@@ -17,6 +17,9 @@ describe('authService', () => {
     };
 
     const prisma = {
+      tenant: {
+        findUnique: vi.fn().mockResolvedValue(null)
+      },
       user: { findFirst: vi.fn().mockResolvedValue(null) },
       refreshToken: { create: vi.fn().mockResolvedValue({ id: 'rt-1' }) },
       $transaction: vi.fn(async (cb: (db: typeof tx) => unknown) => cb(tx))
@@ -127,4 +130,3 @@ describe('authService', () => {
     expect(tx.refreshToken.create).toHaveBeenCalledTimes(1);
   });
 });
-

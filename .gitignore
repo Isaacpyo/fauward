@@ -11,5 +11,9 @@ coverage
 # Prisma
 apps/backend/prisma/migrations
 
+# Next.js
+.next
+*.tsbuildinfo
+
 # OS
 Thumbs.db

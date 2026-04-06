@@ -135,9 +135,9 @@ describe('pricingService.calculate', () => {
       destZoneId: 'zone-dest',
       serviceTier: 'STANDARD',
       weightKg: 5,
-      lengthCm: 100,
-      widthCm: 30,
-      heightCm: 30,
+      lengthCm: 10,
+      widthCm: 10,
+      heightCm: 10,
       declaredValue: 0
     });
     const oversize = await pricingService.calculate(prisma, {
@@ -147,8 +147,8 @@ describe('pricingService.calculate', () => {
       serviceTier: 'STANDARD',
       weightKg: 5,
       lengthCm: 130,
-      widthCm: 30,
-      heightCm: 30,
+      widthCm: 1,
+      heightCm: 1,
       declaredValue: 0
     });
 
@@ -156,4 +156,3 @@ describe('pricingService.calculate', () => {
     expect(oversize.total).toBe(25);
   });
 });
-

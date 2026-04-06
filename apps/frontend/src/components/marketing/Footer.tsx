@@ -49,13 +49,8 @@ export default function Footer() {
       <div className="marketing-container py-16">
         <div className="grid gap-12 lg:grid-cols-[1.2fr,2fr]">
           <div className="space-y-5">
-            <div className="flex items-center gap-3">
-              <div className="w-[44px]">
-                <BrandLogo variant="mark" />
-              </div>
-              <div className="w-[168px]">
-                <BrandLogo variant="wordmark" />
-              </div>
+            <div className="w-[44px]">
+              <BrandLogo variant="mark" />
             </div>
             <p className="max-w-sm text-base text-gray-600">
               Launch a fully branded logistics platform — shipment ops, invoicing, driver app, and customer tracking. No code. No per-seat fees.

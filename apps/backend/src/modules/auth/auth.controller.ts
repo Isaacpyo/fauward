@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { authService } from './auth.service.js';
 import { forgotPasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from './auth.schema.js';
+import { generateQrCodeDataUrl, generateTotpSecret, verifyTotp } from '../../shared/utils/totp.js';
 
 export const authController = {
   register: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -52,14 +53,86 @@ export const authController = {
   me: async (request: FastifyRequest, reply: FastifyReply) => {
     reply.send({ user: request.user });
   },
-  mfaSetup: async (_request: FastifyRequest, reply: FastifyReply) => {
-    reply.code(501).send({ error: 'Not implemented' });
+  mfaSetup: async (request: FastifyRequest, reply: FastifyReply) => {
+    const tenantId = request.tenant?.id;
+    const userId = request.user?.sub;
+    if (!tenantId || !userId) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const user = await request.server.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { id: true, email: true }
+    });
+    if (!user) return reply.status(404).send({ error: 'User not found' });
+
+    const { secret, otpauth } = generateTotpSecret(user.email);
+    const qrCodeDataUrl = await generateQrCodeDataUrl(otpauth);
+
+    await request.server.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        mfaSecret: secret,
+        mfaEnabled: false
+      }
+    });
+
+    reply.send({
+      secret,
+      otpauth,
+      qrCodeDataUrl
+    });
   },
-  mfaVerify: async (_request: FastifyRequest, reply: FastifyReply) => {
-    reply.code(501).send({ error: 'Not implemented' });
+  mfaVerify: async (request: FastifyRequest, reply: FastifyReply) => {
+    const tenantId = request.tenant?.id;
+    const userId = request.user?.sub;
+    if (!tenantId || !userId) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { code, disable } = request.body as { code?: string; disable?: boolean };
+    if (!code) return reply.status(400).send({ error: 'code is required' });
+
+    const user = await request.server.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { id: true, mfaSecret: true, mfaEnabled: true }
+    });
+    if (!user || !user.mfaSecret) return reply.status(400).send({ error: 'MFA setup not initialized' });
+
+    const valid = verifyTotp(code, user.mfaSecret);
+    if (!valid) return reply.status(400).send({ error: 'Invalid MFA code' });
+
+    const updated = await request.server.prisma.user.update({
+      where: { id: user.id },
+      data: disable
+        ? {
+            mfaEnabled: false,
+            mfaSecret: null
+          }
+        : {
+            mfaEnabled: true
+          },
+      select: { mfaEnabled: true }
+    });
+
+    reply.send({
+      success: true,
+      mfaEnabled: updated.mfaEnabled
+    });
   },
-  mfaValidate: async (_request: FastifyRequest, reply: FastifyReply) => {
-    reply.code(501).send({ error: 'Not implemented' });
+  mfaValidate: async (request: FastifyRequest, reply: FastifyReply) => {
+    const { email, code } = request.body as { email?: string; code?: string };
+    if (!email || !code) return reply.status(400).send({ error: 'email and code are required' });
+
+    const user = await request.server.prisma.user.findFirst({
+      where: { email: email.toLowerCase().trim(), isActive: true },
+      select: { mfaEnabled: true, mfaSecret: true }
+    });
+
+    if (!user || !user.mfaEnabled || !user.mfaSecret) {
+      return reply.status(400).send({ error: 'MFA not enabled for account' });
+    }
+
+    const valid = verifyTotp(code, user.mfaSecret);
+    if (!valid) return reply.status(400).send({ error: 'Invalid MFA code' });
+
+    reply.send({ valid: true });
   },
   forgotPassword: async (request: FastifyRequest, reply: FastifyReply) => {
     const payload = forgotPasswordSchema.parse(request.body);

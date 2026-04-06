@@ -31,11 +31,8 @@ export default function Navbar() {
     >
       <div className="marketing-container">
         <div className="flex min-h-[72px] items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-3" aria-label="Fauward home">
-            <span className="hidden w-[172px] sm:inline-flex">
-              <BrandLogo variant="wordmark" priority />
-            </span>
-            <span className="inline-flex w-[46px] sm:hidden">
+          <Link href="/" className="inline-flex items-center" aria-label="Fauward home">
+            <span className="inline-flex w-[46px]">
               <BrandLogo variant="mark" priority />
             </span>
           </Link>

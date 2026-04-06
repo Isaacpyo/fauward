@@ -1,0 +1,14 @@
+run = "cd apps/frontend && npm install && npm run dev"
+entrypoint = "apps/frontend/src/app/page.tsx"
+hidden = [".next", "node_modules"]
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "cd apps/frontend && npm run build && npm run start"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
