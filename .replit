@@ -12,11 +12,7 @@ deploymentTarget = "cloudrun"
 
 [[ports]]
 localPort = 3000
-externalPort = 80
-
-[[ports]]
-localPort = 3001
-externalPort = 3001
+externalPort = 3000
 
 [[ports]]
 localPort = 5000
@@ -41,6 +37,10 @@ args = "Start application"
 task = "workflow.run"
 args = "Backend API"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Tenant Portal"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -61,6 +61,18 @@ author = "agent"
 task = "shell.exec"
 args = "cd apps/backend && npm install && npm run dev"
 waitForPort = 3001
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow]]
+name = "Tenant Portal"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd apps/tenant-portal && npm install && npm run dev"
+waitForPort = 3000
 
 [workflows.workflow.metadata]
 outputType = "console"
