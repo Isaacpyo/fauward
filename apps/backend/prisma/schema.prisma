@@ -1,0 +1,1226 @@
+// Paste the complete schema below, replacing whatever is currently in schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum ShipmentStatus {
+  PENDING
+  PROCESSING
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED_DELIVERY
+  RETURNED
+  CANCELLED
+  EXCEPTION
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  TENANT_MANAGER
+  TENANT_FINANCE
+  TENANT_STAFF
+  TENANT_DRIVER
+  CUSTOMER_ADMIN
+  CUSTOMER_USER
+}
+
+enum TenantStatus {
+  TRIALING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum TenantPlan {
+  STARTER
+  PRO
+  ENTERPRISE
+  TRIALING
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  PARTIALLY_PAID
+  VOID
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CONVERTED
+}
+
+enum LeadStage {
+  PROSPECT
+  QUOTED
+  NEGOTIATING
+  WON
+  LOST
+}
+
+enum DocumentType {
+  DELIVERY_NOTE
+  INVOICE
+  QUOTE
+  CARGO_MANIFEST
+  POD_RECEIPT
+  CREDIT_NOTE
+  AIR_WAYBILL
+  BILL_OF_LADING
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  LABEL_ISSUED
+  PICKED_UP
+  IN_HUB
+  RECEIVED
+  REFUNDED
+  RESOLVED
+  REJECTED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  DAMAGED
+  NOT_AS_DESCRIBED
+  NO_LONGER_NEEDED
+  REFUSED_DELIVERY
+  OTHER
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  DELIVERY_ISSUE
+  PAYMENT_ISSUE
+  DAMAGED_GOODS
+  WRONG_ADDRESS
+  TRACKING_ISSUE
+  RETURN_REQUEST
+  BILLING_QUERY
+  OTHER
+}
+
+enum SurchargeType {
+  PERCENT_OF_BASE
+  PERCENT_OF_TOTAL
+  FLAT_FEE
+  PER_KG
+}
+
+enum SurchargeCondition {
+  ALWAYS
+  OVERSIZE
+  OVERWEIGHT
+  REMOTE_AREA
+  RESIDENTIAL
+  DANGEROUS_GOODS
+  FUEL
+  PEAK_SEASON
+}
+
+enum PricingRuleAction {
+  ADD
+  SUBTRACT
+  MULTIPLY
+  OVERRIDE_TOTAL
+  OVERRIDE_PER_KG
+  SET_MIN
+  SET_MAX
+}
+
+enum PromoType {
+  PERCENT_OFF
+  FIXED_OFF
+  FREE_INSURANCE
+  FREE_EXPRESS
+}
+
+// ─── CORE PLATFORM ────────────────────────────────────────────────────────────
+
+model Tenant {
+  id                 String       @id @default(uuid())
+  name               String
+  slug               String       @unique
+  customDomain       String?      @unique
+  domainVerified     Boolean      @default(false)
+  plan               TenantPlan   @default(TRIALING)
+  status             TenantStatus @default(TRIALING)
+  infrastructureType String       @default("SHARED")
+  region             String       @default("uk_europe")
+  logoUrl            String?
+  primaryColor       String       @default("#0D1F3C")
+  accentColor        String       @default("#D97706")
+  brandName          String?
+  isRtl              Boolean      @default(false)
+  defaultCurrency    String       @default("GBP")
+  defaultLanguage    String       @default("en")
+  timezone           String       @default("Europe/London")
+  showPoweredBy      Boolean      @default(true)
+  smsEnabled         Boolean      @default(false)
+  maxStaff           Int          @default(3)
+  maxShipmentsPm     Int          @default(300)
+  maxOrganisations   Int          @default(10)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  users                 User[]
+  shipments             Shipment[]
+  organisations         Organisation[]
+  leads                 Lead[]
+  quotes                Quote[]
+  invoices              Invoice[]
+  payments              Payment[]
+  refunds               Refund[]
+  creditNotes           CreditNote[]
+  drivers               Driver[]
+  vehicles              Vehicle[]
+  routes                Route[]
+  serviceZones          ServiceZone[]
+  rateCards             RateCard[]
+  shipmentDocuments     ShipmentDocument[]
+  apiKeys               ApiKey[]
+  webhookEndpoints      WebhookEndpoint[]
+  webhookDeliveries     WebhookDelivery[]
+  notificationLogs      NotificationLog[]
+  usageRecords          UsageRecord[]
+  idempotencyKeys       IdempotencyKey[]
+  auditLogs             AuditLog[]
+  passwordResetTokens   PasswordResetToken[]
+  subscription          Subscription?
+  branches              Branch[]
+  accountingConnections AccountingConnection[]
+  settings              TenantSettings?
+  returnRequests        ReturnRequest[]
+  supportTickets        SupportTicket[]
+  ticketMessages        TicketMessage[]
+  emailTemplateConfigs  EmailTemplateConfig[]
+  surcharges            Surcharge[]
+  pricingRules          PricingRule[]
+  promoCodes            PromoCode[]
+  weightDiscountTiers   WeightDiscountTier[]
+  inAppNotifications    InAppNotification[]
+
+  @@map("tenants")
+}
+
+model TenantSettings {
+  tenantId                      String   @id
+  tenant                        Tenant   @relation(fields: [tenantId], references: [id])
+  notificationEmail             String?
+  smsEnabled                    Boolean  @default(false)
+  paymentGateway                String   @default("STRIPE")
+  paymentGatewayKey             String?
+  customEmailDomain             String?
+  webhookUrl                    String?
+  webhookSecret                 String?
+  showPoweredBy                 Boolean  @default(true)
+  timezone                      String   @default("Europe/London")
+  currency                      String   @default("GBP")
+  emailFromName                 String?
+  emailReplyTo                  String?
+  opsEmailRecipients            String[] @default([])
+  serviceTierConfig             Json?
+  insuranceConfig               Json?
+  taxConfig                     Json?
+  dimensionalDivisor            Int      @default(5000)
+  weightTierConflictPolicy      String   @default("BEST_FOR_CUSTOMER")
+  quoteValidityMinutes          Int      @default(30)
+  showPriceBreakdownToCustomer  Boolean  @default(true)
+  autoInvoiceOnDelivery         Boolean  @default(false)
+  slaDeliveryHours              Int      @default(72)
+  roundingMode                  String   @default("ROUND_HALF_UP")
+  roundingPrecision             Int      @default(2)
+  updatedAt                     DateTime @updatedAt
+
+  @@map("tenant_settings")
+}
+
+model Subscription {
+  id                   String    @id @default(uuid())
+  tenantId             String    @unique
+  tenant               Tenant    @relation(fields: [tenantId], references: [id])
+  plan                 String
+  billingCycle         String    @default("MONTHLY")
+  status               String    @default("TRIALING")
+  stripeSubscriptionId String?
+  stripeCustomerId     String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  trialStart           DateTime?
+  trialEnd             DateTime?
+  cancelledAt          DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@map("subscriptions")
+}
+
+model User {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  organisationId String?
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  branchId       String?
+  branch         Branch?       @relation(fields: [branchId], references: [id])
+  email          String
+  phone          String?
+  passwordHash   String?
+  role           UserRole
+  firstName      String?
+  lastName       String?
+  avatarUrl      String?
+  isActive       Boolean       @default(true)
+  mfaEnabled     Boolean       @default(false)
+  mfaSecret      String?
+  lastLogin      DateTime?
+  invitedBy      String?
+  ssoProvider    String?
+  ssoSubject     String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  refreshTokens RefreshToken[]
+  driver        Driver?
+  auditLogs     AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+  returnRequests ReturnRequest[]      @relation("ReturnCustomer")
+  handledReturns ReturnRequest[]      @relation("ReturnHandledBy")
+  supportTickets SupportTicket[]      @relation("TicketCustomer")
+  assignedTickets SupportTicket[]     @relation("TicketAssignee")
+  ticketMessages TicketMessage[]
+  inAppNotifications InAppNotification[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  name      String
+  region    String?
+  address   Json?
+  managerId String?
+  createdAt DateTime @default(now())
+
+  users     User[]
+  shipments Shipment[]
+
+  @@index([tenantId])
+  @@map("branches")
+}
+
+// ─── ORGANISATIONS (B2B clients) ─────────────────────────────────────────────
+
+model Organisation {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  name           String
+  companyNumber  String?
+  taxNumber      String?
+  billingEmail   String?
+  billingAddress Json?
+  paymentTerms   Int      @default(0)
+  creditLimit    Decimal  @default(0) @db.Decimal(12, 2)
+  billingOwnerId String?
+  notes          String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  users       User[]
+  shipments   Shipment[]
+  returnRequests ReturnRequest[]
+  invoices    Invoice[]
+  quotes      Quote[]
+  creditNotes CreditNote[]
+
+  @@index([tenantId])
+  @@map("organisations")
+}
+
+// ─── SHIPMENTS ────────────────────────────────────────────────────────────────
+
+model Shipment {
+  id                  String         @id @default(uuid())
+  tenantId            String
+  tenant              Tenant         @relation(fields: [tenantId], references: [id])
+  branchId            String?
+  branch              Branch?        @relation(fields: [branchId], references: [id])
+  trackingNumber      String         @unique
+  customerId          String?
+  organisationId      String?
+  organisation        Organisation?  @relation(fields: [organisationId], references: [id])
+  assignedStaffId     String?
+  assignedDriverId    String?
+  driver              Driver?        @relation(fields: [assignedDriverId], references: [id])
+  vehicleId           String?
+  vehicle             Vehicle?       @relation(fields: [vehicleId], references: [id])
+  routeId             String?
+  status              ShipmentStatus @default(PENDING)
+  originAddress       Json
+  destinationAddress  Json
+  serviceTier         String         @default("STANDARD")
+  serviceZoneId       String?
+  serviceZone         ServiceZone?   @relation(fields: [serviceZoneId], references: [id])
+  estimatedDelivery   DateTime?
+  actualDelivery      DateTime?
+  price               Decimal?       @db.Decimal(12, 2)
+  currency            String         @default("GBP")
+  weightKg            Decimal?       @db.Decimal(8, 3)
+  notes               String?
+  specialInstructions String?
+  insuranceValue      Decimal?       @db.Decimal(12, 2)
+  promoCodeId         String?
+  idempotencyKey      String?        @unique
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  items     ShipmentItem[]
+  events    ShipmentEvent[]
+  documents ShipmentDocument[]
+  podAssets PodAsset[]
+  returnRequests ReturnRequest[]
+  supportTickets SupportTicket[]
+  promoCode PromoCode?   @relation(fields: [promoCodeId], references: [id])
+  invoice   Invoice?
+  payment   Payment?
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([trackingNumber])
+  @@index([customerId])
+  @@index([promoCodeId])
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id            String   @id @default(uuid())
+  tenantId      String
+  shipmentId    String
+  shipment      Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  description   String?
+  quantity      Int      @default(1)
+  weightKg      Decimal? @db.Decimal(8, 3)
+  lengthCm      Decimal? @db.Decimal(8, 2)
+  widthCm       Decimal? @db.Decimal(8, 2)
+  heightCm      Decimal? @db.Decimal(8, 2)
+  declaredValue Decimal? @db.Decimal(12, 2)
+  hsCode        String?
+  isDangerous   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([tenantId])
+  @@map("shipment_items")
+}
+
+model ShipmentEvent {
+  id         String   @id @default(uuid())
+  tenantId   String
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  status     String
+  location   Json?
+  notes      String?
+  actorId    String?
+  actorType  String?
+  source     String   @default("MANUAL")
+  timestamp  DateTime @default(now())
+
+  @@index([shipmentId])
+  @@index([tenantId])
+  @@map("shipment_events")
+}
+
+model ShipmentDocument {
+  id          String       @id @default(uuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  shipmentId  String
+  shipment    Shipment     @relation(fields: [shipmentId], references: [id])
+  type        DocumentType
+  templateId  String?
+  fileUrl     String
+  fileSize    Int?
+  expiresAt   DateTime?
+  generatedBy String?
+  generatedAt DateTime     @default(now())
+
+  @@index([shipmentId])
+  @@index([tenantId])
+  @@map("shipment_documents")
+}
+
+model PodAsset {
+  id         String   @id @default(uuid())
+  tenantId   String
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  type       String
+  fileUrl    String
+  fileSize   Int?
+  capturedBy String?
+  capturedAt DateTime @default(now())
+
+  @@index([shipmentId])
+  @@map("pod_assets")
+}
+
+// ─── FLEET ────────────────────────────────────────────────────────────────────
+
+model Driver {
+  id             String    @id @default(uuid())
+  tenantId       String
+  tenant         Tenant    @relation(fields: [tenantId], references: [id])
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id])
+  licenceNumber  String?
+  licenceExpiry  DateTime?
+  vehicleId      String?
+  vehicle        Vehicle?  @relation(fields: [vehicleId], references: [id])
+  isAvailable    Boolean   @default(true)
+  currentLat     Decimal?  @db.Decimal(10, 8)
+  currentLng     Decimal?  @db.Decimal(11, 8)
+  lastLocationAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  shipments  Shipment[]
+  routeStops RouteStop[]
+
+  @@index([tenantId])
+  @@map("drivers")
+}
+
+model Vehicle {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  registration String?
+  make         String?
+  model        String?
+  year         Int?
+  type         String?
+  capacityKg   Decimal? @db.Decimal(8, 2)
+  capacityM3   Decimal? @db.Decimal(8, 2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  shipments Shipment[]
+  drivers   Driver[]
+
+  @@index([tenantId])
+  @@map("vehicles")
+}
+
+model Route {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  driverId    String?
+  vehicleId   String?
+  date        DateTime
+  status      String    @default("PLANNED")
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  stops RouteStop[]
+
+  @@index([tenantId])
+  @@map("routes")
+}
+
+model RouteStop {
+  id          String    @id @default(uuid())
+  routeId     String
+  route       Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  shipmentId  String
+  driverId    String?
+  driver      Driver?   @relation(fields: [driverId], references: [id])
+  stopOrder   Int
+  type        String
+  estimatedAt DateTime?
+  arrivedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([routeId])
+  @@map("route_stops")
+}
+
+// ─── PRICING ──────────────────────────────────────────────────────────────────
+
+model ServiceZone {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  zoneType    String   @default("NATIONAL")
+  description String?
+  createdAt   DateTime @default(now())
+
+  originRateCards RateCard[] @relation("OriginZone")
+  destRateCards   RateCard[] @relation("DestZone")
+  shipments       Shipment[]
+
+  @@index([tenantId])
+  @@map("service_zones")
+}
+
+model RateCard {
+  id            String       @id @default(uuid())
+  tenantId      String
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+  name          String?
+  originZoneId  String?
+  destZoneId    String?
+  originZone    ServiceZone? @relation("OriginZone", fields: [originZoneId], references: [id])
+  destZone      ServiceZone? @relation("DestZone", fields: [destZoneId], references: [id])
+  serviceTier   String?
+  basePrice     Decimal      @db.Decimal(12, 2)
+  pricePerKg    Decimal      @db.Decimal(10, 4)
+  minCharge     Decimal?     @db.Decimal(12, 2)
+  maxCharge     Decimal?     @db.Decimal(12, 2)
+  currency      String       @default("GBP")
+  isActive      Boolean      @default(true)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([tenantId])
+  @@map("rate_cards")
+}
+
+// ─── CRM ──────────────────────────────────────────────────────────────────────
+
+model Surcharge {
+  id                  String             @id @default(uuid())
+  tenantId            String
+  tenant              Tenant             @relation(fields: [tenantId], references: [id])
+  name                String
+  description         String?
+  type                SurchargeType
+  condition           SurchargeCondition
+  value               Decimal            @db.Decimal(10, 4)
+  threshold           Decimal?           @db.Decimal(10, 2)
+  peakFrom            DateTime?
+  peakTo              DateTime?
+  isEnabled           Boolean            @default(true)
+  isVisibleToCustomer Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@map("surcharges")
+}
+
+model WeightDiscountTier {
+  id            String   @id @default(uuid())
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  name          String?
+  minWeightKg   Decimal  @db.Decimal(8, 2)
+  maxWeightKg   Decimal? @db.Decimal(8, 2)
+  discountType  String   @default("PERCENT")
+  discountValue Decimal  @db.Decimal(8, 4)
+  isEnabled     Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("weight_discount_tiers")
+}
+
+model PricingRule {
+  id          String            @id @default(uuid())
+  tenantId    String
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  name        String
+  description String?
+  isEnabled   Boolean           @default(true)
+  priority    Int               @default(100)
+  conditions  Json
+  action      PricingRuleAction
+  actionValue Decimal           @db.Decimal(12, 4)
+  stopAfter   Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, priority])
+  @@map("pricing_rules")
+}
+
+model PromoCode {
+  id               String    @id @default(uuid())
+  tenantId         String
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  code             String
+  description      String?
+  type             PromoType
+  value            Decimal   @db.Decimal(10, 2)
+  minOrderValue    Decimal?  @db.Decimal(10, 2)
+  maxDiscountValue Decimal?  @db.Decimal(10, 2)
+  maxUses          Int?
+  usedCount        Int       @default(0)
+  customerIds      String[]
+  isEnabled        Boolean   @default(true)
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  shipments Shipment[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("promo_codes")
+}
+
+model ReturnRequest {
+  id             String       @id @default(uuid())
+  tenantId       String
+  shipmentId     String
+  customerId     String
+  organisationId String?
+  status         ReturnStatus @default(REQUESTED)
+  reason         ReturnReason
+  notes          String?
+  returnLabel    String?
+  handledBy      String?
+  approvedAt     DateTime?
+  receivedAt     DateTime?
+  resolvedAt     DateTime?
+  refundedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  shipment     Shipment      @relation(fields: [shipmentId], references: [id])
+  customer     User          @relation("ReturnCustomer", fields: [customerId], references: [id])
+  organisation Organisation? @relation(fields: [organisationId], references: [id])
+  handler      User?         @relation("ReturnHandledBy", fields: [handledBy], references: [id])
+
+  @@index([tenantId])
+  @@index([shipmentId])
+  @@index([customerId])
+  @@map("return_requests")
+}
+
+model SupportTicket {
+  id           String         @id @default(uuid())
+  tenantId     String
+  ticketNumber String         @unique
+  customerId   String?
+  shipmentId   String?
+  subject      String
+  category     TicketCategory
+  priority     TicketPriority @default(NORMAL)
+  status       TicketStatus   @default(OPEN)
+  assignedTo   String?
+  resolvedAt   DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  customer User?          @relation("TicketCustomer", fields: [customerId], references: [id])
+  shipment Shipment?      @relation(fields: [shipmentId], references: [id])
+  assignee User?          @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  messages TicketMessage[]
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([assignedTo])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid())
+  tenantId   String
+  ticketId   String
+  authorId   String
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id])
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id])
+
+  @@index([tenantId])
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+model EmailTemplateConfig {
+  id            String   @id @default(uuid())
+  tenantId      String
+  templateKey   String
+  isEnabled     Boolean  @default(true)
+  customSubject String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, templateKey])
+  @@index([tenantId])
+  @@map("email_template_configs")
+}
+
+model InAppNotification {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  type      String
+  title     String
+  body      String?
+  link      String?
+  isRead    Boolean  @default(false)
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@index([userId, isRead])
+  @@map("in_app_notifications")
+}
+
+model Lead {
+  id          String    @id @default(uuid())
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id])
+  company     String?
+  contactName String?
+  email       String?
+  phone       String?
+  stage       LeadStage @default(PROSPECT)
+  assignedTo  String?
+  source      String?
+  notes       String?
+  wonAt       DateTime?
+  lostAt      DateTime?
+  lostReason  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  quotes Quote[]
+
+  @@index([tenantId])
+  @@map("leads")
+}
+
+model Quote {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  quoteNumber    String        @unique
+  leadId         String?
+  lead           Lead?         @relation(fields: [leadId], references: [id])
+  customerId     String?
+  organisationId String?
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  shipmentData   Json
+  lineItems      Json?
+  subtotal       Decimal?      @db.Decimal(12, 2)
+  total          Decimal?      @db.Decimal(12, 2)
+  currency       String        @default("GBP")
+  status         QuoteStatus   @default(DRAFT)
+  validUntil     DateTime?
+  acceptedAt     DateTime?
+  rejectedAt     DateTime?
+  shipmentId     String?
+  createdBy      String?
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId])
+  @@map("quotes")
+}
+
+// ─── FINANCE ──────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceNumber  String        @unique
+  customerId     String?
+  organisationId String?
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  shipmentId     String?       @unique
+  shipment       Shipment?     @relation(fields: [shipmentId], references: [id])
+  lineItems      Json
+  subtotal       Decimal       @db.Decimal(12, 2)
+  taxRate        Decimal       @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal       @default(0) @db.Decimal(12, 2)
+  discountAmount Decimal       @default(0) @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  currency       String        @default("GBP")
+  status         InvoiceStatus @default(DRAFT)
+  dueDate        DateTime?
+  paymentTerms   Int           @default(0)
+  notes          String?
+  eInvoiceRef    String?
+  eInvoiceStatus String?
+  sentAt         DateTime?
+  paidAt         DateTime?
+  voidedAt       DateTime?
+  createdBy      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  payments    Payment[]
+  creditNotes CreditNote[]
+
+  @@index([tenantId])
+  @@map("invoices")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceId       String?
+  invoice         Invoice?      @relation(fields: [invoiceId], references: [id])
+  shipmentId      String?       @unique
+  shipment        Shipment?     @relation(fields: [shipmentId], references: [id])
+  customerId      String?
+  amount          Decimal       @db.Decimal(12, 2)
+  currency        String
+  method          String?
+  status          PaymentStatus @default(PENDING)
+  gatewayRef      String?
+  gatewayResponse Json?
+  idempotencyKey  String?       @unique
+  refundedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  refunds Refund[]
+
+  @@index([tenantId])
+  @@map("payments")
+}
+
+model Refund {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id])
+  amount      Decimal  @db.Decimal(12, 2)
+  reason      String?
+  gatewayRef  String?
+  status      String   @default("PENDING")
+  initiatedBy String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("refunds")
+}
+
+model CreditNote {
+  id             String        @id @default(uuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id])
+  invoiceId      String?
+  invoice        Invoice?      @relation(fields: [invoiceId], references: [id])
+  customerId     String?
+  organisationId String?
+  organisation   Organisation? @relation(fields: [organisationId], references: [id])
+  creditNumber   String        @unique
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("GBP")
+  reason         String?
+  appliedTo      String?
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId])
+  @@map("credit_notes")
+}
+
+model CurrencyRate {
+  id           String   @id @default(uuid())
+  fromCurrency String
+  toCurrency   String
+  rate         Decimal  @db.Decimal(18, 8)
+  source       String   @default("OPEN_EXCHANGE")
+  fetchedAt    DateTime @default(now())
+
+  @@unique([fromCurrency, toCurrency])
+  @@map("currency_rates")
+}
+
+model AccountingConnection {
+  id           String    @id @default(uuid())
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id])
+  provider     String
+  accessToken  String?
+  refreshToken String?
+  tokenExpiry  DateTime?
+  tenantRef    String?
+  isActive     Boolean   @default(true)
+  lastSync     DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("accounting_connections")
+}
+
+// ─── PLATFORM: API KEYS ───────────────────────────────────────────────────────
+
+model ApiKey {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  name      String?
+  keyHash   String    @unique
+  keyPrefix String
+  scopes    String[]
+  rateLimit Int       @default(500)
+  lastUsed  DateTime?
+  isActive  Boolean   @default(true)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@map("api_keys")
+}
+
+// ─── PLATFORM: WEBHOOKS ───────────────────────────────────────────────────────
+
+model WebhookEndpoint {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  url       String
+  secret    String
+  events    String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String                @id @default(uuid())
+  tenantId       String
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  endpointId     String
+  endpoint       WebhookEndpoint       @relation(fields: [endpointId], references: [id])
+  eventType      String
+  payload        Json
+  responseStatus Int?
+  responseBody   String?
+  durationMs     Int?
+  attempt        Int                   @default(1)
+  status         WebhookDeliveryStatus @default(PENDING)
+  nextRetryAt    DateTime?
+  createdAt      DateTime              @default(now())
+
+  @@index([endpointId])
+  @@index([tenantId])
+  @@map("webhook_deliveries")
+}
+
+// ─── PLATFORM: NOTIFICATIONS ──────────────────────────────────────────────────
+
+model NotificationLog {
+  id          String              @id @default(uuid())
+  tenantId    String
+  tenant      Tenant              @relation(fields: [tenantId], references: [id])
+  userId      String?
+  shipmentId  String?
+  channel     NotificationChannel
+  event       String
+  status      String              @default("QUEUED")
+  providerRef String?
+  error       String?
+  sentAt      DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([tenantId])
+  @@map("notification_logs")
+}
+
+// ─── PLATFORM: USAGE & BILLING ────────────────────────────────────────────────
+
+model UsageRecord {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  month      String
+  shipments  Int      @default(0)
+  apiCalls   Int      @default(0)
+  smsSent    Int      @default(0)
+  emailsSent Int      @default(0)
+  storageMb  Int      @default(0)
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, month])
+  @@index([tenantId])
+  @@map("usage_records")
+}
+
+// ─── PLATFORM: IDEMPOTENCY ────────────────────────────────────────────────────
+
+model IdempotencyKey {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  key         String
+  requestHash String?
+  response    Json?
+  statusCode  Int?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime @default(dbgenerated("NOW() + INTERVAL '24 hours'"))
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("idempotency_keys")
+}
+
+// ─── PLATFORM: OUTBOX (event consistency) ────────────────────────────────────
+
+model OutboxEvent {
+  id            String    @id @default(uuid())
+  aggregateType String
+  aggregateId   String
+  eventType     String
+  payload       Json
+  published     Boolean   @default(false)
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([published, createdAt])
+  @@map("outbox_events")
+}
+
+// ─── PLATFORM: AUDIT LOG ─────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  actorId      String?
+  actor        User?    @relation(fields: [actorId], references: [id])
+  actorType    String   @default("USER")
+  actorIp      String?
+  sessionId    String?
+  action       String
+  resourceType String?
+  resourceId   String?
+  beforeState  Json?
+  afterState   Json?
+  metadata     Json?
+  timestamp    DateTime @default(now())
+
+  @@index([tenantId, timestamp(sort: Desc)])
+  @@map("audit_log")
+}
+
+// ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────
+
+model SsoProvider {
+  id           String   @id @default(uuid())
+  tenantId     String   @unique
+  providerType String
+  entityId     String?
+  ssoUrl       String?
+  certificate  String?
+  attributeMap Json?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@map("sso_providers")
+}

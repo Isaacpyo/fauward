@@ -1,0 +1,45 @@
+@import "./theme/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface-50);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a,
+input,
+select {
+  min-height: 44px;
+}
+
+[data-driver-surface="true"] button,
+[data-driver-surface="true"] a,
+[data-driver-surface="true"] input,
+[data-driver-surface="true"] select {
+  min-height: 48px;
+}
+
+.font-system-id {
+  font-family: var(--font-mono);
+}

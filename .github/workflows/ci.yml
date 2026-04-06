@@ -1,0 +1,48 @@
+name: CI
+on:
+  push:
+    branches: [main, develop, 'phase/**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fauward_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
+      - run: npx prisma db push --schema=apps/backend/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+      - run: npm test --workspace=apps/backend
+      - run: npm run build --workspace=apps/backend
+      - run: npm run build --workspace=apps/frontend
+      - run: npm run build --workspace=apps/tenant-portal

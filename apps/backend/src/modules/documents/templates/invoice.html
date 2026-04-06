@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
+      .header { border-bottom: 2px solid {{primaryColor}}; margin-bottom: 16px; padding-bottom: 8px; }
+      .title { font-size: 20px; font-weight: 700; }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      td { border: 1px solid #cbd5e1; padding: 8px; }
+    </style>
+  </head>
+  <body>
+    <section class="header">
+      <div class="title">{{brandName}} Invoice</div>
+      <div>Invoice: {{invoiceNumber}}</div>
+      <div>Tracking: {{trackingNumber}}</div>
+      <div>Generated: {{generatedAt}}</div>
+    </section>
+    <p><strong>Customer:</strong> {{customerName}}</p>
+    <table>
+      <tr><td>Amount</td><td>{{amount}} {{currency}}</td></tr>
+      <tr><td>Due Date</td><td>{{dueDate}}</td></tr>
+    </table>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "@fauward/tracking-widget",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.5"
+  }
+}
+

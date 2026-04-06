@@ -1,0 +1,15 @@
+node_modules
+.DS_Store
+.env
+.env.*
+.env.example
+dist
+build
+coverage
+*.log
+
+# Prisma
+apps/backend/prisma/migrations
+
+# OS
+Thumbs.db

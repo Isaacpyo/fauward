@@ -1,0 +1,4 @@
+@import '../../../packages/design-tokens/src/tokens.css';
+@import '../../../packages/design-tokens/src/fauward.css';
+
+/* Persona A should inject tenant primary via applyTenantTheme at runtime. */

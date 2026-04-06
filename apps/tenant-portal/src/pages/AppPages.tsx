@@ -1,0 +1,577 @@
+import { useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { CreditCard, Package, Truck, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+
+import { DashboardChecklist } from "@/components/onboarding/DashboardChecklist";
+import { BillingTab } from "@/pages/settings/BillingTab";
+import { ApiKeysTab } from "@/pages/settings/ApiKeysTab";
+import { WebhooksTab } from "@/pages/settings/WebhooksTab";
+import { EmailSettingsTab } from "@/pages/settings/EmailSettingsTab";
+import { ProfileTab } from "@/pages/settings/ProfileTab";
+import { DomainSettingsTab } from "@/pages/settings/DomainSettingsTab";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { PlanGate } from "@/components/shared/PlanGate";
+import { StatusBadge } from "@/components/shared/StatusBadge";
+import { TrackingNumber } from "@/components/shared/TrackingNumber";
+import { UsageMeter } from "@/components/shared/UsageMeter";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Table, TableCell, TableRow } from "@/components/ui/Table";
+import { Tabs, TabsContent } from "@/components/ui/Tabs";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { PageShell } from "@/layouts/PageShell";
+import { ListPageTemplate, type ListRow } from "@/pages/ListPageTemplate";
+import { useAppStore } from "@/stores/useAppStore";
+import { useTenantStore } from "@/stores/useTenantStore";
+import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { api } from "@/lib/api";
+
+const shipmentsRows: ListRow[] = Array.from({ length: 28 }).map((_, index) => ({
+  id: `TRK-${1000 + index}`,
+  href: `/shipments/TRK-${1000 + index}`,
+  values: [
+    `TRK-${1000 + index}`,
+    index % 2 === 0 ? "Acme Retail" : "Northline Logistics",
+    index % 4 === 0 ? "IN_TRANSIT" : index % 5 === 0 ? "DELIVERED" : "PROCESSING",
+    "UK - London"
+  ]
+}));
+
+const financeRows: ListRow[] = Array.from({ length: 20 }).map((_, index) => ({
+  id: `INV-${2000 + index}`,
+  href: `/finance/INV-${2000 + index}`,
+  values: [
+    `INV-${2000 + index}`,
+    index % 2 === 0 ? "Acme Retail" : "PortBridge",
+    index % 3 === 0 ? "PAID" : index % 4 === 0 ? "OVERDUE" : "SENT",
+    `£${(Math.random() * 3000 + 200).toFixed(2)}`
+  ]
+}));
+
+const crmRows: ListRow[] = Array.from({ length: 16 }).map((_, index) => ({
+  id: `CRM-${400 + index}`,
+  href: `/crm/CRM-${400 + index}`,
+  values: [`Contact ${index + 1}`, index % 2 === 0 ? "Acme Retail" : "Relay Fleet", "Open", "Lagos"]
+}));
+
+const teamRows: ListRow[] = Array.from({ length: 10 }).map((_, index) => ({
+  id: `TEAM-${50 + index}`,
+  href: `/team`,
+  values: [`Member ${index + 1}`, index % 3 === 0 ? "TENANT_MANAGER" : "TENANT_STAFF", "Active", "Last seen 2h ago"]
+}));
+
+export function DashboardPage() {
+  const tenant = useTenantStore((state) => state.tenant);
+  const user = useAppStore((state) => state.user);
+  const dashboardChecklistDismissed = useAppStore((state) => state.dashboardChecklistDismissed);
+  const setDashboardChecklistDismissed = useAppStore((state) => state.setDashboardChecklistDismissed);
+
+  return (
+    <PageShell
+      title="Dashboard"
+      description={`Welcome back${user ? `, ${user.full_name}` : ""}. Live view of shipment, finance, and team health.`}
+      actions={
+        <Button asChild>
+          <Link to="/shipments/create">Create shipment</Link>
+        </Button>
+      }
+    >
+      <div className="grid gap-4 xl:grid-cols-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Today shipments</p>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">124</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">In transit</p>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">53</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Overdue invoices</p>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">7</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+          <p className="text-sm text-gray-500">Tenant plan usage</p>
+          <div className="mt-2">
+            <UsageMeter used={820} total={1000} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 xl:grid-cols-[1.2fr,1fr]">
+        {!dashboardChecklistDismissed ? (
+          <DashboardChecklist
+            state={{
+              brandConfigured: Boolean(tenant?.name),
+              firstShipmentCreated: false,
+              teamInvited: false,
+              paymentsConnected: false,
+              domainConfigured: false
+            }}
+            onDismiss={() => setDashboardChecklistDismissed(true)}
+          />
+        ) : (
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">Checklist dismissed.</p>
+            <Button variant="secondary" size="sm" className="mt-2" onClick={() => setDashboardChecklistDismissed(false)}>
+              Re-show checklist
+            </Button>
+          </div>
+        )}
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="text-base font-semibold text-gray-900">Tenant details</h3>
+          <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-gray-500">Tenant</dt>
+              <dd className="font-medium text-gray-900">{tenant?.name ?? "N/A"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Timezone</dt>
+              <dd className="font-medium text-gray-900">{tenant?.timezone ?? "UTC"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Currency</dt>
+              <dd className="font-medium text-gray-900">{tenant?.currency ?? "GBP"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Locale</dt>
+              <dd className="font-medium text-gray-900">{tenant?.locale ?? "en-GB"}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+export function ShipmentsPage() {
+  return (
+    <ListPageTemplate
+      title="Shipments"
+      description="Manage shipment lifecycle from PENDING through DELIVERED."
+      createLabel="Create shipment"
+      createTo="/shipments/create"
+      columns={["Tracking", "Customer", "Status", "Route"]}
+      rows={shipmentsRows}
+      emptyTitle="No shipments found"
+      emptyDescription="Create your first shipment to start tracking."
+    />
+  );
+}
+
+export function ShipmentDetailPage() {
+  const { id = "TRK-0000" } = useParams();
+  const tenant = useTenantStore((state) => state.tenant);
+
+  return (
+    <PageShell title={`Shipment ${id}`} description="Shipment detail and timeline">
+      <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <TrackingNumber value={id} />
+            <StatusBadge status="IN_TRANSIT" />
+          </div>
+          <Table columns={["Step", "Timestamp", "Actor", "Notes"]} className="mt-4">
+            {[
+              ["PROCESSING", new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), "Dispatcher", "Validated manifest"],
+              ["PICKED_UP", new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), "Driver", "Collected from hub"],
+              ["IN_TRANSIT", new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), "Driver", "En route to destination"]
+            ].map((row) => (
+              <TableRow key={row[0]}>
+                <TableCell>{row[0]}</TableCell>
+                <TableCell>{formatDateTime(row[1], tenant)}</TableCell>
+                <TableCell>{row[2]}</TableCell>
+                <TableCell>{row[3]}</TableCell>
+              </TableRow>
+            ))}
+          </Table>
+        </div>
+        <div className="space-y-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Consignee</h3>
+            <p className="mt-2 text-sm text-gray-600">Acme Retail, London</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900">SLA progress</h3>
+            <div className="mt-2">
+              <UsageMeter used={72} total={100} />
+            </div>
+          </div>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+export function CreateShipmentPage() {
+  return (
+    <PageShell title="Create shipment wizard" description="Multi-step setup for shipment details, routing, and notifications.">
+      <div className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 md:grid-cols-2">
+        <Input placeholder="Customer name" />
+        <Input placeholder="Tracking reference" />
+        <Input placeholder="Pickup address" />
+        <Input placeholder="Delivery address" />
+        <Input type="date" />
+        <Input placeholder="Delivery contact phone" />
+        <div className="md:col-span-2">
+          <Button>Create shipment</Button>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+export function RoutesPage() {
+  return (
+    <PageShell title="Routes / Dispatch Board" description="View active routes, vehicle assignments, and dispatch priorities.">
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-gray-900">Assigned routes</h3>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">18</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-gray-900">Drivers on duty</h3>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">31</p>
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-gray-900">Pending assignments</h3>
+          <p className="mt-2 text-3xl font-semibold text-gray-900">4</p>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
+export function CrmPage() {
+  return (
+    <ListPageTemplate
+      title="CRM"
+      description="Contacts and organizations in your logistics pipeline."
+      createLabel="Create contact"
+      createTo="/crm/new"
+      columns={["Name", "Organization", "Stage", "Region"]}
+      rows={crmRows}
+      emptyTitle="No CRM records"
+      emptyDescription="Add your first contact to begin relationship tracking."
+    />
+  );
+}
+
+export function CrmDetailPage() {
+  const { id = "CRM-0" } = useParams();
+  return (
+    <PageShell title={`Contact ${id}`} description="Contact timeline, notes, and account summary.">
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <p className="text-sm text-gray-600">No activity yet for this contact.</p>
+      </div>
+    </PageShell>
+  );
+}
+
+export function FinancePage() {
+  return (
+    <ListPageTemplate
+      title="Finance"
+      description="Invoices, payment status, and overdue tracking."
+      createLabel="Create invoice"
+      createTo="/finance/create"
+      columns={["Invoice", "Customer", "Status", "Amount"]}
+      rows={financeRows}
+      emptyTitle="No invoices available"
+      emptyDescription="Create your first invoice to begin collections."
+    />
+  );
+}
+
+export function FinanceDetailPage() {
+  const { id = "INV-0000" } = useParams();
+  const tenant = useTenantStore((state) => state.tenant);
+
+  return (
+    <PageShell title={`Invoice ${id}`} description="Invoice details, payment history, and customer notes.">
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <StatusBadge status="SENT" />
+          <p className="text-lg font-semibold text-gray-900">{formatCurrency(2450.5, tenant)}</p>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">Issued {formatDateTime(new Date(), tenant)}</p>
+      </div>
+    </PageShell>
+  );
+}
+
+export function AnalyticsPage() {
+  const user = useAppStore((state) => state.user);
+  const tenant = useTenantStore((state) => state.tenant);
+  const query = useQuery({
+    queryKey: ["analytics-full"],
+    queryFn: async () => (await api.get("/v1/analytics/full")).data,
+    refetchInterval: 60_000,
+    retry: 1
+  });
+
+  const totals = query.data?.totals ?? {
+    shipments: { value: 124, changePct: 12.6 },
+    revenue: { value: 58320, changePct: 9.2 },
+    onTimeRate: { value: 96.4, changePct: 2.4 },
+    avgDeliveryDays: { value: 1.8, changePct: -4.5 }
+  };
+
+  return (
+    <PageShell title="Analytics" description="Tenant performance metrics across shipment and finance workflows.">
+      <PlanGate minimumPlan="pro" currentPlan={user?.plan}>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm text-gray-500">Shipments</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">
+              <AnimatedNumber value={Number(totals.shipments.value ?? 0)} />
+            </p>
+            <p className="mt-1 text-xs text-gray-500">{Number(totals.shipments.changePct ?? 0).toFixed(1)}% vs previous period</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm text-gray-500">Revenue</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">
+              <AnimatedNumber
+                value={Number(totals.revenue.value ?? 0)}
+                formatter={(value) => formatCurrency(value, tenant)}
+              />
+            </p>
+            <p className="mt-1 text-xs text-gray-500">{Number(totals.revenue.changePct ?? 0).toFixed(1)}% vs previous period</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm text-gray-500">On-time rate</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">
+              <AnimatedNumber value={Number(totals.onTimeRate.value ?? 0)} formatter={(value) => `${value.toFixed(1)}%`} />
+            </p>
+            <p className="mt-1 text-xs text-gray-500">{Number(totals.onTimeRate.changePct ?? 0).toFixed(1)}% vs previous period</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm text-gray-500">Avg delivery days</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">
+              <AnimatedNumber value={Number(totals.avgDeliveryDays.value ?? 0)} formatter={(value) => `${value.toFixed(1)}d`} />
+            </p>
+            <p className="mt-1 text-xs text-gray-500">{Number(totals.avgDeliveryDays.changePct ?? 0).toFixed(1)}% vs previous period</p>
+          </div>
+        </div>
+      </PlanGate>
+    </PageShell>
+  );
+}
+
+export function TeamPage() {
+  return (
+    <ListPageTemplate
+      title="Team"
+      description="Manage tenant members, roles, and activity."
+      createLabel="Invite member"
+      createTo="/team/invite"
+      columns={["Name", "Role", "Status", "Activity"]}
+      rows={teamRows}
+      emptyTitle="No team members"
+      emptyDescription="Invite members to collaborate in this tenant."
+    />
+  );
+}
+
+export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get("tab") ?? "billing";
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([currentTab]));
+  const setDashboardChecklistDismissed = useAppStore((state) => state.setDashboardChecklistDismissed);
+
+  return (
+    <PageShell title="Settings" description="General, billing, API keys, webhooks, and branding.">
+      <Tabs
+        value={currentTab}
+        onValueChange={(tab) => {
+          setSearchParams({ tab });
+          setVisitedTabs((previous) => new Set([...previous, tab]));
+        }}
+        items={[
+          { value: "profile", label: "Profile" },
+          { value: "general", label: "General" },
+          { value: "domain", label: "Domain" },
+          { value: "billing", label: "Billing" },
+          { value: "api-keys", label: "API keys" },
+          { value: "webhooks", label: "Webhooks" },
+          { value: "email", label: "Email" },
+          { value: "branding", label: "Branding" }
+        ]}
+      >
+        {visitedTabs.has("profile") ? (
+          <TabsContent value="profile" className="rounded-lg border border-gray-200 bg-white p-4">
+            <ProfileTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("general") ? (
+          <TabsContent value="general" className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">Tenant profile, locale, timezone, and regional settings.</p>
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("domain") ? (
+          <TabsContent value="domain" className="rounded-lg border border-gray-200 bg-white p-4">
+            <DomainSettingsTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("billing") ? (
+          <TabsContent value="billing">
+            <BillingTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("api-keys") ? (
+          <TabsContent value="api-keys" className="rounded-lg border border-gray-200 bg-white p-4">
+            <ApiKeysTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("webhooks") ? (
+          <TabsContent value="webhooks" className="rounded-lg border border-gray-200 bg-white p-4">
+            <WebhooksTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("email") ? (
+          <TabsContent value="email" className="rounded-lg border border-gray-200 bg-white p-4">
+            <EmailSettingsTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("branding") ? (
+          <TabsContent value="branding" className="rounded-lg border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">Theme colors and logo assets for customer-facing pages.</p>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => setDashboardChecklistDismissed(false)}>
+              Re-show dashboard checklist
+            </Button>
+          </TabsContent>
+        ) : null}
+      </Tabs>
+    </PageShell>
+  );
+}
+
+export function PublicTrackLookupPage() {
+  const [number, setNumber] = useState("");
+
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Track shipment</h1>
+      <p className="mt-2 text-sm text-gray-600">Enter a tracking number to view latest shipment updates.</p>
+      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <Input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="TRK-1001" />
+        <Button asChild>
+          <Link to={`/track/${number || "TRK-1001"}`}>Track</Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+export function PublicTrackResultPage() {
+  const { number = "TRK-1001" } = useParams();
+  return (
+    <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Tracking result</h1>
+      <TrackingNumber value={number} />
+      <StatusBadge status="OUT_FOR_DELIVERY" />
+      <p className="text-sm text-gray-600">Shipment is out for delivery and will arrive by end of day.</p>
+    </section>
+  );
+}
+
+export function PublicBookingPage() {
+  return (
+    <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Book shipment</h1>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Input placeholder="Name" />
+        <Input placeholder="Email" />
+        <Input placeholder="Pickup address" />
+        <Input placeholder="Dropoff address" />
+      </div>
+      <Button>Submit booking request</Button>
+    </section>
+  );
+}
+
+export function LoginPage() {
+  return (
+    <section className="mx-auto w-full max-w-md rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Login</h1>
+      <div className="mt-4 space-y-3">
+        <Input placeholder="Email" />
+        <Input type="password" placeholder="Password" />
+        <Button className="w-full">Sign in</Button>
+      </div>
+    </section>
+  );
+}
+
+export function RegisterPage() {
+  return (
+    <section className="mx-auto w-full max-w-md rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Register</h1>
+      <div className="mt-4 space-y-3">
+        <Input placeholder="Full name" />
+        <Input placeholder="Work email" />
+        <Input placeholder="Company" />
+        <Input type="password" placeholder="Password" />
+        <Button className="w-full">Create account</Button>
+      </div>
+    </section>
+  );
+}
+
+export function OnboardingPage() {
+  return (
+    <PageShell title="Onboarding wizard" description="Complete setup and launch your tenant operations.">
+      <div className="grid gap-4 md:grid-cols-3">
+        {[
+          { icon: Users, title: "Invite team", body: "Add managers, finance users, and staff." },
+          { icon: Package, title: "Configure shipments", body: "Define states, labels, and notifications." },
+          { icon: CreditCard, title: "Setup billing", body: "Choose plan and add payment details." },
+          { icon: Truck, title: "Add drivers", body: "Create driver profiles and route assignments." }
+        ].map((item) => (
+          <article key={item.title} className="rounded-lg border border-gray-200 bg-white p-4">
+            <item.icon size={18} className="text-[var(--tenant-primary)]" />
+            <h3 className="mt-3 text-base font-semibold text-gray-900">{item.title}</h3>
+            <p className="mt-1 text-sm text-gray-600">{item.body}</p>
+            <Badge variant="neutral" className="mt-3">
+              Pending
+            </Badge>
+          </article>
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+
+export function PlaceholderCustomerPage({ title, description }: { title: string; description: string }) {
+  return (
+    <PageShell title={title} description={description}>
+      <EmptyState icon={Package} title={`No ${title.toLowerCase()} yet`} description="Data will appear once records are available." />
+    </PageShell>
+  );
+}
+
+export function NotFoundPage() {
+  const options = useMemo(
+    () => [
+      { to: "/", label: "Dashboard" },
+      { to: "/shipments", label: "Shipments" },
+      { to: "/settings", label: "Settings" }
+    ],
+    []
+  );
+
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-6">
+      <h1 className="text-2xl font-semibold text-gray-900">Page not found</h1>
+      <p className="mt-2 text-sm text-gray-600">The page may have moved or no longer exists.</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {options.map((option) => (
+          <Button key={option.to} variant="secondary" asChild>
+            <Link to={option.to}>{option.label}</Link>
+          </Button>
+        ))}
+      </div>
+    </section>
+  );
+}

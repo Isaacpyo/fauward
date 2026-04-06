@@ -1,0 +1,9 @@
+:root {
+  --fauward-navy: var(--brand-navy);
+  --fauward-navy-light: #e8edf5;
+  --fauward-navy-dark: #071224;
+  --fauward-amber: var(--brand-amber);
+  --fauward-amber-light: #fef3c7;
+  --fauward-amber-dark: #b45309;
+  --fauward-white: var(--brand-white);
+}

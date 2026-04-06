@@ -1,0 +1,19 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/auth/register/route": "app/api/auth/register/route.js",
+  "/docs/page": "app/docs/page.js",
+  "/features/page": "app/features/page.js",
+  "/legal/cookies/page": "app/legal/cookies/page.js",
+  "/forgot-password/page": "app/forgot-password/page.js",
+  "/legal/privacy/page": "app/legal/privacy/page.js",
+  "/page": "app/page.js",
+  "/legal/terms/page": "app/legal/terms/page.js",
+  "/plan-gated/page": "app/plan-gated/page.js",
+  "/login/page": "app/login/page.js",
+  "/permission-denied/page": "app/permission-denied/page.js",
+  "/pricing/page": "app/pricing/page.js",
+  "/reset-password/page": "app/reset-password/page.js",
+  "/signup/page": "app/signup/page.js",
+  "/features/[slug]/page": "app/features/[slug]/page.js",
+  "/regions/[region]/page": "app/regions/[region]/page.js"
+}

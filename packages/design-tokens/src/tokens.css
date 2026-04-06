@@ -1,0 +1,173 @@
+:root {
+  --brand-navy: #0d1f3c;
+  --brand-amber: #d97706;
+  --brand-white: #ffffff;
+
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+
+  --color-success: #16a34a;
+  --color-success-light: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-light: #fef3c7;
+  --color-error: #dc2626;
+  --color-error-light: #fee2e2;
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+
+  --tenant-primary: var(--brand-navy);
+  --tenant-primary-hover: #0a1830;
+  --tenant-primary-light: rgba(13, 31, 60, 0.12);
+  --tenant-accent: var(--brand-amber);
+  --tenant-logo: none;
+
+  --color-primary-base: var(--tenant-primary);
+  --color-primary-light: var(--tenant-primary-light);
+  --color-primary-dark: var(--tenant-primary-hover);
+  --color-danger: var(--color-error);
+  --color-danger-dark: #b91c1c;
+
+  --surface-0: #ffffff;
+  --surface-50: var(--gray-50);
+  --surface-100: var(--gray-100);
+  --surface-200: var(--gray-200);
+  --surface-500: var(--gray-500);
+  --surface-700: var(--gray-700);
+  --surface-900: var(--gray-900);
+
+  --color-surface-0: var(--surface-0);
+  --color-surface-50: var(--surface-50);
+  --color-surface-100: var(--surface-100);
+  --color-surface-200: var(--surface-200);
+  --color-surface-300: var(--gray-300);
+  --color-surface-700: var(--gray-700);
+  --color-surface-800: var(--gray-800);
+  --color-surface-900: var(--gray-900);
+
+  --color-text-primary: var(--gray-900);
+  --color-text-secondary: var(--gray-700);
+  --color-text-muted: var(--gray-500);
+  --color-border: var(--gray-200);
+  --color-focus-ring: var(--tenant-primary-light);
+
+  --status-pending-bg: var(--gray-100);
+  --status-pending-text: var(--gray-700);
+  --status-info-bg: #dbeafe;
+  --status-info-text: #1d4ed8;
+  --status-warning-bg: var(--color-warning-light);
+  --status-warning-text: #92400e;
+  --status-success-bg: var(--color-success-light);
+  --status-success-text: #166534;
+  --status-danger-bg: var(--color-error-light);
+  --status-danger-text: #b91c1c;
+  --status-neutral-bg: var(--gray-100);
+  --status-neutral-text: var(--gray-600);
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.75;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --sidebar-width: 256px;
+  --sidebar-width-collapsed: 64px;
+  --topbar-height: 64px;
+  --topbar-height-mobile: 56px;
+  --content-max-width: 80rem;
+
+  --z-dropdown: 1000;
+  --z-sticky: 1100;
+  --z-modal: 1200;
+  --z-toast: 1300;
+  --z-impersonation-banner: 2000;
+
+  --control-height-sm: 32px;
+  --control-height-md: 40px;
+  --control-height-lg: 48px;
+  --touch-target-mobile: 44px;
+  --touch-target-driver: 48px;
+
+  --duration-fast: 100ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+}
+
+[dir="rtl"] {
+  direction: rtl;
+}
+
+:focus-visible {
+  outline: 2px solid var(--tenant-primary);
+  outline-offset: 2px;
+}
+
+code,
+kbd,
+pre,
+samp,
+[data-mono],
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

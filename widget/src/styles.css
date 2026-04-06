@@ -1,0 +1,178 @@
+:host {
+  --fw-primary: #0d1f3c;
+  --fw-accent: #d97706;
+  --fw-font-family: Inter, system-ui, sans-serif;
+  --fw-text: #111827;
+  --fw-muted: #6b7280;
+  --fw-border: #e5e7eb;
+  --fw-bg: #ffffff;
+  --fw-success: #16a34a;
+  --fw-error: #dc2626;
+  --fw-warning: #d97706;
+}
+
+.fw-root,
+.fw-root * {
+  box-sizing: border-box;
+  font-family: var(--fw-font-family);
+}
+
+.fw-root {
+  color: var(--fw-text);
+  background: var(--fw-bg);
+  border: 1px solid var(--fw-border);
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.fw-form {
+  display: flex;
+  gap: 8px;
+}
+
+.fw-root[data-mode="compact"] .fw-form {
+  gap: 6px;
+}
+
+.fw-input {
+  flex: 1;
+  min-height: 38px;
+  border: 1px solid var(--fw-border);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.fw-root[data-mode="compact"] .fw-input {
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.fw-button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 14px;
+  background: var(--fw-primary);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fw-root[data-mode="compact"] .fw-button {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.fw-button:disabled,
+.fw-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fw-error {
+  margin-top: 8px;
+  color: var(--fw-error);
+  font-size: 12px;
+}
+
+.fw-result {
+  margin-top: 12px;
+  border-top: 1px solid var(--fw-border);
+  padding-top: 12px;
+}
+
+.fw-mono {
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace !important;
+}
+
+.fw-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--fw-muted);
+}
+
+.fw-dot[data-state="DELIVERED"] {
+  background: var(--fw-success);
+}
+
+.fw-dot[data-state="FAILED_DELIVERY"],
+.fw-dot[data-state="CANCELLED"],
+.fw-dot[data-state="EXCEPTION"] {
+  background: var(--fw-error);
+}
+
+.fw-dot[data-state="IN_TRANSIT"],
+.fw-dot[data-state="OUT_FOR_DELIVERY"] {
+  background: var(--fw-warning);
+}
+
+.fw-banner {
+  margin-top: 8px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fw-banner--delivered {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.fw-timeline {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.fw-event {
+  border: 1px solid var(--fw-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.fw-event-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.fw-muted {
+  color: var(--fw-muted);
+}
+
+.fw-link {
+  margin-top: 8px;
+  display: inline-block;
+  color: var(--fw-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.fw-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  animation: fw-spin 0.9s linear infinite;
+}
+
+@keyframes fw-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
