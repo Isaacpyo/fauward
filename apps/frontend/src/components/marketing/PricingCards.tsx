@@ -33,6 +33,16 @@ export default function PricingCards({
   showDifferentiator = false
 }: PricingCardsProps) {
   const [billing, setBilling] = useState<BillingPeriod>(initialBilling);
+  const [priceVisible, setPriceVisible] = useState(true);
+
+  function switchBilling(next: BillingPeriod) {
+    if (next === billing) return;
+    setPriceVisible(false);
+    setTimeout(() => {
+      setBilling(next);
+      setPriceVisible(true);
+    }, 150);
+  }
 
   const plans = useMemo(() => PRICING_PLANS, []);
 
@@ -43,7 +53,7 @@ export default function PricingCards({
           <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
             <button
               type="button"
-              onClick={() => setBilling("monthly")}
+              onClick={() => switchBilling("monthly")}
               className={`inline-flex h-11 min-w-[130px] items-center justify-center rounded-md px-4 text-sm font-semibold ${
                 billing === "monthly" ? "bg-brand-navy text-white" : "text-gray-700"
               }`}
@@ -52,7 +62,7 @@ export default function PricingCards({
             </button>
             <button
               type="button"
-              onClick={() => setBilling("annual")}
+              onClick={() => switchBilling("annual")}
               className={`inline-flex h-11 min-w-[130px] items-center justify-center rounded-md px-4 text-sm font-semibold ${
                 billing === "annual" ? "bg-brand-navy text-white" : "text-gray-700"
               }`}
@@ -69,22 +79,31 @@ export default function PricingCards({
       <div className="grid gap-6 lg:grid-cols-3">
         {plans.map((plan) => {
           const price = billing === "annual" ? plan.annualMonthlyEquivalent : plan.monthlyPrice;
-          const cardBorder = plan.recommended ? "border-amber-400" : "border-gray-200";
+          const cardBorder = plan.recommended ? "border-amber-400 ring-2 ring-amber-500" : "border-gray-200";
 
           return (
-            <div key={plan.id} className={`rounded-xl border ${cardBorder} bg-white p-8`}>
+            <div key={plan.id} className={`relative overflow-hidden rounded-xl border ${cardBorder} bg-white p-8 transition-all duration-200 hover:-translate-y-2 hover:shadow-xl`}>
+              {/* Most Popular ribbon */}
+              {plan.recommended ? (
+                <div className="absolute right-0 top-0 overflow-hidden">
+                  <div className="translate-x-6 translate-y-3 rotate-45 transform bg-amber-600 px-8 py-1 text-center text-xs font-bold text-white shadow-sm">
+                    Popular
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-2xl font-semibold text-gray-900">{plan.name}</h3>
                   <p className="mt-2 text-sm text-gray-600">{plan.tagline}</p>
                 </div>
-                {plan.recommended ? (
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Recommended</span>
-                ) : null}
               </div>
 
               <div className="mt-6">
-                <p className="text-4xl font-bold text-gray-900">
+                <p
+                  className="text-4xl font-bold text-gray-900 transition-all duration-200"
+                  style={{ opacity: priceVisible ? 1 : 0, transform: priceVisible ? "scale(1)" : "scale(0.95)" }}
+                >
                   {formatPrice(price)}
                   {price !== null ? <span className="text-base font-medium text-gray-500">/mo</span> : null}
                 </p>

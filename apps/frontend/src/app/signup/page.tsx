@@ -15,7 +15,7 @@ export function generateMetadata(): Metadata {
 
 export default function SignupPage() {
   return (
-    <section className="bg-white py-16 lg:py-24">
+    <section className="min-h-screen bg-gray-50 bg-grid py-16 lg:py-24">
       <div className="marketing-container">
         <div className="grid gap-8 rounded-xl border border-gray-200 bg-white p-6 lg:grid-cols-2 lg:p-10">
           <div>

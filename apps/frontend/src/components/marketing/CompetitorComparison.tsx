@@ -1,5 +1,11 @@
 import { COMPETITOR_COMPARISON_ROWS } from "@/lib/marketing-data";
 
+const NEGATIVE_WORDS = ["Patchy", "Manual", "None", "Extra", "Slow", "Per seat"];
+
+function isNegative(value: string) {
+  return NEGATIVE_WORDS.some((word) => value.includes(word));
+}
+
 export default function CompetitorComparison() {
   return (
     <section className="bg-white py-16 lg:py-24">
@@ -18,7 +24,7 @@ export default function CompetitorComparison() {
           <div className="grid grid-cols-[1fr_auto_auto] bg-gray-50 px-6 py-4">
             <span className="text-sm font-semibold text-gray-500">Capability</span>
             <span className="w-36 text-center text-sm font-semibold text-gray-500">Generic SaaS</span>
-            <span className="w-36 text-center text-sm font-semibold text-brand-navy">Fauward</span>
+            <span className="w-36 rounded-t-lg bg-brand-navy px-4 py-2 text-center text-sm font-semibold text-white">Fauward</span>
           </div>
 
           {/* Rows */}
@@ -26,11 +32,16 @@ export default function CompetitorComparison() {
             <div
               key={row.criterion}
               className={`grid grid-cols-[1fr_auto_auto] items-start gap-x-4 px-6 py-4 ${
-                i % 2 === 0 ? "bg-white" : "bg-gray-50/50"
+                i % 2 === 0 ? "bg-white" : "bg-amber-50/30"
               }`}
             >
               <span className="text-sm font-medium text-gray-800">{row.criterion}</span>
-              <span className="flex w-36 justify-center text-center text-sm text-gray-500">
+              <span className="flex w-36 items-center justify-center gap-1.5 text-center text-sm text-gray-500">
+                {isNegative(row.genericSaaS) && (
+                  <svg className="h-3.5 w-3.5 shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                )}
                 {row.genericSaaS}
               </span>
               <span className="flex w-36 items-center justify-center gap-1.5 text-center text-sm font-semibold text-brand-navy">

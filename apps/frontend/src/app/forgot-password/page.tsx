@@ -37,9 +37,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <section className="bg-white py-16 lg:py-24">
-      <div className="marketing-container">
-        <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-6 lg:p-8">
+    <section className="flex min-h-screen items-center justify-center bg-gray-50 bg-grid py-16">
+      <div className="w-full max-w-md px-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
           <h1 className="text-3xl font-bold text-gray-900">Forgot password</h1>
           <p className="mt-2 text-sm text-gray-600">Enter your account email to request a password reset.</p>
 
@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
                 autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="h-11 w-full rounded-lg border border-gray-200 px-4 text-sm outline-none ring-amber-600/20 focus:ring"
+                className="h-11 w-full rounded-lg border border-gray-200 px-4 text-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
                 required
               />
             </div>

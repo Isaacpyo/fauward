@@ -48,8 +48,11 @@ export default function FeatureSection({ features }: FeatureSectionProps) {
             const Icon = SLUG_ICON_MAP[feature.slug] ?? Package;
 
             return (
-              <article key={feature.slug} className="rounded-2xl border border-gray-200 bg-white p-8 transition hover:border-gray-300 hover:shadow-sm">
-                <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-brand-navy/10">
+              <article key={feature.slug} className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-8 transition-all duration-200 hover:-translate-y-1.5 hover:shadow-lg hover:border-gray-300">
+                {/* Amber top border on hover */}
+                <span className="absolute inset-x-0 top-0 h-0.5 scale-x-0 bg-amber-600 transition-transform duration-200 group-hover:scale-x-100 origin-left" aria-hidden />
+
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-brand-navy/10 transition-colors duration-200 group-hover:bg-amber-50">
                   <Icon className="h-6 w-6 text-brand-navy" aria-hidden />
                 </div>
                 <h3 className="mt-5 text-xl font-bold text-gray-900">{feature.title}</h3>
@@ -71,7 +74,14 @@ export default function FeatureSection({ features }: FeatureSectionProps) {
                   className="mt-6 inline-flex items-center gap-1 text-sm font-semibold text-brand-navy underline-offset-4 hover:underline"
                 >
                   Learn more
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
+                  <svg
+                    className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
                   </svg>
                 </Link>

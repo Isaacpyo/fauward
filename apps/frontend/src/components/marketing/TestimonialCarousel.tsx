@@ -19,14 +19,28 @@ function InitialsAvatar({ initials, name }: { initials: string; name: string }) 
 
 export default function TestimonialCarousel() {
   const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      setIndex((current) => (current + 1) % TESTIMONIALS.length);
+      setVisible(false);
+      setTimeout(() => {
+        setIndex((current) => (current + 1) % TESTIMONIALS.length);
+        setVisible(true);
+      }, 300);
     }, AUTO_ADVANCE_MS);
 
     return () => window.clearInterval(timer);
   }, []);
+
+  function goTo(nextIndex: number) {
+    if (nextIndex === index) return;
+    setVisible(false);
+    setTimeout(() => {
+      setIndex(nextIndex);
+      setVisible(true);
+    }, 300);
+  }
 
   const active = TESTIMONIALS[index];
 
@@ -41,8 +55,19 @@ export default function TestimonialCarousel() {
           <svg className="mb-4 h-7 w-7 text-amber-500" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
             <path d="M4.583 17.321C3.553 16.227 3 15 3 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 0 1-3.5 3.5c-1.073 0-2.099-.49-2.748-1.179zm10 0C13.553 16.227 13 15 13 13.011c0-3.5 2.457-6.637 6.03-8.188l.893 1.378c-3.335 1.804-3.987 4.145-4.247 5.621.537-.278 1.24-.375 1.929-.311 1.804.167 3.226 1.648 3.226 3.489a3.5 3.5 0 0 1-3.5 3.5c-1.073 0-2.099-.49-2.748-1.179z" />
           </svg>
-          <blockquote className="text-xl leading-relaxed text-gray-700">&ldquo;{active.quote}&rdquo;</blockquote>
-          <div className="mt-8 flex items-center gap-4">
+          <blockquote
+            className="text-xl leading-relaxed text-gray-700 transition-all duration-300"
+            style={{
+              opacity: visible ? 1 : 0,
+              transform: visible ? "translateY(0)" : "translateY(8px)"
+            }}
+          >
+            &ldquo;{active.quote}&rdquo;
+          </blockquote>
+          <div
+            className="mt-8 flex items-center gap-4 transition-all duration-300"
+            style={{ opacity: visible ? 1 : 0 }}
+          >
             {active.avatarSrc ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -68,10 +93,12 @@ export default function TestimonialCarousel() {
               <button
                 key={testimonial.name}
                 type="button"
-                onClick={() => setIndex(dotIndex)}
-                className={`h-2.5 w-2.5 rounded-full border transition ${
-                  dotIndex === index ? "border-brand-navy bg-brand-navy" : "border-gray-300 bg-white"
-                }`}
+                onClick={() => goTo(dotIndex)}
+                className={`rounded-full border transition-all duration-200 ${
+                  dotIndex === index
+                    ? "border-brand-navy bg-brand-navy scale-125"
+                    : "border-gray-300 bg-white h-2.5 w-2.5"
+                } ${dotIndex === index ? "h-2.5 w-2.5" : ""}`}
                 aria-label={`Show testimonial ${dotIndex + 1}`}
               />
             ))}
@@ -81,7 +108,7 @@ export default function TestimonialCarousel() {
         {MINI_TESTIMONIALS.length > 0 ? (
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             {MINI_TESTIMONIALS.map((testimonial) => (
-              <div key={testimonial.name} className="rounded-xl border border-gray-200 bg-white p-5">
+              <div key={testimonial.name} className="rounded-xl border border-gray-200 bg-white p-5 transition hover:border-amber-200 hover:shadow-md">
                 <p className="text-sm leading-relaxed text-gray-700">&ldquo;{testimonial.quote}&rdquo;</p>
                 <p className="mt-4 text-xs font-semibold text-gray-500">- {testimonial.name}</p>
               </div>

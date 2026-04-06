@@ -1,0 +1,196 @@
+I'm working on a Next.js 14 + Tailwind CSS marketing site called Fauward 
+(a white-label logistics SaaS platform). The repo is a monorepo — the 
+frontend lives at apps/frontend/src/.
+
+Brand identity:
+- Primary accent: amber-600 (#d97706), hover amber-700
+- Navy: bg-[#0d1f3c] (used as dark backgrounds, brand-navy class)
+- Backgrounds: white, gray-50, gray-100
+- Typography: system font stack, bold headings
+- Tone: professional B2B SaaS, not playful
+
+────────────────────────────────────────────────
+GLOBAL RULES (apply to every file below)
+────────────────────────────────────────────────
+- Keep ALL existing props, data imports, logic, href links, and text content
+- Use only Tailwind CSS — no new npm packages
+- Add CSS keyframe animations inline with <style jsx global> or a 
+  <style> tag if needed
+- Mobile-first, fully responsive
+- Do not rename or remove any exported component or function
+- Do not touch any file outside the list below
+
+────────────────────────────────────────────────
+1. apps/frontend/src/components/marketing/Navbar.tsx
+────────────────────────────────────────────────
+- Detect active route with usePathname (next/navigation) and show a 
+  2px amber-600 underline under the active nav link
+- Mobile menu: add a smooth max-height slide-down CSS transition 
+  (max-h-0 → max-h-96) instead of abrupt appear/disappear
+- On first page load, pulse the "Start Free Trial" button with a 
+  ring-4 ring-amber-400/50 animation for 3 seconds, then stop
+
+────────────────────────────────────────────────
+2. apps/frontend/src/components/marketing/Hero.tsx
+────────────────────────────────────────────────
+- Add a radial gradient glow behind the h1 (amber-100 soft circle, 
+  absolutely positioned, blurred with blur-3xl, -z-10)
+- Replace the "Product screenshot coming soon" browser mockup with a 
+  realistic animated dashboard built from HTML/Tailwind:
+  • A top stats row: 3 mini cards (Shipments Today: 142, Active Drivers: 37, 
+    Revenue MTD: £28,450) using bg-white rounded-xl shadow-sm p-4
+  • Below: a fake shipment list — 4 rows each with a status badge 
+    (In Transit = amber, Delivered = green, Pending = gray), a shipment 
+    ID, and a destination city
+  • Add a subtle floating animation (translateY -6px → 0px loop) on 
+    the whole mockup using a CSS keyframe
+
+────────────────────────────────────────────────
+3. apps/frontend/src/components/marketing/SocialProof.tsx
+────────────────────────────────────────────────
+- Animate the feature pills marquee: duplicate the pill list and 
+  use a CSS keyframe (translateX 0 → -50%) with overflow-hidden to 
+  create an infinite scrolling ticker on mobile, static grid on lg+
+- Add a subtle amber dot • before each pill text instead of the 
+  checkmark SVG on mobile view
+
+────────────────────────────────────────────────
+4. apps/frontend/src/components/marketing/PersonaSection.tsx
+────────────────────────────────────────────────
+- Replace the plain "x" and "check" text spans with proper styled 
+  icons: red ✕ circle for pain, green ✓ circle for gain
+- Add hover:shadow-md hover:-translate-y-1 transition to each card
+- Add a thin amber-600 left border (border-l-4) to each card on hover
+
+────────────────────────────────────────────────
+5. apps/frontend/src/components/marketing/HowItWorks.tsx
+────────────────────────────────────────────────
+- Animate the connector line: add a left-to-right fill animation 
+  using a CSS keyframe (scaleX 0 → 1, transform-origin left) that 
+  triggers on page load with a 0.5s delay
+- Add a step number badge (1, 2, 3) in white text inside the amber 
+  circle alongside the icon
+- Fade-in each step card with staggered opacity/translateY animation 
+  (0ms, 150ms, 300ms delays)
+
+────────────────────────────────────────────────
+6. apps/frontend/src/components/marketing/FeatureSection.tsx
+────────────────────────────────────────────────
+- Each article card: add hover:shadow-lg hover:-translate-y-1.5 
+  transition-all duration-200
+- Make the icon container bg-brand-navy/10 → bg-amber-50 on hover
+- Add a thin amber-600 top border (border-t-2 border-t-amber-600) 
+  that appears only on hover using group-hover
+- "Learn more" link: animate the arrow → with translateX(4px) on 
+  hover
+
+────────────────────────────────────────────────
+7. apps/frontend/src/components/marketing/ScreenshotShowcase.tsx
+────────────────────────────────────────────────
+- Replace each ScreenshotPlaceholder with a rich Tailwind-built 
+  UI mockup relevant to the tab title:
+  • "Shipment ops": table with 5 fake rows (status, ID, route, driver)
+  • "Customer tracking": a map-style placeholder with a pulsing 
+    location pin dot and a "Live tracking" label
+  • "Invoicing": a mini invoice card (invoice #, amount, due date, 
+    status badge)
+- Animate the tab switch: fade-out old content (opacity-0) and 
+  fade-in new (opacity-100) with duration-300
+
+────────────────────────────────────────────────
+8. apps/frontend/src/components/marketing/CompetitorComparison.tsx
+────────────────────────────────────────────────
+- Add alternating row highlight: even rows bg-white, odd rows 
+  bg-amber-50/30 (instead of gray-50/50)
+- Fauward column header: change text-brand-navy → add bg-brand-navy 
+  text-white rounded-t-lg px-4 py-2 header cell styling
+- Add a "✕" red icon for the genericSaaS column cells that contain 
+  negative words (Patchy, Manual, None, Extra, Slow, Per seat)
+
+────────────────────────────────────────────────
+9. apps/frontend/src/components/marketing/PricingCards.tsx
+────────────────────────────────────────────────
+- Price number: animate on billing toggle with a CSS transition 
+  scale-95 → scale-100 + opacity-0 → opacity-100 (duration-200)
+- Most popular plan: add a "Most Popular" badge ribbon in top-right 
+  (absolute, bg-amber-600, text-white, text-xs, rotated) and a 
+  ring-2 ring-amber-500 border
+- Each card: hover:shadow-xl hover:-translate-y-2 transition
+
+────────────────────────────────────────────────
+10. apps/frontend/src/components/marketing/TestimonialCarousel.tsx
+────────────────────────────────────────────────
+- Animate blockquote transition: when index changes, fade out 
+  (opacity-0 translate-y-2) and fade in (opacity-100 translate-y-0) 
+  with duration-300
+- Mini testimonial cards: add hover:shadow-md hover:border-amber-200 
+  transition
+- Active dot: animate the selected dot with a scale-125 transform
+
+────────────────────────────────────────────────
+11. apps/frontend/src/components/marketing/RegionStrip.tsx
+────────────────────────────────────────────────
+- Each region card: on hover, show a subtle amber-600 left border 
+  (border-l-4 border-l-amber-600) sliding in with a CSS transition
+- Add a flag emoji before each region.name 
+  (UK 🇬🇧, Africa 🌍, MENA 🌙, Global 🌐)
+- "View details" link: add an animated → arrow (translateX on 
+  group-hover)
+
+────────────────────────────────────────────────
+12. apps/frontend/src/components/marketing/FAQAccordion.tsx
+────────────────────────────────────────────────
+- Replace + / − text with a rotating chevron SVG (rotate-0 closed, 
+  rotate-180 open) with transition-transform duration-200
+- Add a left amber border (border-l-2 border-l-amber-600) to the 
+  expanded article
+- Topic group labels: add a short amber-600 horizontal rule after 
+  each topic heading
+
+────────────────────────────────────────────────
+13. apps/frontend/src/components/marketing/CTABanner.tsx
+────────────────────────────────────────────────
+- Add a radial amber glow in the bg-[#0d1f3c] banner (absolute 
+  amber-500/20 circle, blur-3xl, top-right corner)
+- Add a slow pulse animation to the primary CTA button 
+  (ring-4 ring-amber-400/40 scale pulse, 2s loop)
+- Add small trust badges below the buttons: 
+  "🔒 No card required", "✓ 14-day free trial", "✓ Cancel anytime" 
+  in small text-blue-200
+
+────────────────────────────────────────────────
+14. apps/frontend/src/components/marketing/Footer.tsx
+────────────────────────────────────────────────
+- Add hover:text-amber-600 transition to all footer links (instead 
+  of hover:text-brand-navy)
+- Newsletter input: add a focus ring (ring-2 ring-amber-500) and 
+  a success state — after submit show "You're on the list ✓" green 
+  message (manage with useState, no real API call needed)
+- Social links: add SVG icons for LinkedIn, X (Twitter), YouTube 
+  inline before the text label
+
+────────────────────────────────────────────────
+15. apps/frontend/src/app/login/page.tsx
+────────────────────────────────────────────────
+- Wrap the card in a full-height centered layout with a subtle 
+  bg-gray-50 background and a faint grid pattern (bg-grid class 
+  already exists in globals.css)
+- Add a show/hide password toggle button (eye icon SVG) on the 
+  password input
+- Add a divider "— or —" with a Google SSO button placeholder 
+  (not functional, just UI — gray border, Google "G" favicon-style 
+  colored circle + "Continue with Google" text)
+- Input focus: ring-2 ring-amber-500 border-amber-500 transition
+
+────────────────────────────────────────────────
+16. apps/frontend/src/app/signup/page.tsx  
+    apps/frontend/src/app/forgot-password/page.tsx
+    apps/frontend/src/app/reset-password/page.tsx
+────────────────────────────────────────────────
+- Apply the same card layout, input focus ring, and grid background 
+  treatment as login above
+- signup: add a progress indicator (Step 1 of 2 pill) at the top 
+  of the card even if single-step for now
+- forgot-password: add a mail envelope SVG icon centered above the 
+  heading
+- reset-password: add a lock SVG icon centered above the heading
