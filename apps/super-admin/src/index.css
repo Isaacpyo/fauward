@@ -14,9 +14,43 @@ body {
   font-family: var(--font-sans);
   background: var(--color-surface-50);
   color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+/* Focus transitions */
+*:focus-visible {
+  outline: 2px solid var(--fauward-amber, #d97706);
+  outline-offset: 2px;
+  border-radius: 4px;
+  transition: outline-color 0.15s ease;
+}
+
+/* Page animation */
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-animate {
+  animation: page-fade-in 0.18s ease-out both;
 }

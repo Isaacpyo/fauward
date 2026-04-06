@@ -22,6 +22,10 @@ externalPort = 3001
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 5173
+externalPort = 5173
+
 [agent]
 expertMode = true
 
@@ -44,6 +48,10 @@ args = "Backend API"
 [[workflows.workflow.tasks]]
 task = "workflow.run"
 args = "Tenant Portal"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Super Admin"
 
 [[workflows.workflow]]
 name = "Start application"
@@ -80,3 +88,15 @@ waitForPort = 3000
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow]]
+name = "Super Admin"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd apps/super-admin && npm install && npm run dev"
+waitForPort = 5173

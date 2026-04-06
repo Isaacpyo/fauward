@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
+import { StatCard } from "@/components/ui/StatCard";
 import { PageShell } from "@/layouts/PageShell";
 import { ListPageTemplate, type ListRow } from "@/pages/ListPageTemplate";
 import { useAppStore } from "@/stores/useAppStore";
@@ -79,23 +80,15 @@ export function DashboardPage() {
       }
     >
       <div className="grid gap-4 xl:grid-cols-4">
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-sm text-gray-500">Today shipments</p>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">124</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-sm text-gray-500">In transit</p>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">53</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-sm text-gray-500">Overdue invoices</p>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">7</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-          <p className="text-sm text-gray-500">Tenant plan usage</p>
-          <div className="mt-2">
+        <StatCard label="Today shipments" value="124" trend="↑ 12% vs yesterday" trendUp />
+        <StatCard label="In transit" value="53" trend="4 delayed" trendUp={false} />
+        <StatCard label="Overdue invoices" value="7" trend="2 added today" trendUp={false} />
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Plan usage</p>
+          <div className="mt-3">
             <UsageMeter used={820} total={1000} />
           </div>
+          <p className="mt-1.5 text-xs text-gray-400">820 / 1,000 shipments</p>
         </div>
       </div>
 
@@ -492,30 +485,91 @@ export function PublicBookingPage() {
 }
 
 export function LoginPage() {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
-    <section className="mx-auto w-full max-w-md rounded-lg border border-gray-200 bg-white p-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Login</h1>
-      <div className="mt-4 space-y-3">
-        <Input placeholder="Email" />
-        <Input type="password" placeholder="Password" />
-        <Button className="w-full">Sign in</Button>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12">
+      <div className="w-full max-w-md px-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+          <h1 className="text-2xl font-bold text-gray-900">Sign in to your portal</h1>
+          <p className="mt-1.5 text-sm text-gray-500">Enter your email and password to continue.</p>
+          <div className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-email">Email</label>
+              <Input id="login-email" type="email" autoComplete="email" placeholder="you@company.com" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-password">Password</label>
+              <div className="relative">
+                <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" className="pr-11" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 min-h-0 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            <Button className="w-full" size="lg">Sign in</Button>
+          </div>
+          <p className="mt-4 text-xs text-gray-400 text-center">Forgot your password? Contact your administrator.</p>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
 export function RegisterPage() {
+  const [showPassword, setShowPassword] = useState(false);
+
   return (
-    <section className="mx-auto w-full max-w-md rounded-lg border border-gray-200 bg-white p-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Register</h1>
-      <div className="mt-4 space-y-3">
-        <Input placeholder="Full name" />
-        <Input placeholder="Work email" />
-        <Input placeholder="Company" />
-        <Input type="password" placeholder="Password" />
-        <Button className="w-full">Create account</Button>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12">
+      <div className="w-full max-w-md px-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
+          <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
+          <p className="mt-1.5 text-sm text-gray-500">Get started with your tenant workspace.</p>
+          <div className="mt-6 space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-name">Full name</label>
+              <Input id="reg-name" type="text" autoComplete="name" placeholder="Jane Smith" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-email">Work email</label>
+              <Input id="reg-email" type="email" autoComplete="email" placeholder="jane@company.com" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-company">Company</label>
+              <Input id="reg-company" type="text" autoComplete="organization" placeholder="Acme Logistics" />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-password">Password</label>
+              <div className="relative">
+                <Input id="reg-password" type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Min 8 characters" className="pr-11" />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 min-h-0 text-gray-400 hover:text-gray-600"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 0 0 1.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.451 10.451 0 0 1 12 4.5c4.756 0 8.773 3.162 10.065 7.498a10.522 10.522 0 0 1-4.293 5.774M6.228 6.228 3 3m3.228 3.228 3.65 3.65m7.894 7.894L21 21m-3.228-3.228-3.65-3.65m0 0a3 3 0 1 0-4.243-4.243m4.242 4.242L9.88 9.88" /></svg>
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z" /></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            <Button className="w-full" size="lg">Create account</Button>
+          </div>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }
 
