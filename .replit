@@ -7,8 +7,9 @@ modules = ["nodejs-20"]
 channel = "stable-24_05"
 
 [deployment]
-run = ["sh", "-c", "cd apps/frontend && npm run build && npm run start"]
-deploymentTarget = "cloudrun"
+run = ["bash", "scripts/start.sh"]
+deploymentTarget = "autoscale"
+build = ["bash", "scripts/build.sh"]
 
 [[ports]]
 localPort = 3000

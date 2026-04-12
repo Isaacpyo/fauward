@@ -74,7 +74,41 @@ The **backend** requires:
 - **vite.config.ts**: port 5173, host 0.0.0.0, allowedHosts: true
 - **index.css**: custom scrollbar, amber focus-visible ring, page animation
 
+## Production Deployment
+
+### Architecture
+All apps are served from a single Replit deployment behind a reverse proxy:
+- **Port 5000**: `proxy.js` — routes by `Host` header (exposed externally)
+- **Port 3001**: Backend API (internal)
+- **Port 3002**: Marketing Site / Next.js (internal)
+- **Port 3003**: Tenant Portal static files (internal)
+- **Port 3004**: Super Admin static files (internal)
+
+### Build & Start scripts
+- `scripts/build.sh` — builds all 4 apps for production
+- `scripts/start.sh` — starts all 4 services + reverse proxy
+- `proxy.js` — Node.js HTTP reverse proxy, routes by hostname
+
+### Custom Domain Routing (fauward.com)
+| Domain | App | Internal Port |
+|---|---|---|
+| fauward.com / www.fauward.com | Marketing Site | 3002 |
+| app.fauward.com | Tenant Portal | 3003 |
+| admin.fauward.com | Super Admin | 3004 |
+| api.fauward.com | Backend API | 3001 |
+
+### Cloudflare DNS Setup (after first deploy)
+Add CNAME records for ALL subdomains pointing to the same Replit deployment URL:
+- `@` (root) → `<replit-cname-target>` (Cloudflare CNAME Flattening handles apex)
+- `www` → `<replit-cname-target>`
+- `app` → `<replit-cname-target>`
+- `admin` → `<replit-cname-target>`
+- `api` → `<replit-cname-target>`
+
+Set DNS records to **DNS-only** (grey cloud) initially; once TLS is verified by Replit, you can enable Cloudflare proxy.
+
 ## Notes
 - Prisma schema pushed directly (`prisma db push`) — no migrations folder
 - Footer.tsx is "use client" for newsletter state
 - ScreenshotShowcase has animated Tailwind mockups (ShipmentOpsMockup, CustomerTrackingMockup, InvoicingMockup)
+- `serve` package installed at root for static file serving in production

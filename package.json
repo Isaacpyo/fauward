@@ -10,5 +10,8 @@
     "dev": "npm run dev --workspace=apps/backend",
     "lint": "npm run lint --workspace=apps/backend",
     "test": "npm run test --workspace=apps/backend"
+  },
+  "dependencies": {
+    "serve": "^14.2.6"
   }
 }
