@@ -2,7 +2,14 @@ import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { tenantStorage } from '../context/tenant.context.js';
 
-const prisma = new PrismaClient();
+const rawUrl = process.env.SUPABASE_DB_URL ?? '';
+const dbUrl = rawUrl && !rawUrl.includes('pgbouncer=true')
+  ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}pgbouncer=true`
+  : rawUrl;
+
+const prisma = new PrismaClient({
+  datasources: { db: { url: dbUrl } },
+});
 
 const TENANT_SCOPED_MODELS = [
   'User', 'Shipment', 'ShipmentItem', 'ShipmentEvent', 'Organisation',

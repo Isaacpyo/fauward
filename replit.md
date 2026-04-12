@@ -32,11 +32,17 @@ npm (npm workspaces monorepo)
 
 ## Required Environment Variables
 The **backend** requires:
-- `DATABASE_URL` — PostgreSQL connection string (already set via Replit DB)
-- `DIRECT_URL` — Direct DB connection (Prisma)
+- `SUPABASE_DB_URL` — Supabase transaction pooler URL (port 6543, pgbouncer=true appended automatically)
+- `SUPABASE_DIRECT_URL` — Supabase direct/session pooler URL (port 5432, used by Prisma for migrations)
 - `REDIS_URL` — Redis connection URL (Upstash)
 - `JWT_ACCESS_SECRET` — JWT signing secret (min 16 chars)
 - `JWT_REFRESH_SECRET` — JWT refresh secret (min 16 chars)
+
+## Database
+- **Provider**: Supabase (PostgreSQL 17)
+- **Schema push**: `cd apps/backend && npx prisma db push`
+- **Prisma config**: uses `SUPABASE_DB_URL` (pooler) for runtime, `SUPABASE_DIRECT_URL` for migrations
+- **PgBouncer fix**: `pgbouncer=true` is appended automatically in `apps/backend/src/plugins/prisma.ts`
 
 ## Replit Configuration
 - Frontend runs on port 5000 (required for Replit webview)

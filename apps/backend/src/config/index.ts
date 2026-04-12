@@ -6,7 +6,7 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.string().default('development'),
   PORT: z.coerce.number().default(3001),
-  DATABASE_URL: z.string().url(),
+  SUPABASE_DB_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
@@ -26,7 +26,7 @@ if (!parsed.success) {
 export const config = {
   nodeEnv: parsed.data.NODE_ENV,
   port: parsed.data.PORT,
-  dbUrl: parsed.data.DATABASE_URL,
+  dbUrl: parsed.data.SUPABASE_DB_URL,
   redisUrl: parsed.data.REDIS_URL,
   jwt: {
     accessSecret: parsed.data.JWT_ACCESS_SECRET,
