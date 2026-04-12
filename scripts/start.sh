@@ -25,7 +25,7 @@ echo "[4/4] Super Admin (static) → :3004"
 npx serve apps/super-admin/dist --listen 3004 --single &
 ADMIN_PID=$!
 
-echo "[proxy] Starting reverse proxy → :5000"
+echo "[proxy] Starting reverse proxy → :3000"
 sleep 2
 node "$ROOT/proxy.js"
 

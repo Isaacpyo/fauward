@@ -51,7 +51,8 @@ server.on('upgrade', (req, socket, head) => {
   socket.on('error', () => upstream.destroy());
 });
 
-server.listen(5000, '0.0.0.0', () => {
-  console.log('[proxy] Listening on :5000');
+const PROXY_PORT = parseInt(process.env.PROXY_PORT || process.env.PORT || '3000', 10);
+server.listen(PROXY_PORT, '0.0.0.0', () => {
+  console.log(`[proxy] Listening on :${PROXY_PORT}`);
   console.log('[proxy] Routes:', ROUTES);
 });

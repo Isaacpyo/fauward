@@ -2,8 +2,12 @@ import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { tenantStorage } from '../context/tenant.context.js';
 
-const rawUrl = process.env.SUPABASE_DB_URL ?? '';
-const dbUrl = rawUrl && !rawUrl.includes('pgbouncer=true')
+// Prefer the session-pooler / direct URL (port 5432) because port 6543 can be
+// blocked in some hosting environments. Fall back to the transaction pooler.
+const rawUrl = process.env.SUPABASE_DIRECT_URL || process.env.SUPABASE_DB_URL || '';
+// Only append pgbouncer flag when using the transaction pooler (port 6543)
+const usesPgBouncer = rawUrl.includes(':6543');
+const dbUrl = usesPgBouncer && !rawUrl.includes('pgbouncer=true')
   ? `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}pgbouncer=true`
   : rawUrl;
 
