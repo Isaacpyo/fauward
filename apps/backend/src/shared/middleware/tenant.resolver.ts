@@ -6,13 +6,21 @@ function normalizeHost(host: string) {
   return host.split(':')[0].toLowerCase();
 }
 
+const RESERVED_SUBDOMAINS = new Set(['api', 'admin', 'app', 'www', 'mail', 'smtp', 'ftp', 'cdn', 'status', 'docs']);
+
 function extractSlugFromHost(host: string, platformDomain: string) {
   const normalized = normalizeHost(host);
   const suffix = `.${platformDomain.toLowerCase()}`;
   if (!normalized.endsWith(suffix)) return null;
   const slug = normalized.slice(0, -suffix.length);
-  if (!slug || slug === 'api' || slug === 'admin') return null;
+  if (!slug || RESERVED_SUBDOMAINS.has(slug)) return null;
   return slug;
+}
+
+function isPlatformDomain(host: string, platformDomain: string): boolean {
+  const normalized = normalizeHost(host);
+  const domain = platformDomain.toLowerCase();
+  return normalized === domain || RESERVED_SUBDOMAINS.has(normalized.replace(`.${domain}`, ''));
 }
 
 const PUBLIC_PATHS = new Set([
@@ -66,6 +74,16 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
 
   const hostHeader = req.headers.host ?? '';
   const host = normalizeHost(hostHeader);
+
+  if (isPlatformDomain(host, config.platformDomain)) {
+    return {
+      tenantId: 'system',
+      tenantSlug: 'system',
+      plan: 'SYSTEM',
+      region: 'global',
+      isSuperAdmin: true
+    };
+  }
 
   let tenant = null;
 
