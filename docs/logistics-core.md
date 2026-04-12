@@ -1,46 +1,61 @@
-# Fauward — Logistics Core
+# Logistics Core
 
-> **Sections:** Shipment State Machine · Feature Modules · Regional Deployment · Enterprise Tier
+> Shipment state machine · Pricing engine · Feature modules · Regional deployment · Enterprise tier
+
+**Navigation →** [Data Model](./data-model.md) · [Frontend](./frontend.md) · [API Design](./api.md) · [← README](../README.md)
 
 ---
 
-## 9. Shipment State Machine
+## Contents
+
+1. [Shipment State Machine](#1-shipment-state-machine)
+2. [Feature Modules](#2-feature-modules)
+3. [Regional Deployment & Tailoring](#3-regional-deployment--tailoring)
+4. [Enterprise Tier](#4-enterprise-tier)
+
+---
+
+## 1. Shipment State Machine
+
+### State Diagram
 
 ```
-                ┌─────────────┐
-                │   PENDING   │ ← Created, payment pending
-                └──────┬──────┘
-                       │ Payment confirmed / manual
-                ┌──────▼──────┐
-                │ PROCESSING  │ ← Awaiting pickup
-                └──────┬──────┘
-                       │ Driver collects
-                ┌──────▼──────┐
-                │  PICKED_UP  │
-                └──────┬──────┘
-                       │ In transport network
-                ┌──────▼──────┐
-          ┌─────│  IN_TRANSIT │─────┐
-          │     └──────┬──────┘     │
-          │     ┌──────▼──────┐     │
-          │     │OUT_FOR_DELVRY│     │
-          │     └──────┬──────┘     │
-          │     ┌──────▼──────┐     │
-          │     │  DELIVERED   │     │ (terminal)
-          │     └─────────────┘     │
-          │     ┌──────────────┐    │
-          └────►│FAILED_DELIV. │◄───┘
-                └──────┬───────┘
-                       │ Re-attempt / return
-                ┌──────▼──────┐
-                │  RETURNED   │ (terminal)
-                └─────────────┘
+                 ┌─────────────┐
+                 │   PENDING   │  ← Created; payment pending
+                 └──────┬──────┘
+                        │  Payment confirmed / manual
+                 ┌──────▼──────┐
+                 │ PROCESSING  │  ← Awaiting pickup
+                 └──────┬──────┘
+                        │  Driver collects
+                 ┌──────▼──────┐
+                 │  PICKED_UP  │
+                 └──────┬──────┘
+                        │  In transport network
+                 ┌──────▼──────┐
+           ┌─────│  IN_TRANSIT │─────┐
+           │     └──────┬──────┘     │
+           │     ┌──────▼──────┐     │
+           │     │OUT_FOR_DELVRY│     │
+           │     └──────┬──────┘     │
+           │     ┌──────▼──────┐     │
+           │     │  DELIVERED  │     │  ← terminal
+           │     └─────────────┘     │
+           │     ┌─────────────┐     │
+           └────►│FAILED_DELIV.│◄────┘
+                 └──────┬──────┘
+                        │  Re-attempt / return
+                 ┌──────▼──────┐
+                 │  RETURNED   │  ← terminal
+                 └─────────────┘
 
-Any non-terminal state → CANCELLED (if before PICKED_UP)
-Any state → EXCEPTION (admin override — re-enters flow)
+Any non-terminal state → CANCELLED  (only before PICKED_UP)
+Any state            → EXCEPTION   (admin override — re-enters flow)
 ```
 
-### Allowed Transitions (enforced in code — all others rejected with 400)
+### Allowed Transitions
+
+> All other transitions are **rejected with HTTP 400**. This is enforced in code — not just convention.
 
 ```typescript
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
@@ -57,29 +72,48 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 };
 ```
 
+**Special requirements on transitions:**
+
+| Transition | Required |
+|------------|---------|
+| → `DELIVERED` | POD asset(s) must exist on the shipment |
+| → `FAILED_DELIVERY` | `failedReason` must be provided |
+
 ### Tracking Number Format
 
 ```
-{TENANT_SLUG}-{YYYYMM}-{6CHAR}
-Example: FWD-202506-A3F9K2
+{TENANT_SLUG}-{YYYYMM}-{6CHAR_ALPHANUMERIC}
+
+Example:  FWD-202506-A3F9K2
 ```
 
-### Pricing Engine (default / baseline)
+Uniqueness is checked against the DB with up to 5 retries. See `shared/utils/trackingNumber.ts`.
+
+### Baseline Pricing Engine
+
+> The full configurable pricing system (tenant-controlled surcharges, weight tiers, dynamic rules, promo codes, tax) is specified in [Feature Additions → Section 25.4](./feature-additions.md#254-tenant-pricing-system-full-self-serve-control).
 
 ```
-Base price = weight_kg × zone_rate[origin_zone][dest_zone]
-Service multiplier: STANDARD=1.0× | EXPRESS=1.6× | OVERNIGHT=2.2×
-Surcharges: Oversize (+15%) | Insurance (+2% declared value) | Remote area (+£5–£20)
+base price  =  weight_kg × zone_rate[origin_zone][dest_zone]
+
+Service multiplier:
+  STANDARD   = 1.0×
+  EXPRESS    = 1.6×
+  OVERNIGHT  = 2.2×
+
+Surcharges:
+  Oversize   = +15%   (if any dimension > 120 cm)
+  Insurance  = +2%    (of declared value)
+  Remote area = +£5–£20 (configurable flat fee)
+
 Final price = (base × multiplier × surcharges) + VAT
 ```
 
-> The full configurable pricing system (tenant-controlled surcharges, weight tiers, dynamic rules, promo codes, tax config) is specified in [`feature-additions.md` — Section 25.4](./feature-additions.md).
-
 ---
 
-## 10. Feature Modules
+## 2. Feature Modules
 
-### 10.1 Core Platform (All Tiers)
+### 2.1 Core Platform *(all tiers)*
 
 - Multi-tenant portal — branded subdomain or custom domain
 - Shipment lifecycle with state machine
@@ -92,7 +126,7 @@ Final price = (base × multiplier × surcharges) + VAT
 - PDF delivery note generation
 - PWA (installable, offline-capable)
 
-### 10.2 CRM & Sales (Pro + Enterprise)
+### 2.2 CRM & Sales *(Pro + Enterprise)*
 
 - Customer records with full shipment history
 - Lead pipeline: Prospect → Quoted → Negotiating → Won/Lost
@@ -100,37 +134,43 @@ Final price = (base × multiplier × surcharges) + VAT
 - Accepted quote → auto-creates shipment booking
 - Revenue per sales rep, conversion rate, win/loss tracking
 
-### 10.3 Operations & Document Management (Pro + Enterprise)
+### 2.3 Operations & Document Management *(Pro + Enterprise)*
 
-Document types generated (PDF, all tenant-branded):
-- Booking confirmation, delivery note, proof of delivery
-- Cargo manifest, packing list
-- Air waybill (Enterprise — IATA format)
-- Bill of lading (Enterprise — IMO format)
-- Commercial invoice for customs
+**Documents generated** (PDF, all tenant-branded):
 
-Operations features:
+| Document | Tier |
+|----------|------|
+| Booking confirmation | All |
+| Delivery note | All |
+| Proof of delivery (POD) | All |
+| Cargo manifest | All |
+| Packing list | All |
+| Air waybill (IATA format) | Enterprise |
+| Bill of lading (IMO format) | Enterprise |
+| Commercial invoice for customs | Enterprise |
+
+**Operations features:**
 - Daily dispatch board — shipments grouped by driver
 - Route optimisation view
 - Capacity planning — shipments per driver, overload warnings
-- Carrier assignment (Enterprise)
+- Carrier assignment *(Enterprise)*
 
-### 10.4 Finance & Invoicing (Pro + Enterprise)
+### 2.4 Finance & Invoicing *(Pro + Enterprise)*
 
 - Auto-generate invoices on delivery or manual trigger
-- Invoice status: Draft → Sent → Paid → Overdue
+- Invoice lifecycle: `DRAFT` → `SENT` → `PAID` → `OVERDUE`
 - Automatic overdue reminders (configurable: 7, 14, 30 days)
 - Bulk invoicing for date ranges
 - Record manual payments (bank transfer, cash)
 - Revenue dashboard, outstanding receivables, cash vs invoiced
-- Expense tracking and gross margin per shipment (Enterprise)
+- Expense tracking and gross margin per shipment *(Enterprise)*
 
-### 10.5 Accounting Integrations (Pro: 1 · Enterprise: All)
+### 2.5 Accounting Integrations *(Pro: 1 · Enterprise: all)*
 
 Bidirectional sync: invoices, payments, contacts, expenses.
 
-| Software | Regions |
-|----------|---------|
+| Software | Primary Regions |
+|----------|----------------|
 | Xero | UK, AU, NZ, South Africa |
 | QuickBooks Online | US, Canada, UK, AU |
 | Sage | UK, South Africa |
@@ -139,14 +179,16 @@ Bidirectional sync: invoices, payments, contacts, expenses.
 | Zoho Books | India, Middle East |
 | TallyPrime | India, East Africa |
 
-### 10.6 Carrier Integrations (Enterprise)
+### 2.6 Carrier Integrations *(Enterprise)*
 
-Air: Traxon CargoHUB, Descartes, WebCargo, CCNhub, Cargonaut
-Ocean: INTTRA, CargoFive, Chain.io
-Visibility: Wakeo, project44, FourKites
-Last-mile: region-specific (see Section 11)
+| Mode | Platforms |
+|------|-----------|
+| Air | Traxon CargoHUB, Descartes, WebCargo, CCNhub, Cargonaut |
+| Ocean | INTTRA, CargoFive, Chain.io |
+| Visibility | Wakeo, project44, FourKites |
+| Last-mile | Region-specific (see Section 3) |
 
-### 10.7 E-Invoicing & Tax Compliance (Enterprise)
+### 2.7 E-Invoicing & Tax Compliance *(Enterprise)*
 
 | Region | Standard | Authority |
 |--------|----------|-----------|
@@ -159,16 +201,16 @@ Last-mile: region-specific (see Section 11)
 | Egypt | ETA | Egyptian Tax Authority |
 | South Africa | SARS e-filing | SARS |
 
-### 10.8 API Access & Webhooks (Pro + Enterprise)
+### 2.8 API Access & Webhooks *(Pro + Enterprise)*
 
-Full REST API with API key authentication, per-key rate limiting, scoped permissions.
-Webhooks fire on: `shipment.*`, `payment.*`, `invoice.*`, `quote.*`
-Each request signed with HMAC-SHA256 in `X-Webhook-Signature` header.
+- Full REST API with API key authentication, per-key rate limiting, scoped permissions
+- Webhooks fire on: `shipment.*`, `payment.*`, `invoice.*`, `quote.*`
+- Each request signed with HMAC-SHA256 in `X-Webhook-Signature` header
 
-### 10.9 Notifications
+### 2.9 Notifications
 
-| Event | Starter | Pro/Enterprise |
-|-------|---------|----------------|
+| Event | Starter | Pro / Enterprise |
+|-------|:-------:|:----------------:|
 | Booking confirmed | Email | Email + SMS |
 | Payment received | Email | Email + SMS |
 | Shipment picked up | Email | Email + SMS |
@@ -178,120 +220,143 @@ Each request signed with HMAC-SHA256 in `X-Webhook-Signature` header.
 | Invoice sent | Email | Email |
 | Invoice overdue | Email | Email + SMS |
 
-### 10.10 Analytics & Reporting
+### 2.10 Analytics & Reporting
 
-**Starter:** Shipments this month by status, recent activity feed.
-**Pro:** Revenue charts, volume trends, on-time rate, top customers, staff performance, CSV export.
-**Enterprise:** Profit margin per shipment/route/customer, multi-branch comparison, custom report builder, scheduled report emails, data warehouse export.
+| Tier | Capabilities |
+|------|-------------|
+| **Starter** | Shipments this month by status, recent activity feed |
+| **Pro** | Revenue charts, volume trends, on-time rate, top customers, staff performance, CSV export |
+| **Enterprise** | Profit margin per shipment/route/customer, multi-branch comparison, custom report builder, scheduled report emails, data warehouse export |
 
 ---
 
-## 11. Regional Deployment & Tailoring
+## 3. Regional Deployment & Tailoring
 
-Each region is a configuration profile applied at tenant signup. It activates the correct payment gateway, currency, tax module, carriers, and language defaults.
+Each region is a **configuration profile** applied at tenant signup. It activates the correct payment gateway, currency, tax module, carriers, and language defaults.
 
-### 11.1 UK & Western Europe
+### 3.1 UK & Western Europe
 
-- **Payments:** Stripe, GoCardless
-- **Currencies:** GBP, EUR, CHF
-- **Languages:** English, French, German, Spanish, Dutch
-- **Accounting:** Xero, QuickBooks, Sage
-- **Tax:** MTD (UK), PEPPOL, VAT per country
-- **Carriers:** Royal Mail, DPD, Evri, Parcelforce, DHL UK, FedEx UK
-- **Customs:** UK CDS, EU AES/ICS2
-- **Regulatory:** GDPR, ICO registration
+| Setting | Value |
+|---------|-------|
+| Payments | Stripe, GoCardless |
+| Currencies | GBP, EUR, CHF |
+| Languages | English, French, German, Spanish, Dutch |
+| Accounting | Xero, QuickBooks, Sage |
+| Tax | MTD (UK), PEPPOL, VAT per country |
+| Carriers | Royal Mail, DPD, Evri, Parcelforce, DHL UK, FedEx UK |
+| Customs | UK CDS, EU AES/ICS2 |
+| Regulatory | GDPR, ICO registration |
 
-### 11.2 West Africa
+### 3.2 West Africa
 
-- **Markets:** Nigeria, Ghana, Côte d'Ivoire, Senegal, Cameroon, Benin
-- **Payments:** Paystack, Flutterwave, Remita
-- **Currencies:** NGN, GHS, XOF, XAF
-- **Languages:** English, French
-- **Tax:** FIRS e-invoicing (Nigeria), GRA VAT (Ghana)
-- **Carriers:** GIG Logistics, Red Star Express, DHL Nigeria, Kwik
-- **Customs:** NICIS II (Nigeria), GCNET (Ghana)
-- **Features:** Mobile Money reconciliation, SMS-first notifications, offline-first operations
+| Setting | Value |
+|---------|-------|
+| Markets | Nigeria, Ghana, Côte d'Ivoire, Senegal, Cameroon, Benin |
+| Payments | Paystack, Flutterwave, Remita |
+| Currencies | NGN, GHS, XOF, XAF |
+| Languages | English, French |
+| Tax | FIRS e-invoicing (Nigeria), GRA VAT (Ghana) |
+| Carriers | GIG Logistics, Red Star Express, DHL Nigeria, Kwik |
+| Customs | NICIS II (Nigeria), GCNET (Ghana) |
+| Special | Mobile Money reconciliation, SMS-first notifications, offline-first |
 
-### 11.3 East Africa
+### 3.3 East Africa
 
-- **Markets:** Kenya, Uganda, Tanzania, Ethiopia, Rwanda, Zambia
-- **Payments:** M-Pesa, Flutterwave, Pesapal
-- **Currencies:** KES, UGX, TZS, ETB, RWF, ZMW
-- **Languages:** English, Swahili
-- **Tax:** KRA eTIMS (Kenya), URA (Uganda)
-- **Carriers:** Sendy, Fargo Courier, DHL Kenya
-- **Features:** M-Pesa STK Push, multi-currency EAC corridor
+| Setting | Value |
+|---------|-------|
+| Markets | Kenya, Uganda, Tanzania, Ethiopia, Rwanda, Zambia |
+| Payments | M-Pesa, Flutterwave, Pesapal |
+| Currencies | KES, UGX, TZS, ETB, RWF, ZMW |
+| Languages | English, Swahili |
+| Tax | KRA eTIMS (Kenya), URA (Uganda) |
+| Carriers | Sendy, Fargo Courier, DHL Kenya |
+| Special | M-Pesa STK Push, multi-currency EAC corridor |
 
-### 11.4 Southern Africa
+### 3.4 Southern Africa
 
-- **Markets:** South Africa, Zimbabwe, Zambia, Mozambique, Botswana, Namibia
-- **Payments:** Peach Payments, PayFast, Ozow, Stitch Money
-- **Currencies:** ZAR, ZWL, ZMW, MZN, BWP, NAD
-- **Tax:** SARS VAT 15%, VAT201 returns
-- **Carriers:** The Courier Guy, Courier It, Dawn Wing, PostNet, DHL SA
+| Setting | Value |
+|---------|-------|
+| Markets | South Africa, Zimbabwe, Zambia, Mozambique, Botswana, Namibia |
+| Payments | Peach Payments, PayFast, Ozow, Stitch Money |
+| Currencies | ZAR, ZWL, ZMW, MZN, BWP, NAD |
+| Tax | SARS VAT 15%, VAT201 returns |
+| Carriers | The Courier Guy, Courier It, Dawn Wing, PostNet, DHL SA |
 
-### 11.5 North Africa & Middle East
+### 3.5 North Africa & Middle East
 
-- **Markets:** UAE, Saudi Arabia, Egypt, Morocco, Tunisia, Qatar, Kuwait
-- **Payments:** Stripe MENA, Checkout.com, HyperPay, Fawry, PayTabs
-- **Currencies:** AED, SAR, EGP, MAD, TND, QAR, KWD
-- **Languages:** English, Arabic (full RTL)
-- **Tax:** UAE VAT 5%, ZATCA Phase 2 (Saudi), ETA e-invoicing (Egypt)
-- **Carriers:** Aramex, Fetchr, SMSA Express, Naqel, Bosta
-- **Customs:** Dubai Customs (Mirsal 2), FASAH (Saudi), ACID (Egypt)
-- **Features:** Full RTL UI, bilingual documents (Arabic + English), Hijri calendar support
+| Setting | Value |
+|---------|-------|
+| Markets | UAE, Saudi Arabia, Egypt, Morocco, Tunisia, Qatar, Kuwait |
+| Payments | Stripe MENA, Checkout.com, HyperPay, Fawry, PayTabs |
+| Currencies | AED, SAR, EGP, MAD, TND, QAR, KWD |
+| Languages | English, Arabic (full RTL) |
+| Tax | UAE VAT 5%, ZATCA Phase 2 (Saudi), ETA e-invoicing (Egypt) |
+| Carriers | Aramex, Fetchr, SMSA Express, Naqel, Bosta |
+| Customs | Dubai Customs (Mirsal 2), FASAH (Saudi), ACID (Egypt) |
+| Special | Full RTL UI, bilingual documents (Arabic + English), Hijri calendar |
 
-### 11.6 North America
+### 3.6 North America
 
-- **Markets:** USA, Canada
-- **Payments:** Stripe, Square
-- **Currencies:** USD, CAD
-- **Languages:** English, French (Canada)
-- **Tax:** Sales tax per state (TaxJar), GST/HST/PST (Canada)
-- **Carriers:** UPS, FedEx, USPS, Canada Post, Purolator
-- **Customs:** ACE (USA), CERS (Canada)
+| Setting | Value |
+|---------|-------|
+| Markets | USA, Canada |
+| Payments | Stripe, Square |
+| Currencies | USD, CAD |
+| Languages | English, French (Canada) |
+| Tax | Sales tax per state (TaxJar), GST/HST/PST (Canada) |
+| Carriers | UPS, FedEx, USPS, Canada Post, Purolator |
+| Customs | ACE (USA), CERS (Canada) |
 
-### 11.7 Asia Pacific
+### 3.7 Asia Pacific
 
-- **Markets:** India, Australia, Singapore
-- **Payments:** Razorpay (India), Stripe (AU/SG), PayNow (SG)
-- **Currencies:** INR, AUD, SGD
-- **Tax:** GST e-invoicing (India), GST 10% (AU), GST 9% (SG)
-- **Carriers:** Delhivery, BlueDart (India), Australia Post, Sendle (AU), SingPost, Ninja Van (SG)
+| Setting | Value |
+|---------|-------|
+| Markets | India, Australia, Singapore |
+| Payments | Razorpay (India), Stripe (AU/SG), PayNow (SG) |
+| Currencies | INR, AUD, SGD |
+| Tax | GST e-invoicing (India), GST 10% (AU), GST 9% (SG) |
+| Carriers | Delhivery, BlueDart (India), Australia Post, Sendle (AU), SingPost, Ninja Van (SG) |
 
 ### Regional Launch Sequence
 
-| Quarter | Region | Why |
-|---------|--------|-----|
-| Q1 | UK + West Africa (Nigeria, Ghana) | Strongest network, Treny presence |
-| Q2 | East Africa (Kenya, Uganda) | M-Pesa + fast-growing market |
-| Q3 | Middle East (UAE, Saudi Arabia) | High ARPU, enterprise buyers, RTL ready |
-| Q4 | Southern Africa + North Africa | SARS + ZATCA compliance unlocks these |
-| Year 2 | North America + Asia Pacific | Larger competition, needs SOC2 first |
+| Quarter | Region | Rationale |
+|---------|--------|-----------|
+| **Q1** | UK + West Africa (Nigeria, Ghana) | Strongest network, Treny presence |
+| **Q2** | East Africa (Kenya, Uganda) | M-Pesa + fast-growing market |
+| **Q3** | Middle East (UAE, Saudi Arabia) | High ARPU, enterprise buyers, RTL ready |
+| **Q4** | Southern Africa + North Africa | SARS + ZATCA compliance unlocks these |
+| **Year 2** | North America + Asia Pacific | Larger competition; needs SOC2 first |
 
 ---
 
-## 12. Enterprise Tier — Full Specification
+## 4. Enterprise Tier
 
 ### Dedicated Infrastructure
 
 ```
 Enterprise Tenant Stack:
-  Dedicated PostgreSQL (db.t3.medium, Multi-AZ)
-  Dedicated Redis cluster
-  Dedicated ECS task group
-  Dedicated S3 bucket
-  Data residency: UK (eu-west-2) | EU (eu-central-1) | UAE (me-central-1) |
-                  West Africa (af-south-1) | US (us-east-1)
+  ├── PostgreSQL  (db.t3.medium, Multi-AZ)
+  ├── Redis cluster  (dedicated)
+  ├── ECS task group  (dedicated)
+  └── S3 bucket  (dedicated)
+
+Data residency options:
+  UK           eu-west-2
+  EU           eu-central-1
+  UAE          me-central-1
+  West Africa  af-south-1
+  US           us-east-1
 ```
 
 ### SSO Integration
 
-SAML 2.0 + OAuth 2.0/OIDC. Works with Azure AD, Okta, Google Workspace, OneLogin, Ping Identity. JIT provisioning — users auto-created on first SSO login with role mapping from IdP groups.
+SAML 2.0 + OAuth 2.0/OIDC. Compatible with: Azure AD, Okta, Google Workspace, OneLogin, Ping Identity.
+
+**JIT provisioning** — users are auto-created on first SSO login with role mapping from IdP groups.
 
 ### Multi-Branch Support
 
-One account, many offices. Branch-level staff assignment, analytics views, and shipment scoping. Super-admin sees consolidated view.
+One account, many offices. Branch-level staff assignment, analytics views, and shipment scoping. Super-admin sees a consolidated view.
 
 ### Advanced RBAC
 
@@ -299,15 +364,23 @@ Custom roles with granular permission sets beyond the standard 8 roles.
 
 ### Audit Log
 
-Every state change recorded: actor, IP, action, before/after state, timestamp, session ID. Immutable, exportable, queryable, retained 7 years, API-accessible for SIEM integration.
+Every state change is recorded: actor, IP, action, before/after state, timestamp, session ID.
+
+- Immutable and exportable
+- Retained **7 years**
+- API-accessible for SIEM integration
 
 ### SLA & Support
 
 | Level | Standard | Enterprise |
 |-------|----------|-----------|
-| Uptime | Best effort | 99.9% (credits for breaches) |
-| P1 response | 4h | 1h, 24/7 |
-| P2 response | 24h | 4h |
-| P3 response | 48h | 8h |
+| Uptime | Best effort | **99.9%** (credits for breaches) |
+| P1 response | 4 h | **1 h**, 24/7 |
+| P2 response | 24 h | 4 h |
+| P3 response | 48 h | 8 h |
 | Support channels | Email | Email + Slack + Phone |
-| Account manager | No | Dedicated |
+| Account manager | ❌ | ✅ Dedicated |
+
+---
+
+*Part of the [Fauward documentation](../README.md)*
