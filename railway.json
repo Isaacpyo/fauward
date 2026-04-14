@@ -5,6 +5,7 @@
     "dockerfilePath": "apps/backend/Dockerfile"
   },
   "deploy": {
-    "healthcheckPath": "/health"
+    "healthcheckPath": "/health",
+    "startCommand": "node dist/server.js"
   }
 }
