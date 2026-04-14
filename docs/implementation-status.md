@@ -102,6 +102,22 @@ Important field additions:
 
 ---
 
+## Completed Agents PWA
+
+`apps/agents` is the current field-operations PWA; it replaces the older driver-only surface. It uses React 18, Vite, React Router, and a context-backed session model rather than Zustand.
+
+| Area | Status |
+|------|:------:|
+| Pages: welcome, login, dashboard, scan, shipment, confirm, shipments | Complete |
+| Agent shell, navigation, auth gate, access-pending state, sync listener, QR scanner | Complete |
+| Session persistence via `fauward_agent_session` in `apps/agents/src/lib/session.ts` | Complete |
+| Offline scan and advance queues in `agentOfflineQueue.ts` | Complete |
+| Backend routes under `/api/v1/agents/shipments/*` | Complete |
+
+Known gap: `AgentSyncListener` stops queue replay on the first server error; a 401 still requires the user to log in again before replay continues.
+
+---
+
 ## Verification Commands
 
 Run from the relevant workspace:
@@ -113,6 +129,9 @@ npx tsc --noEmit
 npx vitest run
 
 cd ../tenant-portal
+npx tsc --noEmit
+
+cd ../agents
 npx tsc --noEmit
 
 cd ../fauward-Go
