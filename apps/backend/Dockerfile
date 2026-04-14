@@ -38,20 +38,18 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Preserve monorepo workspace structure so that
-# `npm start --workspace=@fauward/backend` resolves correctly on Railway
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+# Backend package.json declares "type":"module" — required for ESM
+COPY --from=builder /app/apps/backend/package.json ./package.json
 
-# Production node_modules at the backend workspace level
-COPY --from=builder /prod/node_modules ./apps/backend/node_modules
+# Production node_modules from isolated install (all deps guaranteed present)
+COPY --from=builder /prod/node_modules ./node_modules
 
 # Compiled output and Prisma schema
-COPY --from=builder /app/apps/backend/dist/   ./apps/backend/dist/
-COPY --from=builder /app/apps/backend/prisma/ ./apps/backend/prisma/
+COPY --from=builder /app/apps/backend/dist/   ./dist/
+COPY --from=builder /app/apps/backend/prisma/ ./prisma/
 
 # Re-generate Prisma client against the production node_modules
-RUN cd apps/backend && npx prisma generate
+RUN npx prisma generate
 
 EXPOSE 3001
-CMD ["node", "apps/backend/dist/server.js"]
+CMD ["node", "dist/server.js"]
