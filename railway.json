@@ -6,6 +6,6 @@
   },
   "deploy": {
     "healthcheckPath": "/health",
-    "startCommand": "node dist/server.js"
+    "startCommand": "node apps/backend/dist/server.js"
   }
 }
