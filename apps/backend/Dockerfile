@@ -36,7 +36,7 @@ ENV NODE_ENV=production
 # Copy backend package.json (declares "type":"module" — required for ESM)
 # then install production deps directly, bypassing workspace hoisting
 COPY --from=builder /app/apps/backend/package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 
 # Copy compiled output and Prisma schema
 COPY --from=builder /app/apps/backend/dist    ./dist
