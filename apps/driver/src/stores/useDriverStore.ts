@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { clearTokens } from "@/lib/auth";
 
 export type StopStatus = "pending" | "completed" | "failed";
 
@@ -34,6 +35,9 @@ type DriverStoreState = {
   routeStarted: boolean;
   stops: RouteStop[];
   history: Array<{ id: string; trackingNumber: string; customer: string; status: string; time: string }>;
+  /** Called after a successful API login to persist email in the store. */
+  setAuthenticated: (authenticated: boolean, email?: string) => void;
+  /** @deprecated Use setAuthenticated — kept for backward compat */
   login: (email: string) => void;
   logout: () => void;
   startRoute: () => void;
@@ -145,12 +149,20 @@ export const useDriverStore = create<DriverStoreState>((set) => ({
       time: new Date(Date.now() - 24 * 60 * 60 * 1000 + 60 * 60 * 1000).toISOString()
     }
   ],
+  setAuthenticated: (authenticated, email) =>
+    set((state) => ({
+      isAuthenticated: authenticated,
+      user: email ? { ...state.user, email } : state.user
+    })),
   login: (email) =>
     set((state) => ({
       isAuthenticated: true,
       user: { ...state.user, email }
     })),
-  logout: () => set({ isAuthenticated: false }),
+  logout: () => {
+    clearTokens();
+    set({ isAuthenticated: false });
+  },
   startRoute: () => set({ routeStarted: true }),
   completeStop: (id) =>
     set((state) => ({

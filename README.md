@@ -16,6 +16,8 @@ Fauward gives logistics businesses their own branded, fully operational platform
 | [Product Overview](docs/product-overview.md) | What Fauward is, brand & identity, product surfaces, target market, competitive positioning |
 | [Pricing & Billing](docs/pricing-billing.md) | Tier definitions (Starter / Pro / Enterprise), usage enforcement, unit economics |
 | [Roles & Permissions](docs/roles-permissions.md) | Role hierarchy, full permission matrix, customer organisation model |
+| [Gating Implementation](docs/gating-implementation.md) | How each of the five surfaces is gated — auth, RBAC, plan features, gaps checklist |
+| [Auth Flows](docs/auth-flows.md) | Sign-in, sign-out, token refresh, impersonation, password reset, MFA across all surfaces |
 | [System Architecture](docs/system-architecture.md) | Architecture style, high-level diagram, multi-tenancy, event-driven patterns |
 | [Data Model](docs/data-model.md) | Complete SQL schema for all 35+ tables |
 | [Logistics Core](docs/logistics-core.md) | Shipment state machine, pricing engine, feature modules, regional deployment, enterprise tier |

@@ -1,5 +1,6 @@
-import { BarChart3, Building2, Gauge, ListChecks, Logs, UserCog, Wallet } from "lucide-react";
-import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { BarChart3, Building2, Gauge, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
@@ -8,6 +9,8 @@ import { RevenuePage } from "@/pages/admin/RevenuePage";
 import { SystemHealthPage } from "@/pages/admin/SystemHealthPage";
 import { TenantDetailPage } from "@/pages/admin/TenantDetailPage";
 import { TenantsListPage } from "@/pages/admin/TenantsListPage";
+import { api } from "@/lib/api";
+import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/auth";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
@@ -19,16 +22,163 @@ const navItems = [
   { to: "/admin/impersonation", label: "Impersonation", icon: UserCog },
 ];
 
-function requireSuperAdmin(): boolean {
-  return true;
-}
-
 function SuperAdminGuard() {
   const location = useLocation();
-  if (!requireSuperAdmin()) {
-    return <Navigate to="/" replace state={{ from: location }} />;
+  const [status, setStatus] = useState<"loading" | "ok" | "denied">(
+    getAccessToken() ? "loading" : "denied"
+  );
+
+  useEffect(() => {
+    if (!getAccessToken()) {
+      setStatus("denied");
+      return;
+    }
+    api
+      .get("/auth/me")
+      .then(({ data }) => {
+        const role = data?.user?.role ?? data?.role;
+        setStatus(role === "SUPER_ADMIN" ? "ok" : "denied");
+      })
+      .catch(() => setStatus("denied"));
+  }, []);
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-surface-50)]">
+        <p className="text-sm text-[var(--color-text-muted)]">Verifying session…</p>
+      </div>
+    );
   }
+
+  if (status === "denied") {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
   return <Outlet />;
+}
+
+function LoginPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const { data } = await api.post("/auth/login", { email, password });
+      // Reject non-super-admin tokens immediately — never grant UI access.
+      if (data.role !== "SUPER_ADMIN" && data.user?.role !== "SUPER_ADMIN") {
+        setError("Access denied — SUPER_ADMIN role required");
+        return;
+      }
+      setTokens(data.accessToken, data.refreshToken);
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
+      navigate(from, { replace: true });
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      setError(axiosErr.response?.data?.error ?? "Invalid credentials");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[var(--color-surface-50)]">
+      <div className="w-full max-w-sm px-4">
+        <div className="rounded-xl border border-[var(--color-border)] bg-white p-8 shadow-sm">
+          <div className="mb-6 flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--fauward-navy)]">
+              <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-[var(--fauward-navy)]">Fauward</p>
+              <p className="text-xs text-[var(--color-text-muted)]">Super Admin</p>
+            </div>
+          </div>
+
+          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Sign in</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Internal access only.</p>
+
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[var(--color-text-primary)]" htmlFor="sa-email">
+                Email
+              </label>
+              <input
+                id="sa-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
+                placeholder="admin@fauward.com"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-[var(--color-text-primary)]" htmlFor="sa-password">
+                Password
+              </label>
+              <input
+                id="sa-password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
+                placeholder="••••••••"
+              />
+            </div>
+            {error ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            ) : null}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-md bg-[var(--fauward-navy)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SignOutButton() {
+  const navigate = useNavigate();
+
+  async function handleSignOut() {
+    try {
+      const refreshToken = getRefreshToken();
+      await api.post("/auth/logout", { refreshToken });
+    } catch {
+      // Best-effort
+    } finally {
+      clearTokens();
+      navigate("/login");
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleSignOut}
+      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+    >
+      <LogOut size={13} />
+      Sign out
+    </button>
+  );
 }
 
 function AdminLayout() {
@@ -81,11 +231,12 @@ function AdminLayout() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-[var(--color-border)] px-3 py-3">
+        <div className="border-t border-[var(--color-border)] px-3 py-3 space-y-2">
           <div className="rounded-lg bg-[var(--color-surface-50)] px-3 py-2">
             <p className="text-xs font-semibold text-[var(--color-text-primary)]">Admin Session</p>
             <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">super-admin@fauward.com</p>
           </div>
+          <SignOutButton />
         </div>
       </aside>
 
@@ -131,6 +282,7 @@ function LogsPage() {
 export function AppRouter() {
   return (
     <Routes>
+      <Route path="/login" element={<LoginPage />} />
       <Route element={<SuperAdminGuard />}>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<DashboardPage />} />
@@ -144,7 +296,7 @@ export function AppRouter() {
           <Route path="/" element={<Navigate to="/admin" replace />} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to="/admin" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }
