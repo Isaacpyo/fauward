@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace=apps/backend",
+    "build": "npm run build --workspace=apps/backend",
+    "start": "npm run start --workspace=apps/backend",
     "lint": "npm run lint --workspace=apps/backend",
     "test": "npm run test --workspace=apps/backend"
   },
