@@ -10,7 +10,7 @@
 
 1. [Token Architecture](#1-token-architecture)
 2. [TENANT PORTAL — Sign-In / Sign-Out](#2-tenant-portal--sign-in--sign-out)
-3. [DRIVER PWA — Sign-In / Sign-Out](#3-driver-pwa--sign-in--sign-out)
+3. [AGENTS PWA — Sign-In / Sign-Out](#3-agents-pwa--sign-in--sign-out)
 4. [SUPER ADMIN — Sign-In / Sign-Out](#4-super-admin--sign-in--sign-out)
 5. [Backend Auth Endpoints Reference](#5-backend-auth-endpoints-reference)
 6. [Token Refresh (Silent Re-Authentication)](#6-token-refresh-silent-re-authentication)
@@ -52,7 +52,7 @@ All three authenticated surfaces share the same backend token system.
 | Surface | Access token key | Refresh token key |
 |---------|-----------------|------------------|
 | Tenant Portal | `fw_access_token` | `fw_refresh_token` |
-| Driver PWA | `fw_driver_access_token` | `fw_driver_refresh_token` |
+| Agents PWA | `fauward_agent_session` | `fauward_agent_session` (full session JSON) |
 | Super Admin | `fw_sa_access_token` | `fw_sa_refresh_token` |
 
 Different keys prevent one surface's token from interfering with another on the same device.
@@ -133,68 +133,59 @@ navigate("/login");
 
 ---
 
-## 3. DRIVER PWA — Sign-In / Sign-Out
+## 3. AGENTS PWA — Sign-In / Sign-Out
 
 ### Who uses this
 
-`TENANT_DRIVER` role only.
+Operational roles: `TENANT_DRIVER`, `TENANT_STAFF`, `TENANT_MANAGER`, `TENANT_ADMIN`.
 
 ### Sign-In
 
-**URL:** Served at the driver app URL (configured per deployment), route `/login`
+**URL:** Served at the agents app URL (configured per deployment), route `/login`
 
-**Entry point:** `apps/driver/src/pages/LoginPage.tsx`
+**Entry point:** `apps/agents/src/pages/LoginPage.tsx`
 
 **Flow:**
 
 ```
-1. Driver opens the PWA on their mobile device
-2. Fills in email + password (pre-populated email removed — now blank for security)
+1. Agent opens the PWA on their mobile device
+2. Fills in email + password
 3. Form submits → POST /api/v1/auth/login  { email, password }
-4. Backend: resolves tenant from subdomain/header → verifies TENANT_DRIVER credentials
+4. Backend: resolves tenant from subdomain/header → verifies credentials
 5. Returns: { accessToken, refreshToken, tenantSlug, tenantId }
-6. Frontend: stores tokens via setTokens() (fw_driver_access_token)
-7. Calls setAuthenticated(true, email) in Zustand store
-8. Redirects to /route (or original intended URL if redirect-protected)
+6. Frontend: stores session via saveSession() in localStorage (key: fauward_agent_session)
+7. AgentAuthContext sets session state
+8. Redirects to /dashboard (or original intended URL via ?next= query param)
 ```
 
 **Code path:**
 
 ```typescript
-// apps/driver/src/pages/LoginPage.tsx
-const { data } = await api.post("/v1/auth/login", { email, password });
-setTokens(data.accessToken, data.refreshToken);
-setAuthenticated(true, email);
-navigate(from ?? "/route", { replace: true });
+// apps/agents/src/pages/LoginPage.tsx
+await login(email, password);
+navigate(nextPath, { replace: true, state: { from: location } });
 ```
 
-**Biometric login:** The UI shows a "Use biometric login" button if `window.PublicKeyCredential` is present (WebAuthn API available). The full WebAuthn flow is not yet implemented — clicking it currently does nothing. When implemented it should call `navigator.credentials.get()` and exchange the WebAuthn assertion for a backend session token.
-
-**Offline behaviour:** The PWA service worker caches routes for offline access. API calls made while offline are queued by the service worker and replayed when connectivity is restored. Each queued request carries the stored access token — if the token has expired by the time connectivity returns, the axios interceptor will attempt a refresh before replay.
+**Offline behaviour:** The PWA service worker caches routes for offline access. Scan and advance actions made while offline are queued in `localStorage` (`agentScanQueue`, `agentAdvanceQueue`) and replayed automatically by `AgentSyncListener` when connectivity is restored.
 
 ### Sign-Out
 
-**Location:** `/profile` page → "Log Out" button (`apps/driver/src/pages/ProfilePage.tsx`)
+**Location:** Navigation header → "Logout" button (`apps/agents/src/components/agent/AgentNav.tsx`)
 
 **Flow:**
 
 ```
-1. Driver taps "Log Out" on the Profile tab
-2. Zustand logout() is called → clearTokens() removes both tokens from localStorage
-3. isAuthenticated = false in the store
-4. React Router redirects to /login
+1. Agent taps "Logout" in the navigation header
+2. AgentAuthContext.logout() is called → clearSession() removes session from localStorage
+3. session state set to null in context
+4. React Router redirects to /login via AgentGate
 ```
 
-Note: The driver sign-out does **not** call the backend logout endpoint (the best practice is to include this). The backend refresh token will expire naturally after 7 days. To add server-side invalidation:
-
 ```typescript
-// Recommended addition to ProfilePage.tsx logout handler
-async function handleLogout() {
-  try {
-    await api.post("/v1/auth/logout", { refreshToken: getRefreshToken() });
-  } catch { /* best-effort */ }
-  logout();
-  navigate("/login");
+// apps/agents/src/context/AgentAuthContext.tsx
+function logout() {
+  clearSession();
+  setSession(null);
 }
 ```
 
@@ -350,7 +341,7 @@ All three surfaces have an axios interceptor that automatically handles token ex
 | Surface | File |
 |---------|------|
 | Tenant Portal | `apps/tenant-portal/src/lib/api.ts` |
-| Driver PWA | `apps/driver/src/lib/api.ts` |
+| Agents PWA | `apps/agents/src/lib/api.ts` |
 | Super Admin | `apps/super-admin/src/lib/api.ts` |
 
 **How it works:**
