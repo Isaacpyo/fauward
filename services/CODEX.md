@@ -43,6 +43,7 @@ This guide is written for **OpenAI Codex** (or any AI code-generation agent). Ev
 18. [Add idempotency cleanup cron job](#18-add-idempotency-cleanup-cron-job)
 19. [Add S3 upload for generated documents](#19-add-s3-upload-for-generated-documents)
 20. [Add route optimisation endpoint](#20-add-route-optimisation-endpoint)
+21. [Recommended stack per service](#21-recommended-stack-per-service)
 
 ---
 
@@ -1460,6 +1461,366 @@ await app.prisma.$transaction(async (tx) => {
 2. Export it from `config`: `newKey: parsed.data.NEW_KEY`.
 3. Add it to `apps/backend/.env.example` with a placeholder comment.
 4. Document it in `services/README.md` under the relevant service section.
+
+---
+
+---
+
+## 21. Recommended stack per service
+
+Each entry below covers:
+- **Runtime / language** — what the service is written in and why
+- **Framework** — the HTTP or worker framework
+- **Key libraries** — the npm packages (or equivalents) to install
+- **Data stores** — which databases/caches the service touches
+- **External APIs** — third-party services called
+- **Infrastructure** — how it is deployed
+- **Why this stack** — the concrete trade-off reasoning tied to this codebase
+
+The monolith is Node 20 / Fastify / TypeScript / Prisma. Every service below stays on that runtime unless there is a specific, hard technical reason to deviate — keeping the team on a single language dramatically reduces maintenance cost.
+
+---
+
+### analytics-engine
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify | 4.x |
+| Language | TypeScript | 5.x |
+| ORM | Prisma (read-only replica) | 5.x |
+| Cache | ioredis → Upstash Redis | 5.x |
+| Queue consumer | BullMQ `Worker` | 5.x |
+| Charts data format | JSON (consumed by Recharts on the frontend) | — |
+| Export | `csv-stringify` | 6.x |
+| Deployment | AWS Fargate (read-only DB credentials) | — |
+
+**Key libraries**
+```bash
+npm install bullmq ioredis csv-stringify --workspace=apps/backend
+```
+
+**Why this stack**\
+Analytics is read-heavy and latency-tolerant. The service only needs Prisma on a **read replica** connection (`DATABASE_READ_URL`), which isolates its query load from the OLTP path. Redis cache-aside (TTL 5 min) keeps dashboard response times under 100 ms. `csv-stringify` is a streaming CSV writer — critical for large exports that must not buffer the full result in memory. No separate language is needed; Prisma `groupBy` and `aggregate` cover 95% of the required aggregations.
+
+---
+
+### customs-gateway
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify | 4.x |
+| Language | TypeScript | 5.x |
+| HTTP client | `undici` (Node built-in fetch) | — |
+| XML/SOAP | `fast-xml-parser` + `xmlbuilder2` | latest |
+| PDF stamping | `pdf-lib` | 1.x |
+| Queue | BullMQ (customsQueue) | 5.x |
+| Secret storage | AWS Secrets Manager SDK | 3.x |
+| Deployment | AWS Fargate, Enterprise-only ECS task | — |
+
+**Key libraries**
+```bash
+npm install fast-xml-parser xmlbuilder2 pdf-lib @aws-sdk/client-secrets-manager --workspace=apps/backend
+```
+
+**Why this stack**\
+Most customs authority APIs (HMRC CDS, ZATCA, KRA eTIMS) use REST/JSON or SOAP/XML. `fast-xml-parser` handles SOAP responses; `xmlbuilder2` builds SOAP request bodies. `pdf-lib` is used to embed the ZATCA Phase 2 cryptographic QR stamp onto invoice PDFs after generation. Each country's credentials (certificates, API keys) differ per tenant and **must not** live in env vars shared across tenants — AWS Secrets Manager SDK is the only acceptable storage. This service runs asynchronously via BullMQ so authority timeouts (up to 30 s) do not block the HTTP request path.
+
+---
+
+### fraud-detection
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Inline module (no separate HTTP server in Phase 1) | — |
+| Language | TypeScript | 5.x |
+| Cache | ioredis | 5.x |
+| Rule engine | Hand-rolled scoring (see task 9) | — |
+| Future ML | ONNX Runtime Node.js (`onnxruntime-node`) | 1.x |
+| Deployment | Phase 1: inlined in monolith; Phase 2: standalone Fargate | — |
+
+**Key libraries**
+```bash
+# Phase 1 — no extra install needed (uses app.redis already wired)
+# Phase 2 ML upgrade:
+npm install onnxruntime-node --workspace=apps/backend
+```
+
+**Why this stack**\
+Fraud scoring must be **synchronous on the hot payment path** — it cannot be a queue job. In Phase 1, it runs inline in the payment route handler, calling Redis for velocity counters (sub-millisecond). The rule-based scorer covers the most common fraud patterns. When the dataset grows (Phase 3), an ONNX model loaded once at startup gives sub-5ms inference without a Python dependency — the model artefact is stored in S3 and downloaded at container start. A separate Python ML service would add 20–80 ms of network latency per payment request; ONNX in-process avoids that entirely.
+
+---
+
+### notification-service
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | BullMQ `Worker` (no HTTP server) | 5.x |
+| Language | TypeScript | 5.x |
+| Email | `@sendgrid/mail` | 8.x |
+| Email (self-hosted fallback) | `nodemailer` + SMTP | 6.x |
+| Template engine | SendGrid Dynamic Templates (hosted) | — |
+| ORM | Prisma (notification_log writes) | 5.x |
+| Queue | BullMQ (notificationQueue) | 5.x |
+| Deployment | AWS Fargate, auto-scale on queue depth | — |
+
+**Key libraries**
+```bash
+npm install @sendgrid/mail nodemailer bullmq --workspace=apps/backend
+```
+
+**Why this stack**\
+The notification worker is already structured as a `setInterval` loop processing a queue — it maps 1:1 to a BullMQ `Worker`. SendGrid handles deliverability (DKIM, SPF, bounce handling, template management). `nodemailer` is the SMTP fallback for tenants on Enterprise who want to use their own mail server. No HTTP server is needed because the worker only consumes jobs — this reduces the attack surface and the Fargate task definition is simpler. Auto-scaling on `notificationQueue` depth (CloudWatch metric `ApproximateNumberOfMessages`) means email throughput scales independently of API traffic.
+
+---
+
+### ocr-processor
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | BullMQ `Worker` | 5.x |
+| Language | TypeScript | 5.x |
+| Image pre-processing | `sharp` | 0.33.x |
+| OCR engine (primary) | Google Cloud Vision API | REST |
+| OCR engine (fallback) | `tesseract.js` | 5.x |
+| Malware scan | ClamAV sidecar (TCP socket) | 1.x |
+| Storage | AWS S3 (`@aws-sdk/client-s3`) | 3.x |
+| Queue | BullMQ (ocrQueue) | 5.x |
+| Deployment | AWS Fargate with ClamAV sidecar container | — |
+
+**Key libraries**
+```bash
+npm install sharp tesseract.js @aws-sdk/client-s3 bullmq --workspace=apps/backend
+```
+
+**Why this stack**\
+OCR is compute-intensive and should never run synchronously on an HTTP request. `sharp` (libvips bindings) is the fastest Node.js image processing library — it handles grayscale conversion, deskew, and contrast in under 50 ms before the OCR step. Google Vision gives ~97% accuracy on printed documents; `tesseract.js` is the self-hosted fallback for tenants with data-residency constraints. ClamAV runs as a **sidecar container** in the same ECS task definition (not a network call to a separate service) — this keeps scan latency under 100 ms for typical file sizes. Fargate ephemeral storage means raw file bytes never touch a persistent disk outside of S3.
+
+---
+
+### payment-processor
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify | 4.x |
+| Language | TypeScript | 5.x |
+| Stripe | `stripe` (official SDK) | 14.x |
+| Paystack | `node-fetch` / built-in fetch (REST) | — |
+| Flutterwave | `flutterwave-node-v3` | 1.x |
+| M-Pesa | `node-fetch` + OAuth (Safaricom Daraja) | — |
+| Subscription management | Stripe Billing (Stripe-managed) | — |
+| Dunning | `handleDunningEvent()` in `billing.service.ts` (already exists) | — |
+| Secret storage | AWS Secrets Manager (per-tenant gateway credentials) | — |
+| Deployment | AWS Fargate, isolated security group | — |
+
+**Key libraries**
+```bash
+npm install stripe flutterwave-node-v3 @aws-sdk/client-secrets-manager --workspace=apps/backend
+```
+
+**Why this stack**\
+Stripe's official Node SDK handles webhook signature verification, API versioning, and TypeScript types — using raw `fetch` against the Stripe API is a maintenance risk. Paystack and M-Pesa have no official Node SDK that is actively maintained; the REST APIs are simple enough to call with `fetch` directly. Flutterwave's `flutterwave-node-v3` covers the full pan-Africa product surface. Per-tenant gateway credentials in AWS Secrets Manager ensure that a breach of one tenant's keys cannot expose others — this also enables Enterprise tenants to bring their own Stripe account. The payment service should be isolated in its own ECS security group with **no inbound rules** — it is only reachable from the API gateway task, reducing PCI-DSS scope.
+
+---
+
+### pdf-generator
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | BullMQ `Worker` | 5.x |
+| Language | TypeScript | 5.x |
+| HTML rendering | Puppeteer (headless Chromium) | 22.x |
+| Template engine | Handlebars | 4.x |
+| QR codes | `qrcode` | 1.x |
+| Barcodes | `jsbarcode` | 3.x |
+| Storage | AWS S3 | 3.x |
+| Queue | BullMQ (pdfQueue) | 5.x |
+| Deployment | AWS Fargate, `cpu: 1024, memory: 2048` | — |
+
+**Key libraries**
+```bash
+npm install puppeteer handlebars qrcode jsbarcode @aws-sdk/client-s3 --workspace=apps/backend
+```
+
+**Dockerfile addition**
+```dockerfile
+RUN apk add --no-cache chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+```
+
+**Why this stack**\
+Puppeteer with headless Chromium produces the most faithful CSS rendering — pixel-perfect branded PDFs including custom fonts, colours, and complex table layouts. Alternatives: `pdfkit` (imperative, hard to maintain branded layouts), `react-pdf` (no server-side Chromium needed but limited CSS support), `wkhtmltopdf` (unmaintained). Handlebars is chosen over a JSX template because it is purely a string interpolation engine — it runs with zero DOM/React dependency in a worker process. `qrcode` generates a base64 PNG that is embedded as a `<img src="data:...">` tag in the HTML before Puppeteer renders it — no external request during rendering. The Fargate task gets double the default memory (2 GB) because Chromium holds the full rendered page in RAM.
+
+---
+
+### route-optimizer
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify (inline in fleet module for ≤ 20 stops) | 4.x |
+| Language | TypeScript | 5.x |
+| Distance matrix | Google Maps Distance Matrix API | REST |
+| Algorithm (≤ 20 stops) | Nearest-neighbour + 2-opt (in-process) | — |
+| Algorithm (> 20 stops) | OSRM self-hosted OR Google Maps Routes API | REST |
+| Cache | ioredis (route cache TTL 1 h) | 5.x |
+| Deployment | Phase 1: inline in monolith; Phase 2: standalone Fargate | — |
+
+**Key libraries**
+```bash
+npm install @googlemaps/google-maps-services-js --workspace=apps/backend
+```
+
+**Why this stack**\
+For ≤ 20 stops, nearest-neighbour + 2-opt runs in < 5 ms in-process with no external API call (see task 20). For larger route sizes, the Google Maps Distance Matrix API provides real-world travel times (including traffic) rather than Euclidean distance, which is critical for accurate ETAs. OSRM is the self-hosted alternative when Google Maps costs become a concern at high volume — it runs as a separate Docker container. The `@googlemaps/google-maps-services-js` SDK handles retries, rate limiting, and TypeScript types for the Maps Platform. Route results are cached in Redis keyed by `route:{driverId}:{date}` (TTL 1 h) so a driver reloading their app does not re-trigger the optimisation.
+
+---
+
+### search-engine
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Inline in monolith (Phase 1) | — |
+| Language | TypeScript | 5.x |
+| Search engine (Phase 1) | PostgreSQL full-text search (`tsvector` / `GIN` index) | 15 |
+| Search engine (Phase 3) | Typesense (self-hosted) OR OpenSearch | 0.25.x |
+| Sync pipeline (Phase 3) | BullMQ `searchIndexQueue` fed by outbox worker | — |
+| Deployment | Phase 1: inline; Phase 3: Fargate + Typesense ECS task | — |
+
+**Key libraries**
+```bash
+# Phase 1 — no extra install (Prisma raw queries or $queryRaw for tsvector)
+# Phase 3:
+npm install typesense --workspace=apps/backend
+```
+
+**Why this stack**\
+PostgreSQL full-text search (`tsvector` with GIN index) handles the Phase 1 scale of ~2 M shipment rows with sub-100 ms response times. Adding a dedicated search engine before it is needed wastes operational complexity. When rows exceed 10 M, **Typesense** is the preferred upgrade: it is self-hosted (no per-query cost), has a simple Node.js SDK, and supports multi-tenant collection namespacing. OpenSearch is the fallback if AWS-managed hosting is preferred. Elasticsearch is explicitly avoided — its licensing history (SSPL) and operational complexity are not justified at this scale. The sync pipeline uses the existing outbox worker pattern (events already flow there) — no new infrastructure is needed to feed the search index.
+
+---
+
+### sms-gateway
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | BullMQ `Worker` | 5.x |
+| Language | TypeScript | 5.x |
+| Primary provider | `twilio` (official SDK) | 5.x |
+| Nigeria fallback | Termii REST API (`node-fetch`) | — |
+| Kenya fallback | Africa's Talking SDK (`africastalking`) | 1.x |
+| Quota enforcement | ioredis counter (`sms:count:{tenantId}:{date}`) | — |
+| Delivery callbacks | Twilio Status Callback webhook (Fastify route) | — |
+| Deployment | Shared with notification-service (same Fargate task) until Phase 2 | — |
+
+**Key libraries**
+```bash
+npm install twilio africastalking --workspace=apps/backend
+```
+
+**Why this stack**\
+Twilio's Node SDK handles authentication, retry logic, error normalisation, and TypeScript types — raw REST calls to Twilio are a maintenance risk given how often its API versioning changes. Africa's Talking has an official Node SDK and is the most reliable SMS aggregator for Kenya/Uganda/Tanzania. Termii (Nigeria) only provides a REST API; `fetch` is sufficient. The smart-routing pattern (try primary, auto-failover on 5xx within 3 s) is implemented as a try/catch chain between providers — no external service mesh is needed. The sms-gateway shares the notification-service Fargate task in Phase 1 because both are queue workers with no public HTTP surface; splitting them into separate tasks is a Phase 2 concern.
+
+---
+
+### tracking-service
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify + Socket.io | 4.x / 4.x |
+| Language | TypeScript | 5.x |
+| WebSocket | `socket.io` | 4.x |
+| WebSocket horizontal scale | `@socket.io/redis-adapter` (already wired) | 8.x |
+| Cache | ioredis (shipment status TTL 30 s, driver location TTL 5 min) | 5.x |
+| ORM | Prisma (read-only for public tracking path) | 5.x |
+| Rate limiting | `@fastify/rate-limit` (200 req/min per IP on public endpoint) | 9.x |
+| Deployment | AWS Fargate, 2–4 instances, ALB with WebSocket sticky sessions disabled | — |
+
+**Key libraries**
+```bash
+npm install socket.io @socket.io/redis-adapter ioredis --workspace=apps/backend
+# (all already installed — tracking.websocket.ts is already using them)
+```
+
+**Why this stack**\
+The tracking service is already the most-complete service in the codebase (`tracking.websocket.ts` is fully wired with Redis adapter and JWT auth). The Redis pub/sub adapter (`@socket.io/redis-adapter`) is what allows multiple Fargate instances to share WebSocket rooms without sticky sessions — a client connected to instance A receives events emitted on instance B. The public `GET /api/v1/tracking/:number` endpoint bypasses authentication entirely (it is in `PUBLIC_PATHS` in `tenant.resolver.ts`) but reads from Redis cache first (`shipment:{id}:status`, TTL 30 s), so a traffic spike on the tracking page does not hit PostgreSQL. When extracted in Phase 2, this service gets its own ECS security group with a separate ALB listener for the `/tracking` WebSocket path.
+
+---
+
+### whatsapp-bot
+
+| Layer | Choice | Version |
+|-------|--------|---------|
+| Runtime | Node.js | 20 LTS |
+| Framework | Fastify (webhook receiver) | 4.x |
+| Language | TypeScript | 5.x |
+| WhatsApp API | Meta Cloud API (REST, no SDK) | v19.0 |
+| Conversation state | ioredis (`wa:session:{phone}`, TTL 30 min) | 5.x |
+| Intent detection (Phase 1) | Keyword/regex matching | — |
+| Intent detection (Phase 3) | AWS Lex v2 or Dialogflow CX | REST |
+| Template management | Meta Business Suite (approved templates) | — |
+| ORM | Prisma (notification_log, whatsapp_sessions) | 5.x |
+| Deployment | Inline in notification module (Phase 1); standalone Fargate (Phase 2) | — |
+
+**Key libraries**
+```bash
+# Phase 1 — no extra install (built-in fetch + ioredis already wired)
+# Phase 3 NLP:
+npm install @aws-sdk/client-lex-runtime-v2 --workspace=apps/backend
+```
+
+**Why this stack**\
+Meta does not publish an official Node.js SDK for the WhatsApp Cloud API — the REST API is simple enough to call with `fetch` directly (see task 13). Conversation state in Redis (TTL 30 min) avoids a PostgreSQL round-trip on every incoming message. The webhook receiver must be a Fastify route (not a queue worker) because Meta expects an HTTP 200 response within 15 seconds. Keyword/regex matching covers 80% of inbound messages in Phase 1 (tracking queries and delivery confirmations). AWS Lex v2 is the Phase 3 upgrade path — it integrates via REST, stores session state internally, and supports Arabic and Swahili (needed for regional expansion).
+
+---
+
+### Stack decision matrix
+
+The table below distills every service into a single-line stack fingerprint for quick reference during scaffolding.
+
+| Service | Runtime | HTTP layer | Queue | Primary DB | Cache | External API |
+|---------|---------|-----------|-------|-----------|-------|-------------|
+| analytics-engine | Node 20 | Fastify | BullMQ Worker | PostgreSQL (read replica) | Redis | — |
+| customs-gateway | Node 20 | Fastify | BullMQ Worker | PostgreSQL | — | HMRC, FIRS, ZATCA, KRA, PEPPOL |
+| fraud-detection | Node 20 | Inline | — | PostgreSQL | Redis (velocity counters) | Stripe Radar |
+| notification-service | Node 20 | Worker only | BullMQ Worker | PostgreSQL | — | SendGrid |
+| ocr-processor | Node 20 | Worker only | BullMQ Worker | PostgreSQL | — | Google Vision |
+| payment-processor | Node 20 | Fastify | BullMQ (dunning) | PostgreSQL | Redis (idempotency) | Stripe, Paystack, Flutterwave, M-Pesa |
+| pdf-generator | Node 20 | Worker only | BullMQ Worker | PostgreSQL | — | — (Chromium in-process) |
+| route-optimizer | Node 20 | Fastify | — | PostgreSQL | Redis (route cache) | Google Maps Distance Matrix |
+| search-engine | Node 20 | Fastify | BullMQ (index sync) | PostgreSQL / Typesense | — | — |
+| sms-gateway | Node 20 | Worker only | BullMQ Worker | PostgreSQL | Redis (quota) | Twilio, Africa's Talking, Termii |
+| tracking-service | Node 20 | Fastify + Socket.io | — | PostgreSQL | Redis (status + GPS) | — |
+| whatsapp-bot | Node 20 | Fastify | — | PostgreSQL | Redis (session) | Meta Cloud API, AWS Lex (Phase 3) |
+
+---
+
+### Shared infrastructure stack
+
+These are not service-specific choices — they apply to the entire platform.
+
+| Concern | Choice | Rationale |
+|---------|--------|-----------|
+| **ORM** | Prisma 5 | Type-safe, migration management, tenant middleware already wired |
+| **Queue broker** | Redis (Upstash) via BullMQ | Redis already deployed; BullMQ adds retries, DLQ, repeatable jobs, concurrency control |
+| **Primary database** | PostgreSQL 15 (Supabase) | ACID, JSONB, full-text search, row-level tenant isolation via Prisma middleware |
+| **Read replica** | Supabase read replica (`DATABASE_READ_URL`) | Analytics and search queries routed here; zero OLTP impact |
+| **Object storage** | AWS S3 (`eu-west-2`, cross-region replica to `eu-central-1`) | Managed, cheap, signed URLs, ClamAV-pre-scanned uploads |
+| **Secret management** | AWS Secrets Manager | Nothing stored in env files in production; per-tenant gateway credentials |
+| **Container runtime** | AWS Fargate (ECS) | Serverless containers; no EC2 fleet management |
+| **Load balancer** | AWS ALB | HTTP/2, WebSocket support, path-based routing to tracking vs API tasks |
+| **Monitoring** | CloudWatch + Sentry | CloudWatch for infra metrics + DLQ alarms; Sentry for application errors |
+| **CI/CD** | GitHub Actions → ECR → ECS rolling deploy | Already in `.github/workflows/ci.yml` |
+| **TypeScript** | 5.x, `strict: true`, ESM `.js` extensions | Consistent with existing codebase; no CJS/ESM interop issues |
 
 ---
 
