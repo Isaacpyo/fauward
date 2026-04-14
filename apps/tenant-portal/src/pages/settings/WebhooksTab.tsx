@@ -44,10 +44,58 @@ const MOCK_DELIVERIES: WebhookDeliveryLogItem[] = [
   }
 ];
 
+type WebhookEndpointApi = {
+  id: string;
+  url: string;
+  events: string[];
+  isActive: boolean;
+  secret: string;
+  createdAt: string;
+};
+
+type WebhookDeliveryApi = {
+  id: string;
+  endpointId: string;
+  createdAt: string;
+  eventType: string;
+  responseStatus?: number | null;
+  durationMs?: number | null;
+  attempt: number;
+  payload: unknown;
+  responseBody?: string | null;
+};
+
+function toEndpointView(endpoint: WebhookEndpointApi): WebhookEndpoint {
+  return {
+    id: endpoint.id,
+    url: endpoint.url,
+    events: endpoint.events as WebhookEventType[],
+    active: endpoint.isActive,
+    secret: endpoint.secret,
+    createdAt: endpoint.createdAt
+  };
+}
+
+function toDeliveryView(log: WebhookDeliveryApi): WebhookDeliveryLogItem {
+  return {
+    id: log.id,
+    endpointId: log.endpointId,
+    timestamp: log.createdAt,
+    eventType: (log.eventType as WebhookEventType) ?? "shipment.updated",
+    statusCode: Number(log.responseStatus ?? 0),
+    latencyMs: Number(log.durationMs ?? 0),
+    attempts: Number(log.attempt ?? 1),
+    requestHeaders: { "content-type": "application/json" },
+    requestBody: log.payload,
+    responseHeaders: {},
+    responseBody: log.responseBody ?? undefined
+  };
+}
+
 async function fetchEndpoints(): Promise<WebhookEndpoint[]> {
   try {
-    const response = await api.get<WebhookEndpoint[]>("/settings/webhooks/endpoints");
-    return response.data;
+    const response = await api.get<WebhookEndpointApi[]>("/v1/tenant/webhooks");
+    return response.data.map(toEndpointView);
   } catch {
     return MOCK_ENDPOINTS;
   }
@@ -55,8 +103,8 @@ async function fetchEndpoints(): Promise<WebhookEndpoint[]> {
 
 async function fetchDeliveries(): Promise<WebhookDeliveryLogItem[]> {
   try {
-    const response = await api.get<WebhookDeliveryLogItem[]>("/settings/webhooks/deliveries");
-    return response.data;
+    const response = await api.get<WebhookDeliveryApi[]>("/v1/tenant/webhooks/deliveries");
+    return response.data.map(toDeliveryView);
   } catch {
     return MOCK_DELIVERIES;
   }
@@ -65,8 +113,12 @@ async function fetchDeliveries(): Promise<WebhookDeliveryLogItem[]> {
 async function saveEndpoint(payload: { id?: string; url: string; events: WebhookEventType[]; secret: string; active: boolean }): Promise<WebhookEndpoint> {
   if (payload.id) {
     try {
-      const response = await api.put<WebhookEndpoint>(`/settings/webhooks/endpoints/${payload.id}`, payload);
-      return response.data;
+      const response = await api.patch<WebhookEndpointApi>(`/v1/tenant/webhooks/${payload.id}`, {
+        url: payload.url,
+        events: payload.events,
+        isActive: payload.active
+      });
+      return toEndpointView(response.data);
     } catch {
       return {
         id: payload.id,
@@ -80,8 +132,11 @@ async function saveEndpoint(payload: { id?: string; url: string; events: Webhook
   }
 
   try {
-    const response = await api.post<WebhookEndpoint>("/settings/webhooks/endpoints", payload);
-    return response.data;
+    const response = await api.post<WebhookEndpointApi>("/v1/tenant/webhooks", {
+      url: payload.url,
+      events: payload.events
+    });
+    return toEndpointView(response.data);
   } catch {
     return {
       id: crypto.randomUUID(),
@@ -96,7 +151,7 @@ async function saveEndpoint(payload: { id?: string; url: string; events: Webhook
 
 async function deleteEndpoint(id: string) {
   try {
-    await api.delete(`/settings/webhooks/endpoints/${id}`);
+    await api.delete(`/v1/tenant/webhooks/${id}`);
   } catch {
     return;
   }
@@ -104,7 +159,7 @@ async function deleteEndpoint(id: string) {
 
 async function sendTest(endpoint: WebhookEndpoint): Promise<WebhookSendTestResult> {
   try {
-    const response = await api.post<WebhookSendTestResult>(`/settings/webhooks/endpoints/${endpoint.id}/test`);
+    const response = await api.post<WebhookSendTestResult>(`/v1/tenant/webhooks/${endpoint.id}/test`);
     return response.data;
   } catch {
     const statusCode = Math.random() > 0.2 ? 200 : 500;
@@ -305,4 +360,3 @@ export function WebhooksTab() {
     </PlanGate>
   );
 }
-

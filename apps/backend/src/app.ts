@@ -21,6 +21,7 @@ import { registerFinanceRoutes } from './modules/finance/finance.routes.js';
 import { registerAnalyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { registerAuditRoutes } from './modules/audit/audit.routes.js';
 import { registerDriverRoutes } from './modules/driver/driver.routes.js';
+import { registerAgentRoutes } from './modules/agents/agent.routes.js';
 import { registerUsersRoutes } from './modules/users/users.routes.js';
 import { registerNotificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { registerReturnsRoutes } from './modules/returns/returns.routes.js';
@@ -79,6 +80,7 @@ export async function buildApp() {
   await registerAnalyticsRoutes(app);
   await registerAuditRoutes(app);
   await registerDriverRoutes(app);
+  await registerAgentRoutes(app);
   await registerUsersRoutes(app);
   await registerNotificationsRoutes(app);
   await registerReturnsRoutes(app);

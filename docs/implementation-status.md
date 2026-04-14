@@ -34,7 +34,7 @@ fauward/
 │   ├── backend/          Node.js · Fastify · TypeScript · Prisma
 │   ├── frontend/         Next.js 14 App Router  (marketing site)
 │   ├── tenant-portal/    React 18 · Vite  (ops portal)
-│   ├── driver/           React 18 · Vite · PWA  (driver app)
+│   ├── agents/           React 18 · Vite · PWA  (agent app)
 │   └── super-admin/      React 18 · Vite  (internal admin)
 ├── packages/
 │   ├── brand/            brand.css  (design tokens, colours, typography)
@@ -241,7 +241,7 @@ All models: `Tenant`, `TenantSettings`, `User`, `RefreshToken`, `Organisation`, 
 
 ## 6. Driver PWA
 
-**Status: ~90% complete UI — backend integration missing for POD** — `apps/driver/src/`
+**Status: ~90% complete UI — backend integration missing for POD** — `apps/agents/src/`
 
 ### ✅ What exists
 

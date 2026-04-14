@@ -58,7 +58,7 @@ apps/
 ├── backend/          Node.js · Fastify · TypeScript · Prisma
 ├── frontend/         Next.js 14  (marketing site — fauward.com)
 ├── tenant-portal/    React 18 · Vite  (tenant ops portal)
-├── driver/           React 18 · Vite · PWA  (driver mobile app)
+├── agents/           React 18 · Vite · PWA  (agent mobile app)
 └── super-admin/      React 18 · Vite  (Fauward internal admin)
 
 packages/

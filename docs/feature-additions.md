@@ -645,7 +645,7 @@ Create `apps/tenant-portal/src/pages/pricing/` — all under a "Pricing" top-lev
 
 > **Priority 20** — Driver app has no QR scanning. Must add.
 
-**Component:** `apps/driver/src/components/driver/QRScanner.tsx`
+**Component:** `apps/agents/src/components/agent/QRScanner.tsx`
 - Library: `@zxing/browser`
 - Continuous camera decode, crosshair overlay, torch/flash toggle
 - Camera permission denied → fallback to manual text input

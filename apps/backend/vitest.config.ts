@@ -5,6 +5,8 @@ export default defineConfig({
     environment: 'node',
     passWithNoTests: true,
     env: {
+      SUPABASE_DB_URL: 'postgresql://test:test@localhost:5432/test',
+      SUPABASE_DIRECT_URL: 'postgresql://test:test@localhost:5432/test',
       DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
       DIRECT_URL: 'postgresql://test:test@localhost:5432/test',
       REDIS_URL: 'redis://localhost:6379',

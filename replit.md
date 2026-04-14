@@ -10,7 +10,7 @@ White-label logistics SaaS platform. Monorepo with multiple apps.
 - **`apps/backend`** — Fastify API server (port 3001, console)
 - **`apps/tenant-portal`** — Vite React tenant dashboard (port 3000, console)
 - **`apps/super-admin`** — Vite React super-admin panel (port 5173, console)
-- **`apps/driver`** — Vite React driver mobile app
+- **`apps/agents`** — Vite React agent mobile app
 - **`apps/admin`** — Admin app (minimal)
 
 ### Packages (shared)

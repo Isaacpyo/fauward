@@ -6,7 +6,7 @@ COPY apps/tenant-portal/package*.json apps/tenant-portal/
 COPY apps/backend/package*.json apps/backend/
 COPY apps/frontend/package*.json apps/frontend/
 COPY apps/super-admin/package*.json apps/super-admin/
-COPY apps/driver/package*.json apps/driver/
+COPY apps/agents/package*.json apps/agents/
 COPY packages/*/package*.json packages/
 
 RUN npm ci
