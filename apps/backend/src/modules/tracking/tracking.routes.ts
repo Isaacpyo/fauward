@@ -1,45 +1,30 @@
 import type { FastifyInstance } from 'fastify';
-import { config } from '../../config/index.js';
 
-function normalizeHost(host: string) {
-  return host.split(':')[0].toLowerCase();
-}
+function toPublicLocation(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined;
 
-function extractSlugFromHost(host: string, platformDomain: string) {
-  const normalized = normalizeHost(host);
-  const suffix = `.${platformDomain.toLowerCase()}`;
-  if (!normalized.endsWith(suffix)) return null;
-  const slug = normalized.slice(0, -suffix.length);
-  if (!slug || slug === 'api' || slug === 'admin') return null;
-  return slug;
-}
+  const address = input as Record<string, unknown>;
+  const cityLike =
+    (typeof address.city === 'string' && address.city.trim()) ||
+    (typeof address.town === 'string' && address.town.trim()) ||
+    (typeof address.locality === 'string' && address.locality.trim()) ||
+    '';
+  const stateLike =
+    (typeof address.state === 'string' && address.state.trim()) ||
+    (typeof address.province === 'string' && address.province.trim()) ||
+    '';
+  const countryLike = typeof address.country === 'string' ? address.country.trim() : '';
 
-function asAddress(address: unknown) {
-  if (!address || typeof address !== 'object') return '';
-  return Object.values(address as Record<string, unknown>)
-    .filter(Boolean)
-    .join(', ');
+  const parts = [cityLike, stateLike, countryLike].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : undefined;
 }
 
 export async function registerTrackingRoutes(app: FastifyInstance) {
-  app.get('/api/v1/tracking/:trackingNumber', async (request, reply) => {
+  app.get('/api/v1/tracking/:trackingNumber', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request, reply) => {
     const { trackingNumber } = request.params as { trackingNumber: string };
-    const query = request.query as { tenant?: string };
-
-    let tenantId: string | undefined;
-
-    if (typeof query.tenant === 'string' && query.tenant.trim()) {
-      const tenant = await app.prisma.tenant.findUnique({ where: { slug: query.tenant.trim() } });
-      tenantId = tenant?.id;
-    }
-
+    const tenantId = request.tenant?.id;
     if (!tenantId) {
-      const host = typeof request.headers.host === 'string' ? request.headers.host : '';
-      const slug = extractSlugFromHost(host, config.platformDomain);
-      if (slug) {
-        const tenant = await app.prisma.tenant.findUnique({ where: { slug } });
-        tenantId = tenant?.id;
-      }
+      return reply.status(400).send({ error: 'Tenant context required', code: 'TENANT_REQUIRED' });
     }
 
     const shipment = await app.prisma.shipment.findFirst({
@@ -63,13 +48,12 @@ export async function registerTrackingRoutes(app: FastifyInstance) {
         id: event.id,
         timestamp: event.timestamp,
         status: event.status,
-        location: typeof event.location === 'object' ? JSON.stringify(event.location) : undefined,
-        description: event.notes ?? `Status updated to ${event.status}`,
-        note: event.notes ?? null
+        location: toPublicLocation(event.location),
+        description: `Status updated to ${event.status.replaceAll('_', ' ').toLowerCase()}`
       })),
       estimated_delivery_date: shipment.estimatedDelivery,
-      origin_city: asAddress(shipment.originAddress),
-      destination_city: asAddress(shipment.destinationAddress),
+      origin_city: toPublicLocation(shipment.originAddress),
+      destination_city: toPublicLocation(shipment.destinationAddress),
       service_tier: shipment.serviceTier,
       delivered_at: shipment.actualDelivery ?? undefined
     });

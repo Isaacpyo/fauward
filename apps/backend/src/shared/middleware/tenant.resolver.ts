@@ -34,9 +34,64 @@ const PUBLIC_PATHS = new Set([
   '/api/v1/payments/webhook/stripe'
 ]);
 
+function getTrackingTenantIdentifier(query: unknown): string | null {
+  if (!query || typeof query !== 'object') return null;
+  const q = query as Record<string, unknown>;
+  const value = q.tenantId ?? q.tenant_id ?? q.tenant ?? q.tenantSlug;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function resolveTrackingTenant(req: FastifyRequest, path: string) {
+  if (!path.startsWith('/api/v1/tracking/')) return null;
+
+  const identifier = getTrackingTenantIdentifier(req.query);
+  if (identifier) {
+    const byId = await req.server.prisma.tenant.findUnique({ where: { id: identifier } });
+    if (byId) return byId;
+    const bySlug = await req.server.prisma.tenant.findUnique({ where: { slug: identifier } });
+    if (bySlug) return bySlug;
+  }
+
+  const hostHeader = req.headers.host ?? '';
+  const slug = extractSlugFromHost(hostHeader, config.platformDomain);
+  if (slug) {
+    const byHostSlug = await req.server.prisma.tenant.findUnique({ where: { slug } });
+    if (byHostSlug) return byHostSlug;
+  }
+
+  const host = normalizeHost(hostHeader);
+  if (host && !host.endsWith(config.platformDomain.toLowerCase())) {
+    const byCustomDomain = await req.server.prisma.tenant.findFirst({
+      where: { customDomain: host, domainVerified: true }
+    });
+    if (byCustomDomain) return byCustomDomain;
+  }
+
+  return null;
+}
+
 export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): Promise<TenantContext | null> {
   const path = req.url.split('?')[0];
-  if (PUBLIC_PATHS.has(path) || path.startsWith('/api/v1/tracking/')) {
+
+  if (path.startsWith('/api/v1/tracking/')) {
+    const tenant = await resolveTrackingTenant(req, path);
+    if (!tenant) {
+      reply.status(404).send({ error: 'Business not found', code: 'TENANT_NOT_FOUND' });
+      return null;
+    }
+    req.tenant = tenant;
+    return {
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      plan: tenant.plan,
+      region: tenant.region,
+      isSuperAdmin: false
+    };
+  }
+
+  if (PUBLIC_PATHS.has(path)) {
     const tenantSlugFromQuery = typeof req.query === 'object' ? (req.query as { tenant?: string }).tenant : undefined;
     if (typeof tenantSlugFromQuery === 'string' && tenantSlugFromQuery.trim().length > 0) {
       const tenant = await req.server.prisma.tenant.findUnique({ where: { slug: tenantSlugFromQuery.trim() } });

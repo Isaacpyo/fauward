@@ -1,7 +1,7 @@
 export async function fetchTracking(tenantId, trackingNumber) {
   const encodedNumber = encodeURIComponent(trackingNumber);
   const encodedTenant = encodeURIComponent(tenantId);
-  const url = `https://api.fauward.com/v1/tracking/${encodedNumber}?tenant_id=${encodedTenant}`;
+  const url = `https://api.fauward.com/api/v1/tracking/${encodedNumber}?tenantId=${encodedTenant}`;
 
   const response = await fetch(url, { headers: { accept: "application/json" } });
 
@@ -20,4 +20,3 @@ export async function fetchTracking(tenantId, trackingNumber) {
 
   return response.json();
 }
-

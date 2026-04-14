@@ -1,40 +1,55 @@
-export type QueueJob<T = unknown> = {
-  id: string;
-  name: string;
-  data: T;
-  createdAt: Date;
-};
+import { Queue, type ConnectionOptions } from 'bullmq';
+import { URL } from 'node:url';
 
-class InMemoryQueue<T = unknown> {
-  private jobs: QueueJob<T>[] = [];
+import { config } from '../config/index.js';
 
-  constructor(private readonly queueName: string) {}
+type QueuePayload = Record<string, unknown>;
 
-  async add(name: string, data: T) {
-    const job: QueueJob<T> = {
-      id: crypto.randomUUID(),
-      name,
-      data,
-      createdAt: new Date()
-    };
-    this.jobs.push(job);
-    return job;
-  }
+function buildBullmqConnection(redisUrl: string): ConnectionOptions {
+  const parsed = new URL(redisUrl);
+  const isTls = parsed.protocol === 'rediss:';
+  const db = parsed.pathname && parsed.pathname !== '/' ? Number(parsed.pathname.replace('/', '')) : undefined;
 
-  drain(max = 50) {
-    const slice = this.jobs.slice(0, max);
-    this.jobs = this.jobs.slice(max);
-    return slice;
-  }
-
-  stats() {
-    return {
-      name: this.queueName,
-      waiting: this.jobs.length
-    };
-  }
+  return {
+    host: parsed.hostname,
+    port: parsed.port ? Number(parsed.port) : 6379,
+    username: parsed.username || undefined,
+    password: parsed.password || undefined,
+    ...(Number.isFinite(db) ? { db } : {}),
+    ...(isTls ? { tls: {} } : {})
+  };
 }
 
-export const notificationQueue = new InMemoryQueue<Record<string, unknown>>('notification');
-export const webhookQueue = new InMemoryQueue<Record<string, unknown>>('webhook');
-export const outboxQueue = new InMemoryQueue<Record<string, unknown>>('outbox');
+export const bullmqConnection = buildBullmqConnection(config.redisUrl);
+
+export const notificationQueue = new Queue<QueuePayload>('notification', {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2_000 }
+  }
+});
+
+export const webhookQueue = new Queue<QueuePayload>('webhook', {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2_000 }
+  }
+});
+
+export const outboxQueue = new Queue<QueuePayload>('outbox', {
+  connection: bullmqConnection
+});
+
+export const pdfQueue = new Queue<QueuePayload>('pdf', {
+  connection: bullmqConnection
+});
+
+export const analyticsQueue = new Queue<QueuePayload>('analytics', {
+  connection: bullmqConnection
+});
+
+export const scheduledJobsQueue = new Queue<QueuePayload>('scheduled-jobs', {
+  connection: bullmqConnection
+});

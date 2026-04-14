@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { PaymentStatus } from '@prisma/client';
+import { Buffer } from 'node:buffer';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
@@ -97,7 +98,24 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/v1/payments/webhook/stripe', async (request, reply) => {
-    const event = await stripeService.handleWebhook(request.body);
+    const signature = request.headers['stripe-signature'];
+    if (typeof signature !== 'string') {
+      return reply.status(400).send({ error: 'Missing stripe-signature header' });
+    }
+
+    const rawPayload =
+      Buffer.isBuffer(request.body)
+        ? request.body
+        : Buffer.from(typeof request.body === 'string' ? request.body : JSON.stringify(request.body ?? {}));
+
+    let event;
+    try {
+      event = await stripeService.handleWebhook(rawPayload, signature);
+    } catch (error) {
+      app.log.warn({ error }, 'Invalid Stripe webhook signature');
+      return reply.status(400).send({ error: 'Invalid webhook signature' });
+    }
+
     const eventAny = event as any;
     const eventType = typeof eventAny.type === 'string' ? eventAny.type : '';
 

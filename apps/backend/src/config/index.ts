@@ -13,7 +13,13 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   MFA_ISSUER: z.string().default('Fauward'),
-  PLATFORM_DOMAIN: z.string().default('fauward.com')
+  PLATFORM_DOMAIN: z.string().default('fauward.com'),
+  SENDGRID_API_KEY: z.string().optional(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  TWILIO_FROM: z.string().optional(),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional()
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -35,5 +41,15 @@ export const config = {
     refreshExpiresIn: parsed.data.JWT_REFRESH_EXPIRES_IN
   },
   mfaIssuer: parsed.data.MFA_ISSUER,
-  platformDomain: parsed.data.PLATFORM_DOMAIN
+  platformDomain: parsed.data.PLATFORM_DOMAIN,
+  sendgridApiKey: parsed.data.SENDGRID_API_KEY,
+  twilio: {
+    accountSid: parsed.data.TWILIO_ACCOUNT_SID,
+    authToken: parsed.data.TWILIO_AUTH_TOKEN,
+    from: parsed.data.TWILIO_FROM
+  },
+  stripe: {
+    secretKey: parsed.data.STRIPE_SECRET_KEY,
+    webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
+  }
 };

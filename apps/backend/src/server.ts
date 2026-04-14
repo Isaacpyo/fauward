@@ -1,15 +1,8 @@
 import { buildApp } from './app.js';
 import { startWorkers } from './queues/start-workers.js';
-import { runOverdueInvoiceSweep } from './modules/finance/finance.routes.js';
 
 const app = await buildApp();
-startWorkers(app);
-
-setInterval(() => {
-  runOverdueInvoiceSweep(app).catch((error) => {
-    app.log.error({ error }, 'Overdue invoice sweep failed');
-  });
-}, 24 * 60 * 60 * 1000);
+await startWorkers(app);
 
 const port = Number(process.env.PORT ?? 3001);
 const host = process.env.HOST ?? '0.0.0.0';

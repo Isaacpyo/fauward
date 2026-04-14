@@ -4,6 +4,10 @@ import { TenantPlan, TenantStatus } from '@prisma/client';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { signAccessToken } from '../../shared/utils/jwt.js';
+import { dlqNotificationQueue } from '../notifications/notifications.worker.js';
+import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../queues/queues.js';
+import { dlqOutboxQueue } from '../../queues/outbox.worker.js';
+import { dlqWebhookQueue } from '../../queues/webhook.worker.js';
 
 export async function registerSuperAdminRoutes(app: FastifyInstance) {
   const preHandlers = [authenticate, requireRole(['SUPER_ADMIN'])];
@@ -240,7 +244,7 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/v1/admin/metrics', { preHandler: preHandlers }, async (_request, reply) => {
-    const [activeTenantCount, shipmentsToday, dlqDepth, subscriptions] = await Promise.all([
+    const [activeTenantCount, shipmentsToday, dlqNotificationStats, dlqWebhookStats, dlqOutboxStats, subscriptions] = await Promise.all([
       app.prisma.tenant.count({ where: { status: 'ACTIVE' } }),
       app.prisma.shipment.count({
         where: {
@@ -249,7 +253,9 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
           }
         }
       }),
-      app.prisma.outboxEvent.count({ where: { published: false } }),
+      dlqNotificationQueue.getJobCounts('waiting', 'active', 'delayed'),
+      dlqWebhookQueue.getJobCounts('waiting', 'active', 'delayed'),
+      dlqOutboxQueue.getJobCounts('waiting', 'active', 'delayed'),
       app.prisma.subscription.findMany()
     ]);
 
@@ -259,6 +265,16 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
       if (sub.plan === 'STARTER') return sum + 29;
       return sum;
     }, 0);
+    const dlqDepth =
+      dlqNotificationStats.waiting +
+      dlqNotificationStats.active +
+      dlqNotificationStats.delayed +
+      dlqWebhookStats.waiting +
+      dlqWebhookStats.active +
+      dlqWebhookStats.delayed +
+      dlqOutboxStats.waiting +
+      dlqOutboxStats.active +
+      dlqOutboxStats.delayed;
 
     reply.send({
       totalMRR: mrr,
@@ -269,39 +285,65 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/v1/admin/queues', { preHandler: preHandlers }, async (_request, reply) => {
-    const [outboxPending, webhookFailed, notificationsQueued] = await Promise.all([
-      app.prisma.outboxEvent.count({ where: { published: false } }),
-      app.prisma.webhookDelivery.count({ where: { status: 'FAILED' } }),
-      app.prisma.notificationLog.count({ where: { status: 'QUEUED' } })
+    const [notificationStats, webhookStats, outboxStats, analyticsStats, scheduledStats, dlqNotificationStats, dlqWebhookStats, dlqOutboxStats] = await Promise.all([
+      notificationQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      webhookQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      outboxQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      analyticsQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      scheduledJobsQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      dlqNotificationQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      dlqWebhookQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed'),
+      dlqOutboxQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed')
     ]);
 
     reply.send({
       queues: [
         {
+          name: 'notification',
+          waiting: notificationStats.waiting + notificationStats.delayed,
+          active: notificationStats.active,
+          completed: notificationStats.completed,
+          failed: notificationStats.failed,
+          lastProcessedAt: null
+        },
+        {
+          name: 'webhook',
+          waiting: webhookStats.waiting + webhookStats.delayed,
+          active: webhookStats.active,
+          completed: webhookStats.completed,
+          failed: webhookStats.failed,
+          lastProcessedAt: null
+        },
+        {
           name: 'outbox',
-          waiting: outboxPending,
-          active: 0,
-          completed: 0,
-          failed: 0,
+          waiting: outboxStats.waiting + outboxStats.delayed,
+          active: outboxStats.active,
+          completed: outboxStats.completed,
+          failed: outboxStats.failed,
           lastProcessedAt: null
         },
         {
-          name: 'webhooks',
-          waiting: 0,
-          active: 0,
-          completed: 0,
-          failed: webhookFailed,
+          name: 'analytics',
+          waiting: analyticsStats.waiting + analyticsStats.delayed,
+          active: analyticsStats.active,
+          completed: analyticsStats.completed,
+          failed: analyticsStats.failed,
           lastProcessedAt: null
         },
         {
-          name: 'notifications',
-          waiting: notificationsQueued,
-          active: 0,
-          completed: 0,
-          failed: 0,
+          name: 'scheduled-jobs',
+          waiting: scheduledStats.waiting + scheduledStats.delayed,
+          active: scheduledStats.active,
+          completed: scheduledStats.completed,
+          failed: scheduledStats.failed,
           lastProcessedAt: null
         }
-      ]
+      ],
+      dlq: {
+        notification: dlqNotificationStats.waiting + dlqNotificationStats.delayed + dlqNotificationStats.active,
+        webhook: dlqWebhookStats.waiting + dlqWebhookStats.delayed + dlqWebhookStats.active,
+        outbox: dlqOutboxStats.waiting + dlqOutboxStats.delayed + dlqOutboxStats.active
+      }
     });
   });
 

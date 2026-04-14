@@ -7,7 +7,7 @@ import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middlew
 import { calculateShipmentPrice } from '../../shared/utils/pricing.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { emitTrackingStatusUpdate } from '../tracking/tracking.websocket.js';
-import { notificationQueue } from '../../queues/queues.js';
+import { notificationQueue, webhookQueue } from '../../queues/queues.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
 
 export const ALLOWED_TRANSITIONS: Record<ShipmentStatus, ShipmentStatus[]> = {
@@ -61,61 +61,19 @@ async function fireShipmentWebhook(
   payload: Record<string, unknown>
 ) {
   const endpoints = await app.prisma.webhookEndpoint.findMany({
-    where: { tenantId, isActive: true, events: { has: eventType } }
+    where: { tenantId, isActive: true, events: { has: eventType } },
+    select: { id: true }
   });
 
   await Promise.all(
     endpoints.map(async (endpoint) => {
-      const started = Date.now();
-      let responseStatus: number | null = null;
-      let responseBody: string | null = null;
-      let status: 'DELIVERED' | 'FAILED' = 'DELIVERED';
-
-      try {
-        const response = await fetch(endpoint.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Event-Type': eventType,
-            'X-Delivery-Id': crypto.randomUUID()
-          },
-          body: JSON.stringify(payload)
-        });
-        responseStatus = response.status;
-        responseBody = await response.text();
-        if (!response.ok) status = 'FAILED';
-      } catch (error) {
-        status = 'FAILED';
-        responseBody = error instanceof Error ? error.message : 'Webhook delivery failed';
-      }
-
-      await app.prisma.webhookDelivery.create({
-        data: {
-          tenantId,
-          endpointId: endpoint.id,
-          eventType,
-          payload: payload as Prisma.InputJsonValue,
-          responseStatus: responseStatus ?? undefined,
-          responseBody: responseBody ?? undefined,
-          durationMs: Date.now() - started,
-          status
-        }
+      await webhookQueue.add(eventType, {
+        endpointId: endpoint.id,
+        eventType,
+        payload,
+        tenantId,
+        shipmentId
       });
-
-      if (status === 'FAILED') {
-        await app.prisma.outboxEvent.create({
-          data: {
-            aggregateType: 'shipment',
-            aggregateId: shipmentId,
-            eventType: 'webhook.delivery.failed',
-            payload: {
-              endpointId: endpoint.id,
-              target: endpoint.url,
-              originalEventType: eventType
-            }
-          }
-        });
-      }
     })
   );
 }

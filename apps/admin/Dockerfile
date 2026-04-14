@@ -24,4 +24,4 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/admin ./apps/admin
 
 EXPOSE 4175
-CMD ["npm", "run", "preview", "--workspace=apps/admin", "--", "--host", "0.0.0.0", "--port", "4175"]
+CMD ["npm", "run", "start", "--workspace=apps/admin"]

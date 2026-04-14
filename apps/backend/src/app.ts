@@ -35,12 +35,36 @@ import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
 
+function escapeRegex(source: string) {
+  return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function isAllowedCorsOrigin(origin: string) {
+  const platformDomain = escapeRegex(config.platformDomain.toLowerCase());
+  const rules = [
+    /^https?:\/\/localhost(?::\d+)?$/i,
+    /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i,
+    new RegExp(`^https?:\\/\\/([a-z0-9-]+\\.)*${platformDomain}$`, 'i')
+  ];
+  return rules.some((rule) => rule.test(origin));
+}
+
 export async function buildApp() {
   const app = Fastify({ logger: true });
 
   await app.register(sensible);
   await app.register(helmet);
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cors, {
+    origin: (origin, callback) => {
+      if (!origin || isAllowedCorsOrigin(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Origin not allowed'), false);
+    },
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Slug'],
+    credentials: true
+  });
   await app.register(cookie);
   await app.register(jwt, { secret: config.jwt.accessSecret });
   await app.register(rateLimit, {
