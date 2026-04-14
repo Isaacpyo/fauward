@@ -29,6 +29,7 @@ RUN cd apps/backend && npx prisma generate && npm run build
 
 # ── Stage 2: Production image ─────────────────────────────────────────────────
 FROM node:20-alpine
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
