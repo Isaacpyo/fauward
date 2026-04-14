@@ -33,10 +33,17 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules  ./node_modules
-COPY --from=builder /app/apps/backend/dist    ./apps/backend/dist
-COPY --from=builder /app/apps/backend/prisma  ./apps/backend/prisma
+# Copy backend package.json (declares "type":"module" — required for ESM)
+# then install production deps directly, bypassing workspace hoisting
+COPY --from=builder /app/apps/backend/package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled output and Prisma schema
+COPY --from=builder /app/apps/backend/dist    ./dist
+COPY --from=builder /app/apps/backend/prisma  ./prisma
+
+# Re-generate Prisma client against the production node_modules
+RUN npx prisma generate
 
 EXPOSE 3001
-CMD ["node", "apps/backend/dist/server.js"]
+CMD ["node", "dist/server.js"]
