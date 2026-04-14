@@ -27,20 +27,25 @@ COPY apps/backend/prisma   apps/backend/prisma
 # Generate Prisma client then compile TypeScript
 RUN cd apps/backend && npx prisma generate && npm run build
 
+# Install backend production deps in an isolated directory (no workspace hoisting issues)
+RUN mkdir /prod && cp apps/backend/package.json /prod/ && \
+    cd /prod && npm install --omit=dev
+
 # ── Stage 2: Production image ─────────────────────────────────────────────────
 FROM node:20-alpine
 RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Copy backend package.json (declares "type":"module" — required for ESM)
-# then install production deps directly, bypassing workspace hoisting
-COPY --from=builder /app/apps/backend/package*.json ./
-RUN npm install --omit=dev
+# Backend package.json declares "type":"module" — required for ESM
+COPY --from=builder /app/apps/backend/package.json ./package.json
 
-# Copy compiled output and Prisma schema
-COPY --from=builder /app/apps/backend/dist    ./dist
-COPY --from=builder /app/apps/backend/prisma  ./prisma
+# Production node_modules from isolated install (all deps guaranteed present)
+COPY --from=builder /prod/node_modules ./node_modules
+
+# Compiled output and Prisma schema
+COPY --from=builder /app/apps/backend/dist/   ./dist/
+COPY --from=builder /app/apps/backend/prisma/ ./prisma/
 
 # Re-generate Prisma client against the production node_modules
 RUN npx prisma generate
