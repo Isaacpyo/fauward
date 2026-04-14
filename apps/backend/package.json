@@ -10,6 +10,8 @@
                     "start":  "node dist/server.js",
                     "lint":  "eslint .",
                     "test":  "vitest run --config vitest.config.ts",
+                    "test:watch":  "vitest --config vitest.config.ts",
+                    "test:coverage":  "vitest run --config vitest.config.ts --coverage",
                     "prisma:generate":  "prisma generate",
                     "prisma:migrate":  "prisma migrate dev"
                 },
