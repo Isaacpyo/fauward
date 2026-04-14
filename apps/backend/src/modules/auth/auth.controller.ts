@@ -47,7 +47,11 @@ export const authController = {
       reply.status(401).send({ error: 'Invalid refresh token' });
     }
   },
-  logout: async (_request: FastifyRequest, reply: FastifyReply) => {
+  logout: async (request: FastifyRequest, reply: FastifyReply) => {
+    const { refreshToken } = (request.body ?? {}) as { refreshToken?: string };
+    if (refreshToken) {
+      await request.server.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+    }
     reply.code(204).send();
   },
   me: async (request: FastifyRequest, reply: FastifyReply) => {

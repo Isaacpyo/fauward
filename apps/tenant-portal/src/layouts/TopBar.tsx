@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { clearTokens, getRefreshToken } from "@/lib/auth";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -147,9 +148,19 @@ export function TopBar() {
               <RadixDropdown.Separator className="my-1 h-px bg-gray-200" />
               <RadixDropdown.Item
                 className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-red-600 outline-none hover:bg-red-50"
-                onSelect={() => {
-                  setUser(null);
-                  navigate("/login");
+                onSelect={async () => {
+                  try {
+                    const refreshToken = getRefreshToken();
+                    await import("@/lib/api").then(({ api: apiClient }) =>
+                      apiClient.post("/v1/auth/logout", { refreshToken })
+                    );
+                  } catch {
+                    // Best-effort — always clear locally regardless of API outcome
+                  } finally {
+                    clearTokens();
+                    setUser(null);
+                    navigate("/login");
+                  }
                 }}
               >
                 <LogOut size={15} />

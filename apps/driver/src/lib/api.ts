@@ -1,23 +1,19 @@
 import axios from 'axios';
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './auth';
 
+const BASE_URL = (import.meta as unknown as { env: Record<string, string> }).env.VITE_API_BASE_URL ?? '';
+
 export const api = axios.create({
-  baseURL: '/api',
-  withCredentials: true,
-  timeout: 8_000
+  baseURL: `${BASE_URL}/api`,
+  timeout: 10_000
 });
 
-// Inject the stored access token into every outgoing request.
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`;
-  }
+  if (token) config.headers['Authorization'] = `Bearer ${token}`;
   return config;
 });
 
-// On a 401 response, attempt one silent token refresh.
-// If the refresh also fails (expired / revoked), clear tokens and redirect.
 let isRefreshing = false;
 let pendingQueue: Array<{ resolve: (t: string) => void; reject: (e: unknown) => void }> = [];
 
@@ -55,9 +51,8 @@ api.interceptors.response.use(
     try {
       const refreshToken = getRefreshToken();
       if (!refreshToken) throw new Error('no_refresh_token');
-
-      const { data } = await axios.post('/api/v1/auth/refresh', { refreshToken });
-      setTokens(data.accessToken, data.refreshToken, data.tenantSlug);
+      const { data } = await axios.post(`${BASE_URL}/api/v1/auth/refresh`, { refreshToken });
+      setTokens(data.accessToken, data.refreshToken);
       api.defaults.headers.common['Authorization'] = `Bearer ${data.accessToken}`;
       drainQueue(data.accessToken);
       original.headers['Authorization'] = `Bearer ${data.accessToken}`;

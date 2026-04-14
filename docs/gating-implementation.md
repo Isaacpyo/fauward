@@ -2,7 +2,7 @@
 
 > How each of the five Fauward client surfaces is properly gated for interaction, following industry-standard patterns.
 
-**Navigation →** [Roles & Permissions](./roles-permissions.md) · [System Architecture](./system-architecture.md) · [API Design](./api.md) · [← README](../README.md)
+**Navigation →** [Auth Flows](./auth-flows.md) · [Roles & Permissions](./roles-permissions.md) · [System Architecture](./system-architecture.md) · [API Design](./api.md) · [← README](../README.md)
 
 ---
 

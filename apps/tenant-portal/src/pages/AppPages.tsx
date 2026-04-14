@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import React, { useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CreditCard, Package, Truck, Users } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -485,7 +485,31 @@ export function PublicBookingPage() {
 }
 
 export function LoginPage() {
+  const navigate = useNavigate ? useNavigate() : null;
+  const location = useLocation ? useLocation() : null;
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const { data } = await api.post("/v1/auth/login", { email, password });
+      const { setTokens } = await import("@/lib/auth");
+      setTokens(data.accessToken, data.refreshToken, data.tenantSlug);
+      const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
+      navigate?.(from, { replace: true });
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      setError(axiosErr.response?.data?.error ?? "Invalid email or password");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12">
@@ -493,15 +517,15 @@ export function LoginPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
           <h1 className="text-2xl font-bold text-gray-900">Sign in to your portal</h1>
           <p className="mt-1.5 text-sm text-gray-500">Enter your email and password to continue.</p>
-          <div className="mt-6 space-y-4">
+          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-email">Email</label>
-              <Input id="login-email" type="email" autoComplete="email" placeholder="you@company.com" />
+              <Input id="login-email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-password">Password</label>
               <div className="relative">
-                <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" className="pr-11" />
+                <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" className="pr-11" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
@@ -516,9 +540,16 @@ export function LoginPage() {
                 </button>
               </div>
             </div>
-            <Button className="w-full" size="lg">Sign in</Button>
-          </div>
-          <p className="mt-4 text-xs text-gray-400 text-center">Forgot your password? Contact your administrator.</p>
+            {error ? (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+            ) : null}
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+          <p className="mt-4 text-xs text-gray-400 text-center">
+            <Link to="/forgot-password" className="underline hover:text-gray-600">Forgot your password?</Link>
+          </p>
         </div>
       </div>
     </div>
