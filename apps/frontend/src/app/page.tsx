@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import AgentSection from "@/components/marketing/AgentSection";
+import BusinessSection from "@/components/marketing/BusinessSection";
 import CompetitorComparison from "@/components/marketing/CompetitorComparison";
 import CTABanner from "@/components/marketing/CTABanner";
 import FAQAccordion from "@/components/marketing/FAQAccordion";
@@ -7,10 +9,12 @@ import FadeInOnScroll from "@/components/marketing/FadeInOnScroll";
 import FeatureSection from "@/components/marketing/FeatureSection";
 import Hero from "@/components/marketing/Hero";
 import HowItWorks from "@/components/marketing/HowItWorks";
+import NewsSection from "@/components/marketing/NewsSection";
 import PersonaSection from "@/components/marketing/PersonaSection";
 import PricingCards from "@/components/marketing/PricingCards";
 import RegionStrip from "@/components/marketing/RegionStrip";
 import ScreenshotShowcase from "@/components/marketing/ScreenshotShowcase";
+import ServicesSection from "@/components/marketing/ServicesSection";
 import SocialProof from "@/components/marketing/SocialProof";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import { GENERAL_FAQ_GROUPS, MARKETING_FEATURES } from "@/lib/marketing-data";
@@ -42,12 +46,27 @@ export default function LandingPage() {
         <HowItWorks />
       </FadeInOnScroll>
 
+      {/* Services overview */}
+      <FadeInOnScroll>
+        <ServicesSection />
+      </FadeInOnScroll>
+
       <FadeInOnScroll>
         <FeatureSection features={MARKETING_FEATURES} />
       </FadeInOnScroll>
 
       <FadeInOnScroll>
         <ScreenshotShowcase />
+      </FadeInOnScroll>
+
+      {/* AI Agent teaser */}
+      <FadeInOnScroll>
+        <AgentSection />
+      </FadeInOnScroll>
+
+      {/* Business solutions */}
+      <FadeInOnScroll>
+        <BusinessSection />
       </FadeInOnScroll>
 
       <FadeInOnScroll>
@@ -76,6 +95,11 @@ export default function LandingPage() {
 
       <FadeInOnScroll>
         <TestimonialCarousel />
+      </FadeInOnScroll>
+
+      {/* News */}
+      <FadeInOnScroll>
+        <NewsSection />
       </FadeInOnScroll>
 
       <FadeInOnScroll>

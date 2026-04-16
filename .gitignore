@@ -8,8 +8,6 @@ build
 coverage
 *.log
 
-# Prisma
-apps/backend/prisma/migrations
 
 # Next.js
 .next

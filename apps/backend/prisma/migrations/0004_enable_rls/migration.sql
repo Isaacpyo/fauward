@@ -1,0 +1,51 @@
+-- Enable Row-Level Security on all tables.
+-- Prisma connects via a direct service-role Postgres connection and bypasses RLS,
+-- so application behaviour is unaffected. Enabling RLS with no permissive policies
+-- blocks all access via Supabase's PostgREST REST API (anon / authenticated roles),
+-- resolving the "rls_disabled_in_public" and "sensitive_columns_exposed" advisories.
+
+ALTER TABLE "tenants"                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tenant_settings"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "subscriptions"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "users"                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "refresh_tokens"         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "password_reset_tokens"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "branches"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "organisations"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "shipments"              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "shipment_items"         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "shipment_events"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "shipment_documents"     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pod_assets"             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "drivers"                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "vehicles"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "routes"                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "route_stops"            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "service_zones"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "rate_cards"             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "surcharges"             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "weight_discount_tiers"  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pricing_rules"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "promo_codes"            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "leads"                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "quotes"                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "invoices"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "payments"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "refunds"                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "credit_notes"           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "currency_rates"         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "accounting_connections" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "api_keys"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "webhook_endpoints"      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "webhook_deliveries"     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "notification_logs"      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "in_app_notifications"   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "usage_records"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "idempotency_keys"       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "outbox_events"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "audit_log"              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sso_providers"          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "return_requests"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "support_tickets"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ticket_messages"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "email_template_configs" ENABLE ROW LEVEL SECURITY;
