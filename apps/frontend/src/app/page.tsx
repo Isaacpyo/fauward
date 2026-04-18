@@ -17,21 +17,41 @@ import ScreenshotShowcase from "@/components/marketing/ScreenshotShowcase";
 import ServicesSection from "@/components/marketing/ServicesSection";
 import SocialProof from "@/components/marketing/SocialProof";
 import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
-import { GENERAL_FAQ_GROUPS, MARKETING_FEATURES } from "@/lib/marketing-data";
-import { buildMetadata } from "@/lib/seo";
+import StructuredData from "@/components/seo/StructuredData";
+import {
+  GENERAL_FAQ_GROUPS,
+  MARKETING_FEATURES,
+  PRICING_PLANS,
+} from "@/lib/marketing-data";
+import {
+  buildFaqSchema,
+  buildMetadata,
+  buildSoftwareApplicationSchema,
+} from "@/lib/seo";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Stop improvising your logistics. Run real software.",
     description:
-      "Fauward gives logistics businesses a fully branded platform — shipment ops, invoicing, driver app, and customer tracking — live in 10 minutes. No code. No per-seat fees.",
-    path: "/"
+      "Fauward gives logistics businesses a fully branded platform â€” shipment ops, invoicing, driver app, and customer tracking â€” live in 10 minutes. No code. No per-seat fees.",
+    path: "/",
   });
 }
 
 export default function LandingPage() {
   return (
     <>
+      <StructuredData
+        data={[
+          buildFaqSchema(GENERAL_FAQ_GROUPS),
+          buildSoftwareApplicationSchema({
+            path: "/",
+            description:
+              "Fauward gives logistics businesses a branded platform for shipment ops, invoicing, driver workflows, and customer tracking.",
+            offers: PRICING_PLANS,
+          }),
+        ]}
+      />
       <Hero />
 
       <FadeInOnScroll>
@@ -46,7 +66,6 @@ export default function LandingPage() {
         <HowItWorks />
       </FadeInOnScroll>
 
-      {/* Services overview */}
       <FadeInOnScroll>
         <ServicesSection />
       </FadeInOnScroll>
@@ -59,12 +78,10 @@ export default function LandingPage() {
         <ScreenshotShowcase />
       </FadeInOnScroll>
 
-      {/* AI Agent teaser */}
       <FadeInOnScroll>
         <AgentSection />
       </FadeInOnScroll>
 
-      {/* Business solutions */}
       <FadeInOnScroll>
         <BusinessSection />
       </FadeInOnScroll>
@@ -97,7 +114,6 @@ export default function LandingPage() {
         <TestimonialCarousel />
       </FadeInOnScroll>
 
-      {/* News */}
       <FadeInOnScroll>
         <NewsSection />
       </FadeInOnScroll>

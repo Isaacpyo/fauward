@@ -4,8 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import CTABanner from "@/components/marketing/CTABanner";
+import StructuredData from "@/components/seo/StructuredData";
 import { MARKETING_FEATURES } from "@/lib/marketing-data";
-import { buildMetadata } from "@/lib/seo";
+import { buildBreadcrumbSchema, buildMetadata } from "@/lib/seo";
 
 type FeaturePageProps = {
   params: { slug: string };
@@ -45,6 +46,13 @@ export default function FeatureDetailPage({ params }: FeaturePageProps) {
 
   return (
     <>
+      <StructuredData
+        data={buildBreadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "Features", path: "/features" },
+          { name: feature.title, path: `/features/${feature.slug}` },
+        ])}
+      />
       <section className="bg-white py-16 lg:py-24">
         <div className="marketing-container">
           <Link href="/features" className="text-sm font-semibold text-brand-navy underline-offset-4 hover:underline">

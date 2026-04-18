@@ -9,7 +9,8 @@ export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Start your free trial",
     description: "Create your Fauward account and launch your tenant portal onboarding flow.",
-    path: "/signup"
+    path: "/signup",
+    noIndex: true
   });
 }
 

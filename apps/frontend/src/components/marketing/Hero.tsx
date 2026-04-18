@@ -55,10 +55,10 @@ export default function Hero() {
                 Start Free — No card needed
               </Link>
               <Link
-                href="/demo"
+                href="/support#contact"
                 className="inline-flex h-12 min-w-[160px] items-center justify-center rounded-lg border border-gray-300 px-7 text-base font-semibold text-gray-700 transition hover:bg-gray-50"
               >
-                Book a demo
+                Talk to sales
               </Link>
             </div>
 

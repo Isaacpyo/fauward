@@ -56,7 +56,7 @@ export default function AgentPage() {
                 <span className="ping-slow absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
               </span>
-              Now Available — Fauward Agent
+              Fauward Agent — Generally Available
             </p>
             <h1 className="text-4xl font-bold leading-tight text-white lg:text-6xl">
               Your logistics ops on{" "}
@@ -71,7 +71,7 @@ export default function AgentPage() {
                 className="inline-flex h-13 items-center gap-2 rounded-lg bg-amber-600 px-8 text-base font-semibold text-white transition hover:bg-amber-700"
               >
                 <Zap size={18} />
-                Get Early Access
+                Start Free Trial
               </Link>
               <Link
                 href="/support#contact"
@@ -80,7 +80,7 @@ export default function AgentPage() {
                 Talk to Sales
               </Link>
             </div>
-            <p className="mt-4 text-xs text-blue-400">Available on Pro and Enterprise plans · No extra setup required</p>
+            <p className="mt-4 text-xs text-blue-400">Available on Pro and Enterprise plans · No extra setup · Enable from your dashboard</p>
           </div>
         </div>
       </section>
@@ -211,7 +211,7 @@ export default function AgentPage() {
         <CTABanner
           title="Ready to put your operations on autopilot?"
           description="Fauward Agent handles the repetitive work so your team can focus on growing the business."
-          ctaLabel="Get Early Access"
+          ctaLabel="Start Free Trial"
           ctaHref="/signup"
         />
       </FadeInOnScroll>

@@ -7,7 +7,8 @@ export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Permission denied",
     description: "You do not have access to this resource.",
-    path: "/permission-denied"
+    path: "/permission-denied",
+    noIndex: true
   });
 }
 

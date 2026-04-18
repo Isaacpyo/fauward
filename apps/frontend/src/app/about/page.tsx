@@ -3,8 +3,9 @@ import Link from "next/link";
 import { Zap, Shield, Globe, Users } from "lucide-react";
 import CTABanner from "@/components/marketing/CTABanner";
 import FadeInOnScroll from "@/components/marketing/FadeInOnScroll";
-import { TEAM_MEMBERS, COMPANY_VALUES, COMPANY_MILESTONES } from "@/lib/marketing-data";
-import { buildMetadata } from "@/lib/seo";
+import StructuredData from "@/components/seo/StructuredData";
+import { TEAM_MEMBERS, COMPANY_VALUES } from "@/lib/marketing-data";
+import { buildBreadcrumbSchema, buildMetadata } from "@/lib/seo";
 
 const VALUE_ICON_MAP: Record<string, React.ElementType> = {
   zap: Zap,
@@ -24,6 +25,12 @@ export function generateMetadata(): Metadata {
 export default function AboutPage() {
   return (
     <>
+      <StructuredData
+        data={buildBreadcrumbSchema([
+          { name: "Home", path: "/" },
+          { name: "About", path: "/about" },
+        ])}
+      />
       {/* Hero */}
       <section className="relative overflow-hidden bg-[#0d1f3c] py-20 lg:py-28">
         <div className="absolute inset-0 bg-grid opacity-20" aria-hidden />
@@ -64,7 +71,7 @@ export default function AboutPage() {
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { value: "10 min", label: "Median time to first live shipment" },
-                    { value: "3", label: "Regions supported globally" },
+                    { value: "4+", label: "Regions supported globally" },
                     { value: "99.9%", label: "Target uptime SLA" },
                     { value: "£0", label: "Per-seat charges — ever" },
                   ].map((stat) => (
@@ -106,31 +113,43 @@ export default function AboutPage() {
         </section>
       </FadeInOnScroll>
 
-      {/* Timeline */}
+      {/* Today at Fauward — live-feel metrics block */}
       <FadeInOnScroll>
         <section className="bg-white py-20 lg:py-24">
           <div className="marketing-container">
-            <div className="mx-auto max-w-3xl">
-              <h2 className="mb-12 text-center text-3xl font-bold text-gray-900">Our journey</h2>
-              <div className="relative">
-                {/* Vertical line */}
-                <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200 lg:left-1/2" aria-hidden />
-                <div className="space-y-8">
-                  {COMPANY_MILESTONES.map((m, i) => (
-                    <div key={m.year} className={`relative flex items-start gap-6 ${i % 2 === 0 ? "lg:flex-row" : "lg:flex-row-reverse"}`}>
-                      {/* Dot */}
-                      <div className="absolute left-6 flex -translate-x-1/2 items-center justify-center lg:left-1/2">
-                        <div className="h-4 w-4 rounded-full border-2 border-amber-500 bg-white shadow" />
-                      </div>
-                      {/* Content */}
-                      <div className={`ml-14 lg:ml-0 lg:w-5/12 ${i % 2 === 0 ? "lg:pr-12 lg:text-right" : "lg:pl-12"}`}>
-                        <span className="inline-block rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">{m.year}</span>
-                        <p className="mt-2 text-sm leading-relaxed text-gray-700">{m.event}</p>
-                      </div>
-                    </div>
-                  ))}
+            <div className="mx-auto max-w-3xl text-center">
+              <h2 className="text-3xl font-bold text-gray-900">Today at Fauward</h2>
+              <p className="mt-3 text-lg text-gray-600">
+                Real numbers from operators running their logistics businesses on the platform right now.
+              </p>
+            </div>
+            <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { value: "4+ regions", label: "UK, Africa, MENA & Global deployments", mono: false },
+                { value: "99.9%", label: "Target uptime SLA for Enterprise tenants", mono: true },
+                { value: "10 min", label: "Median time from signup to first live shipment", mono: true },
+                { value: "£0", label: "Per-seat charges — on any plan, ever", mono: true },
+              ].map((stat) => (
+                <div key={stat.label} className="flex flex-col items-center rounded-2xl border border-gray-200 bg-gray-50 p-7 text-center">
+                  <span className={`text-3xl font-bold text-brand-navy ${stat.mono ? "font-mono" : ""}`}>
+                    {stat.value}
+                  </span>
+                  <span className="mt-2 text-xs leading-snug text-gray-500">{stat.label}</span>
                 </div>
-              </div>
+              ))}
+            </div>
+            <div className="mt-10 grid gap-4 sm:grid-cols-3">
+              {[
+                { icon: "🇬🇧", region: "United Kingdom", note: "VAT-ready invoicing · GoCardless · Royal Mail, DPD, Evri" },
+                { icon: "🌍", region: "Africa", note: "M-Pesa · Paystack · Offline-first driver app · COD workflows" },
+                { icon: "🌏", region: "MENA", note: "COD · Checkout.com · HyperPay · Aramex · Arabic notifications" },
+              ].map((r) => (
+                <div key={r.region} className="rounded-xl border border-gray-200 bg-white px-5 py-4">
+                  <p className="text-lg">{r.icon}</p>
+                  <p className="mt-1 font-bold text-gray-900">{r.region}</p>
+                  <p className="mt-1 text-xs text-gray-500">{r.note}</p>
+                </div>
+              ))}
             </div>
           </div>
         </section>

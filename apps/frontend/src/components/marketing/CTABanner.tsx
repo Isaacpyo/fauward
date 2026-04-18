@@ -14,8 +14,8 @@ export default function CTABanner({
   description = "Set your brand, invite your team, and process your first live shipment — in under 10 minutes. No card required.",
   ctaLabel = "Start Free Trial",
   ctaHref = "/signup",
-  secondaryLabel = "Book a demo",
-  secondaryHref = "/demo"
+  secondaryLabel = "Talk to sales",
+  secondaryHref = "/support#contact"
 }: CTABannerProps) {
   return (
     <>

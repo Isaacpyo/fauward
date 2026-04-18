@@ -4,20 +4,39 @@ import CTABanner from "@/components/marketing/CTABanner";
 import FAQAccordion from "@/components/marketing/FAQAccordion";
 import FeatureComparisonTable from "@/components/marketing/FeatureComparisonTable";
 import PricingCards from "@/components/marketing/PricingCards";
-import { BILLING_FAQ_GROUPS } from "@/lib/marketing-data";
-import { buildMetadata } from "@/lib/seo";
+import StructuredData from "@/components/seo/StructuredData";
+import {
+  BILLING_FAQ_GROUPS,
+  PRICING_PLANS,
+} from "@/lib/marketing-data";
+import {
+  buildFaqSchema,
+  buildMetadata,
+  buildSoftwareApplicationSchema,
+} from "@/lib/seo";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Simple, transparent pricing",
     description: "Choose a Fauward plan for your shipment volume, team size, and integration needs.",
-    path: "/pricing"
+    path: "/pricing",
   });
 }
 
 export default function PricingPage() {
   return (
     <>
+      <StructuredData
+        data={[
+          buildFaqSchema(BILLING_FAQ_GROUPS),
+          buildSoftwareApplicationSchema({
+            path: "/pricing",
+            description:
+              "Compare Fauward pricing for branded logistics operations, finance workflows, and API-enabled delivery automation.",
+            offers: PRICING_PLANS,
+          }),
+        ]}
+      />
       <section className="bg-white py-16 lg:py-24">
         <div className="marketing-container">
           <div className="mx-auto max-w-3xl text-center">
@@ -43,7 +62,7 @@ export default function PricingPage() {
       </section>
 
       <FAQAccordion groups={BILLING_FAQ_GROUPS} />
-      <CTABanner title="Need a plan tailored to your operation?" description="Talk with our team about enterprise controls, SSO, and dedicated support." ctaLabel="Contact Sales" ctaHref="/signup?plan=enterprise" />
+      <CTABanner title="Need a plan tailored to your operation?" description="Talk with our team about enterprise controls, SSO, and dedicated support." ctaLabel="Talk to Sales" ctaHref="/support#contact" />
     </>
   );
 }

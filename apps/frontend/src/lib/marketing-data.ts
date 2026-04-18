@@ -77,8 +77,8 @@ export const PRICING_PLANS: PricingPlan[] = [
     annualMonthlyEquivalent: null,
     shipmentLimit: "Unlimited shipments",
     staffLimit: "Unlimited staff seats",
-    ctaLabel: "Contact Sales",
-    ctaHref: "/signup?plan=enterprise",
+    ctaLabel: "Talk to Sales",
+    ctaHref: "/support#contact",
     features: [
       "SSO / SAML",
       "SLA-backed uptime",
@@ -171,7 +171,7 @@ export type StatHighlight = {
 export const STAT_HIGHLIGHTS: StatHighlight[] = [
   { value: "10 min", label: "Median time to first live shipment", mono: true },
   { value: "£0", label: "Per-seat charges — ever", mono: true },
-  { value: "3", label: "Regions supported at launch", mono: false },
+  { value: "4+", label: "Regions supported at launch", mono: false },
   { value: "99.9%", label: "Target uptime SLA (Enterprise)", mono: true }
 ];
 
@@ -675,7 +675,7 @@ export const BUSINESS_SOLUTIONS: BusinessSolution[] = [
       "Dedicated onboarding engineer and support SLA",
       "Unlimited seats, unlimited shipments",
     ],
-    cta: "Contact Sales",
+    cta: "Talk to Sales",
   },
 ];
 

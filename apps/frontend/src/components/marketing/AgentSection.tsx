@@ -55,7 +55,7 @@ export default function AgentSection() {
                 <span className="ping-slow absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
               </span>
-              New — Fauward Agent
+              Fauward Agent — Now Available
             </p>
             <h2 className="text-3xl font-bold leading-tight text-white lg:text-4xl xl:text-5xl">
               Your operations — on{" "}

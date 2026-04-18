@@ -7,7 +7,8 @@ export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Upgrade required",
     description: "This feature requires a higher plan.",
-    path: "/plan-gated"
+    path: "/plan-gated",
+    noIndex: true
   });
 }
 

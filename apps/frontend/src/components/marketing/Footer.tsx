@@ -20,7 +20,15 @@ const footerColumns = [
     title: "Solutions",
     links: [
       { href: "/services", label: "Our Services" },
-      { href: "/business", label: "Business Solutions" },
+      { href: "/services#courier-startups", label: "Courier Startups" },
+      { href: "/services#freight-operators", label: "Freight Operators" },
+      { href: "/services#3pl-providers", label: "3PL Providers" },
+      { href: "/services#enterprise-fleets", label: "Enterprise Fleets" },
+    ],
+  },
+  {
+    title: "Regions",
+    links: [
       { href: "/regions/uk", label: "United Kingdom" },
       { href: "/regions/africa", label: "Africa" },
       { href: "/regions/mena", label: "MENA" },
@@ -32,8 +40,9 @@ const footerColumns = [
     links: [
       { href: "/about", label: "About Us" },
       { href: "/news", label: "News & Updates" },
-      { href: "/login", label: "Log in" },
-      { href: "/signup", label: "Start Free Trial" },
+      { href: "/careers", label: "Careers" },
+      { href: "/trust", label: "Trust & Security" },
+      { href: "/contact", label: "Contact" },
     ],
   },
   {
@@ -42,12 +51,7 @@ const footerColumns = [
       { href: "/support", label: "Help Centre" },
       { href: "/support#contact", label: "Contact Support" },
       { href: "/support#faq", label: "FAQs" },
-      { href: "/docs", label: "Documentation" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
+      { href: "https://docs.fauward.com", label: "Documentation" },
       { href: "/legal/privacy", label: "Privacy Policy" },
       { href: "/legal/terms", label: "Terms of Service" },
       { href: "/legal/cookies", label: "Cookie Policy" },
@@ -57,7 +61,7 @@ const footerColumns = [
 
 const socialLinks = [
   {
-    href: "https://www.linkedin.com",
+    href: "https://www.linkedin.com/company/fauward",
     label: "LinkedIn",
     icon: (
       <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -66,7 +70,7 @@ const socialLinks = [
     ),
   },
   {
-    href: "https://x.com",
+    href: "https://x.com/fauward",
     label: "X",
     icon: (
       <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -75,7 +79,7 @@ const socialLinks = [
     ),
   },
   {
-    href: "https://www.youtube.com",
+    href: "https://www.youtube.com/@fauward",
     label: "YouTube",
     icon: (
       <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
@@ -150,9 +154,12 @@ export default function Footer() {
 
             {/* Newsletter */}
             <form className="space-y-2 pt-2" onSubmit={handleSubscribe}>
-              <label htmlFor="newsletter-email" className="block text-xs font-semibold uppercase tracking-widest text-blue-300">
-                Newsletter
-              </label>
+              <div>
+                <label htmlFor="newsletter-email" className="block text-xs font-semibold uppercase tracking-widest text-blue-300">
+                  Newsletter
+                </label>
+                <p className="mt-0.5 text-xs text-blue-400">Monthly product updates and logistics ops insights. No spam.</p>
+              </div>
               {subscribed ? (
                 <p className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/40 bg-green-900/30 px-4 py-2.5 text-sm font-semibold text-green-400">
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden>
@@ -205,7 +212,12 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-blue-400">© {new Date().getFullYear()} Fauward Ltd. All rights reserved. Registered in England & Wales.</p>
+          <div className="space-y-1">
+            <p className="text-xs text-blue-400">© {new Date().getFullYear()} Fauward Ltd. All rights reserved.</p>
+            <p className="text-xs text-blue-500">
+              Fauward Ltd is registered in England &amp; Wales. Company No: [pending]. Registered office: [address]. VAT No: [pending].
+            </p>
+          </div>
           <div className="flex items-center gap-4">
             {socialLinks.map((link) => (
               <a

@@ -45,10 +45,10 @@ const navItems: NavItem[] = [
         {
           heading: "By Business Type",
           items: [
-            { href: "/business#courier-startups", label: "Courier Startups", description: "Launch in an afternoon", icon: Package },
-            { href: "/business#freight-operators", label: "Freight Operators", description: "Multi-depot operations", icon: Briefcase },
-            { href: "/business#3pl-providers", label: "3PL Providers", description: "White-label for clients", icon: LayoutGrid },
-            { href: "/business#enterprise-fleets", label: "Enterprise Fleets", description: "SSO, SLA, scale", icon: Map },
+            { href: "/services#courier-startups", label: "Courier Startups", description: "Launch in an afternoon", icon: Package },
+            { href: "/services#freight-operators", label: "Freight Operators", description: "Multi-depot operations", icon: Briefcase },
+            { href: "/services#3pl-providers", label: "3PL Providers", description: "White-label for clients", icon: LayoutGrid },
+            { href: "/services#enterprise-fleets", label: "Enterprise Fleets", description: "SSO, SLA, scale", icon: Map },
           ],
         },
         {

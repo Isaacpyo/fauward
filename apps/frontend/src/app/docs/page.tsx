@@ -8,7 +8,8 @@ export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Developer documentation",
     description: "Explore Fauward setup guides, API documentation, and integration references.",
-    path: "/docs"
+    path: "/docs",
+    noIndex: true
   });
 }
 
