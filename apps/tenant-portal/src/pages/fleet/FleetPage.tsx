@@ -111,25 +111,25 @@ export function FleetPage() {
   const drivers = driversQuery.data ?? [];
 
   return (
-    <PageShell title="Fleet" description="Driver and vehicle management for operations control.">
+    <PageShell title="Fleet" description="Field operator and vehicle management for operations control.">
       <Tabs
         value={tab}
         onValueChange={setTab}
         items={[
-          { value: "drivers", label: "Drivers" },
+          { value: "drivers", label: "Field Operators" },
           { value: "vehicles", label: "Vehicles" }
         ]}
       >
         <TabsContent value="drivers">
           <div className="space-y-4">
             <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 lg:grid-cols-4">
-              <Input value={driverForm.userId} onChange={(event) => setDriverForm((prev) => ({ ...prev, userId: event.target.value }))} placeholder="TENANT_DRIVER user ID" />
+              <Input value={driverForm.userId} onChange={(event) => setDriverForm((prev) => ({ ...prev, userId: event.target.value }))} placeholder="Field Operator user ID (TENANT_DRIVER)" />
               <Input value={driverForm.vehicleId} onChange={(event) => setDriverForm((prev) => ({ ...prev, vehicleId: event.target.value }))} placeholder="Vehicle ID (optional)" />
               <Input value={driverForm.licenceNumber} onChange={(event) => setDriverForm((prev) => ({ ...prev, licenceNumber: event.target.value }))} placeholder="Licence number" />
-              <Button onClick={() => createDriver.mutate()}>Add Driver</Button>
+              <Button onClick={() => createDriver.mutate()}>Add Field Operator</Button>
             </div>
 
-            <Table columns={["Driver", "Licence", "Vehicle", "Stops", "Completed", "Available"]}>
+            <Table columns={["Field Operator", "Licence", "Vehicle", "Stops", "Completed", "Available"]}>
               {drivers.map((driver) => (
                 <TableRow key={driver.id}>
                   <TableCell>{[driver.user.firstName, driver.user.lastName].filter(Boolean).join(" ") || driver.user.email}</TableCell>
@@ -163,7 +163,7 @@ export function FleetPage() {
               </div>
             </div>
 
-            <Table columns={["Registration", "Type", "Capacity", "Assigned Driver", "Available"]}>
+            <Table columns={["Registration", "Type", "Capacity", "Assigned Field Operator", "Available"]}>
               {vehicles.map((vehicle) => (
                 <TableRow key={vehicle.id}>
                   <TableCell>{vehicle.registration ?? "N/A"}</TableCell>
@@ -184,4 +184,3 @@ export function FleetPage() {
     </PageShell>
   );
 }
-

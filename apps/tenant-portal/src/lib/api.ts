@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { clearTokens, getAccessToken, getRefreshToken, hasDevTestSession, setTokens } from './auth';
+import { clearTokens, getAccessToken, getRefreshToken, getTenantSlug, hasDevTestSession, setTokens } from './auth';
 
 export const api = axios.create({
   baseURL: '/api',
@@ -10,8 +10,12 @@ export const api = axios.create({
 // Inject the stored access token into every outgoing request.
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
+  const tenantSlug = getTenantSlug();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (tenantSlug) {
+    config.headers['X-Tenant-Slug'] = tenantSlug;
   }
   return config;
 });

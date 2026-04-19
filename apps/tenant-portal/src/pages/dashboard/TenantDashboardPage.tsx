@@ -312,6 +312,14 @@ function compactRouteLabel(route: string) {
   return route.length > 48 ? `${route.slice(0, 45)}...` : route;
 }
 
+function formatRoleLabel(role: string) {
+  if (role === "TENANT_DRIVER") {
+    return "Field Operator";
+  }
+
+  return role.replaceAll("_", " ").toLowerCase();
+}
+
 function queryEnabled() {
   return Boolean(getAccessToken());
 }
@@ -432,7 +440,7 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
       <EmptyState
         icon={MapPinned}
         title="No active locations yet"
-        description="Driver locations and route clusters appear here once live shipment telemetry is available."
+        description="Field operator locations and route clusters appear here once live shipment telemetry is available."
       />
     );
   }
@@ -471,7 +479,7 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
 
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Active drivers</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Active field operators</p>
           <p className="mt-2 text-2xl font-semibold text-gray-900">
             {new Set(shipments.map((shipment) => shipment.driverName).filter(Boolean)).size}
           </p>
@@ -897,7 +905,7 @@ export function TenantDashboardPage() {
           <div className="space-y-6">
             <SectionCard
               title="Map Snapshot"
-              description="Quick view of active drivers, live shipments, and delayed hotspots."
+              description="Quick view of active field operators, live shipments, and delayed hotspots."
               action={
                 <Button asChild variant="secondary" size="sm">
                   <Link to="/operations/live-map">Open live map</Link>
@@ -963,7 +971,7 @@ export function TenantDashboardPage() {
 
             <SectionCard
               title="Team and Fleet Health"
-              description="Driver throughput, active capacity, and workload distribution."
+              description="Field operator throughput, active capacity, and workload distribution."
               action={
                 <Button asChild variant="secondary" size="sm">
                   <Link to="/fleet">Open fleet</Link>
@@ -976,15 +984,15 @@ export function TenantDashboardPage() {
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Drivers online</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Field Operators online</p>
                       <p className="mt-2 text-2xl font-semibold text-gray-900">{mapDriversOnline}</p>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Avg jobs per driver</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Avg jobs per field operator</p>
                       <p className="mt-2 text-2xl font-semibold text-gray-900">{averageJobsPerDriver.toFixed(1)}</p>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Overloaded drivers</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Overloaded field operators</p>
                       <p className="mt-2 text-2xl font-semibold text-gray-900">{overloadedDrivers}</p>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -1002,7 +1010,7 @@ export function TenantDashboardPage() {
                       <div key={member.staffId} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-gray-900">{member.staffName}</p>
-                          <p className="text-xs text-gray-500">{member.role.replaceAll("_", " ").toLowerCase()}</p>
+                          <p className="text-xs text-gray-500">{formatRoleLabel(member.role)}</p>
                         </div>
                         <div className="text-right text-sm text-gray-600">
                           <p>{member.shipmentsProcessed} jobs</p>

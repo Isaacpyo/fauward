@@ -14,7 +14,10 @@ const queryClient = new QueryClient();
 
 export const AppProviders = ({ router }: AppProvidersProps) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const seedDemoData = useFieldDataStore((state) => state.seedDemoData);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const restoreSession = useAuthStore((state) => state.restoreSession);
+  const hydrateAssignedWork = useFieldDataStore((state) => state.hydrateAssignedWork);
+  const resetFieldData = useFieldDataStore((state) => state.resetFieldData);
   const syncPendingMutations = useFieldDataStore((state) => state.syncPendingMutations);
   const pendingCount = useFieldDataStore(
     (state) => state.pendingMutations.filter((mutation) => mutation.state !== "synced").length,
@@ -22,12 +25,23 @@ export const AppProviders = ({ router }: AppProvidersProps) => {
   const setBrowserOnline = useSyncStore((state) => state.setBrowserOnline);
   const isOnline = useSyncStore((state) => state.isOnline);
   const isSyncing = useSyncStore((state) => state.isSyncing);
+  const resetSyncState = useSyncStore((state) => state.reset);
+
+  useEffect(() => {
+    if (accessToken) {
+      void restoreSession();
+    }
+  }, [accessToken, restoreSession]);
 
   useEffect(() => {
     if (isAuthenticated) {
-      seedDemoData();
+      void hydrateAssignedWork();
+      return;
     }
-  }, [isAuthenticated, seedDemoData]);
+
+    resetFieldData();
+    resetSyncState();
+  }, [hydrateAssignedWork, isAuthenticated, resetFieldData, resetSyncState]);
 
   useEffect(() => {
     const syncConnectivity = () => setBrowserOnline(window.navigator.onLine);
@@ -62,4 +76,3 @@ export const AppProviders = ({ router }: AppProvidersProps) => {
     </QueryClientProvider>
   );
 };
-

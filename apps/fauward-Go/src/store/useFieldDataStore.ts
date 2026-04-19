@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { appEnv } from "@/lib/config/env";
-import { createSeededFieldData } from "@/features/jobs/demoFieldData";
+import { fieldApi } from "@/lib/api/fieldApi";
+import { ApiError } from "@/lib/api/http";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useSyncStore } from "@/store/useSyncStore";
 import type {
   FieldJob,
@@ -39,7 +41,9 @@ type FieldDataStore = {
   podDrafts: PodDraft[];
   scanVerifications: ScanVerificationRecord[];
   locationPings: LocationPing[];
-  seedDemoData: () => void;
+  isHydrating: boolean;
+  hydrateError?: string;
+  hydrateAssignedWork: () => Promise<void>;
   resetFieldData: () => void;
   advanceStopStatus: (stopId: string, nextStatus: StopStatus) => void;
   savePodDraft: (stopId: string, draft: PodDraftUpdate) => void;
@@ -50,11 +54,7 @@ type FieldDataStore = {
   clearSyncedMutations: () => void;
 };
 
-const mapStopStatusToJobStatus = (status: StopStatus): FieldJob["status"] => {
-  return status;
-};
-
-const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const mapStopStatusToJobStatus = (status: StopStatus): FieldJob["status"] => status;
 
 const normalizeCode = (value: string) => value.replace(/\s+/g, "").toUpperCase();
 
@@ -66,18 +66,111 @@ const emptyFieldData = {
   podDrafts: [] as PodDraft[],
   scanVerifications: [] as ScanVerificationRecord[],
   locationPings: [] as LocationPing[],
+  isHydrating: false,
+  hydrateError: undefined,
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof ApiError || error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
+};
+
+const applyPendingMutations = (
+  jobs: FieldJob[],
+  stops: FieldStop[],
+  pendingMutations: PendingMutation[],
+) => {
+  const pendingByTime = [...pendingMutations]
+    .filter((mutation) => mutation.state !== "synced")
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+
+  let nextJobs = jobs;
+  let nextStops = stops;
+
+  for (const mutation of pendingByTime) {
+    if (mutation.type !== "status_update" && mutation.type !== "exception_submit" && mutation.type !== "pod_upload") {
+      continue;
+    }
+
+    const stopId = typeof mutation.payload.stopId === "string" ? mutation.payload.stopId : undefined;
+    const nextStatus =
+      mutation.type === "pod_upload"
+        ? "completed"
+        : typeof mutation.payload.status === "string"
+          ? (mutation.payload.status as StopStatus)
+          : undefined;
+
+    if (!stopId || !nextStatus) {
+      continue;
+    }
+
+    nextStops = nextStops.map((stop) =>
+      stop.id === stopId
+        ? {
+            ...stop,
+            status: nextStatus,
+            updatedAt: mutation.createdAt,
+          }
+        : stop,
+    );
+
+    nextJobs = nextJobs.map((job) =>
+      job.stopId === stopId
+        ? {
+            ...job,
+            status: mapStopStatusToJobStatus(nextStatus),
+            updatedAt: mutation.createdAt,
+          }
+        : job,
+    );
+  }
+
+  return {
+    jobs: nextJobs,
+    stops: nextStops,
+  };
 };
 
 export const useFieldDataStore = create<FieldDataStore>()(
   persist(
     (set, get) => ({
       ...emptyFieldData,
-      seedDemoData: () => {
-        if (get().jobs.length > 0) {
+      hydrateAssignedWork: async () => {
+        const accessToken = useAuthStore.getState().accessToken;
+
+        if (!accessToken) {
           return;
         }
 
-        set(createSeededFieldData());
+        set({
+          isHydrating: true,
+          hydrateError: undefined,
+        });
+
+        try {
+          const workload = await fieldApi.fetchAssignedWork(accessToken);
+          const reconciled = applyPendingMutations(workload.jobs, workload.stops, get().pendingMutations);
+
+          set((state) => ({
+            jobs: reconciled.jobs,
+            routes: workload.routes,
+            stops: reconciled.stops,
+            podDrafts: state.podDrafts,
+            pendingMutations: state.pendingMutations,
+            scanVerifications: state.scanVerifications,
+            locationPings: state.locationPings,
+            isHydrating: false,
+            hydrateError: undefined,
+          }));
+        } catch (error) {
+          set({
+            isHydrating: false,
+            hydrateError: getErrorMessage(error, "Unable to load assigned work."),
+          });
+        }
       },
       resetFieldData: () => set(emptyFieldData),
       advanceStopStatus: (stopId, nextStatus) => {
@@ -157,12 +250,6 @@ export const useFieldDataStore = create<FieldDataStore>()(
                 },
                 ...state.podDrafts,
               ],
-          pendingMutations: state.pendingMutations,
-          jobs: state.jobs,
-          routes: state.routes,
-          stops: state.stops,
-          scanVerifications: state.scanVerifications,
-          locationPings: state.locationPings,
         }));
 
         set((state) => ({
@@ -337,7 +424,10 @@ export const useFieldDataStore = create<FieldDataStore>()(
         }));
       },
       syncPendingMutations: async () => {
-        if (!useSyncStore.getState().isOnline || useSyncStore.getState().isSyncing) {
+        const syncState = useSyncStore.getState();
+        const authState = useAuthStore.getState();
+
+        if (!syncState.isOnline || syncState.isSyncing || !authState.accessToken || !authState.user) {
           return;
         }
 
@@ -357,36 +447,74 @@ export const useFieldDataStore = create<FieldDataStore>()(
           ),
         }));
 
-        await pause(900);
+        try {
+          const result = await fieldApi.syncBatch(authState.accessToken, selected, {
+            user: authState.user,
+            jobs: get().jobs,
+            routes: get().routes,
+            stops: get().stops,
+            podDrafts: get().podDrafts,
+            scanVerifications: get().scanVerifications,
+            locationPings: get().locationPings,
+          });
 
-        const syncedPodDraftIds = selected
-          .filter((mutation) => mutation.type === "pod_upload")
-          .map((mutation) => mutation.entityId);
-        const syncedVerificationIds = selected
-          .filter((mutation) => mutation.type === "verification_submit")
-          .map((mutation) => mutation.entityId);
-        const syncedLocationIds = selected
-          .filter((mutation) => mutation.type === "location_update")
-          .map((mutation) => mutation.entityId);
+          const syncedIds = result.results
+            .filter((item) => item.state === "synced")
+            .map((item) => item.mutationId);
+          const failedIds = result.results
+            .filter((item) => item.state === "failed")
+            .map((item) => item.mutationId);
 
-        set((state) => ({
-          pendingMutations: state.pendingMutations.map((mutation) =>
-            selectedIds.includes(mutation.id)
-              ? { ...mutation, state: "synced", retryCount: mutation.retryCount + 1 }
-              : mutation,
-          ),
-          podDrafts: state.podDrafts.map((draft) =>
-            syncedPodDraftIds.includes(draft.id) ? { ...draft, state: "uploaded" } : draft,
-          ),
-          scanVerifications: state.scanVerifications.map((record) =>
-            syncedVerificationIds.includes(record.id) ? { ...record, synced: true } : record,
-          ),
-          locationPings: state.locationPings.map((ping) =>
-            syncedLocationIds.includes(ping.id) ? { ...ping, synced: true } : ping,
-          ),
-        }));
+          const syncedPodDraftIds = selected
+            .filter((mutation) => mutation.type === "pod_upload" && syncedIds.includes(mutation.id))
+            .map((mutation) => mutation.entityId);
+          const syncedVerificationIds = selected
+            .filter((mutation) => mutation.type === "verification_submit" && syncedIds.includes(mutation.id))
+            .map((mutation) => mutation.entityId);
+          const syncedLocationIds = selected
+            .filter((mutation) => mutation.type === "location_update" && syncedIds.includes(mutation.id))
+            .map((mutation) => mutation.entityId);
 
-        useSyncStore.getState().finishSync(new Date().toISOString());
+          set((state) => ({
+            pendingMutations: state.pendingMutations.map((mutation) => {
+              if (syncedIds.includes(mutation.id)) {
+                return { ...mutation, state: "synced", retryCount: mutation.retryCount + 1 };
+              }
+
+              if (failedIds.includes(mutation.id)) {
+                return { ...mutation, state: "failed", retryCount: mutation.retryCount + 1 };
+              }
+
+              return mutation;
+            }),
+            podDrafts: state.podDrafts.map((draft) =>
+              syncedPodDraftIds.includes(draft.id) ? { ...draft, state: "uploaded" } : draft,
+            ),
+            scanVerifications: state.scanVerifications.map((record) =>
+              syncedVerificationIds.includes(record.id) ? { ...record, synced: true } : record,
+            ),
+            locationPings: state.locationPings.map((ping) =>
+              syncedLocationIds.includes(ping.id) ? { ...ping, synced: true } : ping,
+            ),
+          }));
+
+          useSyncStore.getState().finishSync(new Date().toISOString());
+
+          if (syncedIds.length > 0) {
+            await get().hydrateAssignedWork();
+          }
+        } catch (error) {
+          set((state) => ({
+            pendingMutations: state.pendingMutations.map((mutation) =>
+              selectedIds.includes(mutation.id)
+                ? { ...mutation, state: "failed", retryCount: mutation.retryCount + 1 }
+                : mutation,
+            ),
+            hydrateError: getErrorMessage(error, "Unable to sync queued updates."),
+          }));
+
+          useSyncStore.getState().finishSync(new Date().toISOString());
+        }
       },
       clearSyncedMutations: () =>
         set((state) => ({
@@ -394,7 +522,7 @@ export const useFieldDataStore = create<FieldDataStore>()(
         })),
     }),
     {
-      name: "fauward-go-field-data-v3",
+      name: "fauward-go-field-data-v4",
       storage: createJSONStorage(() => localStorage),
     },
   ),

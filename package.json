@@ -14,6 +14,9 @@
     "lint": "npm run lint --workspace=apps/backend",
     "test": "npm run test --workspace=apps/backend"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "serve": "^14.2.6"
   }

@@ -12,30 +12,96 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
+import { normalizePodResponse, normalizeShipmentDetail } from "@/lib/shipment-normalizers";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import type { ShipmentDetail } from "@/types/shipment";
 import type { ShipmentState } from "@/types/domain";
 
-const fallbackShipment = (id: string): ShipmentDetail => ({
-  id,
-  tracking_number: id,
-  status: "OUT_FOR_DELIVERY",
-  service_tier: "Express",
-  customer_id: "cus-1",
-  customer_name: "Acme Retail",
-  created_at: new Date().toISOString(),
-  pickup_address: "Origin",
-  delivery_address: "Destination",
-  origin_city: "Origin",
-  destination_city: "Destination",
-  package_weight_kg: 4.2,
-  package_quantity: 1,
-  pricing_amount: 22.5,
-  timeline: [],
-  documents: [],
-  notes: []
-});
+const fallbackShipment = (id: string): ShipmentDetail =>
+  id === "seed-delivered-shipment"
+    ? {
+        id,
+        tracking_number: "FWD-2026-DEL-0001",
+        status: "DELIVERED",
+        service_tier: "Express",
+        customer_id: "cus-1",
+        customer_name: "Acme Retail",
+        reference_number: "JOB-DELIVERED-0001",
+        created_at: new Date("2026-04-17T10:30:00.000Z").toISOString(),
+        pickup_address: "12 Warehouse Road, Lagos",
+        delivery_address: "48 Bishopsgate, London",
+        origin_city: "Lagos",
+        destination_city: "London",
+        package_weight_kg: 4.2,
+        package_quantity: 1,
+        package_description: "Fashion retail cartons",
+        pricing_amount: 22.5,
+        assigned_driver_id: "drv-1",
+        assigned_driver_name: "Amina Yusuf",
+        timeline: [
+          {
+            id: "seed-event-1",
+            status: "PENDING",
+            description: "Shipment created",
+            timestamp: "2026-04-17T10:30:00.000Z",
+            actor: "Operations"
+          },
+          {
+            id: "seed-event-2",
+            status: "IN_TRANSIT",
+            description: "Shipment moved to transit",
+            location: "Lagos Hub",
+            timestamp: "2026-04-17T14:00:00.000Z",
+            actor: "Dispatch"
+          },
+          {
+            id: "seed-event-3",
+            status: "OUT_FOR_DELIVERY",
+            description: "Shipment assigned to field operator",
+            location: "London",
+            timestamp: "2026-04-18T08:15:00.000Z",
+            actor: "Amina Yusuf"
+          },
+          {
+            id: "seed-event-4",
+            status: "DELIVERED",
+            description: "Shipment delivered successfully",
+            location: "48 Bishopsgate, London",
+            timestamp: "2026-04-18T11:42:00.000Z",
+            actor: "Amina Yusuf"
+          }
+        ],
+        documents: [],
+        notes: [
+          {
+            id: "seed-note-1",
+            author_name: "Operations",
+            text: "Delivered shipment sample added for workflow review.",
+            created_at: "2026-04-18T11:50:00.000Z"
+          }
+        ],
+        estimated_delivery_date: "2026-04-18T12:00:00.000Z"
+      }
+    : {
+        id,
+        tracking_number: id,
+        status: "OUT_FOR_DELIVERY",
+        service_tier: "Express",
+        customer_id: "cus-1",
+        customer_name: "Acme Retail",
+        created_at: new Date().toISOString(),
+        pickup_address: "Origin",
+        delivery_address: "Destination",
+        origin_city: "Origin",
+        destination_city: "Destination",
+        package_weight_kg: 4.2,
+        package_quantity: 1,
+        pricing_amount: 22.5,
+        timeline: [],
+        documents: [],
+        notes: []
+      };
 
 type PodResponse = {
   podAssets: Array<{ id: string; type: string; fileUrl: string; capturedAt?: string }>;
@@ -45,8 +111,8 @@ type PodResponse = {
 };
 
 async function fetchShipment(id: string): Promise<ShipmentDetail> {
-  const response = await api.get<ShipmentDetail>(`/v1/shipments/${id}`);
-  return response.data;
+  const response = await api.get(`/v1/shipments/${id}`);
+  return normalizeShipmentDetail(response.data, id);
 }
 
 export function ShipmentDetailPage() {
@@ -65,7 +131,7 @@ export function ShipmentDetailPage() {
 
   const podQuery = useQuery({
     queryKey: ["shipment-pod", id],
-    queryFn: async () => (await api.get<PodResponse>(`/v1/shipments/${id}/pod`)).data,
+    queryFn: async () => normalizePodResponse((await api.get<PodResponse>(`/v1/shipments/${id}/pod`)).data),
     enabled: shipment.status === "DELIVERED"
   });
 
@@ -164,7 +230,7 @@ export function ShipmentDetailPage() {
                       podAssets={podQuery.data?.podAssets ?? []}
                       recipientName={podQuery.data?.recipientName ?? shipment.customer_name}
                       deliveredAt={podQuery.data?.deliveredAt}
-                      capturedBy={podQuery.data?.capturedBy ?? shipment.assigned_driver_name ?? "Driver"}
+                      capturedBy={podQuery.data?.capturedBy ?? shipment.assigned_driver_name ?? "Field Operator"}
                     />
                   ) : null}
                 </div>

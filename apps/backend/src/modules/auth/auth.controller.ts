@@ -38,6 +38,32 @@ export const authController = {
       reply.status(401).send({ error: 'Invalid credentials' });
     }
   },
+  emailLinkRequest: async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = request.body as { email?: string };
+    if (!payload?.email) {
+      return reply.status(400).send({ error: 'email is required' });
+    }
+
+    try {
+      const result = await authService.requestEmailLink(payload as { email: string }, request.server.prisma, request.tenant?.id);
+      reply.send(result);
+    } catch {
+      reply.status(400).send({ error: 'Unable to issue email sign-in link' });
+    }
+  },
+  emailLinkConsume: async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = request.body as { email?: string; token?: string };
+    if (!payload?.email || !payload?.token) {
+      return reply.status(400).send({ error: 'email and token are required' });
+    }
+
+    try {
+      const result = await authService.consumeEmailLink(payload as { email: string; token: string }, request.server.prisma);
+      reply.send(result);
+    } catch {
+      reply.status(401).send({ error: 'Invalid email-link token' });
+    }
+  },
   refresh: async (request: FastifyRequest, reply: FastifyReply) => {
     const payload = refreshSchema.parse(request.body);
     try {

@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AssignDriverModal } from "@/components/shipments/AssignDriverModal";
 import { ShipmentCard } from "@/components/shipments/ShipmentCard";
+import { ShipmentWorkspacePanel } from "@/components/shipments/ShipmentWorkspacePanel";
 import {
   ShipmentFilterBar,
   type ShipmentFilters
@@ -16,6 +17,8 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
+import { defaultRouteOptions, loadRouteOptions, type TenantRouteOption } from "@/lib/route-options";
+import { normalizeShipmentListResponse } from "@/lib/shipment-normalizers";
 import { getValidNextShipmentStates } from "@/lib/shipment-state";
 import { useAppStore } from "@/stores/useAppStore";
 import type { ShipmentState } from "@/types/domain";
@@ -30,6 +33,11 @@ const initialFilters: ShipmentFilters = {
   customer: "all",
   route: "all"
 };
+
+function buildFilterSearchParamsKey(searchParams: URLSearchParams) {
+  const filterKeys = ["search", "status", "dateFrom", "dateTo", "datePreset", "driver", "customer", "route"];
+  return filterKeys.map((key) => `${key}:${searchParams.get(key) ?? ""}`).join("|");
+}
 
 function buildFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFilters {
   const datePreset = searchParams.get("datePreset");
@@ -68,6 +76,8 @@ const fallbackShipments: ShipmentListItem[] = Array.from({ length: 42 }).map((_,
   customer_name: index % 2 === 0 ? "Acme Retail" : "Northline Freight",
   origin: index % 2 === 0 ? "Lagos" : "Abuja",
   destination: index % 2 === 0 ? "London" : "Manchester",
+  route_id: defaultRouteOptions[index % defaultRouteOptions.length]?.id,
+  route_name: defaultRouteOptions[index % defaultRouteOptions.length]?.label,
   driver_name: index % 3 === 0 ? "Amina Yusuf" : index % 4 === 0 ? undefined : "Daniel Cole",
   service_tier: index % 3 === 0 ? "Same Day" : index % 2 === 0 ? "Express" : "Standard",
   created_at: new Date(Date.now() - index * 1000 * 60 * 60 * 4).toISOString(),
@@ -80,32 +90,52 @@ const fallbackDrivers: DriverListItem[] = [
   { id: "drv-3", name: "Lara Okafor", current_load: 0, status: "offline" }
 ];
 
+const seededDeliveredShipment: ShipmentListItem = {
+  id: "seed-delivered-shipment",
+  tracking_number: "FWD-2026-DEL-0001",
+  status: "DELIVERED",
+  customer_name: "Acme Retail",
+  origin: "Lagos",
+  destination: "London",
+  route_id: "route-london-c",
+  route_name: "London Route C",
+  driver_name: "Amina Yusuf",
+  service_tier: "Express",
+  created_at: new Date("2026-04-17T10:30:00.000Z").toISOString(),
+  reference: "JOB-DELIVERED-0001"
+};
+
 async function fetchShipments(): Promise<ShipmentListItem[]> {
-  const response = await api.get<ShipmentListItem[] | { data: ShipmentListItem[] }>("/v1/shipments");
-  const payload = response.data;
-  return Array.isArray(payload) ? payload : payload.data ?? [];
+  const response = await api.get("/v1/shipments");
+  return normalizeShipmentListResponse(response.data);
 }
 
 export function ShipmentsListPage() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAppStore((state) => state.user);
   const addToast = useAppStore((state) => state.addToast);
 
-  const searchParamsKey = searchParams.toString();
+  const filterSearchParamsKey = buildFilterSearchParamsKey(searchParams);
+  const selectedShipmentId = searchParams.get("selected");
   const [filters, setFilters] = useState<ShipmentFilters>(() =>
-    searchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters
+    filterSearchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState("25");
   const [assignDriverOpen, setAssignDriverOpen] = useState(false);
+  const [routeOptions, setRouteOptions] = useState<TenantRouteOption[]>(() => loadRouteOptions());
 
   useEffect(() => {
-    setFilters(searchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters);
+    setFilters(filterSearchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters);
     setPage(1);
     setSelectedIds([]);
-  }, [searchParams, searchParamsKey]);
+  }, [searchParams, filterSearchParamsKey]);
+
+  useEffect(() => {
+    setRouteOptions(loadRouteOptions());
+  }, []);
 
   const shipmentsQuery = useQuery({
     queryKey: ["shipments-list"],
@@ -114,7 +144,12 @@ export function ShipmentsListPage() {
     retry: 1
   });
 
-  const allShipments = shipmentsQuery.data ?? fallbackShipments;
+  const allShipments =
+    shipmentsQuery.data === undefined
+      ? fallbackShipments
+      : shipmentsQuery.data.length > 0
+        ? shipmentsQuery.data
+        : [seededDeliveredShipment];
 
   const filteredShipments = useMemo(() => {
     return allShipments.filter((shipment) => {
@@ -128,6 +163,10 @@ export function ShipmentsListPage() {
           : filters.driver === "assigned"
             ? Boolean(shipment.driver_name)
             : !shipment.driver_name;
+      const byRoute =
+        filters.route === "all"
+          ? true
+          : shipment.route_id === filters.route || shipment.route_name === filters.route;
 
       const created = new Date(shipment.created_at).getTime();
       const from = filters.dateFrom ? new Date(filters.dateFrom).getTime() : -Infinity;
@@ -136,7 +175,7 @@ export function ShipmentsListPage() {
         : Infinity;
       const byDate = created >= from && created <= to;
 
-      return bySearch && byStatus && byDriver && byDate;
+      return bySearch && byStatus && byDriver && byRoute && byDate;
     });
   }, [allShipments, filters]);
 
@@ -148,6 +187,10 @@ export function ShipmentsListPage() {
   const selectedShipments = useMemo(
     () => filteredShipments.filter((shipment) => selectedIds.includes(shipment.id)),
     [filteredShipments, selectedIds]
+  );
+  const selectedShipment = useMemo(
+    () => allShipments.find((shipment) => shipment.id === selectedShipmentId),
+    [allShipments, selectedShipmentId]
   );
 
   const sharedNextStates = useMemo(() => {
@@ -176,6 +219,18 @@ export function ShipmentsListPage() {
 
   const hasSelection = selectedIds.length > 0;
 
+  const openShipmentWorkspace = (shipment: ShipmentListItem) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("selected", shipment.id);
+    setSearchParams(next, { replace: true });
+  };
+
+  const closeShipmentWorkspace = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("selected");
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <PageShell
       title="Shipments"
@@ -183,7 +238,8 @@ export function ShipmentsListPage() {
         <Button onClick={() => navigate("/shipments/create")}>Create Shipment</Button>
       }
     >
-      <div className="space-y-4">
+      <div className={`grid gap-6 ${selectedShipmentId ? "lg:grid-cols-[minmax(0,1fr)_28rem]" : ""}`}>
+        <div className="space-y-4">
         <ShipmentFilterBar
           filters={filters}
           onChange={(nextFilters) => {
@@ -192,6 +248,7 @@ export function ShipmentsListPage() {
             setSelectedIds([]);
           }}
           role={user?.role}
+          routeOptions={routeOptions}
         />
 
         {hasSelection ? (
@@ -204,7 +261,7 @@ export function ShipmentsListPage() {
                 leftIcon={<UserPlus size={14} />}
                 onClick={() => setAssignDriverOpen(true)}
               >
-                Assign driver
+                Assign field operator
               </Button>
               <Button
                 variant="secondary"
@@ -257,8 +314,10 @@ export function ShipmentsListPage() {
               <ShipmentTable
                 shipments={paginatedShipments}
                 selectedIds={selectedIds}
+                activeShipmentId={selectedShipmentId}
                 onToggleSelect={toggleSelect}
                 onToggleSelectAll={toggleSelectAll}
+                onOpenShipment={openShipmentWorkspace}
               />
             </div>
 
@@ -309,6 +368,15 @@ export function ShipmentsListPage() {
             </div>
           </>
         )}
+        </div>
+
+        {selectedShipmentId ? (
+          <ShipmentWorkspacePanel
+            shipmentId={selectedShipmentId}
+            fallbackShipment={selectedShipment}
+            onClose={closeShipmentWorkspace}
+          />
+        ) : null}
       </div>
 
       <AssignDriverModal
@@ -319,7 +387,7 @@ export function ShipmentsListPage() {
           await new Promise((resolve) => window.setTimeout(resolve, 450));
           const driver = fallbackDrivers.find((item) => item.id === driverId);
           addToast({
-            title: `Assigned ${selectedIds.length} shipment(s) to ${driver?.name ?? "driver"}`,
+            title: `Assigned ${selectedIds.length} shipment(s) to ${driver?.name ?? "field operator"}`,
             variant: "success"
           });
           setSelectedIds([]);

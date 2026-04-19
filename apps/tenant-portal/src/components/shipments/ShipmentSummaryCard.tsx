@@ -42,7 +42,7 @@ export function ShipmentSummaryCard({
           }
           items={[
             { key: "status", label: "Update Status", onSelect: onUpdateStatus },
-            { key: "assign", label: "Assign Driver", onSelect: onAssignDriver },
+            { key: "assign", label: "Assign Field Operator", onSelect: onAssignDriver },
             { key: "print", label: "Print Label", onSelect: onPrintLabel },
             { key: "cancel", label: "Cancel Shipment", onSelect: onCancelShipment, destructive: true }
           ]}

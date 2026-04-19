@@ -31,7 +31,7 @@ const statusDescriptions: Record<ShipmentState, string> = {
   PROCESSING: "Shipment is being prepared and validated.",
   PICKED_UP: "Shipment has been collected from origin.",
   IN_TRANSIT: "Shipment is moving between hubs or routes.",
-  OUT_FOR_DELIVERY: "Shipment is with driver for final delivery.",
+  OUT_FOR_DELIVERY: "Shipment is with the field operator for final delivery.",
   DELIVERED: "Shipment was delivered to recipient.",
   FAILED_DELIVERY: "Delivery attempt failed and requires next action.",
   RETURNED: "Shipment is being returned to sender.",

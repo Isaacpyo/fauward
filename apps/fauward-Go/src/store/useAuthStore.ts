@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { useFieldDataStore } from "@/store/useFieldDataStore";
-import { useSyncStore } from "@/store/useSyncStore";
+import { fieldApi } from "@/lib/api/fieldApi";
+import { ApiError, clearStoredTenantSlug, setStoredTenantSlug } from "@/lib/api/http";
 import type { FieldUser } from "@/types/field";
 
 type SignInResult = {
@@ -11,116 +11,167 @@ type SignInResult = {
 
 type AuthStore = {
   isAuthenticated: boolean;
+  isRestoringSession: boolean;
+  accessToken?: string;
+  tenantSlug?: string;
   user?: FieldUser;
   emailLinkTarget?: string;
+  emailLinkToken?: string;
   signIn: (email: string, password: string) => Promise<SignInResult>;
   requestEmailSignInLink: (email: string) => Promise<SignInResult>;
-  signInWithEmailLink: () => Promise<SignInResult>;
+  signInWithEmailLink: (token?: string) => Promise<SignInResult>;
+  restoreSession: () => Promise<void>;
   signOut: () => void;
 };
 
-const demoCredentials = {
-  email: "ops@fauward.test",
-  password: "246810",
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof ApiError || error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
 };
 
-const baseUser: Omit<FieldUser, "email"> = {
-  id: "field-user-1",
-  name: "Ife Johnson",
-  role: "Field operator",
-  tenantLabel: "Fauward Lagos",
-  vehicleLabel: "FG-2142",
-  shiftLabel: "Morning loop",
-};
-
-const pause = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-const buildUser = (email: string): FieldUser => ({
-  ...baseUser,
-  email,
+const clearAuthState = () => ({
+  isAuthenticated: false,
+  accessToken: undefined,
+  tenantSlug: undefined,
+  user: undefined,
+  emailLinkTarget: undefined,
+  emailLinkToken: undefined,
 });
 
 export const useAuthStore = create<AuthStore>()(
   persist(
     (set, get) => ({
       isAuthenticated: false,
+      isRestoringSession: false,
+      accessToken: undefined,
+      tenantSlug: undefined,
       user: undefined,
       emailLinkTarget: undefined,
+      emailLinkToken: undefined,
       signIn: async (email, password) => {
-        await pause(350);
+        try {
+          const normalizedEmail = email.trim().toLowerCase();
+          const session = await fieldApi.login(normalizedEmail, password);
+          setStoredTenantSlug(session.tenantSlug);
 
-        const normalizedEmail = email.trim().toLowerCase();
+          set({
+            isAuthenticated: true,
+            accessToken: session.accessToken,
+            tenantSlug: session.tenantSlug,
+            user: session.user,
+            emailLinkTarget: undefined,
+            emailLinkToken: undefined,
+          });
 
-        if (normalizedEmail !== demoCredentials.email || password !== demoCredentials.password) {
+          return { ok: true };
+        } catch (error) {
           return {
             ok: false,
-            message: "The email or password is incorrect.",
+            message: getErrorMessage(error, "Unable to sign in."),
           };
         }
-
-        useFieldDataStore.getState().seedDemoData();
-
-        set({
-          isAuthenticated: true,
-          user: buildUser(normalizedEmail),
-          emailLinkTarget: undefined,
-        });
-
-        return { ok: true };
       },
       requestEmailSignInLink: async (email) => {
-        await pause(350);
+        try {
+          const normalizedEmail = email.trim().toLowerCase();
 
-        const normalizedEmail = email.trim().toLowerCase();
+          if (!normalizedEmail || !normalizedEmail.includes("@")) {
+            return {
+              ok: false,
+              message: "Enter a valid email address to receive a sign-in link.",
+            };
+          }
 
-        if (!normalizedEmail || !normalizedEmail.includes("@")) {
+          const result = await fieldApi.requestEmailLink(normalizedEmail);
+
+          if (result.tenantSlug) {
+            setStoredTenantSlug(result.tenantSlug);
+          }
+
+          set({
+            emailLinkTarget: normalizedEmail,
+            emailLinkToken: result.linkToken,
+            tenantSlug: result.tenantSlug ?? get().tenantSlug,
+          });
+
+          return { ok: true };
+        } catch (error) {
           return {
             ok: false,
-            message: "Enter a valid email address to receive a sign-in link.",
+            message: getErrorMessage(error, "Unable to send the sign-in link."),
           };
         }
-
-        set({
-          emailLinkTarget: normalizedEmail,
-        });
-
-        return { ok: true };
       },
-      signInWithEmailLink: async () => {
-        await pause(350);
+      signInWithEmailLink: async (token) => {
+        try {
+          const pendingEmail = get().emailLinkTarget;
 
-        const pendingEmail = get().emailLinkTarget;
+          if (!pendingEmail) {
+            return {
+              ok: false,
+              message: "Request a sign-in link first.",
+            };
+          }
 
-        if (!pendingEmail) {
+          const session = await fieldApi.consumeEmailLink(pendingEmail, token ?? get().emailLinkToken);
+          setStoredTenantSlug(session.tenantSlug);
+
+          set({
+            isAuthenticated: true,
+            accessToken: session.accessToken,
+            tenantSlug: session.tenantSlug,
+            user: session.user,
+            emailLinkTarget: undefined,
+            emailLinkToken: undefined,
+          });
+
+          return { ok: true };
+        } catch (error) {
           return {
             ok: false,
-            message: "Request a sign-in link first.",
+            message: getErrorMessage(error, "Unable to sign in with the emailed link."),
           };
         }
+      },
+      restoreSession: async () => {
+        const accessToken = get().accessToken;
 
-        useFieldDataStore.getState().seedDemoData();
+        if (!accessToken) {
+          return;
+        }
 
-        set({
-          isAuthenticated: true,
-          user: buildUser(pendingEmail),
-          emailLinkTarget: undefined,
-        });
+        set({ isRestoringSession: true });
 
-        return { ok: true };
+        try {
+          const user = await fieldApi.getMe(accessToken);
+
+          set({
+            isAuthenticated: true,
+            user,
+          });
+        } catch {
+          clearStoredTenantSlug();
+          set(clearAuthState());
+        } finally {
+          set({ isRestoringSession: false });
+        }
       },
       signOut: () => {
-        useFieldDataStore.getState().resetFieldData();
-        useSyncStore.getState().reset();
+        const accessToken = get().accessToken;
 
-        set({
-          isAuthenticated: false,
-          user: undefined,
-          emailLinkTarget: undefined,
-        });
+        if (accessToken) {
+          void fieldApi.logout(accessToken).catch(() => undefined);
+        }
+
+        clearStoredTenantSlug();
+        set(clearAuthState());
       },
     }),
     {
-      name: "fauward-go-auth-v1",
+      name: "fauward-go-auth-v2",
       storage: createJSONStorage(() => localStorage),
     },
   ),

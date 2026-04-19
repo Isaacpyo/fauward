@@ -26,6 +26,16 @@ export function signRefreshToken(payload: JwtPayload) {
   });
 }
 
+export function signEmailLinkToken(payload: JwtPayload) {
+  return jwt.sign({ ...payload, purpose: 'email_link' }, config.jwt.accessSecret, {
+    expiresIn: '15m'
+  });
+}
+
+export function verifyAccessToken(token: string): JwtPayload & { purpose?: string } {
+  return jwt.verify(token, config.jwt.accessSecret) as JwtPayload & { purpose?: string };
+}
+
 export function verifyRefreshToken(token: string): JwtPayload {
   return jwt.verify(token, config.jwt.refreshSecret) as JwtPayload;
 }

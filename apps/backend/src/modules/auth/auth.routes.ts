@@ -4,6 +4,8 @@ import { authController } from './auth.controller.js';
 export async function registerAuthRoutes(app: FastifyInstance) {
   app.post('/api/v1/auth/register', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, authController.register);
   app.post('/api/v1/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, authController.login);
+  app.post('/api/v1/auth/email-link/request', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, authController.emailLinkRequest);
+  app.post('/api/v1/auth/email-link/consume', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, authController.emailLinkConsume);
   app.post('/api/v1/auth/refresh', authController.refresh);
   app.post('/api/v1/auth/logout', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, authController.logout);
   app.post('/api/v1/auth/forgot-password', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, authController.forgotPassword);

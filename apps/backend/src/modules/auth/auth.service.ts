@@ -1,7 +1,14 @@
 import type { PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
-import { signAccessToken, signRefreshToken, type JwtPayload, verifyRefreshToken } from '../../shared/utils/jwt.js';
+import {
+  signAccessToken,
+  signEmailLinkToken,
+  signRefreshToken,
+  type JwtPayload,
+  verifyAccessToken,
+  verifyRefreshToken
+} from '../../shared/utils/jwt.js';
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
 
@@ -19,6 +26,15 @@ type LoginPayload = {
 
 type RefreshPayload = {
   refreshToken: string;
+};
+
+type EmailLinkRequestPayload = {
+  email: string;
+};
+
+type EmailLinkConsumePayload = {
+  email: string;
+  token: string;
 };
 
 function slugify(input: string) {
@@ -327,6 +343,97 @@ export const authService = {
     return {
       accessToken: nextAccessToken,
       refreshToken: nextRefreshToken,
+      tenantSlug: tenant.slug,
+      tenantId: tenant.id
+    };
+  },
+  requestEmailLink: async (payload: EmailLinkRequestPayload, prisma: PrismaClient, tenantId?: string) => {
+    const email = payload.email.toLowerCase().trim();
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        isActive: true,
+        ...(tenantId ? { tenantId } : {})
+      },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        tenantId: true,
+        tenant: {
+          select: {
+            id: true,
+            slug: true,
+            plan: true
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return { success: true };
+    }
+
+    const linkToken = signEmailLinkToken(
+      buildJwtPayload(
+        { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
+        { slug: user.tenant.slug, plan: user.tenant.plan }
+      )
+    );
+
+    await prisma.notificationLog.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.id,
+        channel: 'EMAIL',
+        event: 'field_email_link',
+        status: 'QUEUED',
+        providerRef: linkToken
+      }
+    });
+
+    return {
+      success: true,
+      linkToken,
+      tenantSlug: user.tenant.slug
+    };
+  },
+  consumeEmailLink: async (payload: EmailLinkConsumePayload, prisma: PrismaClient) => {
+    const email = payload.email.toLowerCase().trim();
+    const decoded = verifyAccessToken(payload.token);
+
+    if (decoded.purpose !== 'email_link' || decoded.email.toLowerCase() !== email) {
+      throw new Error('Invalid email-link token');
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: decoded.sub, email, tenantId: decoded.tenantId, isActive: true }
+    });
+    const tenant = await prisma.tenant.findUnique({ where: { id: decoded.tenantId } });
+
+    if (!user || !tenant) {
+      throw new Error('Invalid email-link token');
+    }
+
+    const jwtPayload = buildJwtPayload(
+      { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
+      { slug: tenant.slug, plan: tenant.plan }
+    );
+
+    const accessToken = signAccessToken(jwtPayload);
+    const refreshToken = signRefreshToken(jwtPayload);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      }
+    });
+
+    return {
+      accessToken,
+      refreshToken,
       tenantSlug: tenant.slug,
       tenantId: tenant.id
     };

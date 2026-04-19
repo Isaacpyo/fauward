@@ -379,7 +379,7 @@ export function IntegrationsTab() {
         <Textarea
           value={config.instructions ?? ""}
           onChange={(event) => updateProvider(provider, { instructions: event.target.value })}
-          placeholder="Instructions for drivers and finance on COD settlement handling"
+          placeholder="Instructions for field operators and finance on COD settlement handling"
         />
       </div>
     );

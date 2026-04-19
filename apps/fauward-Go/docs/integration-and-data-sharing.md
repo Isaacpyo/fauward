@@ -152,13 +152,16 @@ Use events/webhooks/message streams for:
 
 Implemented today:
 
+- backend auth integration for password and email-link session consumption
+- backend workload bootstrap for assigned jobs, routes, and stop details
 - local workflow-stage model
 - local queue model
 - local verification, confirmation, location, and exception capture
+- sync batch submission with idempotency and event metadata
 
 Not implemented yet:
 
-- real API integration
-- real event publishing
-- shared operational data contracts across services
+- durable attachment upload pipeline
+- real event publishing confirmation from downstream systems
+- fully standardized shared operational data contracts across services
 - attachment pipeline

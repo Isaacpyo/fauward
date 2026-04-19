@@ -51,7 +51,7 @@ export function DispatchPage() {
       const driverName = row.driver
         ? [row.driver.user?.firstName, row.driver.user?.lastName].filter(Boolean).join(" ") ||
           row.driver.user?.email ||
-          "Assigned Driver"
+          "Assigned Field Operator"
         : "Unassigned";
 
       if (!byDriver.has(driverId)) {
@@ -72,7 +72,7 @@ export function DispatchPage() {
   }, [query.data]);
 
   return (
-    <PageShell title="Dispatch Board" description="Operational view of active shipments grouped by driver.">
+    <PageShell title="Dispatch Board" description="Operational view of active shipments grouped by field operator.">
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="max-w-[220px]" />

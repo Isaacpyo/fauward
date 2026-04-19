@@ -12,7 +12,6 @@ import {
   FinancePage,
   LoginPage,
   NotFoundPage,
-  PlaceholderCustomerPage,
   PublicBookingPage,
   RegisterPage,
   RoutesPage,
@@ -50,6 +49,7 @@ import { CurrencyRatesPage } from "@/pages/pricing/CurrencyRatesPage";
 import { PricingSettingsPage } from "@/pages/pricing/PricingSettingsPage";
 import { PricingCalculatorPage } from "@/pages/pricing/PricingCalculatorPage";
 import { DispatchPage } from "@/pages/dispatch/DispatchPage";
+import { FauwardGoPage } from "@/pages/operations/FauwardGoPage";
 
 function AuthGuard() {
   const location = useLocation();
@@ -101,15 +101,7 @@ export function AppRouter() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/shipments" element={<ShipmentsListPage />} />
-          <Route
-            path="/shipments/fauward-go"
-            element={
-              <PlaceholderCustomerPage
-                title="Fauward Go"
-                description="Operational launcher for the field app experience, driver workflows, and mobile execution surfaces."
-              />
-            }
-          />
+          <Route path="/fauward-go" element={<FauwardGoPage />} />
           <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
           <Route path="/shipments/create" element={<CreateShipmentPage />} />
           <Route path="/routes" element={<RoutesPage />} />

@@ -27,6 +27,8 @@ const PUBLIC_PATHS = new Set([
   '/health',
   '/api/v1/auth/register',
   '/api/v1/auth/login',
+  '/api/v1/auth/email-link/request',
+  '/api/v1/auth/email-link/consume',
   '/api/v1/auth/refresh',
   '/api/v1/auth/mfa/validate',
   '/api/v1/auth/forgot-password',

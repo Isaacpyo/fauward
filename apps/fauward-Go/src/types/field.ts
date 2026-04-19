@@ -27,12 +27,14 @@ export type PendingMutationState = "pending" | "syncing" | "failed" | "synced";
 
 export type FieldUser = {
   id: string;
+  tenantId: string;
   name: string;
   email: string;
   role: string;
   tenantLabel: string;
   vehicleLabel: string;
   shiftLabel: string;
+  permissions: string[];
 };
 
 export type StopVerificationCode = {

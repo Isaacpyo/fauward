@@ -59,14 +59,14 @@ export function AssignDriverModal({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Assign driver"
-      description="Select a driver and confirm assignment."
+      title="Assign field operator"
+      description="Select a field operator and confirm assignment."
     >
       <div className="space-y-4">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search drivers..."
+          placeholder="Search field operators..."
           className="pl-10"
         />
         <Search size={16} className="pointer-events-none -mt-[43px] ml-3 text-gray-400" />
@@ -108,7 +108,7 @@ export function AssignDriverModal({
 
         {currentDriverId && selectedDriver && selectedDriver.id !== currentDriverId ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            This shipment is currently assigned to {currentDriverName ?? "a driver"}. Reassign?
+            This shipment is currently assigned to {currentDriverName ?? "a field operator"}. Reassign?
           </div>
         ) : null}
 

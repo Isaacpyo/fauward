@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
 
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/Button";
@@ -19,8 +18,10 @@ import type { ShipmentState } from "@/types/domain";
 type ShipmentTableProps = {
   shipments: ShipmentListItem[];
   selectedIds: string[];
+  activeShipmentId?: string | null;
   onToggleSelect: (id: string, value: boolean) => void;
   onToggleSelectAll: (value: boolean) => void;
+  onOpenShipment: (shipment: ShipmentListItem) => void;
 };
 
 type DriverOption = {
@@ -50,8 +51,14 @@ async function fetchDrivers() {
   return response.data.drivers;
 }
 
-export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggleSelectAll }: ShipmentTableProps) {
-  const navigate = useNavigate();
+export function ShipmentTable({
+  shipments,
+  selectedIds,
+  activeShipmentId,
+  onToggleSelect,
+  onToggleSelectAll,
+  onOpenShipment
+}: ShipmentTableProps) {
   const tenant = useTenantStore((state) => state.tenant);
   const allSelected = shipments.length > 0 && selectedIds.length === shipments.length;
   const queryClient = useQueryClient();
@@ -118,7 +125,7 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
           "Status",
           "Customer",
           "Origin -> Destination",
-          "Driver",
+          "Field Operator",
           "Service",
           "Created",
           "Actions"
@@ -137,7 +144,7 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
           const selected = selectedIds.includes(shipment.id);
           const canAssignInline = shipment.status === "PROCESSING" && !shipment.driver_name;
           return (
-            <TableRow key={shipment.id} selected={selected} onClick={() => navigate(`/shipments/${shipment.id}`)}>
+            <TableRow key={shipment.id} selected={selected || activeShipmentId === shipment.id} onClick={() => onOpenShipment(shipment)}>
               <TableCell>
                 <input
                   type="checkbox"
@@ -147,9 +154,16 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
                 />
               </TableCell>
               <TableCell className="font-mono">
-                <Link className="text-[var(--tenant-primary)] hover:underline" to={`/shipments/${shipment.id}`} onClick={(event) => event.stopPropagation()}>
+                <button
+                  type="button"
+                  className="text-[var(--tenant-primary)] hover:underline"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenShipment(shipment);
+                  }}
+                >
                   {shipment.tracking_number}
-                </Link>
+                </button>
               </TableCell>
               <TableCell>
                 <button
@@ -175,7 +189,7 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
                       value={driverToAssign}
                       onValueChange={setDriverToAssign}
                       options={[
-                        { label: "Assign driver", value: "" },
+                        { label: "Assign field operator", value: "" },
                         ...drivers.map((driver) => ({
                           label:
                             [driver.user.firstName, driver.user.lastName].filter(Boolean).join(" ") ||
@@ -208,7 +222,7 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
                     </button>
                   }
                   items={[
-                    { key: "open", label: "View detail", onSelect: () => navigate(`/shipments/${shipment.id}`) },
+                    { key: "open", label: "Open workspace", onSelect: () => onOpenShipment(shipment) },
                     {
                       key: "status",
                       label: "Quick update status",
@@ -277,4 +291,3 @@ export function ShipmentTable({ shipments, selectedIds, onToggleSelect, onToggle
     </>
   );
 }
-

@@ -7,6 +7,8 @@ export type ShipmentListItem = {
   customer_name: string;
   origin: string;
   destination: string;
+  route_id?: string;
+  route_name?: string;
   driver_name?: string;
   service_tier: "Standard" | "Express" | "Same Day";
   created_at: string;

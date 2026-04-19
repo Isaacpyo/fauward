@@ -1,10 +1,11 @@
 import { useState, useTransition } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { useAuthStore } from "@/store/useAuthStore";
 
 export const LoginScreen = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const signIn = useAuthStore((state) => state.signIn);
   const requestEmailSignInLink = useAuthStore((state) => state.requestEmailSignInLink);
@@ -15,6 +16,7 @@ export const LoginScreen = () => {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const emailLinkToken = searchParams.get("token") ?? searchParams.get("code") ?? undefined;
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -52,7 +54,7 @@ export const LoginScreen = () => {
   };
 
   const handleEmailLinkSignIn = async () => {
-    const result = await signInWithEmailLink();
+    const result = await signInWithEmailLink(emailLinkToken);
 
     if (!result.ok) {
       setError(result.message ?? "Unable to sign in with the emailed link.");
@@ -127,6 +129,9 @@ export const LoginScreen = () => {
           <p className="text-sm leading-6 text-stone-600">
             A sign-in link is waiting for <span className="font-medium text-ink">{emailLinkTarget}</span>.
           </p>
+          {emailLinkToken ? (
+            <p className="text-sm leading-6 text-emerald-700">Email-link token detected. The backend consume endpoint will use it.</p>
+          ) : null}
           <button type="button" className="primary-btn w-full" onClick={() => void handleEmailLinkSignIn()} disabled={isPending}>
             Open emailed sign-in link
           </button>

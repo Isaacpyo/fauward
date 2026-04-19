@@ -4,31 +4,21 @@ Fauward Go is a mobile-first PWA for field execution across the shipment lifecyc
 
 ## Current state
 
-- gated sign-in flow with password and mocked email-link sign-in
+- gated sign-in flow with backend password auth and backend email-link consumption
 - home, jobs, settings, route, stop, verification, location, sync, POD, and support screens
 - white branded UI using Fauward Go assets and a simplified mobile layout
 - assigned job model that supports multiple workflow stages, not just pickup and delivery
-- local-first field store with seeded demo data and queued mutations
+- local-first field store with backend workload bootstrap and queued mutations
 - QR and barcode verification flow with camera support when `BarcodeDetector` is available
 - confirmation capture flow for stages that require recipient name, OTP, signature, and/or photo evidence
-- sync queue screen with queued, syncing, and synced mutation visibility
+- sync queue screen with queued, syncing, failed, and synced mutation visibility
+- authenticated sync batch replay to backend field endpoints with idempotency metadata
 
 ## What is still mocked
 
-- authentication is local demo auth, not backend auth
-- email-link sign-in is simulated in the client
-- field data is seeded locally
-- sync replay is mocked reconciliation
+- attachment upload is still metadata-only and does not push binary files yet
+- field contract adaptation is defensive because the backend response envelope is not fully fixed in the app docs
 - support calling is not configured yet
-
-## Local demo access
-
-The login UI no longer shows demo credentials, but the local demo auth still accepts:
-
-- email: `ops@fauward.test`
-- password: `246810`
-
-You can also use the mocked email-link sign-in path from the login screen.
 
 ## Run locally
 

@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm
+           focus:outline-none focus:ring-2 focus:ring-[#d80000]/30 focus:border-[#d80000];
+  }
+
+  .btn-brand {
+    @apply rounded-xl bg-[#d80000] px-5 py-3 text-sm font-semibold text-white
+           hover:bg-[#b80000] transition-colors disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+
+  .btn-outline {
+    @apply rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold
+           text-gray-700 hover:bg-gray-50 transition-colors;
+  }
+}

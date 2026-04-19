@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
+import { Textarea } from "@/components/ui/Textarea";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { PageShell } from "@/layouts/PageShell";
@@ -31,6 +32,7 @@ import { useTenantStore } from "@/stores/useTenantStore";
 import { createDevTestSession, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { loadRouteOptions, saveRouteOptions, type TenantRouteOption } from "@/lib/route-options";
 
 const shipmentsRows: ListRow[] = Array.from({ length: 28 }).map((_, index) => ({
   id: `TRK-${1000 + index}`,
@@ -179,8 +181,8 @@ export function ShipmentDetailPage() {
           <Table columns={["Step", "Timestamp", "Actor", "Notes"]} className="mt-4">
             {[
               ["PROCESSING", new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), "Dispatcher", "Validated manifest"],
-              ["PICKED_UP", new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), "Driver", "Collected from hub"],
-              ["IN_TRANSIT", new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), "Driver", "En route to destination"]
+              ["PICKED_UP", new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), "Field Operator", "Collected from hub"],
+              ["IN_TRANSIT", new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), "Field Operator", "En route to destination"]
             ].map((row) => (
               <TableRow key={row[0]}>
                 <TableCell>{row[0]}</TableCell>
@@ -227,20 +229,111 @@ export function CreateShipmentPage() {
 }
 
 export function RoutesPage() {
+  const [routeOptions, setRouteOptions] = useState<TenantRouteOption[]>(() => loadRouteOptions());
+  const [routeLabel, setRouteLabel] = useState("");
+  const [routeDescription, setRouteDescription] = useState("");
+
+  const createRouteOption = () => {
+    if (!routeLabel.trim()) {
+      return;
+    }
+
+    const normalizedSlug = routeLabel
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const nextRoutes = [
+      {
+        id: `route-${normalizedSlug || crypto.randomUUID()}`,
+        label: routeLabel.trim(),
+        description: routeDescription.trim() || "No route description provided yet."
+      },
+      ...routeOptions
+    ];
+
+    setRouteOptions(nextRoutes);
+    saveRouteOptions(nextRoutes);
+    setRouteLabel("");
+    setRouteDescription("");
+  };
+
+  const removeRouteOption = (routeId: string) => {
+    const nextRoutes = routeOptions.filter((route) => route.id !== routeId);
+    setRouteOptions(nextRoutes);
+    saveRouteOptions(nextRoutes);
+  };
+
   return (
     <PageShell title="Routes / Dispatch Board" description="View active routes, vehicle assignments, and dispatch priorities.">
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Assigned routes</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">18</p>
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Assigned routes</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">{routeOptions.length}</p>
+            <p className="mt-1 text-sm text-gray-500">Saved route options available for assignment and filtering.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Field Operators on duty</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">31</p>
+            <p className="mt-1 text-sm text-gray-500">Current dispatch staffing snapshot.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Pending assignments</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">4</p>
+            <p className="mt-1 text-sm text-gray-500">Loads still waiting for route planning.</p>
+          </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Drivers on duty</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">31</p>
-        </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Pending assignments</h3>
-          <p className="mt-2 text-3xl font-semibold text-gray-900">4</p>
+
+        <div className="grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
+          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Create route option</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Add a route with description</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Create reusable route options here. They will appear in the shipment tab route filter for planning and review.
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <Input
+                value={routeLabel}
+                onChange={(event) => setRouteLabel(event.target.value)}
+                placeholder="Route name"
+              />
+              <Textarea
+                value={routeDescription}
+                onChange={(event) => setRouteDescription(event.target.value)}
+                placeholder="Describe the route coverage, operating window, or assignment purpose"
+                className="min-h-[140px]"
+              />
+              <Button onClick={createRouteOption} disabled={!routeLabel.trim()} className="w-full">
+                Create route option
+              </Button>
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Route catalog</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Available route options</h2>
+            <div className="mt-4 space-y-3">
+              {routeOptions.map((route) => (
+                <article key={route.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">{route.label}</h3>
+                      <p className="mt-2 text-sm text-gray-600">{route.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="neutral">{route.id}</Badge>
+                      <Button size="sm" variant="ghost" onClick={() => removeRouteOption(route.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
       </div>
     </PageShell>
@@ -633,7 +726,7 @@ export function OnboardingPage() {
           { icon: Users, title: "Invite team", body: "Add managers, finance users, and staff." },
           { icon: Package, title: "Configure shipments", body: "Define states, labels, and notifications." },
           { icon: CreditCard, title: "Setup billing", body: "Choose plan and add payment details." },
-          { icon: Truck, title: "Add drivers", body: "Create driver profiles and route assignments." }
+          { icon: Truck, title: "Add field operators", body: "Create field operator profiles and route assignments." }
         ].map((item) => (
           <article key={item.title} className="rounded-lg border border-gray-200 bg-white p-4">
             <item.icon size={18} className="text-[var(--tenant-primary)]" />

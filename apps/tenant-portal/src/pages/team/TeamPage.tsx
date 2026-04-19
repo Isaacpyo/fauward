@@ -29,6 +29,14 @@ async function fetchUsers(): Promise<TeamUser[]> {
 
 const roleOptions = ["TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF", "TENANT_DRIVER"];
 
+function formatRoleLabel(role: string) {
+  if (role === "TENANT_DRIVER") {
+    return "Field Operator";
+  }
+
+  return role;
+}
+
 export function TeamPage() {
   const user = useAppStore((state) => state.user);
   const queryClient = useQueryClient();
@@ -124,7 +132,7 @@ export function TeamPage() {
           >
             {roleOptions.map((role) => (
               <option key={role} value={role}>
-                {role}
+                {formatRoleLabel(role)}
               </option>
             ))}
           </select>
@@ -144,7 +152,7 @@ export function TeamPage() {
             <TableRow key={user.id}>
               <TableCell>{user.fullName}</TableCell>
               <TableCell>{user.email}</TableCell>
-              <TableCell>{user.role}</TableCell>
+              <TableCell>{formatRoleLabel(user.role)}</TableCell>
               <TableCell>
                 <Badge variant={user.isActive ? "success" : "warning"}>
                   {user.isActive ? "Active" : "Suspended"}
@@ -164,7 +172,7 @@ export function TeamPage() {
                       key: "change-role",
                       label: "Change role",
                       onSelect: () => {
-                        const nextRole = window.prompt("Enter new role", user.role);
+                        const nextRole = window.prompt("Enter new role", formatRoleLabel(user.role));
                         if (!nextRole) return;
                         roleMutation.mutate({ id: user.id, role: nextRole });
                       }

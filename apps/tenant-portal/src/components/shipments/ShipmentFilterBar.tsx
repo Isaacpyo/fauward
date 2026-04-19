@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import type { TenantRouteOption } from "@/lib/route-options";
 import type { ShipmentState, TenantRole } from "@/types/domain";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -23,6 +24,7 @@ type ShipmentFilterBarProps = {
   filters: ShipmentFilters;
   onChange: (filters: ShipmentFilters) => void;
   role?: TenantRole;
+  routeOptions?: TenantRouteOption[];
 };
 
 const statusOptions: ShipmentState[] = [
@@ -41,7 +43,7 @@ const statusOptions: ShipmentState[] = [
 const isStaffRole = (role?: TenantRole) =>
   role === "TENANT_ADMIN" || role === "TENANT_MANAGER" || role === "TENANT_STAFF";
 
-export function ShipmentFilterBar({ filters, onChange, role }: ShipmentFilterBarProps) {
+export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }: ShipmentFilterBarProps) {
   const showStaffFilters = isStaffRole(role);
   const [searchInput, setSearchInput] = useState(filters.search);
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -128,7 +130,7 @@ export function ShipmentFilterBar({ filters, onChange, role }: ShipmentFilterBar
             value={filters.driver}
             onValueChange={(value) => onChange({ ...filters, driver: value })}
             options={[
-              { label: "All drivers", value: "all" },
+              { label: "All field operators", value: "all" },
               { label: "Assigned", value: "assigned" },
               { label: "Unassigned", value: "unassigned" }
             ]}
@@ -157,8 +159,10 @@ export function ShipmentFilterBar({ filters, onChange, role }: ShipmentFilterBar
             onValueChange={(value) => onChange({ ...filters, route: value })}
             options={[
               { label: "All routes", value: "all" },
-              { label: "Lagos Route A", value: "route-a" },
-              { label: "Abuja Route B", value: "route-b" }
+              ...routeOptions.map((route) => ({
+                label: route.label,
+                value: route.id
+              }))
             ]}
           />
         ) : (

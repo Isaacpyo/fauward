@@ -118,7 +118,7 @@ export function LiveMapPage() {
   }, [drivers, filteredShipments]);
 
   return (
-    <PageShell title="Live Map" description="Command center for active driver locations and in-flight deliveries.">
+    <PageShell title="Live Map" description="Command center for active field operator locations and in-flight deliveries.">
       <div className="grid gap-4 lg:grid-cols-[280px,1fr]">
         <aside className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
@@ -126,7 +126,7 @@ export function LiveMapPage() {
             value={driverFilter}
             onValueChange={setDriverFilter}
             options={[
-              { label: "All drivers", value: "all" },
+              { label: "All field operators", value: "all" },
               ...drivers.map((driver) => ({ label: driver.driverName, value: driver.driverName }))
             ]}
           />
@@ -142,7 +142,7 @@ export function LiveMapPage() {
 
           <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
             <p>Legend:</p>
-            <p className="mt-1">Blue markers: drivers</p>
+            <p className="mt-1">Blue markers: field operators</p>
             <p>Amber markers: active shipments</p>
           </div>
         </aside>
@@ -174,12 +174,12 @@ export function LiveMapPage() {
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">Live operations</p>
                   <h3 className="mt-2 text-2xl font-semibold">Map preview unavailable locally</h3>
                   <p className="mt-2 max-w-xl text-sm text-slate-200">
-                    Add `VITE_GOOGLE_MAPS_API_KEY` to enable the interactive map. The live dispatch summary below still shows active drivers and shipments.
+                    Add `VITE_GOOGLE_MAPS_API_KEY` to enable the interactive map. The live dispatch summary below still shows active field operators and shipments.
                   </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-300">Drivers online</p>
+                    <p className="text-xs uppercase tracking-wide text-slate-300">Field Operators online</p>
                     <p className="mt-2 text-3xl font-semibold">{drivers.length}</p>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-white/5 p-4">
@@ -199,7 +199,7 @@ export function LiveMapPage() {
 
           <div className="grid gap-4 xl:grid-cols-2">
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <h3 className="text-sm font-semibold text-gray-900">Driver fleet</h3>
+              <h3 className="text-sm font-semibold text-gray-900">Field operator fleet</h3>
               <div className="mt-3 space-y-3">
                 {drivers.map((driver) => (
                   <div key={driver.driverId} className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
