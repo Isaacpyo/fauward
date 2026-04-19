@@ -1,7 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
+import { getDevTestSession, getDevTestSessionSnapshot } from "@/lib/auth";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { applyTenantConfig } from "@/theme/tenant";
@@ -41,6 +42,8 @@ export function useTenant() {
   const setTenant = useTenantStore((state) => state.setTenant);
   const setAppTenant = useAppStore((state) => state.setTenant);
   const tenant = useTenantStore((state) => state.tenant);
+  const devSessionSnapshot = getDevTestSessionSnapshot();
+  const devSession = useMemo(() => getDevTestSession(), [devSessionSnapshot]);
 
   const query = useQuery({
     queryKey: ["tenant-config"],
@@ -48,6 +51,14 @@ export function useTenant() {
     staleTime: 5 * 60_000,
     retry: 2
   });
+
+  useEffect(() => {
+    if (devSession?.tenant && !tenant) {
+      setTenant(devSession.tenant);
+      setAppTenant(devSession.tenant);
+      applyTenantConfig(devSession.tenant);
+    }
+  }, [devSession, setAppTenant, setTenant, tenant]);
 
   useEffect(() => {
     if (query.data) {
@@ -69,15 +80,15 @@ export function useTenant() {
       return;
     }
 
-    if (query.isError && !tenant) {
+    if (query.isError && !tenant && !devSession?.tenant) {
       setTenant(fallbackTenant);
       setAppTenant(fallbackTenant);
       applyTenantConfig(fallbackTenant);
     }
-  }, [query.data, query.isError, setAppTenant, setTenant, tenant]);
+  }, [devSession, query.data, query.isError, setAppTenant, setTenant, tenant]);
 
   useEffect(() => {
-    if (!query.isLoading || query.data || tenant) {
+    if (!query.isLoading || query.data || tenant || devSession?.tenant) {
       return;
     }
 
@@ -88,7 +99,7 @@ export function useTenant() {
     }, 1500);
 
     return () => window.clearTimeout(timer);
-  }, [query.data, query.isLoading, setAppTenant, setTenant, tenant]);
+  }, [devSession, query.data, query.isLoading, setAppTenant, setTenant, tenant]);
 
-  return { ...query, tenant: query.data ?? tenant };
+  return { ...query, tenant: query.data ?? tenant ?? devSession?.tenant ?? null };
 }

@@ -16,9 +16,17 @@ type SelectProps = {
   className?: string;
 };
 
+const EMPTY_SENTINEL = "__fw_empty__";
+
 export function Select({ value, onValueChange, options, placeholder = "Select", className }: SelectProps) {
+  const hasEmptyOption = options.some((option) => option.value === "");
+  const mappedValue = value === "" && hasEmptyOption ? EMPTY_SENTINEL : value;
+
   return (
-    <RadixSelect.Root value={value} onValueChange={onValueChange}>
+    <RadixSelect.Root
+      value={mappedValue}
+      onValueChange={(nextValue) => onValueChange(nextValue === EMPTY_SENTINEL ? "" : nextValue)}
+    >
       <RadixSelect.Trigger
         className={cn(
           "inline-flex h-11 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900",
@@ -37,7 +45,7 @@ export function Select({ value, onValueChange, options, placeholder = "Select", 
             {options.map((option) => (
               <RadixSelect.Item
                 key={option.value}
-                value={option.value}
+                value={option.value === "" ? EMPTY_SENTINEL : option.value}
                 className="relative flex cursor-pointer items-center rounded-md py-2 pl-8 pr-3 text-sm text-gray-700 outline-none hover:bg-gray-100"
               >
                 <RadixSelect.ItemIndicator className="absolute left-2">

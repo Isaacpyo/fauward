@@ -4,6 +4,17 @@ import { domainService } from './domain.service.js';
 import { planService } from './plan.service.js';
 import { usageService } from './usage.service.js';
 
+function serializePaymentIntegrations(
+  paymentGatewayKey?: string,
+  paymentIntegrations?: unknown
+) {
+  if (paymentIntegrations !== undefined) {
+    return JSON.stringify(paymentIntegrations);
+  }
+
+  return paymentGatewayKey;
+}
+
 export const tenantService = {
   getCurrentTenant: async (req: FastifyRequest) => {
     const tenant = req.tenant;
@@ -18,9 +29,26 @@ export const tenantService = {
     if (!tenant) throw new Error('Tenant context required');
     return brandingService.updateBranding(req.server.prisma, tenant.id, payload);
   },
-  updateSettings: async (req: FastifyRequest, payload: { timezone?: string; currency?: string; notificationEmail?: string; smsEnabled?: boolean; paymentGatewayKey?: string }) => {
+  updateSettings: async (
+    req: FastifyRequest,
+    payload: {
+      timezone?: string;
+      currency?: string;
+      notificationEmail?: string;
+      smsEnabled?: boolean;
+      paymentGateway?: string;
+      paymentGatewayKey?: string;
+      paymentIntegrations?: unknown;
+    }
+  ) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
+
+    const serializedPaymentIntegrations = serializePaymentIntegrations(
+      payload.paymentGatewayKey,
+      payload.paymentIntegrations
+    );
+
     return req.server.prisma.tenantSettings.upsert({
       where: { tenantId: tenant.id },
       create: {
@@ -29,14 +57,16 @@ export const tenantService = {
         currency: payload.currency ?? tenant.defaultCurrency,
         notificationEmail: payload.notificationEmail,
         smsEnabled: payload.smsEnabled ?? false,
-        paymentGatewayKey: payload.paymentGatewayKey
+        paymentGateway: payload.paymentGateway ?? 'STRIPE',
+        paymentGatewayKey: serializedPaymentIntegrations
       },
       update: {
         timezone: payload.timezone,
         currency: payload.currency,
         notificationEmail: payload.notificationEmail,
         smsEnabled: payload.smsEnabled,
-        paymentGatewayKey: payload.paymentGatewayKey
+        paymentGateway: payload.paymentGateway,
+        paymentGatewayKey: serializedPaymentIntegrations
       }
     });
   },

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
@@ -25,6 +26,25 @@ type ReturnItem = {
   };
 };
 
+const fallbackReturns: ReturnItem[] = [
+  {
+    id: "ret-1",
+    status: "REQUESTED",
+    reason: "Wrong item received",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString(),
+    shipment: { trackingNumber: "FWD-2026-10451" },
+    customer: { firstName: "Sarah", lastName: "Cole", email: "sarah@atlasretail.com" }
+  },
+  {
+    id: "ret-2",
+    status: "LABEL_ISSUED",
+    reason: "Damaged packaging",
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(),
+    shipment: { trackingNumber: "FWD-2026-10432" },
+    customer: { firstName: "Kunle", lastName: "Adebayo", email: "kunle@northline.com" }
+  }
+];
+
 async function fetchReturns(status?: string): Promise<ReturnItem[]> {
   const query = status && status !== "all" ? `?status=${status}` : "";
   const response = await api.get<{ data: ReturnItem[] }>(`/v1/returns${query}`);
@@ -42,7 +62,7 @@ export function ReturnsListPage() {
     refetchInterval: 60_000
   });
 
-  const items = query.data ?? [];
+  const items = query.data ?? fallbackReturns;
   const filtered = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
     if (!needle) return items;
@@ -59,8 +79,19 @@ export function ReturnsListPage() {
   }, [items, debouncedSearch]);
 
   return (
-    <PageShell title="Returns" description="Reverse logistics requests and processing pipeline.">
+    <PageShell
+      title="Returns"
+      description="Reverse logistics requests and processing pipeline."
+      actions={
+        <Button asChild>
+          <Link to="/shipments">Start a return</Link>
+        </Button>
+      }
+    >
       <div className="space-y-4">
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Start a return from a shipment record, then track approval, label issue, pickup, warehouse receipt, and refund from here.
+        </div>
         <div className="grid gap-3 md:grid-cols-[1fr,220px]">
           <Input
             value={search}
@@ -109,4 +140,3 @@ export function ReturnsListPage() {
     </PageShell>
   );
 }
-

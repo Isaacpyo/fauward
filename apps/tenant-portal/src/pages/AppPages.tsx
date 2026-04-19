@@ -1,15 +1,18 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { CreditCard, Package, Truck, Users } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
-import { DashboardChecklist } from "@/components/onboarding/DashboardChecklist";
 import { BillingTab } from "@/pages/settings/BillingTab";
 import { ApiKeysTab } from "@/pages/settings/ApiKeysTab";
 import { WebhooksTab } from "@/pages/settings/WebhooksTab";
 import { EmailSettingsTab } from "@/pages/settings/EmailSettingsTab";
 import { ProfileTab } from "@/pages/settings/ProfileTab";
 import { DomainSettingsTab } from "@/pages/settings/DomainSettingsTab";
+import { BrandingTab } from "@/pages/settings/BrandingTab";
+import { IntegrationsTab } from "@/pages/settings/IntegrationsTab";
+import { TenantDashboardPage } from "@/pages/dashboard/TenantDashboardPage";
+import { TenantFinancePage } from "@/pages/finance/TenantFinancePage";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PlanGate } from "@/components/shared/PlanGate";
 import { StatusBadge } from "@/components/shared/StatusBadge";
@@ -21,11 +24,11 @@ import { Input } from "@/components/ui/Input";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
-import { StatCard } from "@/components/ui/StatCard";
 import { PageShell } from "@/layouts/PageShell";
 import { ListPageTemplate, type ListRow } from "@/pages/ListPageTemplate";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
+import { createDevTestSession, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -63,7 +66,14 @@ const teamRows: ListRow[] = Array.from({ length: 10 }).map((_, index) => ({
   values: [`Member ${index + 1}`, index % 3 === 0 ? "TENANT_MANAGER" : "TENANT_STAFF", "Active", "Last seen 2h ago"]
 }));
 
+const TEST_LOGIN = {
+  email: "admin@fauward.com",
+  password: "12345678A"
+};
+
 export function DashboardPage() {
+  return <TenantDashboardPage />;
+  /*
   const tenant = useTenantStore((state) => state.tenant);
   const user = useAppStore((state) => state.user);
   const dashboardChecklistDismissed = useAppStore((state) => state.dashboardChecklistDismissed);
@@ -136,6 +146,7 @@ export function DashboardPage() {
       </div>
     </PageShell>
   );
+  */
 }
 
 export function ShipmentsPage() {
@@ -263,18 +274,7 @@ export function CrmDetailPage() {
 }
 
 export function FinancePage() {
-  return (
-    <ListPageTemplate
-      title="Finance"
-      description="Invoices, payment status, and overdue tracking."
-      createLabel="Create invoice"
-      createTo="/finance/create"
-      columns={["Invoice", "Customer", "Status", "Amount"]}
-      rows={financeRows}
-      emptyTitle="No invoices available"
-      emptyDescription="Create your first invoice to begin collections."
-    />
-  );
+  return <TenantFinancePage />;
 }
 
 export function FinanceDetailPage() {
@@ -369,12 +369,15 @@ export function TeamPage() {
 
 export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = searchParams.get("tab") ?? "billing";
+  const currentTab = searchParams.get("tab") ?? "profile";
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([currentTab]));
-  const setDashboardChecklistDismissed = useAppStore((state) => state.setDashboardChecklistDismissed);
+
+  useEffect(() => {
+    setVisitedTabs((previous) => (previous.has(currentTab) ? previous : new Set([...previous, currentTab])));
+  }, [currentTab]);
 
   return (
-    <PageShell title="Settings" description="General, billing, API keys, webhooks, and branding.">
+    <PageShell title="Settings" description="Tenant profile, integrations, billing, API keys, webhooks, email, and branding.">
       <Tabs
         value={currentTab}
         onValueChange={(tab) => {
@@ -385,6 +388,7 @@ export function SettingsPage() {
           { value: "profile", label: "Profile" },
           { value: "general", label: "General" },
           { value: "domain", label: "Domain" },
+          { value: "integrations", label: "Integrations" },
           { value: "billing", label: "Billing" },
           { value: "api-keys", label: "API keys" },
           { value: "webhooks", label: "Webhooks" },
@@ -405,6 +409,11 @@ export function SettingsPage() {
         {visitedTabs.has("domain") ? (
           <TabsContent value="domain" className="rounded-lg border border-gray-200 bg-white p-4">
             <DomainSettingsTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("integrations") ? (
+          <TabsContent value="integrations" className="rounded-lg border border-gray-200 bg-white p-4">
+            <IntegrationsTab />
           </TabsContent>
         ) : null}
         {visitedTabs.has("billing") ? (
@@ -429,10 +438,7 @@ export function SettingsPage() {
         ) : null}
         {visitedTabs.has("branding") ? (
           <TabsContent value="branding" className="rounded-lg border border-gray-200 bg-white p-4">
-            <p className="text-sm text-gray-600">Theme colors and logo assets for customer-facing pages.</p>
-            <Button variant="secondary" size="sm" className="mt-3" onClick={() => setDashboardChecklistDismissed(false)}>
-              Re-show dashboard checklist
-            </Button>
+            <BrandingTab />
           </TabsContent>
         ) : null}
       </Tabs>
@@ -487,8 +493,13 @@ export function PublicBookingPage() {
 export function LoginPage() {
   const navigate = useNavigate ? useNavigate() : null;
   const location = useLocation ? useLocation() : null;
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const isDevTestLogin = import.meta.env.DEV;
+  const setUser = useAppStore((state) => state.setUser);
+  const setNotifications = useAppStore((state) => state.setNotifications);
+  const setTenant = useTenantStore((state) => state.setTenant);
+  const setAppTenant = useAppStore((state) => state.setTenant);
+  const [email, setEmail] = useState(() => (isDevTestLogin ? TEST_LOGIN.email : ""));
+  const [password, setPassword] = useState(() => (isDevTestLogin ? TEST_LOGIN.password : ""));
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -498,8 +509,18 @@ export function LoginPage() {
     setError(null);
     setLoading(true);
     try {
+      if (matchesDevTestLogin(email, password)) {
+        const session = createDevTestSession();
+        setUser(session.user);
+        setNotifications([]);
+        setTenant(session.tenant);
+        setAppTenant(session.tenant);
+        const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
+        navigate?.(from, { replace: true });
+        return;
+      }
+
       const { data } = await api.post("/v1/auth/login", { email, password });
-      const { setTokens } = await import("@/lib/auth");
       setTokens(data.accessToken, data.refreshToken, data.tenantSlug);
       const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
       navigate?.(from, { replace: true });

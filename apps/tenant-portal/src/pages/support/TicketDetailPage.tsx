@@ -8,30 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
-
-type TicketMessage = {
-  id: string;
-  body: string;
-  isInternal: boolean;
-  createdAt: string;
-  author: {
-    firstName?: string | null;
-    lastName?: string | null;
-    email: string;
-    role: string;
-  };
-};
-
-type TicketDetail = {
-  id: string;
-  ticketNumber: string;
-  subject: string;
-  status: string;
-  priority: string;
-  category: string;
-  assignedTo?: string | null;
-  messages: TicketMessage[];
-};
+import { findTicketDetail, type TicketDetail } from "@/pages/support/supportData";
 
 async function fetchTicket(id: string) {
   const response = await api.get<TicketDetail>(`/v1/support/tickets/${id}`);
@@ -47,7 +24,8 @@ export function TicketDetailPage() {
 
   const query = useQuery({
     queryKey: ["ticket-detail", id],
-    queryFn: () => fetchTicket(id)
+    queryFn: () => fetchTicket(id),
+    retry: false
   });
 
   const messageMutation = useMutation({
@@ -90,10 +68,15 @@ export function TicketDetailPage() {
     }
   });
 
-  const ticket = query.data;
+  const ticket = query.data ?? findTicketDetail(id);
 
   return (
-    <PageShell title={`Ticket ${ticket?.ticketNumber ?? id}`} description={ticket?.subject ?? "Support conversation thread"}>
+    <PageShell
+      title={`Ticket ${ticket?.ticketNumber ?? id}`}
+      description={ticket?.subject ?? "Support conversation thread"}
+      state={query.isLoading && !ticket ? "loading" : query.isError && !ticket ? "error" : "ready"}
+      onRetry={() => query.refetch()}
+    >
       {ticket ? (
         <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
           <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
@@ -164,4 +147,3 @@ export function TicketDetailPage() {
     </PageShell>
   );
 }
-

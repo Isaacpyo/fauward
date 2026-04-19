@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, Printer, UserPlus } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { AssignDriverModal } from "@/components/shipments/AssignDriverModal";
 import { ShipmentCard } from "@/components/shipments/ShipmentCard";
@@ -31,6 +31,28 @@ const initialFilters: ShipmentFilters = {
   route: "all"
 };
 
+function buildFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFilters {
+  const datePreset = searchParams.get("datePreset");
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const todayValue = `${yyyy}-${mm}-${dd}`;
+
+  return {
+    search: searchParams.get("search") ?? "",
+    statuses: (searchParams.get("status") ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean) as ShipmentState[],
+    dateFrom: searchParams.get("dateFrom") ?? (datePreset === "today" ? todayValue : ""),
+    dateTo: searchParams.get("dateTo") ?? (datePreset === "today" ? todayValue : ""),
+    driver: searchParams.get("driver") ?? "all",
+    customer: searchParams.get("customer") ?? "all",
+    route: searchParams.get("route") ?? "all"
+  };
+}
+
 const fallbackShipments: ShipmentListItem[] = Array.from({ length: 42 }).map((_, index) => ({
   id: `SHP-${index + 1}`,
   tracking_number: `FWD-2026-${String(index + 1).padStart(5, "0")}`,
@@ -59,20 +81,31 @@ const fallbackDrivers: DriverListItem[] = [
 ];
 
 async function fetchShipments(): Promise<ShipmentListItem[]> {
-  const response = await api.get<ShipmentListItem[]>("/shipments");
-  return response.data;
+  const response = await api.get<ShipmentListItem[] | { data: ShipmentListItem[] }>("/v1/shipments");
+  const payload = response.data;
+  return Array.isArray(payload) ? payload : payload.data ?? [];
 }
 
 export function ShipmentsListPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const user = useAppStore((state) => state.user);
   const addToast = useAppStore((state) => state.addToast);
 
-  const [filters, setFilters] = useState<ShipmentFilters>(initialFilters);
+  const searchParamsKey = searchParams.toString();
+  const [filters, setFilters] = useState<ShipmentFilters>(() =>
+    searchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters
+  );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState("25");
   const [assignDriverOpen, setAssignDriverOpen] = useState(false);
+
+  useEffect(() => {
+    setFilters(searchParamsKey ? buildFiltersFromSearchParams(searchParams) : initialFilters);
+    setPage(1);
+    setSelectedIds([]);
+  }, [searchParams, searchParamsKey]);
 
   const shipmentsQuery = useQuery({
     queryKey: ["shipments-list"],

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from './auth';
+import { clearTokens, getAccessToken, getRefreshToken, hasDevTestSession, setTokens } from './auth';
 
 export const api = axios.create({
   baseURL: '/api',
@@ -34,6 +34,10 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config as typeof error.config & { _retry?: boolean };
     if (error.response?.status !== 401 || original._retry) {
+      return Promise.reject(error);
+    }
+
+    if (hasDevTestSession()) {
       return Promise.reject(error);
     }
 

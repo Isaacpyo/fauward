@@ -49,7 +49,7 @@ export function StepGoLive({ state, onComplete }: StepGoLiveProps) {
           <ChecklistRow label="Brand configured" complete={Boolean(state.companyName)} fallback="Set up your brand" />
           <ChecklistRow label="First shipment created" complete={state.firstShipmentCreated} fallback="Create a shipment" />
           <ChecklistRow label="Team invited" complete={state.invitedMembers.length > 0} fallback="Invite team members" />
-          <ChecklistRow label="Payments connected" complete={state.paymentsConnected} fallback="Connect Stripe" />
+          <ChecklistRow label="Payments connected" complete={state.paymentsConnected} fallback="Connect payment gateway" />
           <ChecklistRow label="Custom domain" complete={false} fallback="Configure domain" />
         </ul>
 

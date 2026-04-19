@@ -13,7 +13,7 @@ type SidebarProps = {
 };
 
 const NAV_GROUPS: { label: string; paths: string[] }[] = [
-  { label: "Operations", paths: ["/", "/shipments", "/routes", "/dispatch", "/operations/live-map", "/fleet"] },
+  { label: "Operations", paths: ["/", "/shipments", "/shipments/fauward-go", "/routes", "/dispatch", "/operations/live-map", "/fleet"] },
   { label: "Business", paths: ["/crm", "/finance", "/analytics", "/pricing", "/returns"] },
   { label: "Admin", paths: ["/team", "/activity", "/support", "/reports", "/settings"] },
   { label: "Customer", paths: ["/book"] },

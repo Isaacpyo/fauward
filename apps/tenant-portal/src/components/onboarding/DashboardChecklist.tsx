@@ -42,7 +42,7 @@ export function DashboardChecklist({ state, onDismiss }: DashboardChecklistProps
         <Item done={state.brandConfigured} label="Brand configured" to="/onboarding" action="Set up your brand ->" />
         <Item done={state.firstShipmentCreated} label="First shipment created" to="/shipments/create" action="Create a shipment ->" />
         <Item done={state.teamInvited} label="Team invited" to="/team" action="Invite team members ->" />
-        <Item done={state.paymentsConnected} label="Payments connected" to="/settings?tab=billing" action="Connect Stripe ->" />
+        <Item done={state.paymentsConnected} label="Payments connected" to="/settings?tab=integrations" action="Connect payment gateway ->" />
         <Item done={state.domainConfigured} label="Custom domain" to="/settings?tab=branding" action="Configure domain ->" />
       </ul>
     </section>

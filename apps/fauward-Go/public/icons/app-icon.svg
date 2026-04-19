@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#0D1F3C" />
+      <stop offset="100%" stop-color="#133A73" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <path
+    d="M124 274V182c0-44.183 35.817-80 80-80h150l-53 53H204c-15.464 0-28 12.536-28 28v25h67l-67 66h-52Z"
+    fill="#FFFFFF"
+  />
+  <path d="M124 358v-66h52v66h-52Z" fill="#FFFFFF" />
+  <path
+    d="M176 358v-66h76l65-65h-65v-25c0-17.673 14.327-32 32-32h84l-66 66 66 66h-71l-65-65h-56v121Z"
+    fill="#FFFFFF"
+  />
+  <path d="M311 119h87l-66 66h-87l66-66Z" fill="#1D77E8" />
+  <text
+    x="108"
+    y="436"
+    fill="#FFFFFF"
+    font-family="IBM Plex Sans, Arial, sans-serif"
+    font-size="92"
+    font-weight="700"
+  >
+    Go
+  </text>
+</svg>

@@ -1,0 +1,142 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #0d1f3c;
+  background:
+    radial-gradient(circle at top left, rgba(29, 119, 232, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(13, 31, 60, 0.06), transparent 26%),
+    linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+  font-family: "IBM Plex Sans", sans-serif;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: #0d1f3c;
+  background:
+    radial-gradient(circle at top left, rgba(29, 119, 232, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(13, 31, 60, 0.06), transparent 26%),
+    linear-gradient(180deg, #ffffff 0%, #f7f9fc 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@keyframes slideRevealLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideRevealRight {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  a {
+    @apply no-underline;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  canvas {
+    touch-action: none;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-[1.6rem] border border-stone-200 shadow-panel backdrop-blur-xl;
+    background: rgba(255, 255, 255, 0.94);
+  }
+
+  .panel-accent {
+    @apply panel border-brand/30;
+    background: linear-gradient(145deg, rgba(232, 238, 249, 0.98), rgba(255, 255, 255, 0.94), rgba(244, 247, 252, 0.98));
+  }
+
+  .eyebrow {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.24em] text-brand-deep;
+  }
+
+  .screen-title {
+    @apply font-display text-[2rem] leading-none tracking-[-0.04em] text-ink;
+  }
+
+  .subtle-text {
+    @apply text-sm leading-6 text-stone-600;
+  }
+
+  .field-input {
+    @apply w-full rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm text-stone-900 placeholder:text-stone-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25;
+  }
+
+  .field-textarea {
+    @apply field-input min-h-[7rem] resize-none;
+  }
+
+  .primary-btn {
+    @apply inline-flex items-center justify-center rounded-2xl bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500;
+  }
+
+  .secondary-btn {
+    @apply inline-flex items-center justify-center rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-ink transition hover:border-signal-info/40 hover:text-signal-info disabled:cursor-not-allowed disabled:border-stone-200 disabled:text-stone-400;
+  }
+
+  .danger-btn {
+    @apply inline-flex items-center justify-center rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:text-red-300;
+  }
+
+  .chip-btn {
+    @apply rounded-full border border-stone-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-stone-600 transition hover:border-signal-info/40 hover:text-signal-info;
+  }
+
+  .chip-btn-active {
+    @apply border-brand bg-brand text-white;
+  }
+
+  .action-card {
+    @apply panel block p-4 transition hover:-translate-y-0.5 hover:border-brand/30;
+  }
+
+  .tiny-label {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-stone-500;
+  }
+
+  .reveal-card-left {
+    animation: slideRevealLeft 260ms ease-out both;
+  }
+
+  .reveal-card-right {
+    animation: slideRevealRight 320ms ease-out both;
+  }
+}

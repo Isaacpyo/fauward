@@ -1,8 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, getDevTestSession, getDevTestSessionSnapshot } from "@/lib/auth";
 import { useAppStore } from "@/stores/useAppStore";
 import type { NotificationItem, User } from "@/types/domain";
 
@@ -29,6 +29,8 @@ export function useAuth() {
   const setUser = useAppStore((state) => state.setUser);
   const setNotifications = useAppStore((state) => state.setNotifications);
   const user = useAppStore((state) => state.user);
+  const devSessionSnapshot = getDevTestSessionSnapshot();
+  const devSession = useMemo(() => getDevTestSession(), [devSessionSnapshot]);
 
   // Only attempt to fetch auth context when a token is present in storage.
   const hasToken = Boolean(getAccessToken());
@@ -38,29 +40,35 @@ export function useAuth() {
     queryFn: fetchAuthContext,
     staleTime: 45_000,
     retry: 1,
-    enabled: hasToken
+    enabled: hasToken && !devSession
   });
 
   useEffect(() => {
+    if (devSession) {
+      setUser(devSession.user);
+      setNotifications([]);
+      return;
+    }
+
     if (query.data) {
       setUser(query.data.user);
       setNotifications(query.data.notifications ?? []);
     }
-  }, [query.data, setNotifications, setUser]);
+  }, [devSession, query.data, setNotifications, setUser]);
 
   // If auth fetch fails (401 / network error) ensure user is cleared so
   // AuthGuard redirects to /login rather than showing stale state.
   useEffect(() => {
-    if (query.isError) {
+    if (query.isError && !devSession) {
       setUser(null);
       setNotifications([]);
     }
-  }, [query.isError, setNotifications, setUser]);
+  }, [devSession, query.isError, setNotifications, setUser]);
 
   return {
     ...query,
-    isLoading: hasToken ? query.isLoading : false,
-    user: query.data?.user ?? (hasToken ? user : null),
-    notifications: query.data?.notifications ?? []
+    isLoading: devSession ? false : hasToken ? query.isLoading : false,
+    user: devSession?.user ?? query.data?.user ?? (hasToken ? user : null),
+    notifications: devSession ? [] : query.data?.notifications ?? []
   };
 }

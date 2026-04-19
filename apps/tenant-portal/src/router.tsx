@@ -12,6 +12,7 @@ import {
   FinancePage,
   LoginPage,
   NotFoundPage,
+  PlaceholderCustomerPage,
   PublicBookingPage,
   RegisterPage,
   RoutesPage,
@@ -100,6 +101,15 @@ export function AppRouter() {
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/shipments" element={<ShipmentsListPage />} />
+          <Route
+            path="/shipments/fauward-go"
+            element={
+              <PlaceholderCustomerPage
+                title="Fauward Go"
+                description="Operational launcher for the field app experience, driver workflows, and mobile execution surfaces."
+              />
+            }
+          />
           <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
           <Route path="/shipments/create" element={<CreateShipmentPage />} />
           <Route path="/routes" element={<RoutesPage />} />

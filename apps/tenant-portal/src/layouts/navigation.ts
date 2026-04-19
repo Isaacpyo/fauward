@@ -50,6 +50,12 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF", "CUSTOMER_ADMIN", "CUSTOMER_USER"]
   },
   {
+    to: "/shipments/fauward-go",
+    label: "Fauward Go",
+    icon: Package,
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
+  },
+  {
     to: "/routes",
     label: "Routes",
     icon: Route,

@@ -7,6 +7,23 @@ function getCurrentMonth(): string {
   return `${y}-${m}`;
 }
 
+function hasConnectedPaymentGateway(rawValue?: string | null) {
+  if (!rawValue) return false;
+
+  try {
+    const parsed = JSON.parse(rawValue) as {
+      providers?: Record<string, { enabled?: boolean } | undefined>;
+    };
+    const providers = Object.values(parsed.providers ?? {});
+    if (providers.length === 0) {
+      return false;
+    }
+    return providers.some((provider) => provider?.enabled);
+  } catch {
+    return rawValue.trim().length > 0;
+  }
+}
+
 export const usageService = {
   async checkAndIncrement(prisma: PrismaClient, tenant: Tenant, type: 'shipments' | 'apiCalls' | 'smsSent') {
     const month = getCurrentMonth();
@@ -73,7 +90,7 @@ export const usageService = {
       colourSet: tenant.primaryColor !== '#0D1F3C',
       firstShipmentCreated: shipmentCount > 0,
       staffInvited: staffCount > 1,
-      paymentConnected: !!settings?.paymentGatewayKey,
+      paymentConnected: hasConnectedPaymentGateway(settings?.paymentGatewayKey),
       customDomain: !!tenant.domainVerified,
       apiKeyGenerated: false
     };
