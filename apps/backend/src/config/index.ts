@@ -19,6 +19,7 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional()
 });
 
@@ -49,7 +50,8 @@ export const config = {
     from: parsed.data.TWILIO_FROM
   },
   stripe: {
-    secretKey: parsed.data.STRIPE_SECRET_KEY,
+    // Accept either env name so deploy config can use the existing Stripe secret key label.
+    secretKey: parsed.data.STRIPE_SECRET_KEY ?? parsed.data.STRIPE_API_KEY,
     webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
   }
 };
