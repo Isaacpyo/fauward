@@ -101,14 +101,16 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     if (!tenantId) return;
     if (!authorId) return reply.status(401).send({ error: 'Unauthorized' });
 
-    const { subject, category = 'OTHER', priority = 'NORMAL', shipmentId, message } = request.body as {
+    const { subject, category = 'OTHER', priority = 'NORMAL', shipmentId, message, body } = request.body as {
       subject?: string;
       category?: string;
       priority?: string;
       shipmentId?: string;
       message?: string;
+      body?: string;
     };
-    if (!subject || !message) {
+    const messageBody = message ?? body;
+    if (!subject || !messageBody) {
       return reply.status(400).send({ error: 'subject and message are required' });
     }
 
@@ -126,7 +128,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
           create: {
             tenantId,
             authorId,
-            body: message,
+            body: messageBody,
             isInternal: false
           }
         }
@@ -308,4 +310,3 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     }
   );
 }
-

@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { font-family: Arial, sans-serif; color: #111827; font-size: 12px; margin: 0; }
+    .header { display: table; width: 100%; border-bottom: 3px solid {{ tenant.primaryColor }}; padding-bottom: 14px; }
+    .brand, .meta { display: table-cell; vertical-align: top; }
+    .meta { text-align: right; }
+    .logo { max-height: 48px; max-width: 180px; object-fit: contain; }
+    h1 { font-size: 28px; margin: 0 0 6px; color: {{ tenant.primaryColor }}; }
+    .grid { display: table; width: 100%; margin-top: 22px; }
+    .col { display: table-cell; width: 50%; vertical-align: top; }
+    .label { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 22px; }
+    th { background: {{ tenant.primaryColor }}; color: white; padding: 9px; text-align: left; }
+    td { padding: 9px; border-bottom: 1px solid #e5e7eb; }
+    .num { text-align: right; }
+    .totals { margin-left: auto; width: 280px; margin-top: 18px; }
+    .totals td { border: none; padding: 5px 0; }
+    .grand { font-size: 16px; font-weight: bold; color: {{ tenant.primaryColor }}; }
+    .paid { position: fixed; top: 90mm; left: 22mm; color: rgba(22, 163, 74, .14); font-size: 86px; font-weight: bold; transform: rotate(-25deg); }
+    .footer { margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 12px; color: #4b5563; }
+  </style>
+</head>
+<body>
+  {% if data.status == "PAID" %}<div class="paid">PAID</div>{% endif %}
+  <div class="header">
+    <div class="brand">
+      {% if tenant.logoUrl %}<img class="logo" src="{{ tenant.logoUrl }}" alt="{{ tenant.brandName }}">{% else %}<h1>{{ tenant.brandName }}</h1>{% endif %}
+    </div>
+    <div class="meta">
+      <h1>Invoice</h1>
+      <div>{{ data.invoiceNumber or data.invoice_number or shipmentId }}</div>
+      <div>{{ data.invoiceDate or data.invoice_date or "" }}</div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <div class="label">Bill To</div>
+      <strong>{{ data.billTo.name or data.customerName or "Customer" }}</strong><br>
+      {{ data.billTo.address or data.billingAddress or "" }}
+    </div>
+    <div class="col">
+      <div class="label">Payment Instructions</div>
+      {{ data.paymentInstructions or "Payment due according to agreed terms." }}
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Description</th><th class="num">Qty</th><th class="num">Unit Price</th><th class="num">Total</th></tr>
+    </thead>
+    <tbody>
+      {% for item in data.lineItems or data.items or [] %}
+      <tr>
+        <td>{{ item.description }}</td>
+        <td class="num">{{ item.qty or item.quantity or 1 }}</td>
+        <td class="num">{{ data.currency or item.currency or "GBP" }} {{ "%.2f"|format(item.unitPrice or item.unit_price or 0) }}</td>
+        <td class="num">{{ data.currency or item.currency or "GBP" }} {{ "%.2f"|format(item.total or ((item.qty or item.quantity or 1) * (item.unitPrice or item.unit_price or 0))) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="num">{{ data.currency or "GBP" }} {{ "%.2f"|format(data.subtotal or 0) }}</td></tr>
+    <tr><td>VAT</td><td class="num">{{ data.currency or "GBP" }} {{ "%.2f"|format(data.vat or data.taxAmount or 0) }}</td></tr>
+    <tr class="grand"><td>Grand Total</td><td class="num">{{ data.currency or "GBP" }} {{ "%.2f"|format(data.total or data.grandTotal or 0) }}</td></tr>
+  </table>
+  <div class="footer">
+    {{ data.notes or "Thank you for shipping with " ~ tenant.brandName ~ "." }}
+  </div>
+</body>
+</html>

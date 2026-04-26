@@ -69,7 +69,7 @@ const offices = [
 export default function ContactPage() {
   return (
     <>
-      <StructuredData data={[buildBreadcrumbSchema([{ name: "Home", href: "/" }, { name: "Contact", href: "/contact" }])]} />
+      <StructuredData data={[buildBreadcrumbSchema([{ name: "Home", path: "/" }, { name: "Contact", path: "/contact" }])]} />
 
       {/* Hero */}
       <section className="bg-[#0d1f3c] py-20 lg:py-28">

@@ -3,6 +3,7 @@ import { AlertCard } from "@/components/admin/AlertCard";
 import { MRRChart } from "@/components/admin/MRRChart";
 import { MetricCard } from "@/components/admin/MetricCard";
 import { ShipmentsChart } from "@/components/admin/ShipmentsChart";
+import { useEffect, useState } from "react";
 
 const mrrPoints = [
   { month: "Feb", value: 74000 },
@@ -32,7 +33,54 @@ const shipmentPoints = [
   { day: "D10", value: 600 },
 ];
 
+function ShimmerBlock({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded-lg bg-slate-200 ${className}`} />;
+}
+
+function DashboardShimmer() {
+  return (
+    <div className="space-y-5">
+      <div>
+        <ShimmerBlock className="h-6 w-32" />
+        <ShimmerBlock className="mt-2 h-4 w-80 max-w-full" />
+      </div>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+            <ShimmerBlock className="h-4 w-24" />
+            <ShimmerBlock className="mt-4 h-8 w-20" />
+            <ShimmerBlock className="mt-3 h-3 w-28" />
+          </div>
+        ))}
+      </section>
+      <section className="grid gap-4 xl:grid-cols-2">
+        <ShimmerBlock className="h-72" />
+        <ShimmerBlock className="h-72" />
+      </section>
+      <section className="grid gap-4 xl:grid-cols-[1.4fr,1fr]">
+        <ShimmerBlock className="h-80" />
+        <div className="space-y-3">
+          <ShimmerBlock className="h-24" />
+          <ShimmerBlock className="h-24" />
+          <ShimmerBlock className="h-24" />
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function DashboardPage() {
+  const [showShimmer, setShowShimmer] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowShimmer(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (showShimmer) {
+    return <DashboardShimmer />;
+  }
+
   return (
     <div className="space-y-5">
       <div>

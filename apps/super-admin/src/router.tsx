@@ -1,26 +1,44 @@
-import { BarChart3, Building2, Gauge, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
+import { BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
 import { QueuesPage } from "@/pages/admin/QueuesPage";
+import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { RevenuePage } from "@/pages/admin/RevenuePage";
+import { RelayPage } from "@/pages/admin/RelayPage";
 import { SystemHealthPage } from "@/pages/admin/SystemHealthPage";
+import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
 import { TenantDetailPage } from "@/pages/admin/TenantDetailPage";
 import { TenantsListPage } from "@/pages/admin/TenantsListPage";
+import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
 import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/auth";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
   { to: "/admin/tenants", label: "Tenants", icon: Building2 },
+  { to: "/admin/regions", label: "Region", icon: Globe2 },
   { to: "/admin/revenue", label: "Revenue", icon: Wallet },
   { to: "/admin/system", label: "System", icon: BarChart3 },
   { to: "/admin/queues", label: "Queues", icon: ListChecks },
+  { to: "/admin/relay", label: "Relay", icon: Inbox },
+  { to: "/admin/support-audit", label: "Support Audit", icon: ClipboardList },
   { to: "/admin/logs", label: "Logs", icon: Logs },
   { to: "/admin/impersonation", label: "Impersonation", icon: UserCog },
 ];
+
+const PLATFORM_ADMIN_CREDENTIALS = {
+  email: "fauward@gmail.com",
+  password: "Oluwaseun44!",
+};
+
+const SUCCESSFUL_LOGIN_DELAY_MS = 1200;
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function SuperAdminGuard() {
   const location = useLocation();
@@ -44,7 +62,8 @@ function SuperAdminGuard() {
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-surface-50)]">
+      <div className="flex min-h-screen items-center justify-center gap-3 bg-[var(--color-surface-50)]">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
         <p className="text-sm text-[var(--color-text-muted)]">Verifying session…</p>
       </div>
     );
@@ -60,9 +79,10 @@ function SuperAdminGuard() {
 function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(PLATFORM_ADMIN_CREDENTIALS.email);
+  const [password, setPassword] = useState(PLATFORM_ADMIN_CREDENTIALS.password);
   const [loading, setLoading] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -70,7 +90,10 @@ function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
+      const { data } = await api.post("/auth/login", {
+        email: email.trim().toLowerCase(),
+        password: password.trim(),
+      });
       // Reject non-super-admin tokens immediately — never grant UI access.
       if (data.role !== "SUPER_ADMIN" && data.user?.role !== "SUPER_ADMIN") {
         setError("Access denied — SUPER_ADMIN role required");
@@ -78,6 +101,8 @@ function LoginPage() {
       }
       setTokens(data.accessToken, data.refreshToken);
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
+      setRedirecting(true);
+      await wait(SUCCESSFUL_LOGIN_DELAY_MS);
       navigate(from, { replace: true });
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -89,14 +114,18 @@ function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-surface-50)]">
+      {loading || redirecting ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+          <div className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 shadow-sm">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
+            <span className="text-sm font-medium text-[var(--color-text-primary)]">Signing in...</span>
+          </div>
+        </div>
+      ) : null}
       <div className="w-full max-w-sm px-4">
         <div className="rounded-xl border border-[var(--color-border)] bg-white p-8 shadow-sm">
           <div className="mb-6 flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--fauward-navy)]">
-              <svg className="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-              </svg>
-            </div>
+            <img src="/brand/logo-mark.png" alt="Fauward logo" className="h-10 w-10 shrink-0 object-contain" />
             <div>
               <p className="text-sm font-bold text-[var(--fauward-navy)]">Fauward</p>
               <p className="text-xs text-[var(--color-text-muted)]">Super Admin</p>
@@ -119,7 +148,7 @@ function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
-                placeholder="admin@fauward.com"
+                placeholder={PLATFORM_ADMIN_CREDENTIALS.email}
               />
             </div>
             <div>
@@ -143,11 +172,17 @@ function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-md bg-[var(--fauward-navy)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--fauward-navy)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
               {loading ? "Signing in…" : "Sign in"}
             </button>
           </form>
+          <p className="mt-5 text-center text-xs text-[var(--color-text-muted)]">
+            Need help?{" "}
+            <a href="mailto:support@fauward.com" className="font-semibold text-[var(--fauward-navy)] hover:underline">
+              Contact support
+            </a>
+          </p>
         </div>
       </div>
     </div>
@@ -195,11 +230,7 @@ function AdminLayout() {
       <aside className="flex w-[240px] shrink-0 flex-col border-r border-[var(--color-border)] bg-white">
         {/* Brand strip */}
         <div className="flex h-14 items-center gap-2.5 border-b border-[var(--color-border)] px-4">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--fauward-navy)]">
-            <svg className="h-4 w-4 text-amber-400" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
+          <img src="/brand/logo-mark.png" alt="Fauward logo" className="h-8 w-8 shrink-0 object-contain" />
           <div>
             <p className="text-xs font-bold leading-none text-[var(--fauward-navy)]">Fauward</p>
             <p className="text-[10px] leading-none text-[var(--color-text-muted)] mt-0.5">Super Admin</p>
@@ -248,6 +279,7 @@ function AdminLayout() {
             {navItems.find((item) => isActive(item.to))?.label ?? "Admin"}
           </p>
           <div className="flex items-center gap-2">
+            <RelayNotificationCenter />
             <span className="inline-flex items-center rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-[11px] font-semibold text-green-700">
               ● All systems operational
             </span>
@@ -288,9 +320,12 @@ export function AppRouter() {
           <Route path="/admin" element={<DashboardPage />} />
           <Route path="/admin/tenants" element={<TenantsListPage />} />
           <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
+          <Route path="/admin/regions" element={<RegionsPage />} />
           <Route path="/admin/revenue" element={<RevenuePage />} />
           <Route path="/admin/system" element={<SystemHealthPage />} />
           <Route path="/admin/queues" element={<QueuesPage />} />
+          <Route path="/admin/relay" element={<RelayPage />} />
+          <Route path="/admin/support-audit" element={<SupportAuditPage />} />
           <Route path="/admin/logs" element={<LogsPage />} />
           <Route path="/admin/impersonation" element={<ImpersonationPage />} />
           <Route path="/" element={<Navigate to="/admin" replace />} />

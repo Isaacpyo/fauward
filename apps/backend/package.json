@@ -20,6 +20,7 @@
         "@fastify/jwt": "^7.2.0",
         "@fastify/rate-limit": "^9.1.0",
         "@fastify/sensible": "^5.6.0",
+        "@fauward/relay-api": "^0.1.0",
         "@prisma/client": "^5.18.0",
         "@sendgrid/mail": "^8.1.6",
         "@socket.io/redis-adapter": "^8.3.0",

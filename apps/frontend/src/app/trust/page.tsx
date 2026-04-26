@@ -85,7 +85,7 @@ const certifications = [
 export default function TrustPage() {
   return (
     <>
-      <StructuredData data={[buildBreadcrumbSchema([{ name: "Home", href: "/" }, { name: "Trust & Security", href: "/trust" }])]} />
+      <StructuredData data={[buildBreadcrumbSchema([{ name: "Home", path: "/" }, { name: "Trust & Security", path: "/trust" }])]} />
 
       {/* Hero */}
       <section className="bg-[#0d1f3c] py-20 lg:py-28">

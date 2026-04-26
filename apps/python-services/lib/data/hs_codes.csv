@@ -1,0 +1,501 @@
+hs_code,description,notes
+850110,smartphone charger power adapter,electronics
+850111,usb c wall charger,electronics
+850112,wireless phone charger,electronics
+850113,laptop power supply,electronics
+850114,portable battery power bank,electronics
+850115,lithium ion battery pack,electronics
+850116,alkaline consumer battery,electronics
+850117,rechargeable battery cell,electronics
+850118,electric motor small appliance,electronics
+850119,dc electric motor,electronics
+850120,computer monitor led display,electronics
+850121,lcd display panel,electronics
+850122,tablet computer,electronics
+850123,laptop computer,electronics
+850124,desktop computer,electronics
+850125,server computer hardware,electronics
+850126,computer keyboard,electronics
+850127,computer mouse,electronics
+850128,web camera,electronics
+850129,headphones with microphone,electronics
+850130,bluetooth speaker,electronics
+850131,home audio speaker,electronics
+850132,digital camera,electronics
+850133,video camera,electronics
+850134,security camera,electronics
+850135,network router,electronics
+850136,ethernet switch,electronics
+850137,wireless access point,electronics
+850138,modem network device,electronics
+850139,fiber optic transceiver,electronics
+850140,usb cable,electronics
+850141,hdmi cable,electronics
+850142,ethernet cable,electronics
+850143,power extension cable,electronics
+850144,printed circuit board,electronics
+850145,semiconductor device,electronics
+850146,integrated circuit,electronics
+850147,memory module ram,electronics
+850148,solid state drive,electronics
+850149,hard disk drive,electronics
+850150,smart watch,electronics
+850151,fitness tracker,electronics
+850152,gps navigation device,electronics
+850153,barcode scanner,electronics
+850154,point of sale terminal,electronics
+850155,thermal receipt printer,electronics
+850156,laser printer,electronics
+850157,inkjet printer,electronics
+850158,printer toner cartridge,electronics
+850159,ink cartridge,electronics
+850160,television receiver,electronics
+850161,streaming media player,electronics
+850162,game console,electronics
+850163,game controller,electronics
+850164,remote control,electronics
+850165,smart home hub,electronics
+850166,smart thermostat,electronics
+850167,led light strip,electronics
+850168,led bulb,electronics
+850169,solar charger,electronics
+850170,solar panel module,electronics
+850171,inverter power unit,electronics
+850172,ups backup power supply,electronics
+850173,voltage regulator,electronics
+850174,electrical transformer,electronics
+850175,power distribution unit,electronics
+850176,circuit breaker,electronics
+850177,electrical relay,electronics
+850178,electrical switch,electronics
+850179,electrical connector,electronics
+850180,smartphone screen protector,electronics
+850181,mobile phone case,electronics
+850182,laptop sleeve,electronics
+850183,tablet case,electronics
+850184,screen assembly,electronics
+850185,camera lens module,electronics
+850186,microphone component,electronics
+850187,speaker component,electronics
+850188,antenna component,electronics
+850189,rfid tag,electronics
+850190,nfc card,electronics
+850191,contactless smart card,electronics
+850192,sim card,electronics
+850193,smart card reader,electronics
+850194,electronic weighing scale,electronics
+850195,digital thermometer,electronics
+850196,blood pressure monitor,electronics
+850197,pulse oximeter,electronics
+850198,medical diagnostic sensor,electronics
+850199,electronic control module,electronics
+850200,electric shaver,electronics
+850201,hair clipper,electronics
+850202,electric toothbrush,electronics
+850203,kitchen blender motor,electronics
+850204,vacuum cleaner motor,electronics
+850205,robot vacuum cleaner,electronics
+850206,electric fan,electronics
+850207,air purifier,electronics
+850208,coffee machine electronics,electronics
+850209,electric kettle heating element,electronics
+610110,cotton t shirt,clothing
+610111,polyester t shirt,clothing
+610112,polo shirt,clothing
+610113,long sleeve shirt,clothing
+610114,formal dress shirt,clothing
+610115,cotton blouse,clothing
+610116,womens top,clothing
+610117,mens sweatshirt,clothing
+610118,hooded sweatshirt,clothing
+610119,fleece jacket,clothing
+610120,denim jeans,clothing
+610121,cotton trousers,clothing
+610122,formal trousers,clothing
+610123,casual shorts,clothing
+610124,athletic shorts,clothing
+610125,leggings,clothing
+610126,yoga pants,clothing
+610127,track suit,clothing
+610128,sports jersey,clothing
+610129,rain jacket,clothing
+610130,winter coat,clothing
+610131,down jacket,clothing
+610132,windbreaker jacket,clothing
+610133,leather jacket,clothing
+610134,wool coat,clothing
+610135,knitted sweater,clothing
+610136,cardigan,clothing
+610137,vest garment,clothing
+610138,womens dress,clothing
+610139,evening dress,clothing
+610140,skirt,clothing
+610141,suit jacket,clothing
+610142,mens suit,clothing
+610143,womens suit,clothing
+610144,work uniform,clothing
+610145,medical scrubs,clothing
+610146,high visibility vest,clothing
+610147,protective coveralls,clothing
+610148,swimwear,clothing
+610149,sleepwear,clothing
+610150,underwear,clothing
+610151,socks,clothing
+610152,wool socks,clothing
+610153,stockings,clothing
+610154,gloves textile,clothing
+610155,knitted hat,clothing
+610156,baseball cap,clothing
+610157,scarf,clothing
+610158,necktie,clothing
+610159,belt textile,clothing
+610160,leather belt,clothing
+610161,handbag leather,clothing
+610162,backpack textile,clothing
+610163,wallet leather,clothing
+610164,sneakers footwear,clothing
+610165,running shoes,clothing
+610166,leather shoes,clothing
+610167,safety boots,clothing
+610168,sandals,clothing
+610169,slippers,clothing
+610170,baby bodysuit,clothing
+610171,baby blanket textile,clothing
+610172,childrens jacket,clothing
+610173,childrens trousers,clothing
+610174,school uniform,clothing
+610175,linen shirt,clothing
+610176,silk scarf,clothing
+610177,wool sweater,clothing
+610178,cashmere cardigan,clothing
+610179,synthetic sports bra,clothing
+610180,compression socks,clothing
+610181,cycling jersey,clothing
+610182,work gloves,clothing
+610183,garden gloves textile,clothing
+610184,apron textile,clothing
+610185,chef jacket,clothing
+610186,lab coat,clothing
+610187,face mask textile,clothing
+610188,headband textile,clothing
+610189,beanie hat,clothing
+610190,poncho,clothing
+610191,kimono robe,clothing
+610192,shawl,clothing
+610193,tracksuit bottoms,clothing
+610194,cargo trousers,clothing
+610195,thermal underwear,clothing
+610196,waterproof trousers,clothing
+610197,reflective jacket,clothing
+610198,cycling shorts,clothing
+610199,gym vest,clothing
+610200,dress socks,clothing
+610201,ankle socks,clothing
+610202,leather gloves,clothing
+610203,fashion hat,clothing
+610204,canvas tote bag,clothing
+610205,travel duffel bag,clothing
+610206,leather briefcase,clothing
+610207,shoe insoles,clothing
+610208,boot laces,clothing
+610209,garment accessories,clothing
+020110,fresh beef meat,food
+020111,frozen beef meat,food
+020112,fresh lamb meat,food
+020113,frozen lamb meat,food
+020114,fresh chicken meat,food
+020115,frozen chicken meat,food
+020116,turkey meat,food
+020117,pork meat,food
+020118,fish fillets,food
+020119,frozen fish,food
+020120,shrimp prawns,food
+020121,canned tuna,food
+020122,milk powder,food
+020123,cheese blocks,food
+020124,butter,food
+020125,yogurt,food
+020126,eggs,food
+020127,honey,food
+020128,coffee beans,food
+020129,ground coffee,food
+020130,black tea,food
+020131,green tea,food
+020132,cocoa powder,food
+020133,chocolate bars,food
+020134,biscuits cookies,food
+020135,bread products,food
+020136,pasta dry,food
+020137,rice,food
+020138,wheat flour,food
+020139,corn flour,food
+020140,breakfast cereal,food
+020141,oats,food
+020142,sugar,food
+020143,salt,food
+020144,pepper spice,food
+020145,curry spice mix,food
+020146,olive oil,food
+020147,sunflower oil,food
+020148,coconut oil,food
+020149,tomato sauce,food
+020150,ketchup,food
+020151,mayonnaise,food
+020152,jam preserve,food
+020153,peanut butter,food
+020154,nut spread,food
+020155,almonds,food
+020156,cashew nuts,food
+020157,groundnuts peanuts,food
+020158,dried fruit,food
+020159,raisins,food
+020160,dates,food
+020161,fresh apples,food
+020162,fresh bananas,food
+020163,fresh oranges,food
+020164,fresh grapes,food
+020165,fresh berries,food
+020166,fresh tomatoes,food
+020167,fresh onions,food
+020168,potatoes,food
+020169,carrots,food
+020170,lettuce,food
+020171,frozen vegetables,food
+020172,canned beans,food
+020173,canned tomatoes,food
+020174,instant noodles,food
+020175,soup mix,food
+020176,baby food puree,food
+020177,infant formula,food
+020178,protein powder,food
+020179,vitamin gummies,food
+020180,soft drinks,food
+020181,bottled water,food
+020182,fruit juice,food
+020183,energy drink,food
+020184,non alcoholic beer,food
+020185,beer,food
+020186,wine,food
+020187,spirits,food
+020188,frozen pizza,food
+020189,ready meal,food
+020190,ice cream,food
+020191,confectionery sweets,food
+020192,chewing gum,food
+020193,snack crisps,food
+020194,popcorn,food
+020195,granola bar,food
+020196,meal replacement bar,food
+020197,pet food dry,food
+020198,pet food wet,food
+020199,animal feed supplement,food
+020200,baking powder,food
+020201,yeast,food
+020202,soy sauce,food
+020203,vinegar,food
+020204,mustard sauce,food
+020205,herbal tea,food
+020206,seaweed snack,food
+020207,maple syrup,food
+020208,condensed milk,food
+020209,processed cheese,food
+290110,industrial solvent chemicals,chemicals
+290111,ethyl alcohol solution,chemicals
+290112,isopropyl alcohol,chemicals
+290113,acetone,chemicals
+290114,glycerol,chemicals
+290115,hydrogen peroxide,chemicals
+290116,sodium hydroxide,chemicals
+290117,citric acid,chemicals
+290118,acetic acid,chemicals
+290119,cleaning detergent,chemicals
+290120,laundry detergent,chemicals
+290121,dishwashing liquid,chemicals
+290122,surface disinfectant,chemicals
+290123,hand sanitizer,chemicals
+290124,shampoo,chemicals
+290125,hair conditioner,chemicals
+290126,body wash,chemicals
+290127,liquid soap,chemicals
+290128,toothpaste,chemicals
+290129,deodorant,chemicals
+290130,perfume fragrance,chemicals
+290131,essential oil,chemicals
+290132,cosmetic cream,chemicals
+290133,skin lotion,chemicals
+290134,sunscreen lotion,chemicals
+290135,makeup foundation,chemicals
+290136,lipstick,chemicals
+290137,nail polish,chemicals
+290138,hair dye,chemicals
+290139,paint acrylic,chemicals
+290140,paint thinner,chemicals
+290141,printing ink,chemicals
+290142,adhesive glue,chemicals
+290143,epoxy resin,chemicals
+290144,silicone sealant,chemicals
+290145,lubricating oil,chemicals
+290146,engine oil,chemicals
+290147,brake fluid,chemicals
+290148,coolant antifreeze,chemicals
+290149,grease lubricant,chemicals
+290150,fertilizer nitrogen,chemicals
+290151,fertilizer phosphate,chemicals
+290152,pesticide,chemicals
+290153,herbicide,chemicals
+290154,insect repellent,chemicals
+290155,water treatment chemical,chemicals
+290156,pool chlorine,chemicals
+290157,laboratory reagent,chemicals
+290158,diagnostic reagent,chemicals
+290159,pharmaceutical tablet,chemicals
+290160,pharmaceutical capsule,chemicals
+290161,medical ointment,chemicals
+290162,vaccine vial,chemicals
+290163,saline solution,chemicals
+290164,contact lens solution,chemicals
+290165,plastic resin pellet,chemicals
+290166,polyethylene granules,chemicals
+290167,polypropylene granules,chemicals
+290168,pvc compound,chemicals
+290169,rubber additive,chemicals
+290170,dye pigment,chemicals
+290171,textile dye,chemicals
+290172,food colouring,chemicals
+290173,flavour compound,chemicals
+290174,aroma chemical,chemicals
+290175,wax paraffin,chemicals
+290176,candle wax,chemicals
+290177,petroleum jelly,chemicals
+290178,activated carbon,chemicals
+290179,desiccant silica gel,chemicals
+290180,fire extinguisher powder,chemicals
+290181,aerosol spray,chemicals
+290182,compressed gas cartridge,chemicals
+290183,inkjet ink,chemicals
+290184,toner powder,chemicals
+290185,photographic chemical,chemicals
+290186,battery electrolyte,chemicals
+290187,flux solder paste,chemicals
+290188,industrial cleaner,chemicals
+290189,glass cleaner,chemicals
+290190,air freshener,chemicals
+290191,shoe polish,chemicals
+290192,leather conditioner,chemicals
+290193,metal polish,chemicals
+290194,wood varnish,chemicals
+290195,cement additive,chemicals
+290196,construction sealant,chemicals
+290197,ceramic glaze,chemicals
+290198,soap noodles,chemicals
+290199,surfactant blend,chemicals
+290200,enzyme cleaner,chemicals
+290201,industrial acid blend,chemicals
+290202,industrial alkaline blend,chemicals
+290203,cosmetic serum,chemicals
+290204,beard oil,chemicals
+290205,massage oil,chemicals
+290206,pharmaceutical syrup,chemicals
+290207,first aid antiseptic,chemicals
+290208,chemical sample,chemicals
+290209,polymer additive,chemicals
+840110,industrial pump,machinery
+840111,water pump,machinery
+840112,hydraulic pump,machinery
+840113,air compressor,machinery
+840114,refrigeration compressor,machinery
+840115,electric generator,machinery
+840116,diesel generator,machinery
+840117,industrial valve,machinery
+840118,ball valve,machinery
+840119,pressure regulator,machinery
+840120,gearbox assembly,machinery
+840121,bearing set,machinery
+840122,roller bearing,machinery
+840123,conveyor belt,machinery
+840124,conveyor roller,machinery
+840125,forklift part,machinery
+840126,pallet truck,machinery
+840127,hand tool set,machinery
+840128,power drill,machinery
+840129,angle grinder,machinery
+840130,circular saw,machinery
+840131,welding machine,machinery
+840132,soldering iron,machinery
+840133,cnc machine part,machinery
+840134,lathe tool,machinery
+840135,milling cutter,machinery
+840136,industrial fan,machinery
+840137,blower unit,machinery
+840138,heat exchanger,machinery
+840139,boiler part,machinery
+840140,filter cartridge,machinery
+840141,oil filter,machinery
+840142,air filter,machinery
+840143,water filter,machinery
+840144,hydraulic cylinder,machinery
+840145,pneumatic cylinder,machinery
+840146,linear actuator,machinery
+840147,robot arm,machinery
+840148,automation sensor,machinery
+840149,proximity switch,machinery
+840150,industrial controller,machinery
+840151,plc module,machinery
+840152,hmi panel,machinery
+840153,servo motor,machinery
+840154,stepper motor,machinery
+840155,drive belt,machinery
+840156,timing belt,machinery
+840157,chain sprocket,machinery
+840158,industrial chain,machinery
+840159,pipe fitting,machinery
+840160,flange fitting,machinery
+840161,gasket seal,machinery
+840162,mechanical seal,machinery
+840163,fastener bolt,machinery
+840164,fastener nut,machinery
+840165,screw set,machinery
+840166,spring component,machinery
+840167,metal washer,machinery
+840168,cutting blade,machinery
+840169,saw blade,machinery
+840170,grinding wheel,machinery
+840171,abrasive disc,machinery
+840172,industrial hose,machinery
+840173,hydraulic hose,machinery
+840174,pneumatic hose,machinery
+840175,pressure gauge,machinery
+840176,temperature gauge,machinery
+840177,flow meter,machinery
+840178,level sensor,machinery
+840179,industrial scale,machinery
+840180,weighbridge part,machinery
+840181,packaging machine,machinery
+840182,label applicator,machinery
+840183,sealing machine,machinery
+840184,strapping machine,machinery
+840185,carton erector,machinery
+840186,warehouse rack,machinery
+840187,metal shelf,machinery
+840188,trolley cart,machinery
+840189,lifting sling,machinery
+840190,chain hoist,machinery
+840191,electric hoist,machinery
+840192,crane part,machinery
+840193,excavator part,machinery
+840194,tractor part,machinery
+840195,truck spare part,machinery
+840196,automotive brake pad,machinery
+840197,automotive clutch,machinery
+840198,engine spare part,machinery
+840199,transmission part,machinery
+840200,radiator part,machinery
+840201,fuel injector,machinery
+840202,shock absorber,machinery
+840203,suspension spring,machinery
+840204,wheel hub,machinery
+840205,tyre pressure sensor,machinery
+840206,industrial mould,machinery
+840207,metal die,machinery
+840208,3d printer,machinery
+840209,3d printer filament machine part,machinery

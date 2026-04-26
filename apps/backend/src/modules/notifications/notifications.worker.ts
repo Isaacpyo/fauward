@@ -23,12 +23,12 @@ if (sendgridApiKey) {
 }
 
 const twilioClient =
-  config.twilio.accountSid && config.twilio.authToken
+  config.twilio.accountSid?.startsWith('AC') && config.twilio.authToken
     ? twilio(config.twilio.accountSid, config.twilio.authToken)
     : null;
 
 let worker: Worker<NotificationJobData> | null = null;
-export const dlqNotificationQueue = new Queue<Record<string, unknown>>('dlq:notificationQueue', {
+export const dlqNotificationQueue = new Queue<Record<string, unknown>>('dlq-notificationQueue', {
   connection: bullmqConnection
 });
 

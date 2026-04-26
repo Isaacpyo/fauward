@@ -10,8 +10,10 @@ import { Textarea } from "@/components/ui/Textarea";
 import { api } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { useAppStore } from "@/stores/useAppStore";
+import { useTenantStore } from "@/stores/useTenantStore";
 
 type PaymentProvider = "STRIPE" | "PAYSTACK" | "FLUTTERWAVE" | "BANK_TRANSFER" | "COD";
+type PaymentRegion = "africa" | "europe" | "northAmerica" | "global";
 
 type ProviderConfig = {
   enabled: boolean;
@@ -45,6 +47,67 @@ type TenantSettingsResponse = {
 };
 
 const LOCAL_STORAGE_KEY = "fw_payment_integrations_draft";
+
+const providerLabels: Record<PaymentProvider, string> = {
+  STRIPE: "Stripe",
+  PAYSTACK: "Paystack",
+  FLUTTERWAVE: "Flutterwave",
+  BANK_TRANSFER: "Bank transfer / manual",
+  COD: "Cash on delivery"
+};
+
+const providerDescriptions: Record<PaymentProvider, string> = {
+  STRIPE: "Tenant-owned Stripe account and API credentials for customer card payments.",
+  PAYSTACK: "Tenant Paystack credentials for card, bank, transfer, and mobile money payments.",
+  FLUTTERWAVE: "Tenant Flutterwave credentials for regional collections and gateway switching.",
+  BANK_TRANSFER: "Offline settlement details for invoice-based or manual customer remittance.",
+  COD: "COD collection rules and remittance instructions for operations and finance."
+};
+
+const regionProviderMap: Record<PaymentRegion, PaymentProvider[]> = {
+  africa: ["PAYSTACK", "FLUTTERWAVE", "BANK_TRANSFER", "COD"],
+  europe: ["STRIPE", "BANK_TRANSFER"],
+  northAmerica: ["STRIPE", "BANK_TRANSFER"],
+  global: ["STRIPE", "PAYSTACK", "FLUTTERWAVE", "BANK_TRANSFER", "COD"]
+};
+
+function inferPaymentRegion(input: { region?: string | null; currency?: string | null; locale?: string | null }): PaymentRegion {
+  const region = input.region?.toLowerCase() ?? "";
+  const currency = input.currency?.toUpperCase() ?? "";
+  const locale = input.locale?.toLowerCase() ?? "";
+
+  if (
+    region.includes("africa") ||
+    ["NGN", "GHS", "KES", "ZAR", "UGX", "TZS", "RWF", "XOF", "XAF"].includes(currency) ||
+    locale.includes("-ng") ||
+    locale.includes("-gh") ||
+    locale.includes("-ke") ||
+    locale.includes("-za")
+  ) {
+    return "africa";
+  }
+
+  if (
+    region.includes("europe") ||
+    region.includes("uk") ||
+    ["GBP", "EUR", "CHF", "SEK", "NOK", "DKK"].includes(currency)
+  ) {
+    return "europe";
+  }
+
+  if (region.includes("america") || ["USD", "CAD"].includes(currency) || locale.includes("-us") || locale.includes("-ca")) {
+    return "northAmerica";
+  }
+
+  return "global";
+}
+
+function regionLabel(region: PaymentRegion) {
+  if (region === "africa") return "Africa";
+  if (region === "europe") return "Europe";
+  if (region === "northAmerica") return "North America";
+  return "Global";
+}
 
 const defaultIntegrations: PaymentIntegrations = {
   activeProvider: "STRIPE",
@@ -181,9 +244,19 @@ function ProviderSection({
 
 export function IntegrationsTab() {
   const addToast = useAppStore((state) => state.addToast);
+  const tenant = useTenantStore((state) => state.tenant);
   const [subTab, setSubTab] = useState("payments");
   const [integrations, setIntegrations] = useState<PaymentIntegrations>(() => readLocalDraft());
   const hasToken = Boolean(getAccessToken());
+  const paymentRegion = inferPaymentRegion({
+    region: tenant?.region,
+    currency: tenant?.currency,
+    locale: tenant?.locale
+  });
+  const regionalProviders = regionProviderMap[paymentRegion];
+  const secondaryProviders = (Object.keys(defaultIntegrations.providers) as PaymentProvider[]).filter(
+    (provider) => !regionalProviders.includes(provider)
+  );
 
   const tenantQuery = useQuery({
     queryKey: ["tenant-settings-payment-integrations"],
@@ -385,6 +458,20 @@ export function IntegrationsTab() {
     );
   }
 
+  function renderProviderSection(provider: PaymentProvider) {
+    return (
+      <ProviderSection
+        key={provider}
+        title={providerLabels[provider]}
+        description={providerDescriptions[provider]}
+        enabled={integrations.providers[provider].enabled}
+        onEnabledChange={(enabled) => updateProvider(provider, { enabled })}
+      >
+        {renderProviderFields(provider)}
+      </ProviderSection>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
@@ -410,8 +497,14 @@ export function IntegrationsTab() {
             <p className="mt-1 text-sm text-gray-600">
               Choose which enabled provider should be treated as the default collection channel.
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Badge variant="info">{regionLabel(paymentRegion)} payment options</Badge>
+              <span className="text-xs text-gray-500">
+                Based on {tenant?.currency ?? "workspace currency"} and {tenant?.region ?? tenant?.locale ?? "tenant locale"}.
+              </span>
+            </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              {(["STRIPE", "PAYSTACK", "FLUTTERWAVE", "BANK_TRANSFER", "COD"] as PaymentProvider[]).map((provider) => (
+              {[...regionalProviders, ...secondaryProviders].map((provider) => (
                 <button
                   key={provider}
                   type="button"
@@ -431,50 +524,18 @@ export function IntegrationsTab() {
             </div>
           </section>
 
-          <ProviderSection
-            title="Stripe"
-            description="Tenant-owned Stripe account and API credentials for customer card payments."
-            enabled={integrations.providers.STRIPE.enabled}
-            onEnabledChange={(enabled) => updateProvider("STRIPE", { enabled })}
-          >
-            {renderProviderFields("STRIPE")}
-          </ProviderSection>
-
-          <ProviderSection
-            title="Paystack"
-            description="Tenant Paystack credentials for card, bank, and transfer payments."
-            enabled={integrations.providers.PAYSTACK.enabled}
-            onEnabledChange={(enabled) => updateProvider("PAYSTACK", { enabled })}
-          >
-            {renderProviderFields("PAYSTACK")}
-          </ProviderSection>
-
-          <ProviderSection
-            title="Flutterwave"
-            description="Tenant Flutterwave credentials for regional collections and gateway switching."
-            enabled={integrations.providers.FLUTTERWAVE.enabled}
-            onEnabledChange={(enabled) => updateProvider("FLUTTERWAVE", { enabled })}
-          >
-            {renderProviderFields("FLUTTERWAVE")}
-          </ProviderSection>
-
-          <ProviderSection
-            title="Bank transfer / manual"
-            description="Offline settlement details for invoice-based or manual customer remittance."
-            enabled={integrations.providers.BANK_TRANSFER.enabled}
-            onEnabledChange={(enabled) => updateProvider("BANK_TRANSFER", { enabled })}
-          >
-            {renderProviderFields("BANK_TRANSFER")}
-          </ProviderSection>
-
-          <ProviderSection
-            title="Cash on delivery"
-            description="COD collection rules and remittance instructions for operations and finance."
-            enabled={integrations.providers.COD.enabled}
-            onEnabledChange={(enabled) => updateProvider("COD", { enabled })}
-          >
-            {renderProviderFields("COD")}
-          </ProviderSection>
+          <div className="space-y-5">
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-gray-900">{regionLabel(paymentRegion)} providers</h4>
+              <div className="space-y-5">{regionalProviders.map((provider) => renderProviderSection(provider))}</div>
+            </div>
+            {secondaryProviders.length > 0 ? (
+              <div>
+                <h4 className="mb-3 text-sm font-semibold text-gray-900">Other available providers</h4>
+                <div className="space-y-5">{secondaryProviders.map((provider) => renderProviderSection(provider))}</div>
+              </div>
+            ) : null}
+          </div>
 
           <div className="flex justify-end gap-2">
             <Button

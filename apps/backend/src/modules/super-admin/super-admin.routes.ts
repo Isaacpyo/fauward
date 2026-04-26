@@ -8,6 +8,7 @@ import { dlqNotificationQueue } from '../notifications/notifications.worker.js';
 import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../queues/queues.js';
 import { dlqOutboxQueue } from '../../queues/outbox.worker.js';
 import { dlqWebhookQueue } from '../../queues/webhook.worker.js';
+import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../regions/region-change-requests.store.js';
 
 export async function registerSuperAdminRoutes(app: FastifyInstance) {
   const preHandlers = [authenticate, requireRole(['SUPER_ADMIN'])];
@@ -282,6 +283,32 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
       shipmentsToday,
       dlqDepth
     });
+  });
+
+  app.get('/api/v1/admin/region-change-requests', { preHandler: preHandlers }, async (_request, reply) => {
+    reply.send({
+      requests: listRegionChangeRequests(),
+      regions: [
+        { key: 'africa', label: 'Africa', paymentProviders: ['Paystack', 'Flutterwave', 'Bank transfer', 'COD'] },
+        { key: 'europe', label: 'Europe', paymentProviders: ['Stripe', 'Bank transfer'] },
+        { key: 'northAmerica', label: 'North America', paymentProviders: ['Stripe', 'Bank transfer'] },
+        { key: 'global', label: 'Global', paymentProviders: ['Stripe', 'Paystack', 'Flutterwave', 'Bank transfer'] }
+      ]
+    });
+  });
+
+  app.patch('/api/v1/admin/region-change-requests/:id', { preHandler: preHandlers }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { status } = request.body as { status?: 'APPROVED' | 'REJECTED' };
+
+    if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
+      return reply.status(400).send({ error: 'status must be APPROVED or REJECTED' });
+    }
+
+    const regionRequest = updateRegionChangeRequestStatus(id, status, request.user?.email ?? 'Super admin');
+    if (!regionRequest) return reply.status(404).send({ error: 'Region change request not found' });
+
+    reply.send({ request: regionRequest });
   });
 
   app.get('/api/v1/admin/queues', { preHandler: preHandlers }, async (_request, reply) => {

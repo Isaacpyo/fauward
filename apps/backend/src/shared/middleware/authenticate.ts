@@ -10,6 +10,9 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (!userId || !tenantId) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
+    if (userId === 'platform-admin' && tenantId === 'system' && role === 'SUPER_ADMIN') {
+      return;
+    }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },
       select: { isActive: true }

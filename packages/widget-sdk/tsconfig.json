@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "module": "None",
+    "lib": ["ES2017", "DOM"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*"]
+}

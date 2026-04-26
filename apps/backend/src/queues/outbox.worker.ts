@@ -4,7 +4,7 @@ import { Queue } from 'bullmq';
 import { analyticsQueue, bullmqConnection, notificationQueue, outboxQueue, webhookQueue } from './queues.js';
 
 let timer: NodeJS.Timeout | null = null;
-export const dlqOutboxQueue = new Queue<Record<string, unknown>>('dlq:outboxQueue', {
+export const dlqOutboxQueue = new Queue<Record<string, unknown>>('dlq-outboxQueue', {
   connection: bullmqConnection
 });
 

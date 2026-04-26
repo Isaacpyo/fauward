@@ -21,15 +21,15 @@ const planOrder: Record<BillingPlan, number> = {
 const planInfo: Record<BillingPlan, { price: string; features: string[] }> = {
   starter: {
     price: "£29/mo",
-    features: ["200 shipments/mo", "5 staff seats", "Basic tracking"]
+    features: ["300 shipments/mo", "3 staff seats", "Basic tracking"]
   },
   pro: {
     price: "£79/mo",
-    features: ["1000 shipments/mo", "15 staff seats", "API + webhooks"]
+    features: ["2,000 shipments/mo", "15 staff seats", "Messaging", "Fauward Agent", "API + webhooks"]
   },
   enterprise: {
     price: "Custom",
-    features: ["Unlimited usage", "SSO", "SLA + priority support"]
+    features: ["Unlimited shipments", "Unlimited staff seats", "Messaging", "Fauward Agent", "SSO", "SLA + priority support"]
   }
 };
 

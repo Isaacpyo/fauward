@@ -7,6 +7,7 @@ import CookieConsent from "@/components/marketing/CookieConsent";
 import Footer from "@/components/marketing/Footer";
 import Navbar from "@/components/marketing/Navbar";
 import StructuredData from "@/components/seo/StructuredData";
+import { RelayWidget } from "@fauward/relay-ui";
 import { SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/marketing-data";
 import {
   MARKETING_KEYWORDS,
@@ -87,6 +88,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Navbar />
         <main>{children}</main>
         <Footer />
+        <RelayWidget greeting="Hi, how can we help?" />
         <CookieConsent />
         <Analytics />
         <SpeedInsights />

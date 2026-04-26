@@ -6,6 +6,7 @@ import CreateShipmentForm from "@/components/shipments/CreateShipmentForm";
 export default function WidgetPage() {
   const params = useSearchParams();
   const tenantSlug = params.get("tenant") ?? undefined;
+  const widgetToken = params.get("token") ?? undefined;
 
   function handleCreated(trackingRef: string) {
     // postMessage is already fired inside CreateShipmentForm
@@ -17,6 +18,7 @@ export default function WidgetPage() {
       <CreateShipmentForm
         embedded
         tenantSlug={tenantSlug}
+        widgetToken={widgetToken}
         onCreated={handleCreated}
         onTrack={handleCreated}
       />

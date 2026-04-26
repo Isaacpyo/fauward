@@ -34,6 +34,7 @@ import { registerTrackingRoutes } from './modules/tracking/tracking.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
+import { registerRelayRoutes } from './modules/relay/relay.routes.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
 
 function escapeRegex(source: string) {
@@ -111,6 +112,7 @@ export async function buildApp() {
   await registerNotificationsRoutes(app);
   await registerReturnsRoutes(app);
   await registerSupportRoutes(app);
+  await registerRelayRoutes(app);
   await registerPricingRoutes(app);
   await registerFleetRoutes(app);
   await registerSuperAdminRoutes(app);

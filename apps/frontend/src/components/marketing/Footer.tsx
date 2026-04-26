@@ -51,7 +51,7 @@ const footerColumns = [
       { href: "/support", label: "Help Centre" },
       { href: "/support#contact", label: "Contact Support" },
       { href: "/support#faq", label: "FAQs" },
-      { href: "https://docs.fauward.com", label: "Documentation" },
+      { href: "/docs", label: "Documentation" },
       { href: "/legal/privacy", label: "Privacy Policy" },
       { href: "/legal/terms", label: "Terms of Service" },
       { href: "/legal/cookies", label: "Cookie Policy" },

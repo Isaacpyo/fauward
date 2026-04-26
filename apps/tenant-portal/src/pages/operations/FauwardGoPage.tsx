@@ -171,11 +171,18 @@ export function FauwardGoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const overviewQuery = useQuery({
     queryKey: ["field-ops-overview"],
-    queryFn: async () => normalizeOverview((await api.get("/v1/field/ops/overview")).data),
-    refetchInterval: 30_000
+    queryFn: async () => {
+      try {
+        return normalizeOverview((await api.get("/v1/field/ops/overview")).data);
+      } catch {
+        return emptyOverview;
+      }
+    },
+    refetchInterval: 30_000,
+    retry: false
   });
 
-  const data = overviewQuery.data;
+  const data = overviewQuery.data ?? emptyOverview;
   const [selectedKpi, setSelectedKpi] = useState<KpiKey | null>(null);
   const detailPanelRef = useRef<HTMLDivElement | null>(null);
   const viewParam = searchParams.get("view");
@@ -768,7 +775,7 @@ export function FauwardGoPage() {
     <PageShell
       title="Fauward Go"
       description={pageDescription}
-      state={overviewQuery.isLoading ? "loading" : overviewQuery.isError ? "error" : "ready"}
+      state={overviewQuery.isLoading ? "loading" : "ready"}
       onRetry={() => void overviewQuery.refetch()}
       actions={
         activeView === "main" ? (

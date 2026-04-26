@@ -474,19 +474,39 @@ function PhoneVerificationOTP({
   );
 }
 
+async function postShipmentToSupabase(
+  payload: Record<string, unknown>,
+  widgetToken: string,
+): Promise<{ trackingRef: string; shipmentId: string }> {
+  const res = await fetch("/api/widget/shipments", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${widgetToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as Record<string, string>).error ?? `Shipment API error: ${res.status}`);
+  }
+  return res.json();
+}
+
 export default function CreateShipmentForm({
   embedded = false,
   onCreated,
   onBulkCompleted,
   onTrack,
   tenantSlug,
+  widgetToken,
 }: {
   embedded?: boolean;
   onCreated?: (trackingRef: string) => void;
   onBulkCompleted?: (results: BulkResult[]) => void;
   onTrack?: (trackingRef: string) => void;
-  // Widget-specific: tenant context injected from URL params
   tenantSlug?: string;
+  widgetToken?: string;
 }) {
   const router = useRouter();
   const bulkTopRef = useRef<HTMLDivElement | null>(null);
@@ -964,38 +984,50 @@ export default function CreateShipmentForm({
       const route = routeLabel(data.sender.country, data.recipient.country);
       const cw = calcChargeableWeight(data.pkg);
 
-      const shipmentData = removeUndefined({
-        trackingRef,
+      const shipmentPayload = {
         direction: data.direction,
         route,
-        status: "PENDING",
-        sender: data.sender,
-        recipient: data.recipient,
-        goods: data.goods,
-        pkg: data.pkg,
-        phoneVerified: data.phoneVerified,
-        priceEstimate: data.priceEstimate,
-        chargeableWeight: Number(cw.toFixed(2)),
-        assignedAgent: null,
+        sender_name: data.sender.fullName,
+        sender_email: data.sender.email ?? null,
+        sender_phone: `${data.sender.phoneDialCode ?? ""}${data.sender.phone}`,
+        sender_address: { address1: data.sender.address1, address2: data.sender.address2, city: data.sender.city, postcode: data.sender.postcode, country: data.sender.country },
+        recipient_name: data.recipient.fullName,
+        recipient_email: data.recipient.email ?? null,
+        recipient_phone: `${data.recipient.phoneDialCode ?? ""}${data.recipient.phone}`,
+        recipient_address: { address1: data.recipient.address1, address2: data.recipient.address2, city: data.recipient.city, postcode: data.recipient.postcode, country: data.recipient.country },
+        category: data.goods.category,
+        declared_value: data.goods.declaredValueGBP,
+        insurance: data.goods.insurance,
+        notes: data.goods.notes ?? null,
+        length_cm: data.pkg.lengthCm,
+        width_cm: data.pkg.widthCm,
+        height_cm: data.pkg.heightCm,
+        weight_kg: data.pkg.weightKg,
+        chargeable_weight: Number(cw.toFixed(2)),
+        price_estimate: data.priceEstimate,
+        phone_verified: data.phoneVerified,
         source: "widget",
-        tenantSlug,
-        createdByUid: authUser.uid,
-        createdByEmail: authUser.email,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+        widget_session_id: tenantSlug ?? null,
+      };
 
-      // TODO Phase 3: replace with POST /api/widget/shipments to write to tenant Supabase schema
-      const shipmentDoc = await addDoc(collection(db, "shipments"), shipmentData);
+      let shipmentId: string;
+      if (widgetToken) {
+        const result = await postShipmentToSupabase(shipmentPayload, widgetToken);
+        shipmentId = result.shipmentId;
+      } else {
+        // Fallback: Firebase (development only, no widget token)
+        const shipmentDoc = await addDoc(collection(db, "shipments"), { ...shipmentPayload, trackingRef, createdAt: serverTimestamp() });
+        shipmentId = shipmentDoc.id;
+      }
 
       fetch("/api/shipments/generate-qr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackingRef, shipmentId: shipmentDoc.id }),
+        body: JSON.stringify({ trackingRef, shipmentId }),
       }).catch(() => {});
 
       // Fire postMessage event to parent page
-      notifyParent({ type: "SHIPMENT_CREATED", trackingRef, shipmentId: shipmentDoc.id });
+      notifyParent({ type: "SHIPMENT_CREATED", trackingRef, shipmentId });
 
       onCreated?.(trackingRef);
       onTrack?.(trackingRef);
@@ -1174,31 +1206,37 @@ export default function CreateShipmentForm({
           const cw = calcChargeableWeight(row.pkg);
           const est = calcEstimate(cw, row.goods.declaredValueGBP, row.goods.insurance);
 
-          const shipmentData = removeUndefined({
-            trackingRef,
+          const bulkPayload = {
             direction: row.direction,
             route,
-            status: "PENDING",
-            sender: row.sender,
-            recipient: row.recipient,
-            goods: row.goods,
-            pkg: row.pkg,
-            phoneVerified: row.phoneVerified,
-            priceEstimate: Number(est.toFixed(2)),
-            chargeableWeight: Number(cw.toFixed(2)),
-            assignedAgent: null,
-            batchRef,
-            importSource: "BULK",
+            sender_name: row.sender.fullName,
+            sender_email: row.sender.email ?? null,
+            sender_phone: `${row.sender.phoneDialCode ?? ""}${row.sender.phone}`,
+            sender_address: { address1: row.sender.address1, city: row.sender.city, postcode: row.sender.postcode, country: row.sender.country },
+            recipient_name: row.recipient.fullName,
+            recipient_email: row.recipient.email ?? null,
+            recipient_phone: `${row.recipient.phoneDialCode ?? ""}${row.recipient.phone}`,
+            recipient_address: { address1: row.recipient.address1, city: row.recipient.city, postcode: row.recipient.postcode, country: row.recipient.country },
+            category: row.goods.category,
+            declared_value: row.goods.declaredValueGBP,
+            insurance: row.goods.insurance,
+            notes: row.goods.notes ?? null,
+            length_cm: row.pkg.lengthCm,
+            width_cm: row.pkg.widthCm,
+            height_cm: row.pkg.heightCm,
+            weight_kg: row.pkg.weightKg,
+            chargeable_weight: Number(cw.toFixed(2)),
+            price_estimate: Number(est.toFixed(2)),
+            phone_verified: row.phoneVerified,
             source: "widget",
-            tenantSlug,
-            createdByUid: authUser.uid,
-            createdByEmail: authUser.email,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+            widget_session_id: batchRef,
+          };
 
-          // TODO Phase 3: replace with POST /api/widget/shipments
-          await addDoc(collection(db, "shipments"), shipmentData);
+          if (widgetToken) {
+            await postShipmentToSupabase(bulkPayload, widgetToken);
+          } else {
+            await addDoc(collection(db, "shipments"), { ...bulkPayload, trackingRef, createdAt: serverTimestamp() });
+          }
           trackingRefs.push(trackingRef);
 
           results.push({ ok: true, row: row._row, trackingRef });
@@ -1893,34 +1931,45 @@ export default function CreateShipmentForm({
                       const route = routeLabel(data.sender.country, data.recipient.country);
                       const cw = calcChargeableWeight(data.pkg);
 
-                      const shipmentData = removeUndefined({
-                        trackingRef,
+                      const paymentShipmentPayload = {
                         direction: data.direction,
                         route,
-                        status: "PENDING",
-                        sender: data.sender,
-                        recipient: data.recipient,
-                        goods: data.goods,
-                        pkg: data.pkg,
-                        phoneVerified: data.phoneVerified,
-                        priceEstimate: data.priceEstimate,
-                        chargeableWeight: Number(cw.toFixed(2)),
-                        assignedAgent: null,
+                        sender_name: data.sender.fullName,
+                        sender_email: data.sender.email ?? null,
+                        sender_phone: `${data.sender.phoneDialCode ?? ""}${data.sender.phone}`,
+                        sender_address: { address1: data.sender.address1, city: data.sender.city, postcode: data.sender.postcode, country: data.sender.country },
+                        recipient_name: data.recipient.fullName,
+                        recipient_email: data.recipient.email ?? null,
+                        recipient_phone: `${data.recipient.phoneDialCode ?? ""}${data.recipient.phone}`,
+                        recipient_address: { address1: data.recipient.address1, city: data.recipient.city, postcode: data.recipient.postcode, country: data.recipient.country },
+                        category: data.goods.category,
+                        declared_value: data.goods.declaredValueGBP,
+                        insurance: data.goods.insurance,
+                        notes: data.goods.notes ?? null,
+                        length_cm: data.pkg.lengthCm,
+                        width_cm: data.pkg.widthCm,
+                        height_cm: data.pkg.heightCm,
+                        weight_kg: data.pkg.weightKg,
+                        chargeable_weight: Number(cw.toFixed(2)),
+                        price_estimate: data.priceEstimate,
+                        phone_verified: data.phoneVerified,
                         source: "widget",
-                        tenantSlug,
-                        createdByUid: authUser.uid,
-                        createdByEmail: authUser.email,
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp(),
-                      });
+                        widget_session_id: tenantSlug ?? null,
+                      };
 
-                      // TODO Phase 3: replace with POST /api/widget/shipments
-                      const shipmentDoc = await addDoc(collection(db, "shipments"), shipmentData);
+                      let shipmentId: string;
+                      if (widgetToken) {
+                        const result = await postShipmentToSupabase(paymentShipmentPayload, widgetToken);
+                        shipmentId = result.shipmentId;
+                      } else {
+                        const shipmentDoc = await addDoc(collection(db, "shipments"), { ...paymentShipmentPayload, trackingRef, createdAt: serverTimestamp() });
+                        shipmentId = shipmentDoc.id;
+                      }
 
                       fetch("/api/shipments/generate-qr", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ trackingRef, shipmentId: shipmentDoc.id }),
+                        body: JSON.stringify({ trackingRef, shipmentId }),
                       }).catch(() => {});
 
                       return trackingRef;

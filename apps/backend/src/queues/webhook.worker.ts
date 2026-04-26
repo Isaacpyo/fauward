@@ -14,7 +14,7 @@ type WebhookJobData = {
   shipmentId?: unknown;
 };
 
-const DLQ_WEBHOOK_QUEUE = 'dlq:webhookQueue';
+const DLQ_WEBHOOK_QUEUE = 'dlq-webhookQueue';
 
 export const dlqWebhookQueue = new Queue<Record<string, unknown>>(DLQ_WEBHOOK_QUEUE, {
   connection: bullmqConnection,

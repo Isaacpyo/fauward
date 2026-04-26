@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 type TabItem = {
   value: string;
-  label: string;
+  label: ReactNode;
 };
 
 type TabsProps = {

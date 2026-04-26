@@ -20,7 +20,10 @@ const envSchema = z.object({
   TWILIO_FROM: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_API_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional()
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  FIREBASE_PROJECT_ID: z.string().default('fauward'),
+  PLATFORM_ADMIN_EMAIL: z.string().email().default('fauward@gmail.com'),
+  PLATFORM_ADMIN_PASSWORD: z.string().min(8).default('Oluwaseun44!')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -53,5 +56,12 @@ export const config = {
     // Accept either env name so deploy config can use the existing Stripe secret key label.
     secretKey: parsed.data.STRIPE_SECRET_KEY ?? parsed.data.STRIPE_API_KEY,
     webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
+  },
+  firebase: {
+    projectId: parsed.data.FIREBASE_PROJECT_ID
+  },
+  platformAdmin: {
+    email: parsed.data.PLATFORM_ADMIN_EMAIL.toLowerCase(),
+    password: parsed.data.PLATFORM_ADMIN_PASSWORD
   }
 };

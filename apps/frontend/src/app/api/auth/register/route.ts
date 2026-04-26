@@ -4,9 +4,12 @@ type RegisterPayload = {
   name?: string;
   email?: string;
   company?: string;
+  plan?: "starter" | "pro" | "enterprise";
   password?: string;
   acceptedTerms?: boolean;
 };
+
+const planIds = new Set(["starter", "pro", "enterprise"]);
 
 function isValidPayload(payload: RegisterPayload): boolean {
   return Boolean(
@@ -16,6 +19,8 @@ function isValidPayload(payload: RegisterPayload): boolean {
       payload.company.trim().length > 1 &&
       payload.email &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email) &&
+      payload.plan &&
+      planIds.has(payload.plan) &&
       payload.password &&
       payload.password.length >= 8 &&
       payload.acceptedTerms
@@ -33,23 +38,49 @@ export async function POST(request: Request) {
 
   if (backendUrl) {
     try {
-      const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/auth/register`, {
+      const response = await fetch(`${backendUrl.replace(/\/$/, "")}/api/v1/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          companyName: payload.company,
+          region: "global",
+          email: payload.email,
+          plan: payload.plan,
+          password: payload.password
+        })
       });
+      const result = (await response.json().catch(() => null)) as
+        | {
+            tenant?: { slug?: string };
+            accessToken?: string;
+            refreshToken?: string;
+            user?: unknown;
+            error?: string;
+          }
+        | null;
 
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
         return NextResponse.json(
-          { message: body || "Unable to register at this time." },
+          { message: result?.error || "Unable to register at this time." },
           { status: response.status >= 400 ? response.status : 500 }
         );
       }
+
+      const tenantSlug = result?.tenant?.slug;
+      return NextResponse.json(
+        {
+          ok: true,
+          tenantSlug,
+          tenantUrl: tenantSlug ? `http://localhost:3000` : undefined,
+          accessToken: result?.accessToken,
+          refreshToken: result?.refreshToken
+        },
+        { status: 201 }
+      );
     } catch {
       return NextResponse.json({ message: "Registration service unavailable." }, { status: 502 });
     }
   }
 
-  return NextResponse.json({ ok: true }, { status: 201 });
+  return NextResponse.json({ ok: true, tenantUrl: "http://localhost:3000" }, { status: 201 });
 }

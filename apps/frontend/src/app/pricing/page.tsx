@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import CTABanner from "@/components/marketing/CTABanner";
 import FAQAccordion from "@/components/marketing/FAQAccordion";
@@ -48,6 +49,21 @@ export default function PricingPage() {
           <div className="mt-12">
             <PricingCards />
           </div>
+          <div className="mt-10 rounded-xl border border-amber-200 bg-amber-50 p-6 md:flex md:items-center md:justify-between md:gap-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">Fauward Agent is built in — not bolted on</h2>
+              <p className="mt-3 text-base leading-7 text-gray-700">
+                Available on Pro and Enterprise plans. No separate pricing, no API key setup, no integrations to configure.
+                Switch it on from your dashboard.
+              </p>
+            </div>
+            <Link
+              href="/agent"
+              className="mt-5 inline-flex h-11 shrink-0 items-center justify-center rounded-lg bg-amber-600 px-5 text-sm font-semibold text-white transition hover:bg-amber-700 md:mt-0"
+            >
+              More details on /agent
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -62,7 +78,7 @@ export default function PricingPage() {
       </section>
 
       <FAQAccordion groups={BILLING_FAQ_GROUPS} />
-      <CTABanner title="Need a plan tailored to your operation?" description="Talk with our team about enterprise controls, SSO, and dedicated support." ctaLabel="Talk to Sales" ctaHref="/support#contact" />
+      <CTABanner title="Need a plan tailored to your operation?" description="Enterprise controls, SSO, custom SLA, and dedicated support can be configured around your operation." ctaLabel="Talk to Sales" ctaHref="/support#contact" />
     </>
   );
 }

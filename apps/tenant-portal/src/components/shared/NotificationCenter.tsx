@@ -1,9 +1,12 @@
 import * as RadixDropdown from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRelayNotifications } from "@fauward/relay-ui";
 import { AlertCircle, Bell, MessageSquare, RefreshCw, Wallet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "@/lib/api";
+import { hasDevTestSession } from "@/lib/auth";
+import { useTenantStore } from "@/stores/useTenantStore";
 
 type InAppNotification = {
   id: string;
@@ -45,6 +48,8 @@ async function fetchUnreadCount() {
 export function NotificationCenter() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const tenant = useTenantStore((state) => state.tenant);
+  const relayTenantId = hasDevTestSession() ? "tenant_dev" : tenant?.tenant_id;
 
   const notificationsQuery = useQuery({
     queryKey: ["notifications"],
@@ -83,7 +88,13 @@ export function NotificationCenter() {
   });
 
   const notifications = notificationsQuery.data ?? [];
-  const unreadCount = unreadCountQuery.data ?? notifications.filter((item) => !item.isRead).length;
+  const relayNotifications = useRelayNotifications({
+    mode: "tenant",
+    tenantId: relayTenantId,
+    storageKey: `fw_relay_notifications_read_tenant_${relayTenantId ?? "unknown"}`,
+    enabled: Boolean(relayTenantId)
+  });
+  const unreadCount = (unreadCountQuery.data ?? notifications.filter((item) => !item.isRead).length) + relayNotifications.unreadCount;
 
   return (
     <RadixDropdown.Root>
@@ -108,14 +119,45 @@ export function NotificationCenter() {
               type="button"
               className="text-xs font-medium text-[var(--tenant-primary)] hover:underline disabled:opacity-50"
               disabled={markAllRead.isPending || unreadCount === 0}
-              onClick={() => markAllRead.mutate()}
+              onClick={() => {
+                relayNotifications.markRead();
+                markAllRead.mutate();
+              }}
             >
               Mark all read
             </button>
           </div>
 
           <div className="max-h-[400px] overflow-y-auto">
-            {notifications.length === 0 ? (
+            {relayNotifications.items.length > 0 ? (
+              <div className="mb-1 border-b border-gray-100 pb-1">
+                {relayNotifications.items.slice(0, 5).map((notification) => (
+                  <button
+                    key={notification.id}
+                    type="button"
+                    className="flex w-full gap-3 rounded-md px-2 py-2.5 text-left hover:bg-gray-50"
+                    onClick={() => {
+                      relayNotifications.markRead(notification.id);
+                      navigate("/messaging");
+                    }}
+                  >
+                    <div className="mt-0.5 shrink-0">
+                      <MessageSquare size={14} className="text-emerald-600" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="line-clamp-1 text-sm font-medium text-gray-900">{notification.title}</p>
+                        {!notification.isRead ? <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-red-500" /> : null}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-xs text-gray-600">{notification.body}</p>
+                      <p className="mt-1 text-[11px] text-gray-500">{toRelativeTime(notification.createdAt)}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {notifications.length === 0 && relayNotifications.items.length === 0 ? (
               <p className="px-2 py-8 text-center text-sm text-gray-500">No notifications</p>
             ) : (
               notifications.map((notification) => (
@@ -152,4 +194,3 @@ export function NotificationCenter() {
     </RadixDropdown.Root>
   );
 }
-

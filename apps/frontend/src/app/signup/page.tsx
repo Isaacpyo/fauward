@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import BrandLogo from "@/components/marketing/BrandLogo";
 import SignupForm from "@/components/marketing/SignupForm";
@@ -40,6 +41,12 @@ export default function SignupPage() {
                 </li>
               ))}
             </ul>
+            <Link
+              href="/pricing"
+              className="mt-8 inline-flex h-11 items-center justify-center rounded-lg border border-amber-600 px-5 text-sm font-semibold text-amber-700 transition hover:bg-amber-50"
+            >
+              View pricing plans
+            </Link>
           </aside>
         </div>
       </div>

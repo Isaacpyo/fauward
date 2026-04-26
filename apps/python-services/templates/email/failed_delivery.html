@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:22px;margin:0 0 12px;">Delivery attempt failed</h1>
+<p>Hello {{ recipient.name or "there" }},</p>
+<p>We could not complete delivery for {{ variables.trackingRef }}.</p>
+<p>Reason: {{ variables.reason or "Not available" }}</p>
+{% endblock %}

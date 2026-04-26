@@ -3,6 +3,7 @@ import { join } from 'path';
 
 import type { FastifyInstance } from 'fastify';
 import { DocumentType } from '@prisma/client';
+import { publishPythonServiceJob } from '../../queues/python-services.js';
 
 const TEMPLATE_DIR = join(process.cwd(), 'src', 'modules', 'documents', 'templates');
 const LOCAL_STORAGE_DIR = join(process.cwd(), '.storage', 'documents');
@@ -98,6 +99,24 @@ export const documentsService = {
         type: DocumentType.INVOICE,
         fileUrl,
         generatedBy: 'system'
+      }
+    });
+    await publishPythonServiceJob(app, 'fauward:pdf:generate', {
+      jobId: document.id,
+      tenantId,
+      type: 'invoice',
+      shipmentId: invoice.shipmentId,
+      data: {
+        invoiceNumber: invoice.invoiceNumber,
+        customerName: invoice.organisation?.name ?? 'Customer',
+        subtotal: Number(invoice.subtotal),
+        vat: Number(invoice.taxAmount),
+        total: Number(invoice.total),
+        currency: invoice.currency,
+        status: invoice.status,
+        dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? null,
+        trackingRef: invoice.shipment?.trackingNumber ?? null,
+        lineItems: invoice.lineItems
       }
     });
 

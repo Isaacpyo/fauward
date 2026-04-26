@@ -16,21 +16,21 @@ const logoMap: Record<
 > = {
   mark: {
     src: "/brand/logo-mark.png",
-    alt: "Fauward speed mark icon",
-    width: 580,
-    height: 560
+    alt: "Fauward brand icon",
+    width: 512,
+    height: 512
   },
   wordmark: {
     src: "/brand/logo-wordmark.png",
     alt: "Fauward wordmark",
-    width: 1230,
-    height: 250
+    width: 756,
+    height: 246
   },
   lockup: {
     src: "/brand/logo-lockup.png",
-    alt: "Fauward speed mark primary lockup",
-    width: 1400,
-    height: 960
+    alt: "Fauward primary logo",
+    width: 1017,
+    height: 985
   }
 };
 

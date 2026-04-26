@@ -9,6 +9,7 @@
                     "preview":  "vite preview"
                 },
     "dependencies":  {
+                         "@fauward/relay-ui": "*",
                          "@tanstack/react-query":  "^5.62.0",
                          "@tanstack/react-virtual": "^3.10.8",
                          "axios":  "^1.7.7",

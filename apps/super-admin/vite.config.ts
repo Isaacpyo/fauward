@@ -12,6 +12,16 @@ export default defineConfig({
   server: {
     port: 5173,
     host: '0.0.0.0',
-    allowedHosts: true
+    allowedHosts: true,
+    proxy: {
+      '/api/v1': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
+      },
+      '/api/relay': {
+        target: 'http://localhost:5000',
+        changeOrigin: true
+      }
+    }
   }
 });

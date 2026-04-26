@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import { TenantPlan, type PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import {
@@ -11,17 +11,24 @@ import {
 } from '../../shared/utils/jwt.js';
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
+import { config } from '../../config/index.js';
+import { verifyFirebaseIdToken } from './firebase-token.js';
 
 type RegisterPayload = {
   companyName: string;
   region: string;
   email: string;
+  plan?: 'starter' | 'pro' | 'enterprise';
   password: string;
 };
 
 type LoginPayload = {
   email: string;
   password: string;
+};
+
+type FirebaseLoginPayload = {
+  idToken: string;
 };
 
 type RefreshPayload = {
@@ -35,6 +42,12 @@ type EmailLinkRequestPayload = {
 type EmailLinkConsumePayload = {
   email: string;
   token: string;
+};
+
+const tenantPlanBySignupPlan: Record<NonNullable<RegisterPayload['plan']>, TenantPlan> = {
+  starter: TenantPlan.STARTER,
+  pro: TenantPlan.PRO,
+  enterprise: TenantPlan.ENTERPRISE
 };
 
 function slugify(input: string) {
@@ -78,6 +91,32 @@ function buildJwtPayload(user: { id: string; email: string; role: string; tenant
   return payload;
 }
 
+function isPlatformAdminCredentials(payload: LoginPayload) {
+  return (
+    payload.email.toLowerCase().trim() === config.platformAdmin.email &&
+    payload.password === config.platformAdmin.password
+  );
+}
+
+function buildPlatformAdminPayload(): JwtPayload {
+  return {
+    sub: 'platform-admin',
+    email: config.platformAdmin.email,
+    role: 'SUPER_ADMIN',
+    tenantId: 'system',
+    tenantSlug: 'system',
+    plan: 'SYSTEM',
+    mfaVerified: true
+  };
+}
+
+function issueTokens(jwtPayload: JwtPayload) {
+  return {
+    accessToken: signAccessToken(jwtPayload),
+    refreshToken: signRefreshToken(jwtPayload)
+  };
+}
+
 export const authService = {
   register: async (payload: RegisterPayload, prisma: PrismaClient) => {
     const email = payload.email.toLowerCase().trim();
@@ -92,6 +131,7 @@ export const authService = {
     const slug = await ensureUniqueSlug(prisma, baseSlug);
     const passwordHash = await hashPassword(payload.password);
     const usageMonth = monthKey();
+    const selectedPlan = tenantPlanBySignupPlan[payload.plan ?? 'starter'];
 
     const result = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
@@ -99,7 +139,7 @@ export const authService = {
           name: payload.companyName,
           slug,
           region: payload.region,
-          plan: 'TRIALING',
+          plan: selectedPlan,
           status: 'TRIALING'
         }
       });
@@ -215,7 +255,7 @@ export const authService = {
       await tx.subscription.create({
         data: {
           tenantId: tenant.id,
-          plan: 'TRIALING',
+          plan: selectedPlan,
           status: 'TRIALING',
           billingCycle: 'MONTHLY'
         }
@@ -249,6 +289,21 @@ export const authService = {
   },
   login: async (payload: LoginPayload, prisma: PrismaClient, tenantId: string) => {
     const email = payload.email.toLowerCase().trim();
+    if (isPlatformAdminCredentials(payload) && tenantId === 'system') {
+      const tokens = issueTokens(buildPlatformAdminPayload());
+      return {
+        ...tokens,
+        tenantSlug: 'system',
+        tenantId: 'system',
+        role: 'SUPER_ADMIN',
+        user: {
+          id: 'platform-admin',
+          email: config.platformAdmin.email,
+          role: 'SUPER_ADMIN'
+        }
+      };
+    }
+
     const user = await prisma.user.findFirst({
       where: { email, tenantId, isActive: true }
     });
@@ -288,12 +343,109 @@ export const authService = {
       tenantId: tenant.id
     };
   },
+  firebaseLogin: async (payload: FirebaseLoginPayload, prisma: PrismaClient, tenantId?: string) => {
+    const firebaseUser = await verifyFirebaseIdToken(payload.idToken);
+    const email = firebaseUser.email?.toLowerCase().trim();
+
+    if (!email || firebaseUser.email_verified !== true) {
+      throw new Error('Verified Google email is required');
+    }
+
+    if (email === config.platformAdmin.email && (!tenantId || tenantId === 'system')) {
+      const tokens = issueTokens(buildPlatformAdminPayload());
+      return {
+        ...tokens,
+        tenantSlug: 'system',
+        tenantId: 'system',
+        role: 'SUPER_ADMIN',
+        user: {
+          id: 'platform-admin',
+          email: config.platformAdmin.email,
+          role: 'SUPER_ADMIN'
+        }
+      };
+    }
+
+    let resolvedTenantId = tenantId;
+    if (!resolvedTenantId || resolvedTenantId === 'system') {
+      const matches = await prisma.user.findMany({
+        where: {
+          email,
+          isActive: true
+        },
+        select: { tenantId: true },
+        distinct: ['tenantId']
+      });
+
+      if (matches.length === 0) {
+        throw new Error('No Fauward account is linked to this Google email');
+      }
+      if (matches.length > 1) {
+        throw new Error('Multiple tenant workspaces use this email. Sign in from your tenant portal.');
+      }
+      resolvedTenantId = matches[0].tenantId;
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        tenantId: resolvedTenantId,
+        isActive: true
+      }
+    });
+    if (!user) {
+      throw new Error('No Fauward account is linked to this Google email');
+    }
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: resolvedTenantId } });
+    if (!tenant) {
+      throw new Error('Tenant not found');
+    }
+
+    const jwtPayload = buildJwtPayload(
+      { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
+      { slug: tenant.slug, plan: tenant.plan }
+    );
+
+    const accessToken = signAccessToken(jwtPayload);
+    const refreshToken = signRefreshToken(jwtPayload);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshToken,
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      }
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      tenantSlug: tenant.slug,
+      tenantId: tenant.id,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      }
+    };
+  },
   refresh: async (payload: RefreshPayload, prisma: PrismaClient) => {
     let decoded: JwtPayload;
     try {
       decoded = verifyRefreshToken(payload.refreshToken);
     } catch {
       throw new Error('Invalid refresh token');
+    }
+
+    if (decoded.sub === 'platform-admin' && decoded.role === 'SUPER_ADMIN' && decoded.tenantId === 'system') {
+      const tokens = issueTokens(buildPlatformAdminPayload());
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tenantSlug: 'system',
+        tenantId: 'system'
+      };
     }
 
     const refreshToken = await prisma.refreshToken.findUnique({

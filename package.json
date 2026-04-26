@@ -3,21 +3,28 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "npm@10.9.2",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace=apps/backend",
-    "build": "npm run build --workspace=apps/backend",
+    "dev": "turbo run dev --filter=@fauward/backend --filter=@fauward/frontend --filter=@fauward/tenant-portal --filter=@fauward/super-admin",
+    "dev:all": "turbo run dev",
+    "dev:backend": "turbo run dev --filter=@fauward/backend",
+    "dev:frontend": "turbo run dev --filter=@fauward/frontend --filter=@fauward/tenant-portal",
+    "build": "turbo run build",
     "start": "npm run start --workspace=apps/backend",
-    "lint": "npm run lint --workspace=apps/backend",
-    "test": "npm run test --workspace=apps/backend"
+    "lint": "turbo run lint",
+    "test": "turbo run test"
   },
   "engines": {
     "node": "20.x"
   },
   "dependencies": {
     "serve": "^14.2.6"
+  },
+  "devDependencies": {
+    "turbo": "^2.9.6"
   }
 }

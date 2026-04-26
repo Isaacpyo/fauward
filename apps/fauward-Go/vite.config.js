@@ -7,7 +7,7 @@ export default defineConfig({
         react(),
         VitePWA({
             registerType: "autoUpdate",
-            includeAssets: ["icons/app-icon.svg"],
+            includeAssets: ["icons/app-icon-192.png", "icons/app-icon-512.png"],
             manifest: {
                 name: "Fauward Go",
                 short_name: "FGo",
@@ -18,9 +18,15 @@ export default defineConfig({
                 start_url: "/",
                 icons: [
                     {
-                        src: "/icons/app-icon.svg",
-                        sizes: "any",
-                        type: "image/svg+xml",
+                        src: "/icons/app-icon-192.png",
+                        sizes: "192x192",
+                        type: "image/png",
+                        purpose: "any"
+                    },
+                    {
+                        src: "/icons/app-icon-512.png",
+                        sizes: "512x512",
+                        type: "image/png",
                         purpose: "any maskable"
                     }
                 ]

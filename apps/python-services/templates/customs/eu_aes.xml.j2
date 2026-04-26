@@ -1,0 +1,20 @@
+<Declaration type="eu_aes">
+  <JobId>{{ jobId }}</JobId>
+  <TenantId>{{ tenantId }}</TenantId>
+  <ShipmentId>{{ shipmentId }}</ShipmentId>
+  <Declarant>{{ shipment.declarant or shipment.senderName or "" }}</Declarant>
+  <Consignee>{{ shipment.consignee or shipment.recipientName or "" }}</Consignee>
+  <ExportCountry>{{ shipment.originCountry or "" }}</ExportCountry>
+  <ImportCountry>{{ shipment.destCountry or "" }}</ImportCountry>
+  <Goods>
+    {% for item in shipment.items or [] %}
+    <Good>
+      <Description>{{ item.description }}</Description>
+      <CommodityCode>{{ item.hsCode or item.hs_code or "" }}</CommodityCode>
+      <NetMassKg>{{ item.weightKg or 0 }}</NetMassKg>
+      <InvoiceValue>{{ item.declaredValue or item.value or 0 }}</InvoiceValue>
+      <Currency>{{ item.currency or shipment.currency or "EUR" }}</Currency>
+    </Good>
+    {% endfor %}
+  </Goods>
+</Declaration>

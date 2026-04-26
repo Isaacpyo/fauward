@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -286,6 +286,36 @@ const fallbackStaff: StaffRow[] = [
 const fallbackActiveDeliveryCount = 53;
 const fallbackOpenTicketCount = 4;
 
+function DashboardShimmer() {
+  return (
+    <PageShell title="Dashboard" description="Loading your operational command centre.">
+      <div className="space-y-6">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="mt-4 h-8 w-20" />
+              <Skeleton className="mt-3 h-3 w-32" />
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <Skeleton className="h-72 rounded-2xl" />
+          <Skeleton className="h-72 rounded-2xl" />
+        </div>
+        <div className="grid gap-4 xl:grid-cols-[1.3fr,0.7fr]">
+          <Skeleton className="h-80 rounded-2xl" />
+          <div className="space-y-3">
+            <Skeleton className="h-24 rounded-2xl" />
+            <Skeleton className="h-24 rounded-2xl" />
+            <Skeleton className="h-24 rounded-2xl" />
+          </div>
+        </div>
+      </div>
+    </PageShell>
+  );
+}
+
 function startOfDay(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -358,17 +388,19 @@ function MetricCard({
   return (
     <Link
       to={href}
-      className="group rounded-2xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-sm"
+      className="group flex min-h-[188px] flex-col rounded-2xl border border-gray-200 bg-white p-4 transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-sm"
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-400">{label}</p>
-          <p className="mt-3 text-3xl font-bold text-gray-900">{value}</p>
-          <p className={cn("mt-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", accent)}>{delta}</p>
-          <p className="mt-2 text-xs text-gray-500">{subtitle}</p>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-3 text-gray-700">{icon}</div>
+        <p className="min-h-8 max-w-[11rem] text-[11px] font-semibold uppercase leading-4 tracking-[0.16em] text-gray-400">
+          {label}
+        </p>
+        <div className="shrink-0 rounded-xl border border-gray-200 bg-gray-50 p-2.5 text-gray-700">{icon}</div>
       </div>
+      <p className="mt-3 text-3xl font-bold leading-none text-gray-900">{value}</p>
+      <p className={cn("mt-4 inline-flex min-h-8 w-fit max-w-full items-center rounded-full border px-2.5 py-1 text-xs font-semibold leading-4", accent)}>
+        {delta}
+      </p>
+      <p className="mt-auto pt-3 text-xs leading-5 text-gray-500">{subtitle}</p>
     </Link>
   );
 }
@@ -447,7 +479,7 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="relative h-56 overflow-hidden rounded-2xl border border-slate-200 bg-[radial-gradient(circle_at_top,#dbeafe,transparent_40%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
+      <div className="relative h-56 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50">
         <div className="absolute inset-0 opacity-60">
           <div className="absolute inset-x-6 top-10 h-px bg-slate-200" />
           <div className="absolute inset-x-6 top-24 h-px bg-slate-200" />
@@ -465,7 +497,7 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
             <div
               className={cn(
                 "h-3.5 w-3.5 rounded-full border-2 border-white shadow",
-                point.status === "OUT_FOR_DELIVERY" ? "bg-amber-500" : "bg-sky-500"
+                point.status === "OUT_FOR_DELIVERY" ? "bg-[var(--tenant-primary)]" : "bg-gray-500"
               )}
             />
             {point.emphasis ? (
@@ -502,6 +534,7 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
 }
 
 export function TenantDashboardPage() {
+  const [showShimmer, setShowShimmer] = useState(true);
   const tenant = useTenantStore((state) => state.tenant);
   const user = useAppStore((state) => state.user);
   const dashboardChecklistDismissed = useAppStore((state) => state.dashboardChecklistDismissed);
@@ -620,33 +653,42 @@ export function TenantDashboardPage() {
     {
       label: "Overdue pending jobs",
       value: shipmentAnalyticsWeek.exceptions.stalePendingOver24h,
-      tone: "border-red-200 bg-red-50 text-red-700",
+      tone: "border-amber-200 bg-amber-50 text-amber-900",
       hint: "Shipments stuck without progress for more than 24 hours.",
       href: "/shipments?status=PENDING"
     },
     {
       label: "Active exceptions",
       value: shipmentAnalyticsWeek.exceptions.activeExceptions,
-      tone: "border-amber-200 bg-amber-50 text-amber-800",
+      tone: "border-amber-200 bg-amber-50 text-amber-900",
       hint: "Operational exceptions needing intervention.",
       href: "/shipments?status=EXCEPTION"
     },
     {
       label: "Failed delivery rate",
       value: `${shipmentAnalyticsWeek.exceptions.failedDeliveryRate.toFixed(1)}%`,
-      tone: "border-slate-200 bg-slate-50 text-slate-700",
+      tone: "border-gray-200 bg-gray-50 text-gray-800",
       hint: "Share of out-for-delivery jobs ending in a failed attempt.",
       href: "/analytics"
     },
     {
       label: "Open support cases",
       value: openTickets,
-      tone: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      tone: "border-gray-200 bg-gray-50 text-gray-800",
       hint: "Tickets still open across customer and ops support.",
       href: "/support"
     }
   ];
   const financeForbidden = queryErrorStatus(financeSummaryQuery.error) === 403 || queryErrorStatus(revenueQuery.error) === 403;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowShimmer(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  if (showShimmer) {
+    return <DashboardShimmer />;
+  }
 
   return (
     <PageShell
@@ -679,42 +721,42 @@ export function TenantDashboardPage() {
               {
                 label: "Create shipment",
                 to: "/shipments/create",
-                className: "border-sky-200 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Bulk import",
                 to: "/reports",
-                className: "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Dispatch jobs",
                 to: "/dispatch",
-                className: "border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Build route",
                 to: "/routes",
-                className: "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Raise support case",
                 to: "/support",
-                className: "border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Invite team",
                 to: "/team",
-                className: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Export report",
                 to: "/reports",
-                className: "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
                 label: "Open live map",
                 to: "/operations/live-map",
-                className: "border-cyan-200 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
+                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               }
             ].map((action) => (
               <Button
@@ -732,14 +774,14 @@ export function TenantDashboardPage() {
           </div>
         </SectionCard>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
           <MetricCard
             label="Shipments today"
             value={String(overview.totals.shipments.value)}
             delta={`${formatDelta(overview.totals.shipments.changePct)} vs previous window`}
             href="/shipments?datePreset=today"
             icon={<PackageCheck size={18} />}
-            accent={overview.totals.shipments.changePct >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}
+            accent={overview.totals.shipments.changePct >= 0 ? "border-gray-200 bg-gray-50 text-gray-700" : "border-amber-200 bg-amber-50 text-amber-900"}
             subtitle="New shipments created since midnight"
           />
           <MetricCard
@@ -748,7 +790,7 @@ export function TenantDashboardPage() {
             delta={`${activeDeliveries} live in transit or out for delivery`}
             href="/shipments?status=IN_TRANSIT,OUT_FOR_DELIVERY"
             icon={<Truck size={18} />}
-            accent="bg-sky-100 text-sky-700"
+            accent="border-gray-200 bg-gray-50 text-gray-700"
             subtitle="Click through to the filtered shipment queue"
           />
           <MetricCard
@@ -757,7 +799,7 @@ export function TenantDashboardPage() {
             delta={`${shipmentAnalyticsToday.slaCompliance.onTime} on time today`}
             href="/shipments?status=DELIVERED"
             icon={<PackageCheck size={18} />}
-            accent="bg-emerald-100 text-emerald-700"
+            accent="border-gray-200 bg-gray-50 text-gray-700"
             subtitle="Completed delivery events in the current day"
           />
           <MetricCard
@@ -766,7 +808,7 @@ export function TenantDashboardPage() {
             delta={`${shipmentAnalyticsWeek.exceptions.stalePendingOver24h} ageing jobs over 24h`}
             href="/shipments?status=EXCEPTION"
             icon={<ShieldAlert size={18} />}
-            accent="bg-amber-100 text-amber-800"
+            accent="border-amber-200 bg-amber-50 text-amber-900"
             subtitle="Operational incidents requiring manual follow-up"
           />
           <MetricCard
@@ -775,7 +817,7 @@ export function TenantDashboardPage() {
             delta={`${activity.filter((entry) => entry.type === "ticket").length} ticket events in 24h`}
             href="/support"
             icon={<Ticket size={18} />}
-            accent="bg-emerald-100 text-emerald-700"
+            accent="border-gray-200 bg-gray-50 text-gray-700"
             subtitle="Open customer and operations cases"
           />
           <MetricCard
@@ -784,7 +826,7 @@ export function TenantDashboardPage() {
             delta={`${shipmentAnalyticsWeek.slaCompliance.late} late deliveries in range`}
             href="/analytics"
             icon={<Clock3 size={18} />}
-            accent="bg-violet-100 text-violet-700"
+            accent="border-gray-200 bg-gray-50 text-gray-700"
             subtitle="On-time performance across delivered shipments"
           />
         </div>

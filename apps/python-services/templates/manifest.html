@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { font-family: Arial, sans-serif; color: #111827; font-size: 12px; }
+    h1 { color: {{ tenant.primaryColor }}; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: {{ tenant.primaryColor }}; color: white; padding: 8px; text-align: left; }
+    td { border-bottom: 1px solid #e5e7eb; padding: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Shipment Manifest</h1>
+  <p>{{ tenant.brandName }} · {{ data.routeName or shipmentId }}</p>
+  <table>
+    <thead><tr><th>#</th><th>Shipment</th><th>Recipient</th><th>Destination</th></tr></thead>
+    <tbody>
+      {% for stop in data.stops or [] %}
+      <tr><td>{{ loop.index }}</td><td>{{ stop.trackingRef or stop.shipmentId }}</td><td>{{ stop.recipientName }}</td><td>{{ stop.destination }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>

@@ -2,6 +2,17 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { getFirebaseAuthErrorMessage, signInWithGoogle } from "@/lib/firebase";
+
+function getLoginErrorMessage(message: string) {
+  if (message === "Tenant context required") {
+    return "We could not find a tenant workspace for this email.";
+  }
+  if (message === "Internal Server Error" || message === "Login failed") {
+    return "Invalid email or password.";
+  }
+  return message;
+}
 
 export default function LoginPageClient() {
   const [email, setEmail] = useState("");
@@ -9,11 +20,13 @@ export default function LoginPageClient() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authModal, setAuthModal] = useState<{ title: string; message: string } | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    setAuthModal(null);
 
     try {
       const response = await fetch('/api/v1/auth/login', {
@@ -35,7 +48,54 @@ export default function LoginPageClient() {
       window.location.assign(`https://${payload.tenantSlug}.fauward.com/dashboard`);
     } catch (submitError) {
       const message = submitError instanceof Error ? submitError.message : 'Login failed';
-      setError(message);
+      setAuthModal({
+        title: "Sign-in failed",
+        message: getLoginErrorMessage(message)
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onGoogleSignIn() {
+    setLoading(true);
+    setError(null);
+    setAuthModal(null);
+
+    try {
+      const result = await signInWithGoogle();
+      const idToken = await result.user.getIdToken();
+      const response = await fetch("/api/v1/auth/firebase-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | { accessToken?: string; refreshToken?: string; tenantSlug?: string; error?: string }
+        | null;
+
+      if (!response.ok || !payload?.accessToken || !payload.refreshToken || !payload.tenantSlug) {
+        throw new Error(payload?.error || "Google sign-in failed");
+      }
+
+      if (payload.tenantSlug === "system") {
+        setAuthModal({
+          title: "Email not recognized",
+          message: "We could not find a tenant workspace for this email."
+        });
+        return;
+      }
+      localStorage.setItem("fauward_access_token", payload.accessToken);
+      localStorage.setItem("fauward_refresh_token", payload.refreshToken);
+      window.location.assign(`https://${payload.tenantSlug}.fauward.com/dashboard`);
+    } catch (googleError) {
+      setAuthModal({
+        title: "Email not recognized",
+        message: getFirebaseAuthErrorMessage(googleError).includes("Google account is not allowed")
+          ? "We could not find a tenant workspace for this email."
+          : getFirebaseAuthErrorMessage(googleError)
+      });
     } finally {
       setLoading(false);
     }
@@ -43,6 +103,21 @@ export default function LoginPageClient() {
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-gray-50 bg-grid py-16">
+      {authModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-gray-900">{authModal.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{authModal.message}</p>
+            <button
+              type="button"
+              onClick={() => setAuthModal(null)}
+              className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-700"
+            >
+              Use admin credential
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="w-full max-w-md px-4">
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
           <h1 className="text-3xl font-bold text-gray-900">Sign in</h1>
@@ -115,6 +190,8 @@ export default function LoginPageClient() {
           </div>
           <button
             type="button"
+            onClick={onGoogleSignIn}
+            disabled={loading}
             className="inline-flex h-11 w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
           >
             <span className="inline-flex h-5 w-5 items-center justify-center">

@@ -1,7 +1,15 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { authService } from './auth.service.js';
-import { forgotPasswordSchema, loginSchema, refreshSchema, registerSchema, resetPasswordSchema } from './auth.schema.js';
+import {
+  firebaseLoginSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  refreshSchema,
+  registerSchema,
+  resetPasswordSchema
+} from './auth.schema.js';
 import { generateQrCodeDataUrl, generateTotpSecret, verifyTotp } from '../../shared/utils/totp.js';
+import { config } from '../../config/index.js';
 
 export const authController = {
   register: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -16,8 +24,15 @@ export const authController = {
     }
   },
   login: async (request: FastifyRequest, reply: FastifyReply) => {
-    const payload = loginSchema.parse(request.body);
+    const parsed = loginSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(401).send({ error: 'Invalid email or password' });
+    }
+    const payload = parsed.data;
     let tenantId = request.tenant?.id;
+    if (!tenantId && payload.email.toLowerCase().trim() === config.platformAdmin.email) {
+      tenantId = 'system';
+    }
     if (!tenantId) {
       const matches = await request.server.prisma.user.findMany({
         where: { email: payload.email.toLowerCase(), isActive: true },
@@ -36,6 +51,16 @@ export const authController = {
       reply.send(result);
     } catch {
       reply.status(401).send({ error: 'Invalid credentials' });
+    }
+  },
+  firebaseLogin: async (request: FastifyRequest, reply: FastifyReply) => {
+    const payload = firebaseLoginSchema.parse(request.body);
+    try {
+      const result = await authService.firebaseLogin(payload, request.server.prisma, request.tenant?.id);
+      reply.send(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Google sign-in failed';
+      reply.status(401).send({ error: message });
     }
   },
   emailLinkRequest: async (request: FastifyRequest, reply: FastifyReply) => {

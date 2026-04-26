@@ -13,6 +13,7 @@ export type TenantConfig = {
   name: string;
   logo_url: string;
   domain: string;
+  region?: string;
   primary_color: string;
   accent_color: string;
   locale: string;

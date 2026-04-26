@@ -4,6 +4,8 @@ import { tenantController } from './tenant.controller.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
+import { config } from '../../config/index.js';
+import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
@@ -24,6 +26,53 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);
   app.get('/api/v1/tenant/plan-features', { preHandler: [authenticate] }, tenantController.planFeatures);
+
+  app.post('/api/v1/tenant/region-change-requests', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenant = request.tenant;
+    if (!tenant) return reply.status(400).send({ error: 'Tenant context required' });
+
+    const { requestedRegion } = request.body as { requestedRegion?: string };
+    if (!requestedRegion) return reply.status(400).send({ error: 'requestedRegion is required' });
+
+    const regionRequest = createRegionChangeRequest({
+      tenantId: tenant.id,
+      tenantName: tenant.name,
+      tenantSlug: tenant.slug,
+      currentRegion: tenant.region,
+      requestedRegion,
+      requestedBy: request.user?.email ?? 'Tenant user'
+    });
+
+    reply.status(201).send({ request: regionRequest });
+  });
+
+  app.post('/api/v1/tenant/region-change-requests/dev', async (request, reply) => {
+    if (config.nodeEnv === 'production') {
+      return reply.status(404).send({ error: 'Not found' });
+    }
+
+    const payload = request.body as {
+      tenantId?: string;
+      tenantName?: string;
+      tenantSlug?: string;
+      currentRegion?: string;
+      requestedRegion?: string;
+      requestedBy?: string;
+    };
+
+    if (!payload.requestedRegion) return reply.status(400).send({ error: 'requestedRegion is required' });
+
+    const regionRequest = createRegionChangeRequest({
+      tenantId: payload.tenantId ?? `dev_${payload.tenantSlug ?? 'tenant'}`,
+      tenantName: payload.tenantName ?? 'Development tenant',
+      tenantSlug: payload.tenantSlug ?? 'development-tenant',
+      currentRegion: payload.currentRegion ?? 'global',
+      requestedRegion: payload.requestedRegion,
+      requestedBy: payload.requestedBy ?? 'Development user'
+    });
+
+    reply.status(201).send({ request: regionRequest });
+  });
 
   app.get('/api/v1/tenant/email-templates', { preHandler: [authenticate] }, async (request, reply) => {
     const tenantId = request.tenant?.id;

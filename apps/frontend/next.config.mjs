@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  transpilePackages: ["@fauward/relay-api", "@fauward/relay-ui"],
   async redirects() {
     return [
       // /business merged into /services — preserve anchor deep-links
       { source: "/business", destination: "/services", permanent: true },
       { source: "/business/:path*", destination: "/services/:path*", permanent: true },
-      // /docs moved to dedicated subdomain
-      { source: "/docs", destination: "https://docs.fauward.com", permanent: false },
     ];
   },
   async rewrites() {

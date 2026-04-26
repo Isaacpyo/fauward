@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: 100mm 150mm; margin: 6mm; }
+    body { font-family: "Courier New", monospace; color: #111827; margin: 0; width: 88mm; height: 138mm; }
+    .top { text-align: center; border-bottom: 2px solid #111827; padding-bottom: 4mm; }
+    .logo { max-height: 16mm; max-width: 60mm; object-fit: contain; }
+    .brand { font-family: Arial, sans-serif; font-weight: bold; color: {{ tenant.primaryColor }}; }
+    .qr { display: block; width: 52mm; height: 52mm; margin: 8mm auto 4mm; }
+    .tracking { text-align: center; font-size: 17px; font-weight: bold; letter-spacing: .04em; margin-bottom: 6mm; }
+    .addresses { display: table; width: 100%; border-top: 1px solid #111827; padding-top: 4mm; }
+    .col { display: table-cell; width: 50%; font-size: 9px; line-height: 1.35; vertical-align: top; }
+    .label { font-family: Arial, sans-serif; font-size: 8px; color: #6b7280; text-transform: uppercase; margin-bottom: 2mm; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    {% if tenant.logoUrl %}<img class="logo" src="{{ tenant.logoUrl }}" alt="{{ tenant.brandName }}">{% else %}<div class="brand">{{ tenant.brandName }}</div>{% endif %}
+  </div>
+  <img class="qr" src="{{ data.qrCodeDataUri }}" alt="tracking QR">
+  <div class="tracking">{{ data.trackingRef or data.trackingNumber or shipmentId }}</div>
+  <div class="addresses">
+    <div class="col">
+      <div class="label">Origin</div>
+      {{ data.originAddress or data.origin or "" }}
+    </div>
+    <div class="col">
+      <div class="label">Destination</div>
+      {{ data.destAddress or data.destinationAddress or data.destination or "" }}
+    </div>
+  </div>
+</body>
+</html>

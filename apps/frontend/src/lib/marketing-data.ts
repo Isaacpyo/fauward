@@ -118,15 +118,26 @@ export type ComparisonRow = {
 export const FEATURE_COMPARISON_ROWS: ComparisonRow[] = [
   { feature: "Included shipments", starter: "300 / month", pro: "2,000 / month", enterprise: "Unlimited" },
   { feature: "Staff seats", starter: "3", pro: "15", enterprise: "Unlimited" },
+  { feature: "Fauward Agent", starter: "Upgrade to Pro", pro: "Included", enterprise: "Included" },
+  { feature: "Agent setup", starter: false, pro: "Switch on from dashboard", enterprise: "Switch on from dashboard" },
   { feature: "Shipment state machine", starter: true, pro: true, enterprise: true },
+  { feature: "Driver proof-of-delivery", starter: true, pro: true, enterprise: true },
+  { feature: "Branded customer notifications", starter: true, pro: true, enterprise: true },
   { feature: "Invoice lifecycle", starter: true, pro: true, enterprise: true },
+  { feature: "VAT-ready invoicing", starter: true, pro: true, enterprise: true },
   { feature: "Public tracking page", starter: true, pro: true, enterprise: true },
+  { feature: "Returns workflow", starter: true, pro: true, enterprise: true },
+  { feature: "Live operations map", starter: "Basic", pro: "Advanced", enterprise: "Advanced" },
+  { feature: "Automation rules", starter: false, pro: true, enterprise: true },
+  { feature: "Multi-depot route views", starter: false, pro: true, enterprise: true },
   { feature: "API access", starter: false, pro: true, enterprise: true },
   { feature: "Webhook events", starter: false, pro: true, enterprise: true },
   { feature: "Custom domain", starter: false, pro: true, enterprise: true },
+  { feature: "Custom email domain", starter: false, pro: false, enterprise: true },
+  { feature: "Audit logs and compliance exports", starter: false, pro: false, enterprise: true },
   { feature: "SSO / SAML", starter: false, pro: false, enterprise: true },
-  { feature: "SLA", starter: false, pro: false, enterprise: true },
-  { feature: "Dedicated support channel", starter: false, pro: false, enterprise: true }
+  { feature: "SLA", starter: false, pro: false, enterprise: "Custom SLA" },
+  { feature: "Support", starter: "Email", pro: "Priority email + chat", enterprise: "Dedicated support channel" }
 ];
 
 // ─── Competitor Comparison (used on landing page) ─────────────────────────────

@@ -1,10 +1,11 @@
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Lock } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { cn } from "@/lib/utils";
 import { navItems } from "@/layouts/navigation";
+import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess } from "@/lib/plan-features";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 
@@ -32,9 +33,11 @@ export function Sidebar({ mobile = false }: SidebarProps) {
   const setSidebarCollapsed = useAppStore((state) => state.setSidebarCollapsed);
   const tenant = useTenantStore((state) => state.tenant);
 
-  const visibleItems = navItems.filter((item) =>
-    user ? item.roles.includes(user.role) : false
-  );
+  const currentPlan = user?.plan;
+  const visibleItems = navItems.filter((item) => {
+    if (!user || !item.roles.includes(user.role)) return false;
+    return hasFeatureAccess(currentPlan, item.feature) || item.showWhenLocked;
+  });
 
   const seenGroups = new Set<string>();
 
@@ -43,20 +46,20 @@ export function Sidebar({ mobile = false }: SidebarProps) {
       className={cn(
         mobile
           ? "flex h-full shrink-0 flex-col border-r border-gray-200 bg-white"
-          : "hidden h-screen shrink-0 border-r border-gray-200 bg-white lg:flex lg:flex-col",
+          : "sticky top-0 hidden h-screen shrink-0 self-start border-r border-gray-200 bg-white lg:flex lg:flex-col",
         mobile ? "w-64" : sidebarCollapsed ? "w-16" : "w-64"
       )}
     >
       {/* Brand header */}
       <div className="flex h-16 items-center border-b border-gray-100 px-4">
-        <div className={cn("h-8 rounded-md", mobile || !sidebarCollapsed ? "w-36" : "w-8")}>
-          {tenant?.logo_url ? (
-            <img src={tenant.logo_url} alt={`${tenant.name} logo`} className="h-full w-full object-contain object-left" />
-          ) : (
-            <div className="flex h-full items-center rounded-md bg-[var(--tenant-primary)] px-2 text-sm font-semibold text-white">
-              {sidebarCollapsed && !mobile ? "F" : "Fauward"}
+        <div className="flex min-w-0 items-center gap-2.5">
+          <img src="/brand/logo-mark.png" alt="Fauward logo" className="h-8 w-8 shrink-0 object-contain" />
+          {!sidebarCollapsed || mobile ? (
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-[var(--tenant-primary)]">Fauward</p>
+              <p className="truncate text-[11px] text-gray-400">{tenant?.name ?? "Tenant Portal"}</p>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -66,6 +69,8 @@ export function Sidebar({ mobile = false }: SidebarProps) {
           const groupLabel = (!sidebarCollapsed || mobile) ? getGroupLabel(item.to) : null;
           const showGroup = groupLabel && !seenGroups.has(groupLabel);
           if (showGroup) seenGroups.add(groupLabel);
+          const locked = !hasFeatureAccess(currentPlan, item.feature);
+          const minimumPlan = getFeatureMinimumPlan(item.feature);
 
           const link = (
             <NavLink
@@ -75,7 +80,9 @@ export function Sidebar({ mobile = false }: SidebarProps) {
               className={({ isActive }) =>
                 cn(
                   "relative flex min-h-[40px] items-center rounded-md px-3 text-sm font-medium transition",
-                  isActive
+                  locked
+                    ? "text-gray-400 hover:bg-amber-50 hover:text-amber-700"
+                    : isActive
                     ? "bg-[var(--tenant-primary)]/10 text-[var(--tenant-primary)]"
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                 )
@@ -88,8 +95,17 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                   )}
                   <item.icon size={17} className="shrink-0" />
                   {!sidebarCollapsed || mobile ? (
-                    <span className="ms-3">{item.label}</span>
+                    <>
+                      <span className="ms-3 min-w-0 flex-1 truncate">{item.label}</span>
+                      {locked ? (
+                        <span className="ms-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          <Lock size={10} />
+                          {formatPlanLabel(minimumPlan)}
+                        </span>
+                      ) : null}
+                    </>
                   ) : null}
+                  {sidebarCollapsed && !mobile && locked ? <Lock size={13} className="ms-auto" /> : null}
                 </>
               )}
             </NavLink>
@@ -103,7 +119,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                 </p>
               )}
               {sidebarCollapsed && !mobile ? (
-                <Tooltip content={item.label} key={item.to}>
+                <Tooltip content={locked ? `${item.label} requires ${formatPlanLabel(minimumPlan)}` : item.label} key={item.to}>
                   {link}
                 </Tooltip>
               ) : (

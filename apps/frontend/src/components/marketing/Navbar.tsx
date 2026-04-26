@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu, X, ChevronDown, Package, DollarSign, Map, FileText, Briefcase, Info, Newspaper, Headphones, Bot, LayoutGrid, Smartphone, Code, MapPin } from "lucide-react";
+import { Menu, X, ChevronDown, Package, DollarSign, Map, FileText, Briefcase, Info, Newspaper, Headphones, Bot, LayoutGrid, Smartphone, Code, MapPin, Users } from "lucide-react";
 import BrandLogo from "@/components/marketing/BrandLogo";
 
 type MegaMenuItem = { href: string; label: string; description: string; icon: React.ElementType };
@@ -72,6 +72,7 @@ const navItems: NavItem[] = [
           items: [
             { href: "/about", label: "About Us", description: "Our story and team", icon: Info },
             { href: "/news", label: "News & Updates", description: "Product news and insights", icon: Newspaper },
+            { href: "/careers", label: "Careers", description: "Build logistics infrastructure", icon: Users },
           ],
         },
         {
@@ -79,7 +80,7 @@ const navItems: NavItem[] = [
           items: [
             { href: "/support", label: "Help Centre", description: "Guides and FAQs", icon: Headphones },
             { href: "/support#contact", label: "Contact Support", description: "Reach our team", icon: Headphones },
-            { href: "/docs", label: "Documentation", description: "API and developer docs", icon: Code },
+            { href: "/docs", label: "Documentation", description: "Tenant setup and usage guides", icon: Code },
           ],
         },
       ],
@@ -90,9 +91,11 @@ const navItems: NavItem[] = [
 function MegaMenuPanel({
   columns,
   onClose,
+  pathname,
 }: {
   columns: Array<{ heading: string; items: MegaMenuItem[] }>;
   onClose: () => void;
+  pathname: string;
 }) {
   return (
     <div className="absolute left-1/2 top-full z-50 mt-2 w-[720px] max-w-[96vw] -translate-x-1/2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-gray-200/60 ring-1 ring-gray-100">
@@ -103,18 +106,25 @@ function MegaMenuPanel({
             <ul className="space-y-0.5">
               {col.items.map((item) => {
                 const Icon = item.icon;
+                const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       onClick={onClose}
-                      className="group flex items-start gap-3 rounded-xl px-3 py-2.5 transition hover:bg-amber-50"
+                      className={`group flex items-start gap-3 rounded-xl px-3 py-2.5 transition hover:bg-amber-50 ${
+                        isActive ? "bg-amber-50" : ""
+                      }`}
                     >
-                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-500 transition group-hover:bg-amber-100 group-hover:text-amber-700">
+                      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition group-hover:bg-amber-100 group-hover:text-amber-700 ${
+                        isActive ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-500"
+                      }`}>
                         <Icon size={16} />
                       </span>
                       <span>
-                        <span className="block text-sm font-semibold text-gray-800 group-hover:text-amber-700">{item.label}</span>
+                        <span className={`block text-sm font-semibold group-hover:text-amber-700 ${
+                          isActive ? "text-amber-700" : "text-gray-800"
+                        }`}>{item.label}</span>
                         <span className="mt-0.5 block text-xs leading-snug text-gray-500">{item.description}</span>
                       </span>
                     </Link>
@@ -205,13 +215,16 @@ export default function Navbar() {
               {navItems.map((item) => {
                 if (item.mega) {
                   const isOpen = activeMenu === item.label;
+                  const isActive = item.mega.columns.some((col) =>
+                    col.items.some((link) => pathname === link.href || pathname.startsWith(link.href + "/"))
+                  );
                   return (
                     <div key={item.label} className="relative">
                       <button
                         type="button"
                         onClick={() => setActiveMenu(isOpen ? null : item.label)}
                         className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-gray-100 hover:text-brand-navy ${
-                          isOpen ? "bg-gray-100 text-brand-navy" : "text-gray-700"
+                          isOpen || isActive ? "bg-gray-100 text-brand-navy" : "text-gray-700"
                         }`}
                       >
                         {item.label}
@@ -223,6 +236,7 @@ export default function Navbar() {
                       {isOpen && (
                         <MegaMenuPanel
                           columns={item.mega.columns}
+                          pathname={pathname}
                           onClose={() => setActiveMenu(null)}
                         />
                       )}
@@ -287,17 +301,22 @@ export default function Navbar() {
                       <div key={item.label}>
                         <p className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-gray-400">{item.label}</p>
                         {item.mega.columns.flatMap((col) =>
-                          col.items.map((link) => (
-                            <Link
-                              key={link.href}
-                              href={link.href}
-                              onClick={() => setMobileOpen(false)}
-                              className="inline-flex min-h-[44px] items-center gap-2 rounded-md px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                              <link.icon size={15} className="text-gray-400" />
-                              {link.label}
-                            </Link>
-                          ))
+                          col.items.map((link) => {
+                            const isActive = pathname === link.href || pathname.startsWith(link.href + "/");
+                            return (
+                              <Link
+                                key={link.href}
+                                href={link.href}
+                                onClick={() => setMobileOpen(false)}
+                                className={`inline-flex min-h-[44px] items-center gap-2 rounded-md px-4 text-sm font-medium hover:bg-gray-50 ${
+                                  isActive ? "bg-gray-50 text-brand-navy" : "text-gray-700"
+                                }`}
+                              >
+                                <link.icon size={15} className={isActive ? "text-amber-600" : "text-gray-400"} />
+                                {link.label}
+                              </Link>
+                            );
+                          })
                         )}
                       </div>
                     );

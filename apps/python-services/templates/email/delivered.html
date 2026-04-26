@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="font-size:22px;margin:0 0 12px;">Delivered</h1>
+<p>Hello {{ recipient.name or "there" }},</p>
+<p>Your shipment {{ variables.trackingRef }} was delivered.</p>
+<p>Delivered at: {{ variables.deliveredAt or variables.timestamp or "" }}</p>
+{% endblock %}

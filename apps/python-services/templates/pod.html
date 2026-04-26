@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { font-family: Arial, sans-serif; color: #111827; font-size: 12px; }
+    .header { border-bottom: 3px solid {{ tenant.primaryColor }}; padding-bottom: 12px; margin-bottom: 22px; }
+    h1 { color: {{ tenant.primaryColor }}; margin: 0; font-size: 28px; }
+    .grid { display: table; width: 100%; }
+    .row { display: table-row; }
+    .cell { display: table-cell; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+    .label { width: 32%; color: #6b7280; text-transform: uppercase; font-size: 10px; letter-spacing: .06em; }
+    .signature { margin-top: 24px; border: 1px solid #d1d5db; padding: 12px; min-height: 110px; }
+    .signature img { max-height: 96px; max-width: 360px; }
+  </style>
+</head>
+<body>
+  <div class="header"><h1>Proof of Delivery</h1><div>{{ tenant.brandName }}</div></div>
+  <div class="grid">
+    <div class="row"><div class="cell label">Shipment</div><div class="cell">{{ data.trackingRef or data.trackingNumber or shipmentId }}</div></div>
+    <div class="row"><div class="cell label">Recipient</div><div class="cell">{{ data.recipientName or data.recipient or "" }}</div></div>
+    <div class="row"><div class="cell label">Timestamp</div><div class="cell">{{ data.timestamp or data.deliveredAt or "" }}</div></div>
+    <div class="row"><div class="cell label">GPS</div><div class="cell">{{ data.gps or data.coordinates or "" }}</div></div>
+    <div class="row"><div class="cell label">Agent</div><div class="cell">{{ data.agentName or data.driverName or "" }}</div></div>
+  </div>
+  <div class="signature">
+    <div class="label">Signature</div>
+    {% if data.signatureImage %}<img src="{{ data.signatureImage }}" alt="signature">{% else %}<div>No signature image supplied.</div>{% endif %}
+  </div>
+</body>
+</html>

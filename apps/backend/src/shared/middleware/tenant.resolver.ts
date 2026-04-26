@@ -27,12 +27,16 @@ const PUBLIC_PATHS = new Set([
   '/health',
   '/api/v1/auth/register',
   '/api/v1/auth/login',
+  '/api/v1/auth/firebase-login',
   '/api/v1/auth/email-link/request',
   '/api/v1/auth/email-link/consume',
   '/api/v1/auth/refresh',
+  '/api/v1/auth/logout',
+  '/api/v1/auth/me',
   '/api/v1/auth/mfa/validate',
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
+  '/api/v1/tenant/region-change-requests/dev',
   '/api/v1/payments/webhook/stripe'
 ]);
 
@@ -119,7 +123,7 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return ctx;
   }
 
-  if (path.startsWith('/api/v1/admin')) {
+  if (path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/relay')) {
     return {
       tenantId: 'system',
       tenantSlug: 'system',

@@ -10,6 +10,12 @@ type CurrentPlanCardProps = {
   onManageBilling: () => void;
 };
 
+const staffSeatLimitLabel: Record<BillingSummary["plan"], string> = {
+  starter: "3 staff seats",
+  pro: "15 staff seats",
+  enterprise: "Unlimited staff seats"
+};
+
 export function CurrentPlanCard({
   summary,
   onChangePlan,
@@ -35,6 +41,9 @@ export function CurrentPlanCard({
           </p>
           <p className="mt-1 text-sm text-gray-600">
             Renewal date: {formatDateTime(summary.renewalDate, tenant)}
+          </p>
+          <p className="mt-1 text-sm font-medium text-gray-700">
+            Staff seat limit: {staffSeatLimitLabel[summary.plan]}
           </p>
           {typeof summary.trialDaysRemaining === "number" && summary.trialDaysRemaining > 0 ? (
             <Badge variant="warning" className="mt-2">

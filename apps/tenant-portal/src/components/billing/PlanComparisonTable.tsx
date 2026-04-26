@@ -8,8 +8,10 @@ type PlanComparisonTableProps = {
 };
 
 const rows = [
-  { feature: "Shipments / mo", starter: "200", pro: "1000", enterprise: "Unlimited" },
-  { feature: "Staff seats", starter: "5", pro: "15", enterprise: "Unlimited" },
+  { feature: "Shipments / mo", starter: "300", pro: "2,000", enterprise: "Unlimited" },
+  { feature: "Staff seats", starter: "3 seats", pro: "15 seats", enterprise: "Unlimited seats" },
+  { feature: "Messaging", starter: "No", pro: "Yes", enterprise: "Yes" },
+  { feature: "Fauward Agent", starter: "No", pro: "Yes", enterprise: "Yes" },
   { feature: "API access", starter: "No", pro: "Yes", enterprise: "Yes" },
   { feature: "Webhooks", starter: "No", pro: "Yes", enterprise: "Yes" },
   { feature: "Custom domain", starter: "No", pro: "Yes", enterprise: "Yes" },

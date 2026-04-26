@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:600px;max-width:100%;background:#ffffff;border-collapse:collapse;">
+          <tr>
+            <td style="background:{{ tenant.primaryColor }};padding:20px;color:#ffffff;">
+              {% if tenant.logoUrl %}
+              <img src="{{ tenant.logoUrl }}" alt="{{ tenant.brandName }}" style="max-height:40px;max-width:180px;">
+              {% else %}
+              <strong style="font-size:20px;">{{ tenant.brandName }}</strong>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              {% block content %}{% endblock %}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 24px;background:#f9fafb;color:#6b7280;font-size:12px;">
+              Powered by {{ tenant.brandName }} · <a href="{{ variables.unsubscribeUrl or '#' }}" style="color:#6b7280;">Unsubscribe</a><br>
+              {{ variables.address or "Fauward Logistics" }}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

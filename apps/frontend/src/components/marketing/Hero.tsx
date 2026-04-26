@@ -34,17 +34,13 @@ export default function Hero() {
             </p>
 
             <h1 className="text-4xl font-bold leading-tight text-gray-900 md:text-5xl lg:text-6xl">
-              Stop duct-taping spreadsheets
+              The logistics platform
               <br />
-              to WhatsApp.
-              <br />
-              <span className="text-amber-600">Run real logistics software.</span>
+              <span className="text-amber-600">that runs itself.</span>
             </h1>
 
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-gray-600">
-              Fauward gives your freight or courier business a fully branded platform — shipment ops,
-              customer tracking, invoicing, driver app, and booking widget. No code. No per-seat fees.
-              Live in 10 minutes.
+              Fully branded, all-in-one, and powered by agents that handle the ops you don't have time for.
             </p>
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

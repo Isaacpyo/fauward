@@ -27,7 +27,7 @@ export function getSupabaseAdmin(): SupabaseClient {
  * Returns a service-role client scoped to a specific tenant schema.
  * Used by widget API routes that write shipments to tenant_{slug}.shipments.
  */
-export function getTenantDb(slug: string): SupabaseClient {
+export function getTenantDb(slug: string): SupabaseClient<any, string> {
   return createClient(
     requireEnv("SUPABASE_URL"),
     requireEnv("SUPABASE_SERVICE_ROLE_KEY"),

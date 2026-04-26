@@ -1,0 +1,20 @@
+<Declaration type="uk_cds">
+  <JobId>{{ jobId }}</JobId>
+  <TenantId>{{ tenantId }}</TenantId>
+  <ShipmentId>{{ shipmentId }}</ShipmentId>
+  <Exporter>{{ shipment.exporter or shipment.senderName or "" }}</Exporter>
+  <Importer>{{ shipment.importer or shipment.recipientName or "" }}</Importer>
+  <OriginCountry>{{ shipment.originCountry or "" }}</OriginCountry>
+  <DestinationCountry>{{ shipment.destCountry or "GB" }}</DestinationCountry>
+  <Items>
+    {% for item in shipment.items or [] %}
+    <Item>
+      <Description>{{ item.description }}</Description>
+      <HsCode>{{ item.hsCode or item.hs_code or "" }}</HsCode>
+      <Quantity>{{ item.quantity or 1 }}</Quantity>
+      <DeclaredValue>{{ item.declaredValue or item.value or 0 }}</DeclaredValue>
+      <Currency>{{ item.currency or shipment.currency or "GBP" }}</Currency>
+    </Item>
+    {% endfor %}
+  </Items>
+</Declaration>
