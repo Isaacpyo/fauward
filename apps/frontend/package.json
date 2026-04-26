@@ -14,6 +14,7 @@
     "@fauward/tenant-db": "*",
     "@supabase/supabase-js": "^2.45.0",
     "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "jose": "^5.9.6",
     "lucide-react": "^0.511.0",
     "next": "^14.2.5",

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import CookieConsent from "@/components/marketing/CookieConsent";
 import Footer from "@/components/marketing/Footer";
 import Navbar from "@/components/marketing/Navbar";
@@ -88,6 +89,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Footer />
         <CookieConsent />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
