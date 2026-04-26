@@ -16,7 +16,7 @@
 3. [Prisma Schema](#3-prisma-schema)
 4. [Marketing Site](#4-marketing-site)
 5. [Tenant Portal](#5-tenant-portal)
-6. [Driver PWA](#6-driver-pwa)
+6. [Agents PWA](#6-agents-pwa)
 7. [Super Admin](#7-super-admin)
 8. [Embeddable Widget](#8-embeddable-widget)
 9. [Shared Packages](#9-shared-packages)
@@ -239,30 +239,39 @@ All models: `Tenant`, `TenantSettings`, `User`, `RefreshToken`, `Organisation`, 
 
 ---
 
-## 6. Driver PWA
+## 6. Agents PWA
 
-**Status: ~90% complete UI — backend integration missing for POD** — `apps/agents/src/`
+**Status: ✅ Complete** — `apps/agents/src/`
+
+Replaces the old `apps/driver` surface. Field-operations mobile web app for scanning shipments and advancing statuses with audit-friendly notes and location.
 
 ### ✅ What exists
 
-All pages: `LoginPage`, `RoutePage`, `StopDetailPage`, `ShipmentDetailPage`, `CapturePODPage`, `FailedDeliveryPage`, `HistoryPage`, `ProfilePage`
+All pages: `WelcomePage`, `LoginPage`, `DashboardPage`, `ScanPage`, `ShipmentPage`, `ConfirmPage`, `ShipmentsPage`
 
-All components: `BottomTabBar`, `CameraCapture`, `SignaturePad`, `OfflineBanner`, `RouteHeader`, `ShipmentCard`, `StopCard`, `SyncIndicator`, `ReasonSelector`
+All components: `AgentGate`, `AgentLayout`, `AgentNav`, `AgentSyncListener`, `QRScanner`, `AccessPending`, `Button`, `Input`, `Textarea`
 
-All hooks: `useCamera`, `useGeolocation`, `useOnlineStatus`
+All hooks: `useOnlineStatus`
 
-All stores: `useDriverStore`, `useOfflineQueue`, `useSyncStore`
+Context: `AgentAuthContext` (session/auth state + token refresh)
 
-Service worker `sw.ts` — offline caching strategy
+Core lib: `api.ts` (authenticated API client), `session.ts` (localStorage persistence), `agentOfflineQueue.ts` (scan + advance queues), `agentWorkflow.ts` (status flow), `agentPaths.ts` (route helpers)
 
-### ❌ What is missing (all backend routes)
+Service worker `sw.ts` — stale-while-revalidate app shell + network-first agents API
 
-| Route | Needed for |
-|-------|-----------|
-| `PATCH /driver/stops/:id/status` | Marking stops started / completed |
-| `POST /driver/pod` | Photo + signature upload → triggers `DELIVERED` |
-| `PATCH /driver/shipments/:id/failed` | Failed delivery logging |
-| Offline sync backend | `useSyncStore` flush on reconnect; no `/sync` endpoint exists |
+### ✅ Backend routes (all implemented)
+
+| Route | Purpose |
+|-------|---------|
+| `GET /api/v1/agents/shipments/by-ref/:trackingRef` | Shipment summary + timeline for a tracking reference |
+| `POST /api/v1/agents/shipments/advance` | Advance shipment to next status with location + notes |
+| `GET /api/v1/agents/shipments/recent?limit=50` | Recent shipments last touched by authenticated user |
+
+### ⚠️ Known gap
+
+| Item | Detail |
+|------|--------|
+| Offline advance queue doesn't re-auth before replay | `AgentSyncListener` stops on first server error; if the error is a 401 the queue stalls until the user logs in again |
 
 ---
 

@@ -12,7 +12,7 @@
 2. [Gating Model — Layers of Defence](#2-gating-model--layers-of-defence)
 3. [MARKETING — Public Site](#3-marketing--public-site)
 4. [TENANT — Tenant Portal](#4-tenant--tenant-portal)
-5. [DRIVER — Driver PWA](#5-driver--driver-pwa)
+5. [DRIVER — Agents PWA](#5-driver--agents-pwa)
 6. [SUPER — Super Admin](#6-super--super-admin)
 7. [EMBEDDED — Tracking Widget](#7-embedded--tracking-widget)
 8. [Cross-Cutting: JWT Payload & Shared Claims](#8-cross-cutting-jwt-payload--shared-claims)
@@ -27,14 +27,14 @@
 
 ```
 ╔═══════════════╦═══════════════╦══════════════╦═══════════════╦═════════════════╗
-║  MARKETING    ║  TENANT       ║  DRIVER      ║  SUPER        ║  EMBEDDED       ║
+║  MARKETING    ║  TENANT       ║  AGENTS      ║  SUPER        ║  EMBEDDED       ║
 ║  SITE         ║  PORTAL       ║  PWA         ║  ADMIN        ║  WIDGET         ║
 ╠═══════════════╬═══════════════╬══════════════╬═══════════════╬═════════════════╣
 ║ fauward.com   ║{slug}.fw.com  ║ Mobile PWA   ║admin.fw.com   ║ Any 3rd-party   ║
-║               ║               ║              ║               ║ website         ║
+║               ║               ║ (apps/agents)║               ║ website         ║
 ╠═══════════════╬═══════════════╬══════════════╬═══════════════╬═════════════════╣
 ║ Audience:     ║ Audience:     ║ Audience:    ║ Audience:     ║ Audience:       ║
-║ Prospects     ║ Logistics ops ║ Drivers      ║ Fauward team  ║ End customers   ║
+║ Prospects     ║ Logistics ops ║ Field ops    ║ Fauward team  ║ End customers   ║
 ║ (unauthentd.) ║ + customers   ║ (field)      ║ (internal)    ║ (unauthentd.)   ║
 ╠═══════════════╬═══════════════╬══════════════╬═══════════════╬═════════════════╣
 ║ Auth model:   ║ Auth model:   ║ Auth model:  ║ Auth model:   ║ Auth model:     ║
@@ -42,9 +42,9 @@
 ║               ║ + tenant      ║ + tenant     ║ check         ║ tenantId only   ║
 ╠═══════════════╬═══════════════╬══════════════╬═══════════════╬═════════════════╣
 ║ Gate type:    ║ Gate type:    ║ Gate type:   ║ Gate type:    ║ Gate type:      ║
-║ Origin /      ║ AuthGuard +   ║ ProtectedRte ║ SuperAdmin-   ║ data-tenant-id  ║
-║ CORS only     ║ requireRole   ║ + TENANT_    ║ Guard + SUPER_║ + public API    ║
-║               ║               ║ DRIVER role  ║ ADMIN role    ║ path exemption  ║
+║ Origin /      ║ AuthGuard +   ║ AgentGate +  ║ SuperAdmin-   ║ data-tenant-id  ║
+║ CORS only     ║ requireRole   ║ agent roles  ║ Guard + SUPER_║ + public API    ║
+║               ║               ║              ║ ADMIN role    ║ path exemption  ║
 ╚═══════════════╩═══════════════╩══════════════╩═══════════════╩═════════════════╝
 ```
 
@@ -320,79 +320,89 @@ export default api;
 
 ---
 
-## 5. DRIVER — Driver PWA
+## 5. DRIVER — Agents PWA
 
 ### What it is
-React 18 + Vite PWA at a mobile URL. Used by delivery drivers in the field. Operates offline via Service Worker. The only role that should access this surface is `TENANT_DRIVER`.
+React 18 + Vite PWA at `apps/agents`. Used by field operations staff for scanning shipments and advancing statuses. Operates offline via Service Worker. Accessible to operational roles: `TENANT_DRIVER`, `TENANT_STAFF`, `TENANT_MANAGER`, `TENANT_ADMIN`.
 
 ### How it is gated
 
-#### 5.1 Frontend — ProtectedRoute
-`apps/driver/src/router.tsx` uses a Zustand-backed `ProtectedRoute`:
+#### 5.1 Frontend — AgentGate
+`apps/agents/src/components/agent/AgentGate.tsx` is the React context-backed gate:
 
 ```tsx
-// apps/driver/src/router.tsx  lines 18–25
-function ProtectedRoute() {
-  const isAuthenticated = useDriverStore((state) => state.isAuthenticated);
+// apps/agents/src/components/agent/AgentGate.tsx
+export function AgentGate({ children }: { children: React.ReactNode }) {
+  const { authReady, isAuthenticated, isRoleAllowed, logout, session } = useAgentAuth();
+
+  if (!authReady) return <div>Preparing workspace...</div>;
+
   if (!isAuthenticated) {
-    return <Navigate to='/login' replace state={{ from: location }} />;
+    const next = encodeURIComponent(`${location.pathname}${location.search}`);
+    return <Navigate to={`/login?next=${next}`} replace />;
   }
-  return <Outlet />;
+
+  if (!isRoleAllowed) {
+    return <AccessPending email={session?.user.email} onLogout={logout} />;
+  }
+
+  return <>{children}</>;
 }
 ```
 
-`isAuthenticated` is set to `true` after a successful `POST /api/v1/auth/login` and the token is stored. On app start, the token should be validated against `GET /api/v1/auth/me` to detect expiry.
+`authReady` is set after loading the persisted session from `localStorage` and validating it against `GET /api/v1/auth/me`. On cold start, an invalid or expired session is cleared immediately.
 
-#### 5.2 Backend — TENANT_DRIVER role enforcement
-All driver-specific routes require the `TENANT_DRIVER` role:
+#### 5.2 Backend — Agent role enforcement
+All agent-specific routes require operational roles:
 
 ```typescript
-// apps/backend/src/modules/driver/driver.routes.ts
-preHandler: [authenticate, requireTenantMatch, requireRole(['TENANT_DRIVER'])]
+// apps/backend/src/modules/agents/agent.routes.ts
+const AGENT_ALLOWED_ROLES = ['TENANT_DRIVER', 'TENANT_STAFF', 'TENANT_MANAGER', 'TENANT_ADMIN'];
+preHandler: [authenticate, requireTenantMatch, requireRole([...AGENT_ALLOWED_ROLES])]
 ```
 
-Drivers cannot access shipment management, finance, CRM, or any other module — their role grants only:
-- View assigned stops and shipment details
-- Update shipment status for assigned stops only
-- Capture POD (photo + signature)
-- Report failed delivery
-- Push GPS location
-- View their own delivery history
+Agent role grants only:
+- Look up shipments by tracking reference (`GET /api/v1/agents/shipments/by-ref/:ref`)
+- Advance shipment to next status with location + notes (`POST /api/v1/agents/shipments/advance`)
+- View recent shipments last touched by the authenticated user (`GET /api/v1/agents/shipments/recent`)
 
-#### 5.3 Backend — Tenant isolation for drivers
-Drivers belong to a tenant. Their JWT contains `tenantId`. The `requireTenantMatch` middleware ensures they can only access their own tenant's data regardless of the request hostname.
+#### 5.3 Backend — Tenant isolation for agents
+Agents belong to a tenant. Their JWT contains `tenantId`. The `requireTenantMatch` middleware ensures they can only access their own tenant's data regardless of the request hostname.
 
 #### 5.4 Offline support gating
-The Service Worker queues mutations (status updates, POD uploads) when offline. When connectivity is restored, the queue is flushed in order. Each queued request must include the JWT token — the offline queue must also handle 401 responses by re-authenticating before replaying the queue.
+Two `localStorage` queues (`agentScanQueue`, `agentAdvanceQueue`) buffer actions when offline. `AgentSyncListener` drains the advance queue automatically on reconnect. Processing stops on first server rejection to preserve action order.
 
 #### 5.5 Proper implementation checklist
 
 | Item | Status | Action |
 |------|--------|--------|
-| `ProtectedRoute` blocks unauthenticated access | ✅ | `router.tsx` |
-| JWT stored in Zustand + `localStorage` | ✅ | `useDriverStore` |
-| Backend `TENANT_DRIVER` role required on all driver routes | ✅ | `driver.routes.ts` |
+| `AgentGate` blocks unauthenticated access | ✅ | `AgentGate.tsx` |
+| `AgentGate` blocks disallowed roles (`AccessPending`) | ✅ | `AgentGate.tsx` |
+| Session stored as JSON in `localStorage` | ✅ | `session.ts` — key `fauward_agent_session` |
+| Token validation on PWA cold start (`GET /auth/me`) | ✅ | `AgentAuthContext.tsx` `useEffect` |
+| Backend agent role required on all agent routes | ✅ | `agent.routes.ts` |
 | Backend tenant isolation | ✅ | `tenantMatch.ts` |
-| Token validation on PWA cold start (`GET /auth/me`) | ❌ | Add to `useDriverStore` hydration |
-| Offline queue handles 401 → re-auth before replay | ❌ | Implement in service worker message handler |
-| Biometric auth (optional, PWA Web Auth API) | ❌ | Enhancement for v2 |
+| Offline advance queue with auto-drain on reconnect | ✅ | `agentOfflineQueue.ts` + `AgentSyncListener.tsx` |
+| Offline queue handles 401 → re-auth before replay | ❌ | `AgentSyncListener` stops on error; full re-auth replay not yet implemented |
 
-#### 5.6 Cold-start token validation (recommended addition)
+#### 5.6 Cold-start token validation (implemented)
 
 ```typescript
-// apps/driver/src/stores/useDriverStore.ts  — hydration on app start
-const token = localStorage.getItem('driverToken');
-if (token) {
-  try {
-    const { data } = await axios.get('/api/v1/auth/me', {
-      headers: { Authorization: `Bearer ${token}` }
+// apps/agents/src/context/AgentAuthContext.tsx — hydration on app start
+useEffect(() => {
+  const existing = loadSession();
+  setSession(existing);
+  setAuthReady(true);
+
+  if (!existing) return;
+
+  apiRequest<{ user?: unknown }>("/auth/me")
+    .then(() => undefined)
+    .catch(() => {
+      clearSession();
+      setSession(null);
     });
-    set({ isAuthenticated: true, user: data.user });
-  } catch {
-    localStorage.removeItem('driverToken');
-    set({ isAuthenticated: false });
-  }
-}
+}, []);
 ```
 
 ---
@@ -738,7 +748,7 @@ The following gaps exist in the current implementation. They are ordered by secu
 |-----|---------|-----|
 | No suspended tenant check | TENANT | Add `tenant.status === 'SUSPENDED' → 403` in `authenticate.ts` |
 | `mfaVerified` claim in JWT not enforced anywhere | ALL | Check `req.user.mfaVerified` for sensitive operations |
-| Token not validated on Driver PWA cold start | DRIVER | Call `GET /auth/me` on store hydration |
+| Token validated on Agents PWA cold start | AGENTS | ✅ Implemented in `AgentAuthContext.tsx` |
 | No token refresh interceptor in Tenant Portal | TENANT | Add axios interceptor (see §4.11) |
 
 ### Medium
@@ -748,7 +758,7 @@ The following gaps exist in the current implementation. They are ordered by secu
 | Email verification on sign-up missing | MARKETING | Add email verification token flow to `auth.service.ts` |
 | PII in public tracking response not audited | EMBEDDED | Audit and redact recipient fields in `tracking.service.ts` |
 | Rate limit on public tracking endpoint missing | EMBEDDED | Add `{ max: 30, timeWindow: '1 minute' }` per IP |
-| Offline queue on Driver PWA doesn't handle 401 | DRIVER | Re-auth before queue replay |
+| Offline queue on Agents PWA doesn't re-auth before replay | AGENTS | `AgentSyncListener` stops on first error; add re-auth before queue drain |
 
 ### Low / Enhancement
 
@@ -757,7 +767,7 @@ The following gaps exist in the current implementation. They are ordered by secu
 | CSP / SRI for widget bundle | EMBEDDED | Add to CDN build pipeline |
 | MFA required for `SUPER_ADMIN` | SUPER | Enforce `mfaVerified: true` in authenticate.ts when role = SUPER_ADMIN |
 | Next.js `middleware.ts` for future protected pages | MARKETING | Add when adding member pages |
-| Biometric auth for Driver PWA | DRIVER | Web Authentication API (WebAuthn) |
+| Biometric auth for Agents PWA | AGENTS | Web Authentication API (WebAuthn) |
 
 ---
 
@@ -818,7 +828,7 @@ VITE_API_BASE_URL=/api        # proxied to backend via nginx
 VITE_WS_URL=wss://api.fauward.com
 ```
 
-### Driver PWA (`apps/driver/.env`)
+### Agents PWA (`apps/agents/.env`)
 
 ```bash
 VITE_API_BASE_URL=https://api.fauward.com
