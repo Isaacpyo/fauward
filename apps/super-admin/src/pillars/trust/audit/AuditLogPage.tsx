@@ -1,5 +1,4 @@
-import { DenseTable, EmptyState, MonoCell } from "@fauward/internal-ui";
-import { DiffViewer } from "@fauward/internal-audit";
+import { DenseTable, DiffViewer, EmptyState, MonoCell } from "@fauward/internal-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchAuditEntries, type AuditEntry, type AuditFilters } from "./api";
