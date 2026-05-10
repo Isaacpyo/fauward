@@ -129,7 +129,7 @@ export const PILLARS: PillarManifest[] = [
     accent: "#DC2626",
     icon: ShieldCheck,
     services: [
-      { id: "iam", name: "Employee IAM", route: "/trust/iam", owner: "Security", description: "Staff SSO, RBAC and sessions.", requiredPermission: "trust.iam.read", icon: Users },
+      { id: "iam", name: "Employee IAM", route: "/trust/iam/users", owner: "Security", description: "Staff SSO, RBAC and sessions.", requiredPermission: "trust.iam.read", icon: Users },
       { id: "jit", name: "Just-in-Time Access", route: "/trust/jit", owner: "Security", description: "Break-glass elevation with approval.", requiredPermission: "trust.iam.read", icon: KeyRound },
       { id: "audit", name: "Audit Log", route: "/trust/audit", owner: "Compliance", description: "Immutable, searchable SOC 2 audit log.", requiredPermission: "trust.audit.read", icon: ClipboardList },
       { id: "compliance", name: "Compliance Operations", route: "/trust/compliance", owner: "Legal", description: "GDPR DSAR, legal hold and exports.", requiredPermission: "trust.compliance.dsar.read", icon: FileCheck2 },

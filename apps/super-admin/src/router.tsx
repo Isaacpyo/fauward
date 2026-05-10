@@ -20,6 +20,12 @@ import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { TrustOverview } from "@/pillars/trust/TrustOverview";
+import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
+import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
+import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
+import { RolesPage } from "@/pillars/trust/iam/RolesPage";
+import { UserDetailPage } from "@/pillars/trust/iam/UserDetailPage";
+import { UsersListPage } from "@/pillars/trust/iam/UsersListPage";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
 import { PermissionGate, PermissionProvider, type Permission } from "@fauward/internal-rbac";
@@ -414,6 +420,55 @@ export function AppRouter() {
           />
           <Route path="/customer" element={<CustomerOverview />} />
           <Route path="/trust" element={<TrustOverview />} />
+          <Route path="/trust/iam" element={<Navigate to="/trust/iam/users" replace />} />
+          <Route
+            path="/trust/iam/users"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <UsersListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/iam/users/:id"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <UserDetailPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/iam/roles"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <RolesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/iam/roles/:id"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <RoleDetailPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/iam/permissions"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <PermissionsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/iam/groups"
+            element={
+              <PermissionRoute permission="trust.iam.read">
+                <GroupsPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/gtm" element={<GtmOverview />} />
         </Route>
         <Route element={<AdminLayout />}>
