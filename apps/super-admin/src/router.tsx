@@ -16,6 +16,7 @@ import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCen
 import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
+import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
 import { PermissionProvider } from "@fauward/internal-rbac";
 
@@ -343,7 +344,7 @@ export function AppRouter() {
       <Route path="/login" element={<LoginPage />} />
       <Route element={<SuperAdminGuard />}>
         <Route element={<ShellLayout />}>
-          <Route path="/" element={<ShellPlaceholder title="Pillar Dashboard" />} />
+          <Route path="/" element={<PillarDashboard />} />
           <Route path="/platform" element={<ShellPlaceholder title="Platform Operations" />} />
           <Route path="/revenue" element={<ShellPlaceholder title="Revenue Operations" />} />
           <Route path="/customer" element={<ShellPlaceholder title="Customer Operations" />} />
