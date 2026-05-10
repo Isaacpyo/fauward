@@ -327,6 +327,7 @@ model Tenant {
   maxStaff           Int          @default(3)
   maxShipmentsPm     Int          @default(300)
   maxOrganisations   Int          @default(10)
+  internalNotes      String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 

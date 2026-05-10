@@ -47,6 +47,7 @@ import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
 import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
 import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
+import { registerInternalCustomer360Routes } from './modules/internal/customer360.routes.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -153,6 +154,7 @@ export async function buildApp() {
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);
   await registerInternalBillingRoutes(app);
+  await registerInternalCustomer360Routes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);
