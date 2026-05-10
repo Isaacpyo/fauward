@@ -20,6 +20,10 @@ import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { TrustOverview } from "@/pillars/trust/TrustOverview";
+import { AuditExportPage } from "@/pillars/trust/audit/AuditExportPage";
+import { AuditIntegrityPage } from "@/pillars/trust/audit/AuditIntegrityPage";
+import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
+import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
 import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
@@ -466,6 +470,38 @@ export function AppRouter() {
             element={
               <PermissionRoute permission="trust.iam.read">
                 <GroupsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/audit"
+            element={
+              <PermissionRoute permission="trust.audit.read">
+                <AuditLogPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/audit/timeline"
+            element={
+              <PermissionRoute permission="trust.audit.read">
+                <AuditTimelinePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/audit/export"
+            element={
+              <PermissionRoute permission="trust.audit.export">
+                <AuditExportPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/trust/audit/integrity"
+            element={
+              <PermissionRoute permission="trust.audit.read">
+                <AuditIntegrityPage />
               </PermissionRoute>
             }
           />
