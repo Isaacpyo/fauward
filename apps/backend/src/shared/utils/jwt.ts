@@ -11,6 +11,13 @@ export interface JwtPayload {
   plan: string;
   mfaVerified: boolean;
   impersonator?: string;
+  actorType?: 'PLATFORM_USER' | 'TENANT_USER';
+  actorId?: string;
+  targetTenantId?: string;
+  targetUserId?: string | null;
+  impersonationSessionId?: string;
+  scopes?: string[];
+  mode?: 'IMPERSONATION';
 }
 
 export function signAccessToken(payload: JwtPayload) {

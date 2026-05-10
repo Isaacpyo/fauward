@@ -1,5 +1,7 @@
 # Implementation Baseline - April 14, 2026
 
+> Historical baseline only. For the current May 2026 implementation status, use `docs/implementation-status.md`.
+
 This is the current ground truth after auditing code against:
 - `README.md`
 - `docs/implementation-status.md`

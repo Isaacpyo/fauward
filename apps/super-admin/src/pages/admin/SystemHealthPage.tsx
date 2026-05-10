@@ -10,7 +10,7 @@ type HealthPayload = {
 };
 
 async function fetchHealth() {
-  const response = await api.get<HealthPayload>("/admin/health");
+  const response = await api.get<HealthPayload>("/health");
   return response.data;
 }
 

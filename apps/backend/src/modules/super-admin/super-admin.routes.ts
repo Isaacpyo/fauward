@@ -11,6 +11,7 @@ import { dlqWebhookQueue } from '../../queues/webhook.worker.js';
 import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../regions/region-change-requests.store.js';
 
 export async function registerSuperAdminRoutes(app: FastifyInstance) {
+  // Deprecated compatibility namespace. New platform control-plane code must use /api/v1/platform/*.
   const preHandlers = [authenticate, requireRole(['SUPER_ADMIN'])];
 
   app.get('/api/v1/admin/tenants', { preHandler: preHandlers }, async (request, reply) => {

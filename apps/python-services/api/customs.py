@@ -1,48 +1,51 @@
-from typing import Annotated, Any, Literal
-from uuid import uuid4
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-import db
-from api.auth import AuthContext, require_bearer_token
-from lib.hs_lookup import fuzzy_match
-from lib.tax_engine import estimate_landed_cost
+from api.auth import AuthContext, require_scope
+from main import limiter
+from schemas.customs import (
+    DeclarationQueuedResponse,
+    DeclarationRequest,
+    DeclarationStatusResponse,
+    DutyEstimateRequest,
+    DutyEstimateResponse,
+)
+from services.analytics_service import tenant_rate_limit_key
+from services.customs_declarations import (
+    FAILED_QUEUE_ERROR,
+    CustomsQueuePublishError,
+    declaration_status_response,
+    duty_estimate_response,
+    fetch_declaration_for_auth,
+    hs_lookup_response,
+    log_declaration_audit,
+    queue_declaration_generation,
+    resolve_effective_tenant_id,
+)
 from workers import publish_job
 
 router = APIRouter(prefix="/customs", tags=["customs"])
 
 
-class DutyEstimateRequest(BaseModel):
-    originCountry: str
-    destCountry: str
-    hsCode: str
-    declaredValue: float
-    currency: str
-
-
-class DeclarationRequest(BaseModel):
-    jobId: str = Field(default_factory=lambda: str(uuid4()))
-    tenantId: str
-    shipmentId: str
-    declarationType: Literal["uk_cds", "eu_aes"]
-    shipmentData: dict[str, Any] = Field(default_factory=dict)
-
-
 @router.post("/hs-lookup")
+@limiter.limit("60/minute", key_func=tenant_rate_limit_key)
 async def hs_lookup(
-    _: Annotated[AuthContext, Depends(require_bearer_token)],
-    description: str = Query(..., min_length=2),
+    request: Request,
+    _: Annotated[AuthContext, Depends(require_scope("customs:read"))],
+    description: str = Query(..., min_length=2, max_length=200),
 ) -> dict[str, Any]:
-    return {"description": description, "matches": fuzzy_match(description, limit=5)}
+    return hs_lookup_response(description)
 
 
-@router.post("/duty-estimate")
+@router.post("/duty-estimate", response_model=DutyEstimateResponse)
+@limiter.limit("60/minute", key_func=tenant_rate_limit_key)
 async def duty_estimate(
+    request: Request,
     payload: DutyEstimateRequest,
-    _: Annotated[AuthContext, Depends(require_bearer_token)],
+    _: Annotated[AuthContext, Depends(require_scope("customs:estimate"))],
 ) -> dict[str, Any]:
-    return estimate_landed_cost(
+    return duty_estimate_response(
         origin_country=payload.originCountry,
         dest_country=payload.destCountry,
         hs_code=payload.hsCode,
@@ -51,28 +54,36 @@ async def duty_estimate(
     )
 
 
-@router.post("/declaration")
+@router.post("/declaration", response_model=DeclarationQueuedResponse)
+@limiter.limit("30/minute", key_func=tenant_rate_limit_key)
 async def declaration(
+    request: Request,
     payload: DeclarationRequest,
-    auth: Annotated[AuthContext, Depends(require_bearer_token)],
+    auth: Annotated[AuthContext, Depends(require_scope("customs:write"))],
 ) -> dict[str, str]:
-    if payload.tenantId != auth.tenant_id and not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    await db.execute(
-        """
-        insert into customs_declarations (id, tenant_id, shipment_id, declaration_type, status, metadata, updated_at)
-        values ($1, $2, $3, $4, 'QUEUED', $5::jsonb, now())
-        on conflict (id) do update
-        set status = 'QUEUED',
-            error_message = null,
-            metadata = excluded.metadata,
-            updated_at = now()
-        """,
-        payload.jobId,
-        payload.tenantId,
-        payload.shipmentId,
-        payload.declarationType,
-        db.json_dumps({"source": "api"}),
+    try:
+        response = await queue_declaration_generation(payload=payload, auth=auth, publisher=publish_job)
+    except CustomsQueuePublishError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"jobId": exc.job_id, "error": FAILED_QUEUE_ERROR},
+        ) from exc
+    await log_declaration_audit(
+        auth=auth,
+        payload=payload,
+        tenant_id=resolve_effective_tenant_id(auth, payload.tenantId),
+        job_id=response["jobId"],
+        request=request,
     )
-    publish_job("fauward:customs:generate", payload.model_dump())
-    return {"jobId": payload.jobId, "status": "queued"}
+    return response
+
+
+@router.get("/declaration/status/{job_id}", response_model=DeclarationStatusResponse)
+@limiter.limit("60/minute", key_func=tenant_rate_limit_key)
+async def declaration_status(
+    request: Request,
+    job_id: str,
+    auth: Annotated[AuthContext, Depends(require_scope("customs:read"))],
+) -> dict[str, Any]:
+    row = await fetch_declaration_for_auth(job_id, auth)
+    return declaration_status_response(row, auth)

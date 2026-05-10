@@ -7,6 +7,7 @@ import { JobsScreen } from "@/features/jobs/JobsScreen";
 import { NotFoundScreen } from "@/features/not-found/NotFoundScreen";
 import { PodCaptureScreen } from "@/features/pod/PodCaptureScreen";
 import { RouteDetailScreen } from "@/features/routes/RouteDetailScreen";
+import { ReturnPickupPage } from "@/features/returns/ReturnPickupPage";
 import { SettingsScreen } from "@/features/settings/SettingsScreen";
 import { StopDetailScreen } from "@/features/stops/StopDetailScreen";
 import { SupportScreen } from "@/features/support/SupportScreen";
@@ -42,6 +43,10 @@ export const router = createBrowserRouter([
       {
         path: "routes/:routeId",
         element: <RouteDetailScreen />,
+      },
+      {
+        path: "returns",
+        element: <ReturnPickupPage />,
       },
       {
         path: "stops/:stopId",

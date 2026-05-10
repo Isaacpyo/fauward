@@ -5,7 +5,7 @@ import { AlertCircle, Bell, MessageSquare, RefreshCw, Wallet } from "lucide-reac
 import { useNavigate } from "react-router-dom";
 
 import { api } from "@/lib/api";
-import { hasDevTestSession } from "@/lib/auth";
+import { getAccessToken, hasDevTestSession } from "@/lib/auth";
 import { useTenantStore } from "@/stores/useTenantStore";
 
 type InAppNotification = {
@@ -49,18 +49,22 @@ export function NotificationCenter() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenant = useTenantStore((state) => state.tenant);
-  const relayTenantId = hasDevTestSession() ? "tenant_dev" : tenant?.tenant_id;
+  const isDevSession = hasDevTestSession();
+  const canFetchNotifications = Boolean(getAccessToken()) && !isDevSession;
+  const relayTenantId = isDevSession ? "tenant_dev" : tenant?.tenant_id;
 
   const notificationsQuery = useQuery({
     queryKey: ["notifications"],
     queryFn: fetchNotifications,
-    staleTime: 10_000
+    staleTime: 10_000,
+    enabled: canFetchNotifications
   });
 
   const unreadCountQuery = useQuery({
     queryKey: ["notifications-unread-count"],
     queryFn: fetchUnreadCount,
-    refetchInterval: 30_000
+    refetchInterval: 30_000,
+    enabled: canFetchNotifications
   });
 
   const markRead = useMutation({
@@ -121,7 +125,9 @@ export function NotificationCenter() {
               disabled={markAllRead.isPending || unreadCount === 0}
               onClick={() => {
                 relayNotifications.markRead();
-                markAllRead.mutate();
+                if (canFetchNotifications) {
+                  markAllRead.mutate();
+                }
               }}
             >
               Mark all read

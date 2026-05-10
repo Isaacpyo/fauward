@@ -14,7 +14,7 @@ import { TenantDetailPage } from "@/pages/admin/TenantDetailPage";
 import { TenantsListPage } from "@/pages/admin/TenantsListPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/auth";
+import { hasPlatformSessionHint } from "@/lib/auth";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
@@ -29,11 +29,6 @@ const navItems = [
   { to: "/admin/impersonation", label: "Impersonation", icon: UserCog },
 ];
 
-const PLATFORM_ADMIN_CREDENTIALS = {
-  email: "fauward@gmail.com",
-  password: "Oluwaseun44!",
-};
-
 const SUCCESSFUL_LOGIN_DELAY_MS = 1200;
 
 function wait(ms: number) {
@@ -43,19 +38,18 @@ function wait(ms: number) {
 function SuperAdminGuard() {
   const location = useLocation();
   const [status, setStatus] = useState<"loading" | "ok" | "denied">(
-    getAccessToken() ? "loading" : "denied"
+    hasPlatformSessionHint() ? "loading" : "denied"
   );
 
   useEffect(() => {
-    if (!getAccessToken()) {
+    if (!hasPlatformSessionHint()) {
       setStatus("denied");
       return;
     }
     api
       .get("/auth/me")
       .then(({ data }) => {
-        const role = data?.user?.role ?? data?.role;
-        setStatus(role === "SUPER_ADMIN" ? "ok" : "denied");
+        setStatus(Array.isArray(data?.user?.permissions) ? "ok" : "denied");
       })
       .catch(() => setStatus("denied"));
   }, []);
@@ -79,8 +73,8 @@ function SuperAdminGuard() {
 function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [email, setEmail] = useState(PLATFORM_ADMIN_CREDENTIALS.email);
-  const [password, setPassword] = useState(PLATFORM_ADMIN_CREDENTIALS.password);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,14 +86,13 @@ function LoginPage() {
     try {
       const { data } = await api.post("/auth/login", {
         email: email.trim().toLowerCase(),
-        password: password.trim(),
+        password,
       });
       // Reject non-super-admin tokens immediately — never grant UI access.
-      if (data.role !== "SUPER_ADMIN" && data.user?.role !== "SUPER_ADMIN") {
+      if (!Array.isArray(data.user?.permissions)) {
         setError("Access denied — SUPER_ADMIN role required");
         return;
       }
-      setTokens(data.accessToken, data.refreshToken);
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
       setRedirecting(true);
       await wait(SUCCESSFUL_LOGIN_DELAY_MS);
@@ -148,7 +141,7 @@ function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
-                placeholder={PLATFORM_ADMIN_CREDENTIALS.email}
+                placeholder="platform-admin@example.com"
               />
             </div>
             <div>
@@ -194,12 +187,10 @@ function SignOutButton() {
 
   async function handleSignOut() {
     try {
-      const refreshToken = getRefreshToken();
-      await api.post("/auth/logout", { refreshToken });
+      await api.post("/auth/logout");
     } catch {
       // Best-effort
     } finally {
-      clearTokens();
       navigate("/login");
     }
   }
@@ -265,7 +256,7 @@ function AdminLayout() {
         <div className="border-t border-[var(--color-border)] px-3 py-3 space-y-2">
           <div className="rounded-lg bg-[var(--color-surface-50)] px-3 py-2">
             <p className="text-xs font-semibold text-[var(--color-text-primary)]">Admin Session</p>
-            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">super-admin@fauward.com</p>
+            <p className="text-[11px] text-[var(--color-text-muted)] mt-0.5">Platform control plane</p>
           </div>
           <SignOutButton />
         </div>

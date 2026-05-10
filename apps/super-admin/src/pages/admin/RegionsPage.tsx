@@ -41,7 +41,7 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"];
 
 async function fetchRegions() {
-  const response = await api.get<RegionsResponse>("/admin/region-change-requests");
+  const response = await api.get<RegionsResponse>("/region-change-requests");
   return response.data;
 }
 
@@ -71,7 +71,7 @@ export function RegionsPage() {
 
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: "APPROVED" | "REJECTED" }) =>
-      api.patch(`/admin/region-change-requests/${id}`, { status }),
+      api.patch(`/region-change-requests/${id}`, { status, reason: `Platform ${status.toLowerCase()} from region queue` }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-regions"] })
   });
 

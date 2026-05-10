@@ -22,8 +22,12 @@ const envSchema = z.object({
   STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   FIREBASE_PROJECT_ID: z.string().default('fauward'),
-  PLATFORM_ADMIN_EMAIL: z.string().email().default('fauward@gmail.com'),
-  PLATFORM_ADMIN_PASSWORD: z.string().min(8).default('Oluwaseun44!')
+  PLATFORM_SESSION_SECRET: z.string().optional(),
+  PLATFORM_REFRESH_SECRET: z.string().optional(),
+  PLATFORM_COOKIE_DOMAIN: z.string().optional(),
+  PLATFORM_ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
+  PLATFORM_ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
+  ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -32,6 +36,23 @@ if (!parsed.success) {
   console.error('Invalid environment variables', parsed.error.flatten().fieldErrors);
   throw new Error('Invalid environment');
 }
+
+if (parsed.data.NODE_ENV === 'production') {
+  const missing = [
+    parsed.data.PLATFORM_SESSION_SECRET ? null : 'PLATFORM_SESSION_SECRET',
+    parsed.data.PLATFORM_REFRESH_SECRET ? null : 'PLATFORM_REFRESH_SECRET',
+    parsed.data.PLATFORM_COOKIE_DOMAIN ? null : 'PLATFORM_COOKIE_DOMAIN'
+  ].filter(Boolean);
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required production platform auth environment variables: ${missing.join(', ')}`);
+  }
+}
+
+const devOnlyPlatformSessionSecret =
+  parsed.data.PLATFORM_SESSION_SECRET ?? 'dev-platform-session-secret-change-before-production';
+const devOnlyPlatformRefreshSecret =
+  parsed.data.PLATFORM_REFRESH_SECRET ?? 'dev-platform-refresh-secret-change-before-production';
 
 export const config = {
   nodeEnv: parsed.data.NODE_ENV,
@@ -60,8 +81,12 @@ export const config = {
   firebase: {
     projectId: parsed.data.FIREBASE_PROJECT_ID
   },
-  platformAdmin: {
-    email: parsed.data.PLATFORM_ADMIN_EMAIL.toLowerCase(),
-    password: parsed.data.PLATFORM_ADMIN_PASSWORD
-  }
+  platformAuth: {
+    sessionSecret: devOnlyPlatformSessionSecret,
+    refreshSecret: devOnlyPlatformRefreshSecret,
+    cookieDomain: parsed.data.PLATFORM_COOKIE_DOMAIN,
+    issuer: 'fauward-platform',
+    audience: 'fauward-platform-admin'
+  },
+  routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL
 };

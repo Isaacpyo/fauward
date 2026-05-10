@@ -2,10 +2,10 @@ import asyncio
 import math
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-import redis
 from sklearn.linear_model import LogisticRegression
 
 import db
@@ -15,7 +15,9 @@ from lib.model_registry import model_registry
 from workers import run_worker
 
 
-def _redis() -> redis.Redis:
+def _redis() -> Any:
+    import redis
+
     return redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 
@@ -25,6 +27,45 @@ def _region_from_postcode(postcode: str) -> str:
 
 def _money(value: float) -> float:
     return round(float(value), 2)
+
+
+async def _tenant_plan(tenant_id: str) -> str:
+    tenant_row = await db.fetchrow(
+        'select plan from tenants where id = $1',
+        tenant_id,
+    )
+    return str(tenant_row["plan"]) if tenant_row else "PRO"
+
+
+def _quote_number() -> str:
+    return f"PY-{datetime.now(UTC).strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8].upper()}"
+
+
+async def persist_quote(payload: dict[str, Any], quote: dict[str, Any]) -> None:
+    tenant_id = str(payload["tenantId"])
+    tenant_plan = await _tenant_plan(tenant_id)
+    await db.execute(
+        """
+        insert into quotes (
+          "tenantId", "quoteNumber", "shipmentData", total, currency, status, "createdAt"
+        )
+        values ($1, $2, $3::jsonb, $4, $5, 'DRAFT', now())
+        """,
+        tenant_id,
+        _quote_number(),
+        db.json_dumps(
+            {
+                "originPostcode": str(payload["originPostcode"]),
+                "destPostcode": str(payload["destPostcode"]),
+                "routeDemandSignal": quote["demandSignal"],
+                "weightKg": float(payload["weightKg"]),
+                "tenantPlan": tenant_plan,
+                "acceptanceProbability": quote["acceptanceProbability"],
+            }
+        ),
+        quote["total"],
+        quote["currency"],
+    )
 
 
 async def evaluate_quote(
@@ -53,6 +94,7 @@ async def evaluate_quote(
     base_price = float(rate["basePrice"]) if rate else 5.0
     price_per_kg = float(rate["pricePerKg"]) if rate else 1.25
     currency = str(rate["currency"]) if rate else "GBP"
+    tenant_plan = await _tenant_plan(tenant_id)
     base = base_price + (price_per_kg * weight_kg)
     surcharges: list[dict[str, Any]] = []
 
@@ -123,7 +165,7 @@ async def evaluate_quote(
     acceptance_probability = predict_acceptance_probability(
         demand_signal=demand_signal,
         weight_kg=weight_kg,
-        tenant_plan="PRO",
+        tenant_plan=tenant_plan,
         price=total,
     )
     if acceptance_probability < 0.4:
@@ -240,6 +282,7 @@ async def handle_pricing_job(payload: dict[str, Any]) -> dict[str, Any]:
         weight_kg=float(payload["weightKg"]),
         promo_code=payload.get("promoCode"),
     )
+    await persist_quote(payload, quote)
     return quote
 
 

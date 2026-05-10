@@ -25,6 +25,10 @@ const POPULAR_ARTICLES = [
   { title: "What happens if my driver loses connectivity?", href: "/support/drivers/offline" },
 ];
 
+function openLiveChat() {
+  window.dispatchEvent(new CustomEvent("fauward:open-relay-chat"));
+}
+
 export default function SupportPageContent() {
   const [query, setQuery] = useState("");
 
@@ -136,7 +140,7 @@ export default function SupportPageContent() {
                   title: "Live Chat",
                   description: "Chat with our team in real time from your Fauward dashboard.",
                   cta: "Open chat",
-                  href: "/signup",
+                  href: "#open-chat",
                   accent: "bg-green-50 text-green-600",
                 },
                 {
@@ -154,12 +158,22 @@ export default function SupportPageContent() {
                   </div>
                   <h3 className="mb-2 font-bold text-gray-900">{channel.title}</h3>
                   <p className="mb-4 text-sm leading-relaxed text-gray-600">{channel.description}</p>
-                  <Link
-                    href={channel.href}
-                    className="inline-flex h-10 items-center rounded-lg bg-amber-600 px-5 text-sm font-semibold text-white transition hover:bg-amber-700"
-                  >
-                    {channel.cta}
-                  </Link>
+                  {channel.href === "#open-chat" ? (
+                    <button
+                      type="button"
+                      onClick={openLiveChat}
+                      className="inline-flex h-10 items-center rounded-lg bg-amber-600 px-5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      {channel.cta}
+                    </button>
+                  ) : (
+                    <Link
+                      href={channel.href}
+                      className="inline-flex h-10 items-center rounded-lg bg-amber-600 px-5 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    >
+                      {channel.cta}
+                    </Link>
+                  )}
                 </div>
               ))}
             </div>

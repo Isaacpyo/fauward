@@ -11,6 +11,8 @@ from weasyprint import HTML
 import db
 from celery_app import celery_app
 from lib.storage import upload_bytes
+from models.pdf_schemas import PdfDisplayOptions
+from services.pdf_jobs import build_pdf_data_from_shipment, fetch_shipment_for_tenant
 from workers import run_worker
 
 TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
@@ -75,12 +77,30 @@ async def handle_pdf_job(payload: dict[str, Any]) -> dict[str, Any]:
     tenant_id = str(payload["tenantId"])
     document_type = str(payload["type"])
     shipment_id = str(payload.get("shipmentId") or "")
-    data = dict(payload.get("data") or {})
+    options = PdfDisplayOptions.model_validate(dict(payload.get("options") or {}))
     template_name = PDF_TEMPLATES.get(document_type)
     if template_name is None:
         raise ValueError(f"Unsupported PDF type: {document_type}")
+    shipment = await fetch_shipment_for_tenant(tenant_id, shipment_id)
+    if shipment is None:
+        raise ValueError("Shipment not found")
+
+    updated = await db.execute(
+        """
+        update documents
+        set status = 'PROCESSING',
+            error_message = null,
+            updated_at = now()
+        where id = $1 and tenant_id = $2
+        """,
+        job_id,
+        tenant_id,
+    )
+    if updated == "UPDATE 0":
+        raise ValueError("PDF job not found")
 
     branding = await _tenant_branding(tenant_id)
+    data = build_pdf_data_from_shipment(shipment=shipment, document_type=document_type, options=options)
     if document_type == "shipping_label":
         tracking_ref = str(data.get("trackingRef") or data.get("trackingNumber") or shipment_id)
         data["qrCodeDataUri"] = _qr_data_uri(tracking_ref)
@@ -101,16 +121,15 @@ async def handle_pdf_job(payload: dict[str, Any]) -> dict[str, Any]:
         content_type="application/pdf",
     )
 
-    await db.execute(
+    updated = await db.execute(
         """
-        insert into documents (id, tenant_id, shipment_id, type, url, status, metadata, updated_at)
-        values ($1, $2, $3, $4, $5, 'READY', $6::jsonb, now())
-        on conflict (id) do update
-        set url = excluded.url,
-            status = 'READY',
+        update documents
+        set url = $5,
+            status = 'COMPLETED',
             error_message = null,
-            metadata = excluded.metadata,
+            metadata = metadata || $6::jsonb,
             updated_at = now()
+        where id = $1 and tenant_id = $2
         """,
         job_id,
         tenant_id,
@@ -119,13 +138,15 @@ async def handle_pdf_job(payload: dict[str, Any]) -> dict[str, Any]:
         url,
         db.json_dumps({"storagePath": path}),
     )
+    if updated == "UPDATE 0":
+        raise ValueError("PDF job not found")
     if await db.table_exists("shipment_documents"):
         await db.execute(
             """
             update shipment_documents
             set "fileUrl" = $1
-            where id = $2
-               or ("tenantId" = $3 and "shipmentId" = $4 and lower(type::text) = $5)
+            where "tenantId" = $3
+              and (id = $2 or ("shipmentId" = $4 and lower(type::text) = $5))
             """,
             url,
             job_id,

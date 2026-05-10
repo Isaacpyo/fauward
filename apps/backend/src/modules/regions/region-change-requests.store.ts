@@ -12,6 +12,8 @@ export type RegionChangeRequest = {
   createdAt: string;
   reviewedAt?: string;
   reviewedBy?: string;
+  reviewedByPlatformUserId?: string;
+  decisionReason?: string;
 };
 
 type CreateRegionChangeRequestInput = {
@@ -52,12 +54,20 @@ export function listRegionChangeRequests() {
   return requests;
 }
 
-export function updateRegionChangeRequestStatus(id: string, status: Exclude<RegionChangeStatus, 'PENDING'>, reviewedBy: string) {
+export function updateRegionChangeRequestStatus(
+  id: string,
+  status: Exclude<RegionChangeStatus, 'PENDING'>,
+  reviewedBy: string,
+  reviewedByPlatformUserId?: string,
+  decisionReason?: string
+) {
   const request = requests.find((item) => item.id === id);
   if (!request) return null;
 
   request.status = status;
   request.reviewedAt = new Date().toISOString();
   request.reviewedBy = reviewedBy;
+  request.reviewedByPlatformUserId = reviewedByPlatformUserId;
+  request.decisionReason = decisionReason;
   return request;
 }

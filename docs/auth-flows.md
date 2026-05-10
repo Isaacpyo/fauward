@@ -53,7 +53,7 @@ All three authenticated surfaces share the same backend token system.
 |---------|-----------------|------------------|
 | Tenant Portal | `fw_access_token` | `fw_refresh_token` |
 | Driver PWA | `fw_driver_access_token` | `fw_driver_refresh_token` |
-| Super Admin | `fw_sa_access_token` | `fw_sa_refresh_token` |
+| Super Admin | HttpOnly `fw_platform_access` cookie | HttpOnly `fw_platform_refresh` cookie |
 
 Different keys prevent one surface's token from interfering with another on the same device.
 
@@ -223,7 +223,7 @@ async function handleLogout() {
 4. Returns: { accessToken, refreshToken, role }
 5. Frontend verifies: role must equal "SUPER_ADMIN" — if not, access is denied
    and tokens are NOT stored.
-6. Stores tokens via setTokens() (fw_sa_access_token)
+6. Stores the platform session in HttpOnly cookies and uses `X-CSRF-Token` for mutations.
 7. Redirects to /admin (or original intended URL)
 ```
 
@@ -268,7 +268,7 @@ useEffect(() => {
 1. Admin clicks "Sign out" in the sidebar footer
 2. Frontend calls POST /api/v1/auth/logout  { refreshToken }
 3. Backend deletes the refreshToken row
-4. Frontend calls clearTokens() — removes fw_sa_access_token + fw_sa_refresh_token
+4. Frontend calls platform logout, which revokes the session and clears platform cookies.
 5. React Router redirects to /login
 ```
 

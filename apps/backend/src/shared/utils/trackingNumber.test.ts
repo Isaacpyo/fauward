@@ -11,7 +11,7 @@ describe('generateTrackingNumber', () => {
     } as any;
 
     const value = await generateTrackingNumber(prisma, 'northline');
-    expect(value).toMatch(/^NORTHLINE-\d{6}-[A-Z0-9]{6}$/);
+    expect(value).toMatch(/^NO\d{4}-\d{2}-[A-Z0-9]{4}-\d{5}$/);
     expect(prisma.shipment.findUnique).toHaveBeenCalledTimes(1);
   });
 
@@ -23,7 +23,7 @@ describe('generateTrackingNumber', () => {
     } as any;
 
     const value = await generateTrackingNumber(prisma, 'abc');
-    expect(value).toMatch(/^ABC-\d{6}-[A-Z0-9]{6}$/);
+    expect(value).toMatch(/^AB\d{4}-\d{2}-[A-Z0-9]{4}-\d{5}$/);
     expect(prisma.shipment.findUnique).toHaveBeenCalledTimes(2);
   });
 });

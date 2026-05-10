@@ -6,8 +6,8 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("SUPABASE_DB_URL")
-  directUrl = env("SUPABASE_DIRECT_URL")
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ─── ENUMS ────────────────────────────────────────────────────────────────────
@@ -25,6 +25,104 @@ enum ShipmentStatus {
   EXCEPTION
 }
 
+enum TrackingStatus {
+  CREATED
+  BOOKED
+  LABEL_GENERATED
+  ASSIGNED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  AT_ORIGIN_HUB
+  DEPARTED_ORIGIN_HUB
+  IN_TRANSIT
+  AT_DESTINATION_HUB
+  OUT_FOR_DELIVERY
+  DELIVERY_ATTEMPTED
+  DELIVERED
+  FAILED_DELIVERY
+  EXCEPTION
+  CUSTOMS_HOLD
+  CUSTOMS_RELEASED
+  RETURN_STARTED
+  RETURNED
+  CANCELLED
+}
+
+enum TrackingEventType {
+  SHIPMENT_CREATED
+  SHIPMENT_BOOKED
+  LABEL_GENERATED
+  DRIVER_ASSIGNED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  ARRIVED_AT_HUB
+  DEPARTED_HUB
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERY_ATTEMPTED
+  DELIVERED
+  FAILED_DELIVERY
+  EXCEPTION_RAISED
+  EXCEPTION_RESOLVED
+  CUSTOMS_HOLD
+  CUSTOMS_RELEASED
+  RETURN_STARTED
+  RETURNED
+  CANCELLED
+  POD_UPLOADED
+  LOCATION_UPDATED
+  ETA_UPDATED
+  STATUS_OVERRIDE
+  CUSTOMER_NOTIFICATION_SENT
+  WEBHOOK_DISPATCHED
+  WEBHOOK_FAILED
+  OFFLINE_SYNC
+}
+
+enum TrackingSource {
+  TENANT_PORTAL
+  SUPERADMIN
+  FAUWARD_GO
+  CUSTOMER_PORTAL
+  CARRIER_WEBHOOK
+  API
+  SYSTEM_AUTOMATION
+  AI_AGENT
+  QUEUE_WORKER
+  MIGRATION
+}
+
+enum TrackingVisibility {
+  PLATFORM_ONLY
+  TENANT_INTERNAL
+  CUSTOMER_VISIBLE
+  FIELD_VISIBLE
+}
+
+enum TrackingActorType {
+  TENANT_USER
+  PLATFORM_USER
+  CUSTOMER
+  FIELD_USER
+  DRIVER
+  SYSTEM
+  AI_AGENT
+  CARRIER
+}
+
+enum PodMethod {
+  SIGNATURE
+  PHOTO
+  OTP
+  NAME
+}
+
+enum TrackingAccessMode {
+  TRACKING_NUMBER_ONLY
+  TRACKING_NUMBER_AND_POSTCODE
+  SIGNED_LINK
+}
+
 enum UserRole {
   SUPER_ADMIN
   TENANT_ADMIN
@@ -34,6 +132,19 @@ enum UserRole {
   TENANT_DRIVER
   CUSTOMER_ADMIN
   CUSTOMER_USER
+}
+
+enum PlatformRole {
+  SUPER_ADMIN
+  PLATFORM_SUPPORT
+  PLATFORM_OPERATIONS
+  PLATFORM_FINANCE
+  PLATFORM_READONLY
+}
+
+enum PlatformUserStatus {
+  ACTIVE
+  DISABLED
 }
 
 enum TenantStatus {
@@ -118,15 +229,6 @@ enum ReturnStatus {
   REJECTED
 }
 
-enum ReturnReason {
-  WRONG_ITEM
-  DAMAGED
-  NOT_AS_DESCRIBED
-  NO_LONGER_NEEDED
-  REFUSED_DELIVERY
-  OTHER
-}
-
 enum TicketStatus {
   OPEN
   IN_PROGRESS
@@ -188,6 +290,12 @@ enum PromoType {
   FREE_EXPRESS
 }
 
+enum LabelFormat {
+  PDF
+  ZPL
+  PNG
+}
+
 // ─── CORE PLATFORM ────────────────────────────────────────────────────────────
 
 model Tenant {
@@ -216,74 +324,168 @@ model Tenant {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  users                 User[]
-  shipments             Shipment[]
-  organisations         Organisation[]
-  leads                 Lead[]
-  quotes                Quote[]
-  invoices              Invoice[]
-  payments              Payment[]
-  refunds               Refund[]
-  creditNotes           CreditNote[]
-  drivers               Driver[]
-  vehicles              Vehicle[]
-  routes                Route[]
-  serviceZones          ServiceZone[]
-  rateCards             RateCard[]
-  shipmentDocuments     ShipmentDocument[]
-  apiKeys               ApiKey[]
-  webhookEndpoints      WebhookEndpoint[]
-  webhookDeliveries     WebhookDelivery[]
-  notificationLogs      NotificationLog[]
-  usageRecords          UsageRecord[]
-  idempotencyKeys       IdempotencyKey[]
-  auditLogs             AuditLog[]
-  passwordResetTokens   PasswordResetToken[]
-  subscription          Subscription?
-  branches              Branch[]
-  accountingConnections AccountingConnection[]
-  settings              TenantSettings?
-  returnRequests        ReturnRequest[]
-  supportTickets        SupportTicket[]
-  ticketMessages        TicketMessage[]
-  emailTemplateConfigs  EmailTemplateConfig[]
-  surcharges            Surcharge[]
-  pricingRules          PricingRule[]
-  promoCodes            PromoCode[]
-  weightDiscountTiers   WeightDiscountTier[]
-  inAppNotifications    InAppNotification[]
+  users                         User[]
+  shipments                     Shipment[]
+  organisations                 Organisation[]
+  leads                         Lead[]
+  quotes                        Quote[]
+  invoices                      Invoice[]
+  payments                      Payment[]
+  refunds                       Refund[]
+  creditNotes                   CreditNote[]
+  drivers                       Driver[]
+  vehicles                      Vehicle[]
+  routes                        Route[]
+  serviceZones                  ServiceZone[]
+  rateCards                     RateCard[]
+  shipmentDocuments             ShipmentDocument[]
+  apiKeys                       ApiKey[]
+  webhookEndpoints              WebhookEndpoint[]
+  webhookDeliveries             WebhookDelivery[]
+  notificationLogs              NotificationLog[]
+  usageRecords                  UsageRecord[]
+  apiUsageRecords               ApiUsageRecord[]
+  idempotencyKeys               IdempotencyKey[]
+  auditLogs                     AuditLog[]
+  passwordResetTokens           PasswordResetToken[]
+  subscription                  Subscription?
+  branches                      Branch[]
+  accountingConnections         AccountingConnection[]
+  settings                      TenantSettings?
+  returnRequests                ReturnRequest[]
+  supportTickets                SupportTicket[]
+  ticketMessages                TicketMessage[]
+  emailTemplateConfigs          EmailTemplateConfig[]
+  surcharges                    Surcharge[]
+  pricingRules                  PricingRule[]
+  promoCodes                    PromoCode[]
+  weightDiscountTiers           WeightDiscountTier[]
+  inAppNotifications            InAppNotification[]
+  planOverrides                 TenantPlanOverride[]
+  platformImpersonationSessions PlatformImpersonationSession[]
+  trackingEvents                TrackingEvent[]
+  trackingSnapshots             TrackingSnapshot[]
+  trackingShares                TrackingShare[]
+  proofsOfDelivery              ProofOfDelivery[]
+  carrierAccounts               CarrierAccount[]
+  carrierServiceLevels          CarrierServiceLevel[]
+  rateQuotes                    RateQuote[]
+  generatedLabels               GeneratedLabel[]
+  shippingRules                 ShippingRule[]
+  customsDeclarations           CustomsDeclaration[]
+  tenantAiUsages                TenantAiUsage[]
+  tenantAiLimit                 TenantAiLimit?
+  aiAgentRuns                   AiAgentRun[]
+  exceptionCases                ExceptionCase[]
+  slaPolicies                   SlaPolicy[]
 
   @@map("tenants")
 }
 
+model PlatformUser {
+  id                 String             @id @default(uuid())
+  email              String             @unique
+  name               String?
+  passwordHash       String
+  role               PlatformRole
+  status             PlatformUserStatus @default(ACTIVE)
+  mfaEnabled         Boolean            @default(false)
+  mfaSecretEncrypted String?
+  lastLoginAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  disabledAt         DateTime?
+
+  sessions              PlatformSession[]
+  impersonationSessions PlatformImpersonationSession[]
+  planOverrides         TenantPlanOverride[]
+
+  @@index([status])
+  @@map("platform_users")
+}
+
+model PlatformSession {
+  id               String       @id @default(uuid())
+  platformUserId   String
+  platformUser     PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  mfaVerifiedAt    DateTime?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([platformUserId])
+  @@index([expiresAt])
+  @@map("platform_sessions")
+}
+
+model PlatformImpersonationSession {
+  id             String       @id @default(uuid())
+  platformUserId String
+  platformUser   PlatformUser @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
+  targetTenantId String
+  targetTenant   Tenant       @relation(fields: [targetTenantId], references: [id])
+  targetUserId   String?
+  scopes         String[]     @default([])
+  reason         String
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([platformUserId])
+  @@index([targetTenantId])
+  @@index([expiresAt])
+  @@map("platform_impersonation_sessions")
+}
+
+model TenantPlanOverride {
+  id                      String       @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant       @relation(fields: [tenantId], references: [id])
+  plan                    TenantPlan
+  reason                  String
+  expiresAt               DateTime?
+  createdByPlatformUserId String
+  createdByPlatformUser   PlatformUser @relation(fields: [createdByPlatformUserId], references: [id])
+  revokedAt               DateTime?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  @@index([tenantId, revokedAt, expiresAt])
+  @@map("tenant_plan_overrides")
+}
+
 model TenantSettings {
-  tenantId                      String   @id
-  tenant                        Tenant   @relation(fields: [tenantId], references: [id])
-  notificationEmail             String?
-  smsEnabled                    Boolean  @default(false)
-  paymentGateway                String   @default("STRIPE")
-  paymentGatewayKey             String?
-  customEmailDomain             String?
-  webhookUrl                    String?
-  webhookSecret                 String?
-  showPoweredBy                 Boolean  @default(true)
-  timezone                      String   @default("Europe/London")
-  currency                      String   @default("GBP")
-  emailFromName                 String?
-  emailReplyTo                  String?
-  opsEmailRecipients            String[] @default([])
-  serviceTierConfig             Json?
-  insuranceConfig               Json?
-  taxConfig                     Json?
-  dimensionalDivisor            Int      @default(5000)
-  weightTierConflictPolicy      String   @default("BEST_FOR_CUSTOMER")
-  quoteValidityMinutes          Int      @default(30)
-  showPriceBreakdownToCustomer  Boolean  @default(true)
-  autoInvoiceOnDelivery         Boolean  @default(false)
-  slaDeliveryHours              Int      @default(72)
-  roundingMode                  String   @default("ROUND_HALF_UP")
-  roundingPrecision             Int      @default(2)
-  updatedAt                     DateTime @updatedAt
+  tenantId                     String   @id
+  tenant                       Tenant   @relation(fields: [tenantId], references: [id])
+  notificationEmail            String?
+  smsEnabled                   Boolean  @default(false)
+  paymentGateway               String   @default("STRIPE")
+  paymentGatewayKey            String?
+  customEmailDomain            String?
+  webhookUrl                   String?
+  webhookSecret                String?
+  showPoweredBy                Boolean  @default(true)
+  timezone                     String   @default("Europe/London")
+  currency                     String   @default("GBP")
+  emailFromName                String?
+  emailReplyTo                 String?
+  opsEmailRecipients           String[] @default([])
+  serviceTierConfig            Json?
+  insuranceConfig              Json?
+  taxConfig                    Json?
+  dimensionalDivisor           Int      @default(5000)
+  weightTierConflictPolicy     String   @default("BEST_FOR_CUSTOMER")
+  quoteValidityMinutes         Int      @default(30)
+  showPriceBreakdownToCustomer Boolean  @default(true)
+  autoInvoiceOnDelivery        Boolean  @default(false)
+  slaDeliveryHours             Int      @default(72)
+  roundingMode                 String   @default("ROUND_HALF_UP")
+  roundingPrecision            Int      @default(2)
+  updatedAt                    DateTime @updatedAt
 
   @@map("tenant_settings")
 }
@@ -334,16 +536,16 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  refreshTokens RefreshToken[]
-  driver        Driver?
-  auditLogs     AuditLog[]
+  refreshTokens       RefreshToken[]
+  driver              Driver?
+  auditLogs           AuditLog[]
   passwordResetTokens PasswordResetToken[]
-  returnRequests ReturnRequest[]      @relation("ReturnCustomer")
-  handledReturns ReturnRequest[]      @relation("ReturnHandledBy")
-  supportTickets SupportTicket[]      @relation("TicketCustomer")
-  assignedTickets SupportTicket[]     @relation("TicketAssignee")
-  ticketMessages TicketMessage[]
-  inAppNotifications InAppNotification[]
+  returnRequests      ReturnRequest[]      @relation("ReturnCustomer")
+  handledReturns      ReturnRequest[]      @relation("ReturnHandledBy")
+  supportTickets      SupportTicket[]      @relation("TicketCustomer")
+  assignedTickets     SupportTicket[]      @relation("TicketAssignee")
+  ticketMessages      TicketMessage[]
+  inAppNotifications  InAppNotification[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -363,15 +565,15 @@ model RefreshToken {
 }
 
 model PasswordResetToken {
-  id         String   @id @default(uuid())
-  tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String   @unique
-  expiresAt  DateTime
-  usedAt     DateTime?
-  createdAt  DateTime @default(now())
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([tenantId, userId])
   @@index([expiresAt])
@@ -413,12 +615,12 @@ model Organisation {
   isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
 
-  users       User[]
-  shipments   Shipment[]
+  users          User[]
+  shipments      Shipment[]
   returnRequests ReturnRequest[]
-  invoices    Invoice[]
-  quotes      Quote[]
-  creditNotes CreditNote[]
+  invoices       Invoice[]
+  quotes         Quote[]
+  creditNotes    CreditNote[]
 
   @@index([tenantId])
   @@map("organisations")
@@ -446,6 +648,7 @@ model Shipment {
   originAddress       Json
   destinationAddress  Json
   serviceTier         String         @default("STANDARD")
+  isSandbox           Boolean        @default(false)
   serviceZoneId       String?
   serviceZone         ServiceZone?   @relation(fields: [serviceZoneId], references: [id])
   estimatedDelivery   DateTime?
@@ -457,25 +660,42 @@ model Shipment {
   specialInstructions String?
   insuranceValue      Decimal?       @db.Decimal(12, 2)
   promoCodeId         String?
+  rateQuoteId         String?
+  carrierAccountId    String?
+  customsDeclarationId String?
   idempotencyKey      String?        @unique
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
-  items     ShipmentItem[]
-  events    ShipmentEvent[]
-  documents ShipmentDocument[]
-  podAssets PodAsset[]
-  returnRequests ReturnRequest[]
-  supportTickets SupportTicket[]
-  promoCode PromoCode?   @relation(fields: [promoCodeId], references: [id])
-  invoice   Invoice?
-  payment   Payment?
+  items            ShipmentItem[]
+  events           ShipmentEvent[]
+  documents        ShipmentDocument[]
+  podAssets        PodAsset[]
+  returnRequests   ReturnRequest[]
+  supportTickets   SupportTicket[]
+  promoCode        PromoCode?         @relation(fields: [promoCodeId], references: [id])
+  invoice          Invoice?
+  payment          Payment?
+  trackingEvents   TrackingEvent[]
+  trackingSnapshot TrackingSnapshot?
+  trackingShares   TrackingShare[]
+  proofsOfDelivery ProofOfDelivery[]
+  routeStops       RouteStop[]
+  rateQuote        RateQuote?         @relation(fields: [rateQuoteId], references: [id])
+  carrierAccount   CarrierAccount?    @relation(fields: [carrierAccountId], references: [id])
+  generatedLabels  GeneratedLabel[]
+  customsDeclaration CustomsDeclaration?
+  exceptionCases     ExceptionCase[]
 
   @@index([tenantId])
+  @@index([tenantId, isSandbox])
   @@index([status])
   @@index([trackingNumber])
   @@index([customerId])
   @@index([promoCodeId])
+  @@index([rateQuoteId])
+  @@index([carrierAccountId])
+  @@index([customsDeclarationId])
   @@map("shipments")
 }
 
@@ -599,16 +819,18 @@ model Vehicle {
 }
 
 model Route {
-  id          String    @id @default(uuid())
-  tenantId    String
-  tenant      Tenant    @relation(fields: [tenantId], references: [id])
-  driverId    String?
-  vehicleId   String?
-  date        DateTime
-  status      String    @default("PLANNED")
-  startedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
+  id                String    @id @default(uuid())
+  tenantId          String
+  tenant            Tenant    @relation(fields: [tenantId], references: [id])
+  driverId          String?
+  vehicleId         String?
+  date              DateTime
+  status            String    @default("PLANNED")
+  startedAt         DateTime?
+  completedAt       DateTime?
+  optimizedAt       DateTime?
+  optimizationScore Json?
+  createdAt         DateTime  @default(now())
 
   stops RouteStop[]
 
@@ -621,15 +843,19 @@ model RouteStop {
   routeId     String
   route       Route     @relation(fields: [routeId], references: [id], onDelete: Cascade)
   shipmentId  String
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id])
   driverId    String?
   driver      Driver?   @relation(fields: [driverId], references: [id])
   stopOrder   Int
+  sequence    Int       @default(0)
+  status      String    @default("PENDING")
   type        String
   estimatedAt DateTime?
   arrivedAt   DateTime?
   completedAt DateTime?
 
   @@index([routeId])
+  @@index([shipmentId])
   @@map("route_stops")
 }
 
@@ -674,6 +900,66 @@ model RateCard {
 
   @@index([tenantId])
   @@map("rate_cards")
+}
+
+model CarrierAccount {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  name        String
+  carrier     String
+  credentials Json
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  serviceLevels CarrierServiceLevel[]
+  shipments     Shipment[]
+
+  @@index([tenantId])
+  @@index([tenantId, carrier])
+  @@map("carrier_accounts")
+}
+
+model CarrierServiceLevel {
+  id               String         @id @default(uuid())
+  tenantId         String
+  tenant           Tenant         @relation(fields: [tenantId], references: [id])
+  carrierAccountId String
+  carrierAccount   CarrierAccount @relation(fields: [carrierAccountId], references: [id], onDelete: Cascade)
+  name             String
+  transitDays      Int
+  regions          String[]
+  isActive         Boolean        @default(true)
+
+  @@index([tenantId])
+  @@index([carrierAccountId])
+  @@map("carrier_service_levels")
+}
+
+model RateQuote {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId           String?
+  origin               Json
+  destination          Json
+  weightKg             Float
+  volumetricWeightKg   Float?
+  quotes               Json
+  selectedCarrier      String?
+  selectedServiceLevel String?
+  isSandbox            Boolean  @default(false)
+  expiresAt            DateTime
+  createdAt            DateTime @default(now())
+
+  shipments Shipment[]
+
+  @@index([tenantId])
+  @@index([tenantId, isSandbox])
+  @@index([shipmentId])
+  @@index([tenantId, expiresAt])
+  @@map("rate_quotes")
 }
 
 // ─── CRM ──────────────────────────────────────────────────────────────────────
@@ -767,7 +1053,13 @@ model ReturnRequest {
   customerId     String
   organisationId String?
   status         ReturnStatus @default(REQUESTED)
-  reason         ReturnReason
+  reason         String?
+  items          Json?
+  photos         String[]     @default([])
+  labelId        String?
+  refundStatus   String?
+  reversedAt     DateTime?
+  pickupScheduledAt DateTime?
   notes          String?
   returnLabel    String?
   handledBy      String?
@@ -806,10 +1098,10 @@ model SupportTicket {
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
-  tenant   Tenant         @relation(fields: [tenantId], references: [id])
-  customer User?          @relation("TicketCustomer", fields: [customerId], references: [id])
-  shipment Shipment?      @relation(fields: [shipmentId], references: [id])
-  assignee User?          @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  tenant   Tenant          @relation(fields: [tenantId], references: [id])
+  customer User?           @relation("TicketCustomer", fields: [customerId], references: [id])
+  shipment Shipment?       @relation(fields: [shipmentId], references: [id])
+  assignee User?           @relation("TicketAssignee", fields: [assignedTo], references: [id])
   messages TicketMessage[]
 
   @@index([tenantId])
@@ -853,16 +1145,16 @@ model EmailTemplateConfig {
 }
 
 model InAppNotification {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   tenantId  String
   userId    String
   type      String
   title     String
   body      String?
   link      String?
-  isRead    Boolean  @default(false)
+  isRead    Boolean   @default(false)
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   user   User   @relation(fields: [userId], references: [id])
@@ -1057,18 +1349,23 @@ model AccountingConnection {
 // ─── PLATFORM: API KEYS ───────────────────────────────────────────────────────
 
 model ApiKey {
-  id        String    @id @default(uuid())
-  tenantId  String
-  tenant    Tenant    @relation(fields: [tenantId], references: [id])
-  name      String?
-  keyHash   String    @unique
-  keyPrefix String
-  scopes    String[]
-  rateLimit Int       @default(500)
-  lastUsed  DateTime?
-  isActive  Boolean   @default(true)
-  expiresAt DateTime?
-  createdAt DateTime  @default(now())
+  id                  String    @id @default(uuid())
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id])
+  name                String?
+  keyHash             String    @unique
+  keyPrefix           String
+  scopes              String[]
+  rateLimit           Int       @default(500)
+  lastUsed            DateTime?
+  isSandbox           Boolean   @default(false)
+  lastUsedAt          DateTime?
+  monthlyRequestCount Int       @default(0)
+  isActive            Boolean   @default(true)
+  expiresAt           DateTime?
+  createdAt           DateTime  @default(now())
+
+  usageEvents ApiUsageRecord[]
 
   @@index([tenantId])
   @@map("api_keys")
@@ -1093,24 +1390,84 @@ model WebhookEndpoint {
 }
 
 model WebhookDelivery {
-  id             String                @id @default(uuid())
-  tenantId       String
-  tenant         Tenant                @relation(fields: [tenantId], references: [id])
-  endpointId     String
-  endpoint       WebhookEndpoint       @relation(fields: [endpointId], references: [id])
-  eventType      String
-  payload        Json
-  responseStatus Int?
-  responseBody   String?
-  durationMs     Int?
-  attempt        Int                   @default(1)
-  status         WebhookDeliveryStatus @default(PENDING)
-  nextRetryAt    DateTime?
-  createdAt      DateTime              @default(now())
+  id                String                @id @default(uuid())
+  tenantId          String
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  endpointId        String
+  endpoint          WebhookEndpoint       @relation(fields: [endpointId], references: [id])
+  eventType         String
+  payload           Json
+  responseStatus    Int?
+  responseBody      String?
+  durationMs        Int?
+  attempt           Int                   @default(1)
+  attemptCount      Int                   @default(0)
+  deadLetteredAt    DateTime?
+  hmacSignature     String?
+  responseCode      Int?
+  responseLatencyMs Int?
+  status            WebhookDeliveryStatus @default(PENDING)
+  nextRetryAt       DateTime?
+  createdAt         DateTime              @default(now())
 
   @@index([endpointId])
   @@index([tenantId])
   @@map("webhook_deliveries")
+}
+
+model GeneratedLabel {
+  id             String      @id @default(uuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id])
+  shipmentId     String
+  shipment       Shipment    @relation(fields: [shipmentId], references: [id])
+  format         LabelFormat
+  url            String
+  carrier        String?
+  barcodeData    String?
+  trackingNumber String
+  generatedAt    DateTime    @default(now())
+
+  @@index([tenantId])
+  @@index([tenantId, shipmentId])
+  @@map("generated_labels")
+}
+
+model ShippingRule {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  name       String
+  isActive   Boolean  @default(true)
+  priority   Int      @default(0)
+  conditions Json
+  actions    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, isActive, priority])
+  @@map("shipping_rules")
+}
+
+model CustomsDeclaration {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId String   @unique
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  type       String
+  items      Json
+  totalValue Float
+  currency   String
+  documents  Json?
+  status     String
+  holdReason String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@map("customs_declarations")
 }
 
 // ─── PLATFORM: NOTIFICATIONS ──────────────────────────────────────────────────
@@ -1150,6 +1507,102 @@ model UsageRecord {
   @@unique([tenantId, month])
   @@index([tenantId])
   @@map("usage_records")
+}
+
+model ApiUsageRecord {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  apiKeyId   String
+  apiKey     ApiKey   @relation(fields: [apiKeyId], references: [id])
+  endpoint   String
+  method     String
+  statusCode Int
+  latencyMs  Int
+  timestamp  DateTime @default(now())
+
+  @@index([tenantId, timestamp])
+  @@index([tenantId, apiKeyId, timestamp])
+  @@map("api_usage_records")
+}
+
+model TenantAiUsage {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  month        String
+  model        String
+  feature      String
+  requestCount Int      @default(0)
+  tokenCount   Int      @default(0)
+  costUsd      Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, month, model, feature])
+  @@index([tenantId])
+  @@map("tenant_ai_usage")
+}
+
+model TenantAiLimit {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  monthlyBudgetUsd  Float?
+  flashRequestLimit Int?
+  proRequestLimit   Int?
+  featuresEnabled   String[]
+}
+
+model AiAgentRun {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  agentType  String
+  input      Json
+  output     Json?
+  status     String
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@map("ai_agent_runs")
+}
+
+model ExceptionCase {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId  String?
+  shipment    Shipment? @relation(fields: [shipmentId], references: [id])
+  type        String
+  severity    String
+  status      String
+  assignedTo  String?
+  aiDiagnosis Json?
+  notes       String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, shipmentId, status])
+  @@map("exception_cases")
+}
+
+model SlaPolicy {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+  name                String
+  serviceType         String?
+  pickupWindowHours   Int
+  deliveryWindowHours Int
+  escalationHours     Int
+  isDefault           Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  @@index([tenantId, isDefault])
+  @@map("sla_policies")
 }
 
 // ─── PLATFORM: IDEMPOTENCY ────────────────────────────────────────────────────
@@ -1209,6 +1662,28 @@ model AuditLog {
   @@map("audit_log")
 }
 
+model PlatformAuditLog {
+  id                     String   @id @default(uuid())
+  actorType              String
+  actorId                String
+  actorEmail             String?
+  action                 String
+  targetTenantId         String?
+  targetUserId           String?
+  impersonationSessionId String?
+  reason                 String?
+  metadata               Json
+  ipAddress              String?
+  userAgent              String?
+  previousHash           String?
+  hash                   String
+  createdAt              DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetTenantId, createdAt])
+  @@map("platform_audit_logs")
+}
+
 // ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────
 
 model SsoProvider {
@@ -1223,4 +1698,136 @@ model SsoProvider {
   createdAt    DateTime @default(now())
 
   @@map("sso_providers")
+}
+
+// ─── TRACKING CORE ────────────────────────────────────────────────────────────
+
+model TrackingEvent {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId     String
+  shipment       Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  trackingNumber String
+
+  eventType TrackingEventType
+  status    TrackingStatus
+
+  title       String
+  description String?
+
+  source    TrackingSource
+  actorType TrackingActorType
+  actorId   String?
+
+  visibility TrackingVisibility
+
+  locationName String?
+  city         String?
+  region       String?
+  country      String?
+  lat          Decimal? @db.Decimal(10, 8)
+  lng          Decimal? @db.Decimal(11, 8)
+
+  metadata Json?
+
+  idempotencyKey String?
+
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+
+  proofOfDelivery ProofOfDelivery?
+
+  @@unique([tenantId, shipmentId, idempotencyKey])
+  @@index([tenantId, shipmentId])
+  @@index([tenantId, trackingNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, occurredAt(sort: Desc)])
+  @@map("tracking_events")
+}
+
+model TrackingSnapshot {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId     String   @unique
+  shipment       Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  trackingNumber String
+
+  currentStatus     TrackingStatus
+  operationalStatus TrackingStatus
+  customerStatus    String
+
+  currentTitle   String
+  currentMessage String?
+
+  lastEventId String?
+  lastEventAt DateTime?
+
+  originName      String?
+  destinationName String?
+
+  estimatedDeliveryAt DateTime?
+  deliveredAt         DateTime?
+
+  hasException     Boolean @default(false)
+  exceptionCode    String?
+  exceptionMessage String?
+
+  assignedDriverId  String?
+  assignedVehicleId String?
+
+  podAvailable Boolean @default(false)
+
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, currentStatus])
+  @@index([tenantId, trackingNumber])
+  @@map("tracking_snapshots")
+}
+
+model TrackingShare {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId     String
+  shipment       Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  trackingNumber String
+
+  publicToken String?            @unique
+  accessMode  TrackingAccessMode @default(TRACKING_NUMBER_ONLY)
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([tenantId, shipmentId])
+  @@map("tracking_shares")
+}
+
+model ProofOfDelivery {
+  id              String         @id @default(uuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id])
+  shipmentId      String
+  shipment        Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  trackingEventId String?        @unique
+  trackingEvent   TrackingEvent? @relation(fields: [trackingEventId], references: [id])
+
+  method PodMethod
+
+  recipientName String?
+  signatureUrl  String?
+  photoUrls     String[]
+  otpVerified   Boolean  @default(false)
+
+  capturedByUserId    String?
+  capturedByActorType String?
+
+  capturedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, shipmentId])
+  @@map("proof_of_delivery")
 }

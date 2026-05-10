@@ -26,7 +26,10 @@ describe('authenticate', () => {
     await authenticate(request, reply as any);
 
     expect(reply.status).toHaveBeenCalledWith(403);
-    expect(reply.send).toHaveBeenCalledWith({ error: 'Tenant suspended', code: 'TENANT_SUSPENDED' });
+    expect(reply.send).toHaveBeenCalledWith({
+      error: 'TENANT_SUSPENDED',
+      message: 'This tenant is currently suspended. Contact support.'
+    });
   });
 
   it('requires mfa for super-admin routes', async () => {
@@ -48,4 +51,3 @@ describe('authenticate', () => {
     expect(reply.send).toHaveBeenCalledWith({ error: 'MFA required', code: 'MFA_REQUIRED' });
   });
 });
-

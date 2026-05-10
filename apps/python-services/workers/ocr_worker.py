@@ -10,9 +10,9 @@ import requests
 from PIL import Image
 from pytesseract import image_to_string
 
-import db
 from celery_app import celery_app
 from lib.storage import upload_bytes
+from repositories.parsed_documents import complete_ocr_job, mark_ocr_job_processing
 from workers import run_worker
 
 
@@ -110,32 +110,19 @@ async def handle_ocr_job(payload: dict[str, Any]) -> dict[str, Any]:
     tenant_id = str(payload["tenantId"])
     document_type = str(payload["documentType"])
     file_url = str(payload["fileUrl"])
+    await mark_ocr_job_processing(job_id, tenant_id)
     content, content_type = await asyncio.to_thread(_download, file_url)
     kind = _detect_kind(content, content_type, file_url)
     text = await asyncio.to_thread(_extract_text, content, kind)
     fields, confidence = _parse_fields(document_type, text)
-    await db.execute(
-        """
-        insert into parsed_documents (
-          job_id, tenant_id, document_type, file_url, extracted_fields,
-          raw_text, confidence_score, status, updated_at
-        )
-        values ($1, $2, $3, $4, $5::jsonb, $6, $7, 'READY', now())
-        on conflict (job_id) do update
-        set extracted_fields = excluded.extracted_fields,
-            raw_text = excluded.raw_text,
-            confidence_score = excluded.confidence_score,
-            status = 'READY',
-            error_message = null,
-            updated_at = now()
-        """,
-        job_id,
-        tenant_id,
-        document_type,
-        file_url,
-        db.json_dumps(fields),
-        text[:100_000],
-        confidence,
+    await complete_ocr_job(
+        job_id=job_id,
+        tenant_id=tenant_id,
+        document_type=document_type,
+        file_url=file_url,
+        fields=fields,
+        raw_text=text,
+        confidence=confidence,
     )
     return {"documentType": document_type, "extractedFields": fields, "confidenceScore": confidence}
 

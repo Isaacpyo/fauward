@@ -1,6 +1,6 @@
 # Data Model — Complete Schema
 
-> Authoritative reference for all database tables. The live Prisma schema lives at `apps/backend/prisma/schema.prisma` (893 lines, all 35 models present). This document is the human-readable companion.
+> Human-readable database reference. The live source of truth is `apps/backend/prisma/schema.prisma`; use it for exact field names, relations, indexes, and migration history.
 
 **Navigation →** [System Architecture](./system-architecture.md) · [Logistics Core](./logistics-core.md) · [← README](../README.md)
 
@@ -13,6 +13,37 @@
 3. [Finance Tables](#3-finance-tables) — Invoices, Payments, Refunds, Credit Notes
 4. [CRM Tables](#4-crm-tables) — Leads, Quotes
 5. [Platform & Integration Tables](#5-platform--integration-tables) — Subscriptions, API Keys, Webhooks, Audit Log, and more
+
+---
+
+## Current Schema Update - 2026-05-10
+
+The May 2026 implementation added the production models needed for rating, labels, shipping rules, customs, returns hardening, AI usage, exceptions, and control tower health.
+
+New models now present in Prisma:
+
+- `CarrierAccount`
+- `CarrierServiceLevel`
+- `RateQuote`
+- `ShippingRule`
+- `GeneratedLabel`
+- `CustomsDeclaration`
+- `ExceptionCase`
+- `SlaPolicy`
+- `TenantAiUsage`
+- `TenantAiLimit`
+- `AiAgentRun`
+
+Important field additions:
+
+- `Shipment.rateQuoteId`, `Shipment.carrierAccountId`, `Shipment.customsDeclarationId`, `Shipment.isSandbox`
+- `RateQuote.isSandbox`
+- `WebhookDelivery.attemptCount`, `nextRetryAt`, `deadLetteredAt`, `hmacSignature`, `responseCode`, `responseLatencyMs`
+- `ApiKey.scopes`, `isSandbox`, `lastUsedAt`, `monthlyRequestCount`
+- `ReturnRequest.reason String?`, `items`, `photos`, `labelId`, `refundStatus`, `reversedAt`, `pickupScheduledAt`
+- Relay approval fields: `isDraft`, `approvedBy`, `approvedAt`
+
+All new tenant-scoped models include `tenantId` and a `Tenant` relation in Prisma.
 
 ---
 
@@ -118,6 +149,8 @@ CREATE TABLE shipments (
   vehicle_id             UUID           REFERENCES vehicles(id),
   route_id               UUID           REFERENCES routes(id),
   carrier_booking_id     UUID           REFERENCES carrier_bookings(id),
+  rate_quote_id          UUID,
+  carrier_account_id     UUID,
   status                 shipment_status NOT NULL DEFAULT 'PENDING',
   origin_address         JSONB          NOT NULL,
   destination_address    JSONB          NOT NULL,
@@ -132,6 +165,7 @@ CREATE TABLE shipments (
   special_instructions   TEXT,
   insurance_value        DECIMAL(12,2),
   customs_declaration_id UUID           REFERENCES customs_declarations(id),
+  is_sandbox             BOOLEAN        DEFAULT FALSE,
   idempotency_key        VARCHAR(255)   UNIQUE,
   created_at             TIMESTAMPTZ    DEFAULT NOW(),
   updated_at             TIMESTAMPTZ    DEFAULT NOW()

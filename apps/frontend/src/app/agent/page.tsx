@@ -17,15 +17,15 @@ const ICON_MAP: Record<string, React.ElementType> = {
 
 const WORKFLOW_STEPS = [
   { step: "01", title: "Shipment arrives", description: "A new booking comes in via the portal, API, or bulk import." },
-  { step: "02", title: "Agent analyses the job", description: "Fauward Agent evaluates load, route, driver availability, and carrier cost in real time." },
-  { step: "03", title: "Optimal assignment made", description: "The shipment is assigned to the best available driver and carrier — no dispatcher needed." },
-  { step: "04", title: "Exceptions handled autonomously", description: "If a delay, failure, or SLA risk appears, the agent re-routes and notifies the customer automatically." },
+  { step: "02", title: "Agent analyses the job", description: "Fauward Agent evaluates load, route, Fauward Go availability, and carrier cost in real time." },
+  { step: "03", title: "Optimal assignment made", description: "The shipment is assigned to the best available Fauward Go operator and carrier — no dispatcher needed." },
+  { step: "04", title: "Exceptions flagged and escalated", description: "If a delay, failure, or SLA risk appears, the agent notifies the customer and flags the risk immediately. Rerouting is recommended and escalated for your team to approve." },
   { step: "05", title: "Finance triggered on delivery", description: "POD confirmed — invoice generated and sent. No manual step." },
 ];
 
 const COMPARISON_ROWS = [
-  { task: "Assign shipments to drivers", without: "Manual, 2–5 min per job", with: "Automated, <1 second" },
-  { task: "Handle failed delivery reattempts", without: "Phone call chain, 20+ min", with: "Agent re-routes in real time" },
+  { task: "Assign shipments to Fauward Go operators", without: "Manual, 2–5 min per job", with: "Automated, <1 second" },
+  { task: "Handle failed delivery reattempts", without: "Phone call chain, 20+ min", with: "Agent flags risk instantly, team approves reroute" },
   { task: "SLA breach detection", without: "After the fact — already breached", with: "Predicted 2h+ in advance" },
   { task: "Customer status updates", without: "Manual copy-paste or calls", with: "Automatic at every transition" },
   { task: "Carrier selection per shipment", without: "Default carrier — no optimisation", with: "Best price & reliability scored" },
@@ -35,7 +35,7 @@ const COMPARISON_ROWS = [
 export function generateMetadata(): Metadata {
   return buildMetadata({
     title: "Fauward Agent — AI-powered logistics operations",
-    description: "Fauward Agent autonomously handles shipment dispatch, exception management, and demand forecasting — so your team can focus on growth.",
+    description: "Fauward Agent is a policy-controlled AI layer that automates safe operations, escalates risky ones for approval, and keeps your logistics running 24/7.",
     path: "/agent",
   });
 }
@@ -63,7 +63,7 @@ export default function AgentPage() {
               <span className="gradient-text">autopilot</span>
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-blue-200">
-              Fauward Agent is an AI layer built into your logistics platform that handles shipment assignment, exception management, SLA monitoring, and customer communication — autonomously, in real time.
+              A policy-controlled AI operations layer built into your logistics platform. Fauward Agent automates safe actions, recommends risky ones for human approval, and always defers to your team as the source of truth.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link

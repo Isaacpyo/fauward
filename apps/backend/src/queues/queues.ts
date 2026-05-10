@@ -33,8 +33,8 @@ export const notificationQueue = new Queue<QueuePayload>('notification', {
 export const webhookQueue = new Queue<QueuePayload>('webhook', {
   connection: bullmqConnection,
   defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2_000 }
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 60_000 }
   }
 });
 
@@ -52,4 +52,12 @@ export const analyticsQueue = new Queue<QueuePayload>('analytics', {
 
 export const scheduledJobsQueue = new Queue<QueuePayload>('scheduled-jobs', {
   connection: bullmqConnection
+});
+
+export const routeOptimizationQueue = new Queue<QueuePayload>('route-optimization', {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 }
+  }
 });

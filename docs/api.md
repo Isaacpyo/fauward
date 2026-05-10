@@ -66,7 +66,11 @@ GET    /shipments/live-map                active shipments with last known locat
 
 ```
 GET    /tracking/:trackingNumber          returns status, events, estimatedDelivery, addresses
+GET    /tenant/shipments/:id/tracking/ai-summary
+GET    /tenant/shipments/:id/tracking/exception-diagnosis
 ```
+
+Tracking AI summaries route through `LLMGatewayService` and map internal codes such as `CUSTOMS_HOLD` and `FAILED_DELIVERY` to customer-safe language.
 
 ### Payments
 
@@ -164,14 +168,84 @@ POST   /tenant/email-templates/:key/test
 GET    /tenant/api-keys
 POST   /tenant/api-keys
 DELETE /tenant/api-keys/:id
+GET    /tenant/api-usage                   per-key, per-endpoint, per-day usage
 
 GET    /tenant/webhooks
 POST   /tenant/webhooks
 PATCH  /tenant/webhooks/:id
 DELETE /tenant/webhooks/:id
 POST   /tenant/webhooks/:id/test
-GET    /tenant/webhooks/deliveries
+GET    /tenant/webhooks/:id/deliveries
+POST   /tenant/webhooks/:id/deliveries/:deliveryId/replay
+GET    /platform/webhooks/failures         SUPER_ADMIN dead-letter queue
 ```
+
+Webhook deliveries include:
+
+- `X-Fauward-Signature`: HMAC-SHA256 over the raw payload body using the endpoint secret.
+- `X-Fauward-Event-Id`: stable event id for idempotency.
+
+Failed deliveries retry after 1, 2, 4, 8, and 16 minutes. After five failed attempts the delivery is dead-lettered and must be replayed manually.
+
+API keys enforce route scopes and sandbox isolation. Insufficient scope returns:
+
+```json
+{
+  "error": "INSUFFICIENT_SCOPE",
+  "required": "shipments:write",
+  "provided": ["shipments:read"]
+}
+```
+
+### Rating
+
+```
+POST   /tenant/rates/quote                 returns ranked carrier/internal-fleet quotes
+GET    /tenant/rates/carriers              tenant carrier accounts only
+GET    /tenant/rates/service-levels        active service levels
+```
+
+Quotes use volumetric weight `(lengthCm * widthCm * heightCm) / 5000`, apply stacked surcharges, respect tenant carrier preference, and expire 30 minutes after creation.
+
+### Shipping Rules
+
+```
+GET    /tenant/shipping-rules
+POST   /tenant/shipping-rules
+PUT    /tenant/shipping-rules/:id
+DELETE /tenant/shipping-rules/:id
+POST   /tenant/shipping-rules/:id/test     dry-run against mock shipment data
+```
+
+Rules are evaluated by priority ascending at shipment booking time. `blockBooking` returns `422 BOOKING_BLOCKED`; triggered rules are written to `AuditLog`.
+
+### Customs
+
+```
+POST   /tenant/shipments/:id/customs/declaration
+GET    /tenant/shipments/:id/customs/declaration
+PUT    /tenant/shipments/:id/customs/declaration
+POST   /tenant/customs/hs-lookup
+GET    /tenant/customs/restricted-items?country=
+```
+
+The Node service orchestrates declarations and delegates compute-heavy processing to the Python customs worker. `CUSTOMS_HOLD` and `CUSTOMS_CLEARED` are emitted as tracking events.
+
+### Returns
+
+```
+GET    /tenant/returns
+POST   /tenant/returns
+GET    /tenant/returns/:id
+POST   /tenant/returns/:id/approve
+POST   /tenant/returns/:id/reject
+POST   /tenant/returns/:id/label
+POST   /tenant/returns/:id/receive
+GET    /tenant/returns/analytics
+GET    /customer/returns/:id/status        public token-auth status
+```
+
+Returns approval generates a reverse label and `RETURN_INITIATED` tracking event. Receive-at-hub emits `RETURN_RECEIVED`. Analytics supports `from`, `to`, and `groupBy=day|week|month`.
 
 ### Driver *(TENANT_DRIVER role)*
 
@@ -193,7 +267,15 @@ POST   /documents/invoice/:invoiceId
 POST   /documents/pod/:shipmentId
 GET    /documents/:id                     get/refresh signed download URL
 GET    /label/:trackingNumber             thermal-printer optimised HTML/PDF
+POST   /tenant/shipments/:id/labels
+GET    /tenant/shipments/:id/labels/:labelId
+POST   /tenant/shipments/:id/labels/:labelId/reprint
+POST   /tenant/manifests/pickup
+POST   /tenant/manifests/delivery
+POST   /tenant/shipments/:id/documents/packing-slip
 ```
+
+Label jobs pass tenant branding from `packages/theme-engine` to the Python label worker. Supported formats include PDF, ZPL, and PNG.
 
 ### Notifications
 
@@ -217,7 +299,22 @@ DELETE /admin/impersonate
 GET    /admin/metrics
 GET    /admin/queues
 GET    /admin/health
+GET    /platform/control-tower/health
+GET    /platform/control-tower/tenants/:id/health
 ```
+
+### Exceptions and SLA Policies
+
+```
+GET    /tenant/exceptions
+GET    /tenant/exceptions/:id
+POST   /tenant/exceptions/:id/resolve
+GET    /tenant/exceptions/:id/ai-diagnosis
+GET    /tenant/sla-policies
+POST   /tenant/sla-policies
+```
+
+The stuck-shipment detector creates `ExceptionCase` records when shipments exceed the applicable SLA window without a tracking update.
 
 ### Pricing *(TENANT_ADMIN, TENANT_MANAGER)*
 

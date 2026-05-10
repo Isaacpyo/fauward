@@ -1,6 +1,7 @@
 export type RelaySource = "marketing" | "tenant_portal";
 export type RelaySender = "customer" | "admin" | "system";
 export type RelayStatus = "open" | "assigned" | "closed";
+export type RelayAiStatus = "pending" | "ai_handling" | "ai_resolved" | "human_needed";
 
 export type RelayConversation = {
   id: string;
@@ -10,7 +11,10 @@ export type RelayConversation = {
   customer_email: string | null;
   subject: string | null;
   status: RelayStatus;
+  ai_status?: RelayAiStatus | null;
+  ai_turn_count?: number | null;
   assigned_admin_id: string | null;
+  access_token_hash?: string | null;
   last_message_at: string | null;
   created_at: string | null;
 };

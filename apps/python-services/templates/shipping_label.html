@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <style>
     @page { size: 100mm 150mm; margin: 6mm; }
-    body { font-family: "Courier New", monospace; color: #111827; margin: 0; width: 88mm; height: 138mm; }
-    .top { text-align: center; border-bottom: 2px solid #111827; padding-bottom: 4mm; }
+    body { font-family: {{ tenant.fontFamily|default('"Courier New", monospace') }}; color: #111827; margin: 0; width: 88mm; height: 138mm; }
+    .top { text-align: center; border-bottom: 4px solid {{ tenant.primaryColour or tenant.primaryColor }}; padding-bottom: 4mm; }
     .logo { max-height: 16mm; max-width: 60mm; object-fit: contain; }
     .brand { font-family: Arial, sans-serif; font-weight: bold; color: {{ tenant.primaryColor }}; }
     .qr { display: block; width: 52mm; height: 52mm; margin: 8mm auto 4mm; }

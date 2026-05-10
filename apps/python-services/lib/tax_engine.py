@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 DATA_PATH = Path(__file__).parent / "data" / "duty_rates.json"
+IOSS_COUNTRIES = {"DE", "FR", "IT", "ES", "NL", "PL", "BE", "SE", "AT", "DK"}
 
 
 def _money(value: Decimal) -> float:
@@ -19,7 +20,7 @@ def estimate_landed_cost(
     origin_country: str,
     dest_country: str,
     hs_code: str,
-    declared_value: float,
+    declared_value: Decimal | float | str,
     currency: str,
 ) -> dict[str, Any]:
     rates = _load_rates()
@@ -31,6 +32,8 @@ def estimate_landed_cost(
     value = Decimal(str(declared_value))
     import_duty = value * duty_rate
     vat = (value + import_duty) * vat_rate
+    if dest_key in IOSS_COUNTRIES and value < Decimal("150"):
+        vat = Decimal("0")
     total = value + import_duty + vat
     return {
         "originCountry": origin_country.upper(),

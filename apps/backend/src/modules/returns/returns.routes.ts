@@ -3,6 +3,7 @@ import { ReturnStatus } from '@prisma/client';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
+import { returnsService } from './returns.service.js';
 
 const ALLOWED_RETURN_TRANSITIONS: Record<ReturnStatus, ReturnStatus[]> = {
   REQUESTED: ['APPROVED', 'REJECTED'],
@@ -37,6 +38,108 @@ async function getOpsUserIds(app: FastifyInstance, tenantId: string) {
 }
 
 export async function registerReturnsRoutes(app: FastifyInstance) {
+  app.get('/api/v1/tenant/returns', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const returns = await app.prisma.returnRequest.findMany({
+      where: { tenantId },
+      include: { shipment: true, customer: { select: { id: true, email: true, firstName: true, lastName: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    reply.send({ data: returns });
+  });
+
+  app.post('/api/v1/tenant/returns', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    try {
+      const body = request.body as {
+        shipmentId: string;
+        customerId?: string;
+        reason: string;
+        notes?: string;
+        items?: Array<{ shipmentItemId?: string; quantity?: number; description?: string }>;
+        photos?: string[];
+      };
+      const created = await returnsService.create(app, tenantId, {
+        ...body,
+        customerId: body.customerId ?? request.user?.sub
+      });
+      reply.status(201).send(created);
+    } catch (error) {
+      const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number' ? (error as { statusCode: number }).statusCode : 400;
+      reply.status(statusCode).send({ error: error instanceof Error ? error.message : 'Unable to create return' });
+    }
+  });
+
+  app.get('/api/v1/tenant/returns/analytics', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { from, to, groupBy } = request.query as { from?: string; to?: string; groupBy?: 'day' | 'week' | 'month' };
+    reply.send(await returnsService.analytics(app, tenantId, { from, to, groupBy }));
+  });
+
+  app.get('/api/v1/tenant/returns/:id', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { id } = request.params as { id: string };
+    const returnRequest = await app.prisma.returnRequest.findFirst({
+      where: { id, tenantId },
+      include: { shipment: true, customer: { select: { id: true, email: true, firstName: true, lastName: true } } }
+    });
+    if (!returnRequest) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(returnRequest);
+  });
+
+  app.post('/api/v1/tenant/returns/:id/approve', { preHandler: [authenticate, requireRole([...RETURN_STAFF_ROLES])] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { id } = request.params as { id: string };
+    const updated = await returnsService.approve(app, tenantId, id, request.user?.sub);
+    if (!updated) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(updated);
+  });
+
+  app.post('/api/v1/tenant/returns/:id/reject', { preHandler: [authenticate, requireRole([...RETURN_STAFF_ROLES])] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { id } = request.params as { id: string };
+    const { reason } = request.body as { reason?: string };
+    const updated = await returnsService.reject(app, tenantId, id, reason, request.user?.sub);
+    if (!updated) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(updated);
+  });
+
+  app.post('/api/v1/tenant/returns/:id/label', { preHandler: [authenticate, requireRole([...RETURN_STAFF_ROLES])] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { id } = request.params as { id: string };
+    const updated = await returnsService.approve(app, tenantId, id, request.user?.sub);
+    if (!updated) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(updated);
+  });
+
+  app.post('/api/v1/tenant/returns/:id/receive', { preHandler: [authenticate, requireRole([...RETURN_PHYSICAL_ROLES])] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+    const { id } = request.params as { id: string };
+    const updated = await returnsService.receiveAtHub(app, tenantId, id);
+    if (!updated) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(updated);
+  });
+
+  app.get('/api/v1/customer/returns/:id/status', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { token } = request.query as { token?: string };
+    if (!token || token !== id) return reply.status(401).send({ error: 'Invalid return status token' });
+    const returnRequest = await app.prisma.returnRequest.findFirst({
+      where: { id },
+      select: { id: true, status: true, reason: true, returnLabel: true, updatedAt: true }
+    });
+    if (!returnRequest) return reply.status(404).send({ error: 'Return request not found' });
+    reply.send(returnRequest);
+  });
+
   app.get('/api/v1/returns', { preHandler: [authenticate] }, async (request, reply) => {
     const tenantId = getTenantId(request, reply);
     if (!tenantId) return;
@@ -105,10 +208,10 @@ export async function registerReturnsRoutes(app: FastifyInstance) {
         shipmentId: shipment.id,
         customerId: shipment.customerId ?? userId,
         organisationId: shipment.organisationId,
-        reason: reason as any,
+        reason,
         notes,
         status: 'REQUESTED'
-      }
+      } as any
     });
 
     const opsUserIds = await getOpsUserIds(app, tenantId);
@@ -298,4 +401,3 @@ export async function registerReturnsRoutes(app: FastifyInstance) {
     }
   );
 }
-

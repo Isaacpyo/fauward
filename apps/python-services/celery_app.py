@@ -49,6 +49,7 @@ celery_app.conf.update(
         "workers.analytics_worker.cohort_analysis": {"queue": "analytics"},
         "workers.analytics_worker.churn_signals": {"queue": "analytics"},
         "workers.ml_worker.process_ml_score_job": {"queue": "ml"},
+        "workers.ml_worker.refresh_weather_signals": {"queue": "ml"},
         "workers.ml_worker.train_delay_model": {"queue": "ml"},
         "workers.ml_worker.train_churn_model": {"queue": "ml"},
         "workers.ml_worker.train_lead_model": {"queue": "ml"},
@@ -96,6 +97,10 @@ celery_app.conf.update(
         "ml-hourly-score-shipments": {
             "task": "workers.ml_worker.score_all_shipments",
             "schedule": timedelta(hours=1),
+        },
+        "ml-weather-signals": {
+            "task": "workers.ml_worker.refresh_weather_signals",
+            "schedule": timedelta(hours=6),
         },
         "ml-daily-score-tenants": {
             "task": "workers.ml_worker.score_all_tenants",

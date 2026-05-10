@@ -53,6 +53,11 @@ import { DispatchPage } from "@/pages/dispatch/DispatchPage";
 import { FauwardGoPage } from "@/pages/operations/FauwardGoPage";
 import { MessagingPage } from "@/pages/messaging/MessagingPage";
 import { AgentPage } from "@/pages/agent/AgentPage";
+import { RatesPage } from "@/pages/rates/RatesPage";
+import { ShippingRulesPage } from "@/pages/shipping-rules/ShippingRulesPage";
+import { LabelsPage } from "@/pages/labels/LabelsPage";
+import { CustomsDeclarationPage } from "@/pages/customs/CustomsDeclarationPage";
+import { DeveloperPage } from "@/pages/developer/DeveloperPage";
 import { AuditLogPage } from "@/features/admin/audit/AuditLogPage";
 import { Button } from "@/components/ui/Button";
 import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess, type FeatureKey } from "@/lib/plan-features";
@@ -138,6 +143,11 @@ export function AppRouter() {
           <Route path="/fauward-go" element={<FauwardGoPage />} />
           <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
           <Route path="/shipments/create" element={<CreateShipmentPage />} />
+          <Route path="/rates" element={<RatesPage />} />
+          <Route path="/shipping-rules" element={<ShippingRulesPage />} />
+          <Route path="/labels" element={<LabelsPage />} />
+          <Route path="/customs/:shipmentId" element={<CustomsDeclarationPage />} />
+          <Route path="/developer" element={<DeveloperPage />} />
           <Route path="/routes" element={<RoutesPage />} />
           <Route path="/dispatch" element={<DispatchPage />} />
           <Route path="/crm" element={<CrmPage />} />

@@ -17,7 +17,7 @@ type QueueStatsResponse = {
 };
 
 async function fetchQueues() {
-  const response = await api.get<QueueStatsResponse>("/admin/queues");
+  const response = await api.get<QueueStatsResponse>("/queues");
   return response.data;
 }
 

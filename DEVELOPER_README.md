@@ -143,10 +143,10 @@ docker-compose up -d
 cp apps/backend/.env.example apps/backend/.env
 # Edit DATABASE_URL, REDIS_URL, JWT secrets (see §5)
 
-# 4. Generate Prisma client and push schema
+# 4. Generate Prisma client and apply migrations
 cd apps/backend
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev
 
 # 5. Start backend
 npm run dev        # from repo root — starts Fastify on :3001
@@ -191,7 +191,7 @@ All variables are validated at startup by `src/config/index.ts` using Zod. The p
 
 ## 6. Database Schema
 
-The canonical schema is `apps/backend/prisma/schema.prisma`. The database is PostgreSQL, managed via `prisma db push` (no migration folder — CI pushes the schema directly). All tables are in a single shared database; tenant isolation is enforced via `tenantId` on every row, not via schema separation.
+The canonical schema is `apps/backend/prisma/schema.prisma`. The database is PostgreSQL, managed through Prisma migrations in `apps/backend/prisma/migrations/`. `DATABASE_URL` may point to the pooled Supabase connection for runtime traffic, while Prisma migrate requires `DIRECT_URL` with a direct PostgreSQL connection. All tables are in a single shared database; tenant isolation is enforced via `tenantId` on every tenant-scoped row, not via schema separation.
 
 ### 6.1 Enums
 
@@ -209,7 +209,6 @@ The canonical schema is `apps/backend/prisma/schema.prisma`. The database is Pos
 | `NotificationChannel` | `EMAIL`, `SMS`, `PUSH` |
 | `WebhookDeliveryStatus` | `PENDING`, `DELIVERED`, `FAILED` |
 | `ReturnStatus` | `REQUESTED`, `APPROVED`, `LABEL_ISSUED`, `PICKED_UP`, `IN_HUB`, `RECEIVED`, `REFUNDED`, `RESOLVED`, `REJECTED` |
-| `ReturnReason` | `WRONG_ITEM`, `DAMAGED`, `NOT_AS_DESCRIBED`, `NO_LONGER_NEEDED`, `REFUSED_DELIVERY`, `OTHER` |
 | `TicketStatus` | `OPEN`, `IN_PROGRESS`, `WAITING_CUSTOMER`, `RESOLVED`, `CLOSED` |
 | `TicketPriority` | `LOW`, `NORMAL`, `HIGH`, `URGENT` |
 | `TicketCategory` | `DELIVERY_ISSUE`, `PAYMENT_ISSUE`, `DAMAGED_GOODS`, `WRONG_ADDRESS`, `TRACKING_ISSUE`, `RETURN_REQUEST`, `BILLING_QUERY`, `OTHER` |
@@ -749,7 +748,7 @@ Full return lifecycle from customer request to resolution.
 | `customerId` | FK → `users` (as `ReturnCustomer` relation) |
 | `organisationId` | FK → `organisations` (nullable) |
 | `status` | `ReturnStatus` |
-| `reason` | `ReturnReason` |
+| `reason` | String? free-text category used for analytics grouping |
 | `returnLabel` | String? — S3 URL |
 | `handledBy` | FK → `users` (as `ReturnHandledBy` relation) |
 | `approvedAt` / `receivedAt` / `resolvedAt` / `refundedAt` | DateTime? |
@@ -1324,7 +1323,7 @@ Steps:
   2. Setup Node 20
   3. npm ci
   4. npx prisma generate
-  5. npx prisma db push --schema=apps/backend/prisma/schema.prisma
+  5. npx prisma migrate deploy --schema=apps/backend/prisma/schema.prisma
   6. npm test (backend Vitest)
   7. Backend build (tsc)
   8. Frontend build (next build)
@@ -1335,6 +1334,8 @@ CI sets `DATABASE_URL` and `DIRECT_URL` as environment secrets. Tests run agains
 ---
 
 ## 12. Missing and Incomplete Areas
+
+> Historical section from the earlier implementation audit. For the current May 2026 status of rating, labels, webhooks, API keys, shipping rules, customs, returns, Relay, AI gateway, tracking AI, exceptions, control tower, and tenant portal pages, use `docs/implementation-status.md`.
 
 This section documents every confirmed gap between the product specification (README.md), the Prisma schema, and the existing tests. It is intended to drive the next development iteration.
 
@@ -1565,9 +1566,9 @@ Plan limits and feature availability are hardcoded in `planService.ts`. There is
 - `shipments`: `promoCodeId`
 - `rate_cards`: `minCharge`, `maxCharge`
 
-**Risk:** If any developer or CI pipeline bootstraps a new environment using `supabase_init.sql`, they get a database that is incompatible with the Prisma schema. The `prisma db push` step in CI is the correct source of truth.
+**Risk:** If any developer or CI pipeline bootstraps a new environment using `supabase_init.sql`, they get a database that is incompatible with the Prisma schema. Prisma migrations are the correct source of truth.
 
-**Recommended action:** Either delete `supabase_init.sql` and document that `prisma db push` is the bootstrap mechanism, or regenerate it from Prisma using `prisma migrate diff`.
+**Recommended action:** Either delete `supabase_init.sql` and document that Prisma migrations are the bootstrap mechanism, or regenerate it from Prisma using `prisma migrate diff`.
 
 ---
 
@@ -1739,7 +1740,7 @@ npx tsc --noEmit  # type check must be clean
 ### Adding a new model
 
 1. Add to `apps/backend/prisma/schema.prisma`
-2. Run `npx prisma db push` locally
+2. Create a Prisma migration with `npx prisma migrate dev --name <descriptive-name> --schema=apps/backend/prisma/schema.prisma`
 3. Run `npx prisma generate` to regenerate the client
 4. Add the model to the relevant `Tenant` relations if it is tenant-scoped
 5. Ensure the Prisma middleware in `plugins/prisma.ts` covers the new model's operations with `tenantId` injection

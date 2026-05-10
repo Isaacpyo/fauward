@@ -3,9 +3,12 @@ import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 
 export default [
+  {
+    ignores: ['dist/**', 'node_modules/**']
+  },
   js.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.js', '**/*.mjs'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
@@ -14,7 +17,16 @@ export default [
       },
       globals: {
         process: 'readonly',
-        console: 'readonly'
+        console: 'readonly',
+        Buffer: 'readonly',
+        fetch: 'readonly',
+        Headers: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        AbortSignal: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        NodeJS: 'readonly'
       }
     },
     plugins: {

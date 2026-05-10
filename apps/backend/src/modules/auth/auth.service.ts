@@ -1,17 +1,9 @@
 import { TenantPlan, type PrismaClient } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
-import {
-  signAccessToken,
-  signEmailLinkToken,
-  signRefreshToken,
-  type JwtPayload,
-  verifyAccessToken,
-  verifyRefreshToken
-} from '../../shared/utils/jwt.js';
+import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload, verifyAccessToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
-import { config } from '../../config/index.js';
 import { verifyFirebaseIdToken } from './firebase-token.js';
 
 type RegisterPayload = {
@@ -89,32 +81,6 @@ function buildJwtPayload(user: { id: string; email: string; role: string; tenant
     mfaVerified: true
   };
   return payload;
-}
-
-function isPlatformAdminCredentials(payload: LoginPayload) {
-  return (
-    payload.email.toLowerCase().trim() === config.platformAdmin.email &&
-    payload.password === config.platformAdmin.password
-  );
-}
-
-function buildPlatformAdminPayload(): JwtPayload {
-  return {
-    sub: 'platform-admin',
-    email: config.platformAdmin.email,
-    role: 'SUPER_ADMIN',
-    tenantId: 'system',
-    tenantSlug: 'system',
-    plan: 'SYSTEM',
-    mfaVerified: true
-  };
-}
-
-function issueTokens(jwtPayload: JwtPayload) {
-  return {
-    accessToken: signAccessToken(jwtPayload),
-    refreshToken: signRefreshToken(jwtPayload)
-  };
 }
 
 export const authService = {
@@ -289,21 +255,6 @@ export const authService = {
   },
   login: async (payload: LoginPayload, prisma: PrismaClient, tenantId: string) => {
     const email = payload.email.toLowerCase().trim();
-    if (isPlatformAdminCredentials(payload) && tenantId === 'system') {
-      const tokens = issueTokens(buildPlatformAdminPayload());
-      return {
-        ...tokens,
-        tenantSlug: 'system',
-        tenantId: 'system',
-        role: 'SUPER_ADMIN',
-        user: {
-          id: 'platform-admin',
-          email: config.platformAdmin.email,
-          role: 'SUPER_ADMIN'
-        }
-      };
-    }
-
     const user = await prisma.user.findFirst({
       where: { email, tenantId, isActive: true }
     });
@@ -349,21 +300,6 @@ export const authService = {
 
     if (!email || firebaseUser.email_verified !== true) {
       throw new Error('Verified Google email is required');
-    }
-
-    if (email === config.platformAdmin.email && (!tenantId || tenantId === 'system')) {
-      const tokens = issueTokens(buildPlatformAdminPayload());
-      return {
-        ...tokens,
-        tenantSlug: 'system',
-        tenantId: 'system',
-        role: 'SUPER_ADMIN',
-        user: {
-          id: 'platform-admin',
-          email: config.platformAdmin.email,
-          role: 'SUPER_ADMIN'
-        }
-      };
     }
 
     let resolvedTenantId = tenantId;
@@ -436,16 +372,6 @@ export const authService = {
       decoded = verifyRefreshToken(payload.refreshToken);
     } catch {
       throw new Error('Invalid refresh token');
-    }
-
-    if (decoded.sub === 'platform-admin' && decoded.role === 'SUPER_ADMIN' && decoded.tenantId === 'system') {
-      const tokens = issueTokens(buildPlatformAdminPayload());
-      return {
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        tenantSlug: 'system',
-        tenantId: 'system'
-      };
     }
 
     const refreshToken = await prisma.refreshToken.findUnique({

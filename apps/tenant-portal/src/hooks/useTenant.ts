@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
-import { getDevTestSession, getDevTestSessionSnapshot } from "@/lib/auth";
+import { getAccessToken, getDevTestSession, getDevTestSessionSnapshot } from "@/lib/auth";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { applyTenantConfig } from "@/theme/tenant";
@@ -25,17 +25,61 @@ const fallbackTenant: TenantConfig = {
 };
 
 async function fetchTenantConfig(): Promise<TenantConfig> {
-  const response = await api.get<TenantConfig>("/tenant/config");
+  const response = await api.get<TenantConfig | Record<string, unknown>>("/v1/tenant/me");
   const data = response.data as unknown;
+  const normalized = normalizeTenantConfig(data);
   if (
-    typeof data !== "object" ||
-    data === null ||
-    typeof (data as TenantConfig).tenant_id !== "string" ||
-    typeof (data as TenantConfig).primary_color !== "string"
+    typeof normalized.tenant_id !== "string" ||
+    typeof normalized.primary_color !== "string"
   ) {
     throw new Error("Invalid tenant config payload");
   }
-  return data as TenantConfig;
+  return normalized;
+}
+
+function normalizeTenantConfig(data: unknown): TenantConfig {
+  if (typeof data !== "object" || data === null) {
+    throw new Error("Invalid tenant config payload");
+  }
+
+  const raw = data as Partial<TenantConfig> & {
+    id?: string;
+    slug?: string;
+    customDomain?: string | null;
+    logoUrl?: string | null;
+    primaryColor?: string;
+    accentColor?: string;
+    defaultCurrency?: string;
+    defaultLanguage?: string;
+    isRtl?: boolean;
+    timezone?: string;
+    status?: string;
+    settings?: {
+      currency?: string | null;
+      timezone?: string | null;
+      notificationEmail?: string | null;
+    } | null;
+  };
+
+  if (raw.tenant_id && raw.primary_color) {
+    return raw as TenantConfig;
+  }
+
+  return {
+    tenant_id: raw.id ?? "tenant_unknown",
+    name: raw.name ?? "Tenant",
+    logo_url: raw.logoUrl ?? "",
+    domain: raw.customDomain ?? (raw.slug ? `${raw.slug}.fauward.com` : ""),
+    region: raw.region,
+    primary_color: raw.primaryColor ?? "#0D1F3C",
+    accent_color: raw.accentColor ?? "#D97706",
+    locale: raw.defaultLanguage ?? "en-GB",
+    rtl: raw.isRtl ?? false,
+    currency: raw.settings?.currency ?? raw.defaultCurrency ?? "GBP",
+    timezone: raw.settings?.timezone ?? raw.timezone ?? "Europe/London",
+    onboarding_complete: raw.status !== "TRIALING",
+    support_email: raw.settings?.notificationEmail ?? "support@fauward.com"
+  };
 }
 
 export function useTenant() {
@@ -44,12 +88,14 @@ export function useTenant() {
   const tenant = useTenantStore((state) => state.tenant);
   const devSessionSnapshot = getDevTestSessionSnapshot();
   const devSession = useMemo(() => getDevTestSession(), [devSessionSnapshot]);
+  const hasToken = Boolean(getAccessToken());
 
   const query = useQuery({
     queryKey: ["tenant-config"],
     queryFn: fetchTenantConfig,
     staleTime: 5 * 60_000,
-    retry: 2
+    retry: 2,
+    enabled: hasToken && !devSession
   });
 
   useEffect(() => {

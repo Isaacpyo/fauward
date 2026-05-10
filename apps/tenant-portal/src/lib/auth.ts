@@ -10,7 +10,7 @@ const REFRESH_TOKEN_KEY = 'fw_refresh_token';
 const TENANT_SLUG_KEY = 'fw_tenant_slug';
 const DEV_TEST_SESSION_KEY = 'fw_dev_test_session';
 
-const DEV_TEST_PASSWORD = 'Oluwaseun44!';
+const DEV_TEST_PASSWORD = 'dev-only-password';
 
 const DEV_TEST_ACCOUNTS: Record<string, { fullName: string; tenantName: string; slug: string; plan: User['plan'] }> = {
   'temitopeagbola@gmail.com': {
@@ -25,7 +25,7 @@ const DEV_TEST_ACCOUNTS: Record<string, { fullName: string; tenantName: string; 
     slug: 'treny-limited',
     plan: 'pro'
   },
-  'fauward@gmail.com': {
+  'tenant-demo@example.test': {
     fullName: 'Fauward Admin',
     tenantName: 'Fauward Enterprise',
     slug: 'fauward-enterprise',
@@ -89,7 +89,7 @@ export function isDevTestEmail(email: string) {
 
 export function createDevTestSession(email: string): DevTestSession {
   const normalizedEmail = normalizeDevEmail(email);
-  const account = getDevTestAccount(normalizedEmail) ?? DEV_TEST_ACCOUNTS['fauward@gmail.com'];
+  const account = getDevTestAccount(normalizedEmail) ?? DEV_TEST_ACCOUNTS['tenant-demo@example.test'];
   const session: DevTestSession = {
     user: {
       id: `dev-admin-${account.slug}`,

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
+import { requireRole } from '../../shared/middleware/requireRole.js';
 import { webhooksService } from './webhooks.service.js';
 
 export async function registerWebhookRoutes(app: FastifyInstance) {
@@ -26,6 +27,16 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       const tenantId = req.tenant?.id;
       if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
       const items = await webhooksService.listDeliveries(app.prisma, tenantId);
+      reply.send(items);
+    });
+
+  app.get('/api/v1/tenant/webhooks/:id/deliveries', { preHandler: [authenticate, requireFeature('webhooks')] },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = req.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id } = req.params as { id: string };
+      const items = await webhooksService.listEndpointDeliveries(app.prisma, tenantId, id);
+      if (!items) return reply.status(404).send({ error: 'Webhook endpoint not found' });
       reply.send(items);
     });
 
@@ -68,5 +79,21 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       );
       if (!result) return reply.status(404).send({ error: 'Webhook endpoint not found' });
       reply.send(result);
+    });
+
+  app.post('/api/v1/tenant/webhooks/:id/deliveries/:deliveryId/replay', { preHandler: [authenticate, requireFeature('webhooks')] },
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      const tenantId = req.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id, deliveryId } = req.params as { id: string; deliveryId: string };
+      const result = await webhooksService.replay(app.prisma, tenantId, id, deliveryId);
+      if (!result) return reply.status(404).send({ error: 'Webhook delivery not found' });
+      reply.send(result);
+    });
+
+  app.get('/api/v1/platform/webhooks/failures', { preHandler: [authenticate, requireRole(['SUPER_ADMIN'])] },
+    async (_req: FastifyRequest, reply: FastifyReply) => {
+      const failures = await webhooksService.platformFailures(app.prisma);
+      reply.send({ failures });
     });
 }

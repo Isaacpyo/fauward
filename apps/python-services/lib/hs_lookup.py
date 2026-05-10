@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import redis
-
 from config import settings
 
 DATA_PATH = Path(__file__).parent / "data" / "hs_codes.csv"
@@ -23,7 +21,9 @@ def _load_rows() -> list[dict[str, str]]:
     return _rows
 
 
-def _redis_client() -> redis.Redis:
+def _redis_client() -> Any:
+    import redis
+
     return redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 

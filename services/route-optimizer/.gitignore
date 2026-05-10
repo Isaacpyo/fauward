@@ -1,0 +1,8 @@
+data/*.joblib
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+*.egg-info/

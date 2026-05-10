@@ -6,6 +6,41 @@ export type TenantTheme = {
   isRtl: boolean;
 };
 
+export type TenantBrandingConfig = {
+  brandName: string;
+  logoUrl?: string | null;
+  primaryColour: string;
+  primaryColor: string;
+  accentColour: string;
+  accentColor: string;
+  fontFamily: string;
+};
+
+type TenantBrandingSource = {
+  name?: string | null;
+  brandName?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+  primaryColour?: string | null;
+  accentColor?: string | null;
+  accentColour?: string | null;
+  fontFamily?: string | null;
+};
+
+export function resolveTenantBranding(tenant?: TenantBrandingSource | null): TenantBrandingConfig {
+  const primary = tenant?.primaryColour ?? tenant?.primaryColor ?? '#0D1F3C';
+  const accent = tenant?.accentColour ?? tenant?.accentColor ?? '#D97706';
+  return {
+    brandName: tenant?.brandName ?? tenant?.name ?? 'Fauward',
+    logoUrl: tenant?.logoUrl ?? null,
+    primaryColour: primary,
+    primaryColor: primary,
+    accentColour: accent,
+    accentColor: accent,
+    fontFamily: tenant?.fontFamily ?? 'Arial, sans-serif'
+  };
+}
+
 export function applyTenantTheme(tenant: TenantTheme): void {
   const root = document.documentElement;
 

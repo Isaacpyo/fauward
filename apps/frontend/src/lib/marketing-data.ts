@@ -40,7 +40,7 @@ export const PRICING_PLANS: PricingPlan[] = [
       "Shipment creation and tracking",
       "Branded customer notifications",
       "Basic invoicing",
-      "Driver mobile proof-of-delivery",
+      "Fauward Go proof-of-delivery",
       "Branded public tracking page",
       "VAT-ready invoicing",
       "Email support"
@@ -121,7 +121,7 @@ export const FEATURE_COMPARISON_ROWS: ComparisonRow[] = [
   { feature: "Fauward Agent", starter: "Upgrade to Pro", pro: "Included", enterprise: "Included" },
   { feature: "Agent setup", starter: false, pro: "Switch on from dashboard", enterprise: "Switch on from dashboard" },
   { feature: "Shipment state machine", starter: true, pro: true, enterprise: true },
-  { feature: "Driver proof-of-delivery", starter: true, pro: true, enterprise: true },
+  { feature: "Fauward Go proof-of-delivery", starter: true, pro: true, enterprise: true },
   { feature: "Branded customer notifications", starter: true, pro: true, enterprise: true },
   { feature: "Invoice lifecycle", starter: true, pro: true, enterprise: true },
   { feature: "VAT-ready invoicing", starter: true, pro: true, enterprise: true },
@@ -154,7 +154,7 @@ export const COMPETITOR_COMPARISON_ROWS: CompetitorRow[] = [
   { criterion: "White-label tracking page", fauward: "Included from Starter", genericSaaS: "Add-on or custom dev" },
   { criterion: "Regional payment methods", fauward: "M-Pesa, Paystack, Stripe, GoCardless", genericSaaS: "Stripe only" },
   { criterion: "Time to first shipment", fauward: "Under 10 minutes", genericSaaS: "Days of setup and training" },
-  { criterion: "Driver offline support", fauward: "Built-in, syncs on reconnect", genericSaaS: "Not available" }
+  { criterion: "Fauward Go offline support", fauward: "Built-in, syncs on reconnect", genericSaaS: "Not available" }
 ];
 
 // ─── Social Proof ──────────────────────────────────────────────────────────────
@@ -209,14 +209,14 @@ export const MARKETING_FEATURES: MarketingFeature[] = [
     imageSrc: "/images/screens/portal-tracking.svg",
     bullets: [
       "Know which shipments are at risk before customers complain",
-      "Drivers confirm handoffs without phone calls",
+      "Fauward Go operators confirm handoffs without phone calls",
       "Customers self-serve on a branded tracking page"
     ],
     cards: [
       {
         title: "One source of truth",
         description:
-          "Dispatch, finance, and drivers all read from the same live state — no reconciliation needed."
+          "Dispatch, finance, and Fauward Go operators all read from the same live state — no reconciliation needed."
       },
       {
         title: "Fewer support tickets",
@@ -349,10 +349,10 @@ export const REGIONS: RegionInfo[] = [
     name: "Africa",
     label: "Africa",
     summary:
-      "Support M-Pesa and Paystack collections, offline driver workflows, and cross-border operations from a single platform.",
+      "Support M-Pesa and Paystack collections, offline Fauward Go workflows, and cross-border operations from a single platform.",
     highlights: [
       "Multi-currency finance controls",
-      "Offline-tolerant driver workflows",
+      "Offline-tolerant Fauward Go workflows",
       "Country-specific delivery proof collection"
     ],
     badges: ["M-Pesa", "Paystack", "Flutterwave", "GIG Logistics", "DHL Africa"]
@@ -417,7 +417,7 @@ export const TESTIMONIALS: Testimonial[] = [
   },
   {
     quote:
-      "Finance stopped chasing drivers for delivery confirmations. The invoice goes out automatically when the POD comes in. That alone changed how the business runs.",
+      "Finance stopped chasing Fauward Go operators for delivery confirmations. The invoice goes out automatically when the POD comes in. That alone changed how the business runs.",
     name: "Sara Al-Rashidi",
     role: "Finance Lead",
     company: "Gulf Link Logistics, Dubai",
@@ -479,9 +479,9 @@ export const GENERAL_FAQ_GROUPS: FaqGroup[] = [
     topic: "Operations & Security",
     items: [
       {
-        question: "What happens if our driver loses connectivity mid-delivery?",
+        question: "What happens if a Fauward Go operator loses connectivity mid-delivery?",
         answer:
-          "The driver app queues actions locally and syncs when connectivity returns. Proof-of-delivery, status updates, and failed delivery notes are all preserved offline. No data is lost during connectivity gaps."
+          "Fauward Go queues actions locally and syncs when connectivity returns. Proof-of-delivery, status updates, and failed delivery notes are all preserved offline. No data is lost during connectivity gaps."
       },
       {
         question: "Can our customers track shipments without logging in?",
@@ -555,9 +555,9 @@ export const SERVICES: ServiceItem[] = [
   {
     slug: "driver-app",
     icon: "smartphone",
-    title: "Driver Mobile App",
+    title: "Fauward Go",
     summary:
-      "A purpose-built driver app that works on and offline — capturing signatures, photos, and barcodes for irrefutable proof-of-delivery.",
+      "A purpose-built field operations app that works on and offline — capturing signatures, photos, and barcodes for irrefutable proof-of-delivery.",
     bullets: [
       "Offline-first: queues actions and syncs on reconnect",
       "Photo, signature, and barcode proof-of-delivery",
@@ -603,7 +603,7 @@ export const SERVICES: ServiceItem[] = [
     bullets: [
       "Full theme control: logo, colours, fonts",
       "Custom domain with SSL auto-provisioning",
-      "Role-based access for staff, drivers, and customers",
+      "Role-based access for staff, Fauward Go operators, and customers",
       "Branded email and SMS notifications",
       "Tenant-scoped data isolation",
     ],
@@ -641,7 +641,7 @@ export const BUSINESS_SOLUTIONS: BusinessSolution[] = [
     audience: "Courier Startups",
     title: "Launch a professional courier operation in one afternoon",
     summary:
-      "Skip the months of custom development. Fauward gives you a branded platform, driver app, and customer tracking portal — ready to take your first booking today.",
+      "Skip the months of custom development. Fauward gives you a branded platform, Fauward Go, and customer tracking portal — ready to take your first booking today.",
     outcomes: [
       "First live shipment in under 10 minutes",
       "Professional customer-facing tracking page from day one",
@@ -654,7 +654,7 @@ export const BUSINESS_SOLUTIONS: BusinessSolution[] = [
     audience: "Freight Operators",
     title: "Replace spreadsheets with a single source of truth",
     summary:
-      "Multi-depot freight operations need more than tracking links. Fauward gives dispatchers, drivers, and finance one coherent platform — with the audit trail to back it up.",
+      "Multi-depot freight operations need more than tracking links. Fauward gives dispatchers, Fauward Go operators, and finance one coherent platform — with the audit trail to back it up.",
     outcomes: [
       "Multi-depot route and hub-and-spoke visibility",
       "Finance and ops share one live ledger",
@@ -744,7 +744,7 @@ export const COMPANY_VALUES: CompanyValue[] = [
     icon: "shield",
     title: "Reliability above all",
     description:
-      "A missed delivery notification is a failed business promise. Our infrastructure is built to stay online when your drivers are on the road.",
+      "A missed delivery notification is a failed business promise. Our infrastructure is built to stay online when your Fauward Go operators are on the road.",
   },
   {
     icon: "globe",
@@ -770,7 +770,7 @@ export const COMPANY_MILESTONES: CompanyMilestone[] = [
   { year: "2022", event: "Closed seed round; launched beta across UK and West Africa" },
   { year: "2023", event: "Launched MENA region; crossed 10,000 shipments processed per month" },
   { year: "2024", event: "Released API v2, webhooks, and white-label multi-tenancy" },
-  { year: "2025", event: "Launched AI Agent for autonomous shipment dispatch and exception handling" },
+  { year: "2025", event: "Launched Fauward Agent — policy-controlled AI operations layer for logistics" },
 ];
 
 // ─── News / Blog ───────────────────────────────────────────────────────────────
@@ -789,9 +789,9 @@ export const NEWS_ARTICLES: NewsArticle[] = [
   {
     slug: "ai-agent-launch",
     category: "Product",
-    title: "Introducing Fauward Agent: autonomous shipment dispatch powered by AI",
+    title: "Introducing Fauward Agent: policy-controlled operations powered by AI",
     summary:
-      "Today we're launching Fauward Agent — an AI-powered layer that handles shipment assignment, exception routing, and driver communications without manual intervention.",
+      "Today we're launching Fauward Agent — a policy-controlled AI layer that automates safe operations, escalates risky ones for team approval, and keeps logistics running 24/7.",
     publishedAt: "2025-04-10",
     readMinutes: 6,
     featured: true,
@@ -808,9 +808,9 @@ export const NEWS_ARTICLES: NewsArticle[] = [
   {
     slug: "offline-driver-sync",
     category: "Engineering",
-    title: "How we built offline-first proof-of-delivery for drivers in low-connectivity zones",
+    title: "How we built offline-first proof-of-delivery for Fauward Go operators in low-connectivity zones",
     summary:
-      "An inside look at the sync architecture that lets drivers capture signatures and photos without a data connection — and reliably flush them when back online.",
+      "An inside look at the sync architecture that lets Fauward Go operators capture signatures and photos without a data connection — and reliably flush them when back online.",
     publishedAt: "2025-03-05",
     readMinutes: 8,
   },
@@ -905,13 +905,13 @@ export const SUPPORT_CATEGORIES: SupportCategory[] = [
   {
     slug: "drivers",
     icon: "smartphone",
-    title: "Driver App",
-    description: "Installing, using, and troubleshooting the driver mobile app.",
+    title: "Fauward Go",
+    description: "Installing, using, and troubleshooting the Fauward Go field app.",
     articles: [
-      { title: "Download and install the driver app", href: "/support/drivers/install" },
+      { title: "Download and install Fauward Go", href: "/support/drivers/install" },
       { title: "Capturing proof-of-delivery", href: "/support/drivers/proof-of-delivery" },
       { title: "Offline mode and syncing", href: "/support/drivers/offline" },
-      { title: "Driver troubleshooting guide", href: "/support/drivers/troubleshooting" },
+      { title: "Fauward Go troubleshooting guide", href: "/support/drivers/troubleshooting" },
     ],
   },
   {
@@ -939,15 +939,15 @@ export type AgentCapability = {
 export const AGENT_CAPABILITIES: AgentCapability[] = [
   {
     icon: "cpu",
-    title: "Autonomous Dispatch",
+    title: "Shipment Assignment",
     description:
-      "Assign incoming shipments to the optimal driver automatically — factoring load, proximity, and historical performance.",
+      "New shipments are assigned to the optimal Fauward Go operator automatically — factoring load, proximity, and current workload. No dispatcher needed.",
   },
   {
     icon: "alert-triangle",
     title: "Exception Management",
     description:
-      "Detect failed deliveries, SLA breaches, and route anomalies in real time — and trigger re-routing or customer notifications without human input.",
+      "Detect failed deliveries, SLA breaches, and route anomalies in real time. The agent notifies the customer immediately and flags rerouting for your team to approve.",
   },
   {
     icon: "message-square",
@@ -957,9 +957,9 @@ export const AGENT_CAPABILITIES: AgentCapability[] = [
   },
   {
     icon: "trending-up",
-    title: "Demand Forecasting",
+    title: "Operations Reporting",
     description:
-      "Predict shipment volume by zone and day using historical patterns — so you have the right drivers rostered before the surge.",
+      "Get a full picture of your operations in plain English — delivery success rates, SLA breach trends, top delay reasons, and Fauward Go operator performance — all from a single query.",
   },
   {
     icon: "bell",
@@ -1033,13 +1033,13 @@ export const PERSONA_CARDS: PersonaCard[] = [
   },
   {
     role: "Operations manager",
-    context: "Juggling dispatch, drivers, and constant customer status requests",
+    context: "Juggling dispatch, Fauward Go operators, and constant customer status requests",
     pain: "Endless status calls, manual reconciliation, and no single view of what's in transit",
     gain: "One screen for every shipment state — dispatchers stop firefighting and customers stop calling"
   },
   {
     role: "Finance lead",
-    context: "Chasing invoice payments and waiting for drivers to confirm deliveries",
+    context: "Chasing invoice payments and waiting for Fauward Go operators to confirm deliveries",
     pain: "The invoice-to-payment cycle is entirely manual and depends on people remembering to do things",
     gain: "Invoices generate from confirmed deliveries. Overdue reminders run on a schedule. Collections happen without chasing."
   }

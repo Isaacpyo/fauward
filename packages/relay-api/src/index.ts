@@ -6,6 +6,7 @@ import type {
   CreateRelayConversationInput,
   CreateRelayMessageInput,
   ListRelayConversationsInput,
+  RelayAiStatus,
   RelayConversation,
   RelayFeedback,
   RelayMessage,
@@ -19,6 +20,7 @@ export type {
   CreateRelayConversationInput,
   CreateRelayMessageInput,
   ListRelayConversationsInput,
+  RelayAiStatus,
   RelayConversation,
   RelayFeedback,
   RelayMessage,
@@ -205,6 +207,11 @@ export async function createRelayConversation(input: CreateRelayConversationInpu
 
 export async function createRelayMessage(conversationId: string, input: CreateRelayMessageInput) {
   const supabase = getRelayAdminClient();
+  const isDraft = input.sender_type === "admin"
+    ? input.is_draft ?? true
+    : input.sender_type === "system"
+      ? input.is_draft ?? false
+      : false;
   const { data, error } = await supabase
     .from("relay_messages")
     .insert({
@@ -212,6 +219,10 @@ export async function createRelayMessage(conversationId: string, input: CreateRe
       sender_type: input.sender_type,
       sender_id: input.sender_id ?? null,
       body: input.body,
+      is_draft: isDraft,
+      draft_mode: isDraft,
+      approved_by: input.approved_by ?? null,
+      approved_at: input.approved_at ?? null,
     })
     .select("*")
     .single<RelayMessage>();
@@ -395,11 +406,14 @@ export async function handleCreateMessage(request: Request, conversationId: stri
     }
   }
 
+  // System status notifications generated from deterministic TrackingEvents may be delivered immediately.
+  // Human and AI-authored admin replies are drafts until the tenant approves them through approve-and-send.
   return json(
     await createRelayMessage(conversationId, {
       sender_type,
       sender_id: cleanText(body.sender_id),
       body: bodyText,
+      is_draft: sender_type === "admin" ? true : sender_type === "system" ? false : false,
     }),
     201,
   );

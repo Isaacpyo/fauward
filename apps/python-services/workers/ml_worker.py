@@ -9,6 +9,7 @@ from sklearn.linear_model import LogisticRegression
 
 import db
 from celery_app import celery_app
+from config import settings
 from lib.model_registry import model_registry
 from workers import run_worker
 
@@ -59,6 +60,54 @@ def _predict_artifact(model_name: str, features: pd.DataFrame) -> float | None:
     return float(artifact["model"].predict_proba(encoded)[0][1])
 
 
+async def _on_time_rate(origin_region: str, dest_region: str) -> float:
+    result = await db.fetchval(
+        """
+        select avg(case when "actualDelivery" <= "estimatedDelivery"
+                   then 1.0 else 0.0 end)
+        from shipments
+        where "actualDelivery" is not null
+          and "estimatedDelivery" is not null
+          and left(upper(("originAddress"->>'postcode')::text), 3) = $1
+          and left(upper(("destinationAddress"->>'postcode')::text), 3) = $2
+        """,
+        origin_region[:3],
+        dest_region[:3],
+    )
+    return float(result) if result is not None else 0.85
+
+
+async def _on_time_rate_map() -> dict[tuple[str, str], float]:
+    rows = await db.fetch(
+        """
+        select
+          left(upper(("originAddress"->>'postcode')::text), 3) as origin,
+          left(upper(("destinationAddress"->>'postcode')::text), 3) as dest,
+          avg(case when "actualDelivery" <= "estimatedDelivery"
+                   then 1.0 else 0.0 end) as rate
+        from shipments
+        where "actualDelivery" is not null
+          and "estimatedDelivery" is not null
+        group by 1, 2
+        """
+    )
+    return {
+        (str(row["origin"]), str(row["dest"])): float(row["rate"])
+        for row in rows
+        if row["origin"] and row["dest"]
+    }
+
+
+def _weather_disruption(origin_region: str, dest_region: str) -> bool:
+    try:
+        from workers import redis_client
+
+        key = f"weather:disruption:{origin_region}:{dest_region}"
+        return redis_client().exists(key) > 0
+    except Exception:
+        return False
+
+
 async def _save_prediction(
     *,
     tenant_id: str | None,
@@ -69,11 +118,30 @@ async def _save_prediction(
     label: str,
     payload: dict[str, Any],
 ) -> None:
+    if tenant_id is None:
+        await db.execute(
+            """
+            insert into prediction_results (tenant_id, entity_type, entity_id, model_name, score, label, payload, updated_at)
+            values (null, $1, $2, $3, $4, $5, $6::jsonb, now())
+            on conflict (entity_type, entity_id, model_name) where tenant_id is null do update
+            set score = excluded.score,
+                label = excluded.label,
+                payload = excluded.payload,
+                updated_at = now()
+            """,
+            entity_type,
+            entity_id,
+            model_name,
+            score,
+            label,
+            db.json_dumps(payload),
+        )
+        return
     await db.execute(
         """
         insert into prediction_results (tenant_id, entity_type, entity_id, model_name, score, label, payload, updated_at)
         values ($1, $2, $3, $4, $5, $6, $7::jsonb, now())
-        on conflict (entity_type, entity_id, model_name) do update
+        on conflict (tenant_id, entity_type, entity_id, model_name) where tenant_id is not null do update
         set score = excluded.score,
             label = excluded.label,
             payload = excluded.payload,
@@ -109,10 +177,17 @@ async def _train_delay_model() -> dict[str, Any]:
     y = frame.pop("is_delayed").astype(int)
     if y.nunique() < 2:
         return {"trained": False, "reason": "single_class_labels"}
+    on_time_rates = await _on_time_rate_map()
     frame["origin_region"] = frame.pop("originAddress").map(_region)
     frame["dest_region"] = frame.pop("destinationAddress").map(_region)
-    frame["route_historical_on_time_rate"] = 0.85
-    frame["weather_disruption_flag"] = False
+    frame["route_historical_on_time_rate"] = [
+        on_time_rates.get((str(origin)[:3], str(dest)[:3]), 0.85)
+        for origin, dest in zip(frame["origin_region"], frame["dest_region"], strict=False)
+    ]
+    frame["weather_disruption_flag"] = [
+        _weather_disruption(str(origin)[:3], str(dest)[:3])
+        for origin, dest in zip(frame["origin_region"], frame["dest_region"], strict=False)
+    ]
     encoded = _encode(frame)
     try:
         from xgboost import XGBClassifier
@@ -133,9 +208,11 @@ async def _train_delay_model() -> dict[str, Any]:
 async def _tenant_churn_features() -> pd.DataFrame:
     tenants = await db.fetch(
         """
-        select id, plan, extract(month from age(now(), "createdAt"))::int as months_active
+        select id, plan,
+          extract(month from age(now(), "createdAt"))::int as months_active,
+          (status = 'CANCELLED') as is_churned
         from tenants
-        where status in ('ACTIVE', 'TRIALING')
+        where status in ('ACTIVE', 'TRIALING', 'CANCELLED')
         """
     )
     rows: list[dict[str, Any]] = []
@@ -176,6 +253,7 @@ async def _tenant_churn_features() -> pd.DataFrame:
                 "invoice_overdue_count": overdue or 0,
                 "plan": {"STARTER": 0, "PRO": 1, "ENTERPRISE": 2}.get(str(tenant["plan"]), 0),
                 "months_active": tenant["months_active"] or 0,
+                "is_churned": bool(tenant["is_churned"]),
             }
         )
     return pd.DataFrame(rows)
@@ -185,7 +263,11 @@ async def _train_churn_model() -> dict[str, Any]:
     features = await _tenant_churn_features()
     if len(features) < 10:
         return {"trained": False, "reason": "not_enough_tenants"}
-    y = ((features["days_since_last_shipment"] > 60) | (features["shipment_trend"] < -3)).astype(int)
+    if "is_churned" in features.columns and features["is_churned"].sum() >= 2:
+        y = features.pop("is_churned").astype(int)
+    else:
+        y = ((features["days_since_last_shipment"] > 60) | (features["shipment_trend"] < -3)).astype(int)
+        features.drop(columns=["is_churned"], errors="ignore", inplace=True)
     if y.nunique() < 2:
         return {"trained": False, "reason": "single_class_labels"}
     x = features.drop(columns=["tenant_id"])
@@ -203,6 +285,7 @@ async def _train_lead_model() -> dict[str, Any]:
           coalesce(source, 'unknown') as source_channel,
           coalesce(stage, 'PROSPECT') as stage,
           coalesce(company, 'unknown') as company,
+          0 as monthly_shipment_estimate,
           "createdAt",
           "wonAt"
         from leads
@@ -216,9 +299,12 @@ async def _train_lead_model() -> dict[str, Any]:
         return {"trained": False, "reason": "single_class_labels"}
     features = pd.DataFrame(
         {
-            "company_size_bucket": "unknown",
             "industry": "unknown",
-            "monthly_shipment_estimate": 0,
+            "monthly_shipment_estimate": [float(value or 0) for value in frame["monthly_shipment_estimate"]],
+            "company_known": [
+                int(str(value or "unknown").lower() != "unknown")
+                for value in frame["company"]
+            ],
             "source_channel": frame["source_channel"],
             "days_to_respond": [
                 max((row["wonAt"] - row["createdAt"]).days, 0) if row["wonAt"] else 30 for _, row in frame.iterrows()
@@ -233,6 +319,9 @@ async def _train_lead_model() -> dict[str, Any]:
 
 
 async def _score_shipment(row: dict[str, Any]) -> dict[str, Any]:
+    origin_region = _region(row.get("originAddress"))
+    dest_region = _region(row.get("destinationAddress"))
+    route_on_time_rate = await _on_time_rate(origin_region, dest_region)
     features = pd.DataFrame(
         [
             {
@@ -241,10 +330,10 @@ async def _score_shipment(row: dict[str, Any]) -> dict[str, Any]:
                 "day_of_week": int(row["createdAt"].weekday()),
                 "hour_created": int(row["createdAt"].hour),
                 "carrier_id": row.get("assignedDriverId") or "unknown",
-                "origin_region": _region(row.get("originAddress")),
-                "dest_region": _region(row.get("destinationAddress")),
-                "route_historical_on_time_rate": 0.85,
-                "weather_disruption_flag": False,
+                "origin_region": origin_region,
+                "dest_region": dest_region,
+                "route_historical_on_time_rate": route_on_time_rate,
+                "weather_disruption_flag": _weather_disruption(origin_region[:3], dest_region[:3]),
             }
         ]
     )
@@ -284,30 +373,41 @@ async def _score_all_tenants() -> dict[str, int]:
     if features.empty:
         return {"tenants": 0}
     artifact = model_registry.load_latest("tenant_churn")
-    x = features.drop(columns=["tenant_id"])
-    for _, row in features.iterrows():
-        if artifact:
-            probability = float(artifact["model"].predict_proba(pd.DataFrame([row.drop(labels=["tenant_id"])]))[0][1])
-        else:
-            probability = min(0.9, max(0.05, row["days_since_last_shipment"] / 120))
+    tenant_ids = features["tenant_id"].tolist()
+    x = features.drop(columns=["tenant_id", "is_churned"], errors="ignore")
+    if artifact:
+        for col in artifact["feature_columns"]:
+            if col not in x:
+                x[col] = 0
+        x = x[artifact["feature_columns"]]
+        probs = artifact["model"].predict_proba(x)[:, 1].tolist()
+    else:
+        probs = [
+            min(0.9, max(0.05, row / 120))
+            for row in features["days_since_last_shipment"].tolist()
+        ]
+    for tenant_id, probability in zip(tenant_ids, probs, strict=False):
         label = risk_label(probability)
         payload = {"churnProbability": round(probability, 4), "riskTier": label}
         await _save_prediction(
-            tenant_id=str(row["tenant_id"]),
+            tenant_id=str(tenant_id),
             entity_type="tenant",
-            entity_id=str(row["tenant_id"]),
+            entity_id=str(tenant_id),
             model_name="tenant_churn",
             score=probability,
             label=label,
             payload=payload,
         )
-    return {"tenants": len(features)}
+    return {"tenants": len(tenant_ids)}
 
 
 async def _score_all_leads() -> dict[str, int]:
     rows = await db.fetch(
         """
-        select id, "tenantId", coalesce(source, 'unknown') as source_channel, "createdAt"
+        select id, "tenantId", coalesce(source, 'unknown') as source_channel,
+               coalesce(company, 'unknown') as company,
+               0 as monthly_shipment_estimate,
+               "createdAt"
         from leads
         where stage not in ('WON', 'LOST')
         """
@@ -316,9 +416,9 @@ async def _score_all_leads() -> dict[str, int]:
         features = pd.DataFrame(
             [
                 {
-                    "company_size_bucket": "unknown",
                     "industry": "unknown",
-                    "monthly_shipment_estimate": 0,
+                    "monthly_shipment_estimate": float(row["monthly_shipment_estimate"] or 0),
+                    "company_known": int(str(row["company"] or "unknown").lower() != "unknown"),
                     "source_channel": row["source_channel"],
                     "days_to_respond": _days_since(row["createdAt"]),
                 }
@@ -365,6 +465,22 @@ async def handle_ml_score_job(payload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("Unsupported ML score entityType")
 
 
+def _refresh_weather_signals() -> dict[str, int]:
+    from workers import redis_client
+
+    client = redis_client()
+    count = 0
+    for pair in (settings.weather_disruption_regions or "").split(","):
+        if ":" not in pair:
+            continue
+        origin, dest = (part.strip().upper() for part in pair.split(":", 1))
+        if not origin or not dest:
+            continue
+        client.setex(f"weather:disruption:{origin}:{dest}", 7 * 60 * 60, "1")
+        count += 1
+    return {"routes": count}
+
+
 @celery_app.task(name="workers.ml_worker.process_ml_score_job", queue="ml")
 def process_ml_score_job(payload: dict[str, Any]) -> dict[str, Any]:
     return run_worker(
@@ -373,6 +489,11 @@ def process_ml_score_job(payload: dict[str, Any]) -> dict[str, Any]:
         payload=payload,
         handler=handle_ml_score_job,
     )
+
+
+@celery_app.task(name="workers.ml_worker.refresh_weather_signals", queue="ml")
+def refresh_weather_signals() -> dict[str, int]:
+    return _refresh_weather_signals()
 
 
 @celery_app.task(name="workers.ml_worker.train_delay_model", queue="ml")

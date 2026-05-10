@@ -1,6 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { LabelFormat } from '@prisma/client';
 import QRCode from 'qrcode';
 import { authenticate } from '../../shared/middleware/authenticate.js';
+import { requireTenantMatch } from '../../shared/middleware/tenantMatch.js';
+import { labelGenerateSchema, manifestGenerateSchema } from './label.schema.js';
+import { labelService } from './label.service.js';
 
 function escapeHtml(input: string) {
   return input
@@ -88,6 +92,96 @@ function buildLabelHtml(params: {
 }
 
 export async function registerLabelRoutes(app: FastifyInstance) {
+  app.post(
+    '/api/v1/tenant/shipments/:id/labels',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id } = request.params as { id: string };
+      const payload = labelGenerateSchema.parse(request.body ?? {});
+
+      try {
+        const label = await labelService.generate(
+          app,
+          tenantId,
+          id,
+          payload.format as LabelFormat,
+          payload.forceRegenerate ?? false
+        );
+        reply.status(201).send({ label, downloadUrl: label.url });
+      } catch (error) {
+        reply.status(400).send({ error: error instanceof Error ? error.message : 'Unable to generate label' });
+      }
+    }
+  );
+
+  app.get(
+    '/api/v1/tenant/shipments/:id/labels/:labelId',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id, labelId } = request.params as { id: string; labelId: string };
+      const label = await labelService.get(app, tenantId, id, labelId);
+      if (!label) return reply.status(404).send({ error: 'Label not found' });
+      reply.send({ label, downloadUrl: label.url });
+    }
+  );
+
+  app.post(
+    '/api/v1/tenant/shipments/:id/labels/:labelId/reprint',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id, labelId } = request.params as { id: string; labelId: string };
+      const label = await labelService.reprint(app, tenantId, id, labelId);
+      if (!label) return reply.status(404).send({ error: 'Label not found' });
+      reply.send({ label, downloadUrl: label.url });
+    }
+  );
+
+  app.post(
+    '/api/v1/tenant/manifests/pickup',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const payload = manifestGenerateSchema.parse(request.body ?? {});
+      const manifest = await labelService.manifest(app, tenantId, 'pickup', payload.shipmentIds);
+      reply.status(201).send(manifest);
+    }
+  );
+
+  app.post(
+    '/api/v1/tenant/manifests/delivery',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const payload = manifestGenerateSchema.parse(request.body ?? {});
+      const manifest = await labelService.manifest(app, tenantId, 'delivery', payload.shipmentIds);
+      reply.status(201).send(manifest);
+    }
+  );
+
+  app.post(
+    '/api/v1/tenant/shipments/:id/documents/packing-slip',
+    { preHandler: [authenticate, requireTenantMatch] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+      const { id } = request.params as { id: string };
+      try {
+        const document = await labelService.packingSlip(app, tenantId, id);
+        reply.status(201).send(document);
+      } catch (error) {
+        reply.status(400).send({ error: error instanceof Error ? error.message : 'Unable to generate packing slip' });
+      }
+    }
+  );
+
   app.get('/api/v1/label/:trackingNumber', { preHandler: [authenticate] }, async (request, reply) => {
     const tenantId = request.tenant?.id;
     if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
@@ -156,4 +250,3 @@ export async function registerLabelRoutes(app: FastifyInstance) {
     reply.send({ signedUrl, podSummary });
   });
 }
-

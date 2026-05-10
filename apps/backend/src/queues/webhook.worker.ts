@@ -15,6 +15,7 @@ type WebhookJobData = {
 };
 
 const DLQ_WEBHOOK_QUEUE = 'dlq-webhookQueue';
+const RETRY_DELAYS_MS = [60_000, 120_000, 240_000, 480_000, 960_000];
 
 export const dlqWebhookQueue = new Queue<Record<string, unknown>>(DLQ_WEBHOOK_QUEUE, {
   connection: bullmqConnection,
@@ -65,6 +66,7 @@ export function startWebhookWorker(app: FastifyInstance) {
       const signature = endpoint.secret
         ? `sha256=${createHmac('sha256', endpoint.secret).update(body).digest('hex')}`
         : undefined;
+      const eventId = String(job.id ?? randomUUID());
 
       const startedAt = Date.now();
       let responseStatus: number | undefined;
@@ -77,8 +79,9 @@ export function startWebhookWorker(app: FastifyInstance) {
           headers: {
             'Content-Type': 'application/json',
             'X-Event-Type': eventType,
-            'X-Delivery-Id': job.id ?? randomUUID(),
-            ...(signature ? { 'X-Webhook-Signature': signature } : {})
+            'X-Delivery-Id': eventId,
+            'X-Fauward-Event-Id': eventId,
+            ...(signature ? { 'X-Webhook-Signature': signature, 'X-Fauward-Signature': signature } : {})
           },
           signal: AbortSignal.timeout(10_000),
           body
@@ -105,9 +108,14 @@ export function startWebhookWorker(app: FastifyInstance) {
           eventType,
           payload: payload as Prisma.InputJsonValue,
           responseStatus,
+          responseCode: responseStatus,
           responseBody,
           durationMs: Date.now() - startedAt,
+          responseLatencyMs: Date.now() - startedAt,
           attempt,
+          attemptCount: attempt,
+          hmacSignature: signature,
+          nextRetryAt: errorToThrow && attempt < 5 ? new Date(Date.now() + RETRY_DELAYS_MS[attempt - 1]) : null,
           status: errorToThrow ? 'FAILED' : 'DELIVERED'
         }
       });
@@ -139,6 +147,15 @@ export function startWebhookWorker(app: FastifyInstance) {
       reason: error.message,
       attemptsMade: job.attemptsMade
     });
+
+    const endpointId = typeof job.data.endpointId === 'string' ? job.data.endpointId : '';
+    const tenantId = typeof job.data.tenantId === 'string' ? job.data.tenantId : '';
+    if (endpointId && tenantId) {
+      await app.prisma.webhookDelivery.updateMany({
+        where: { endpointId, tenantId, status: 'FAILED', deadLetteredAt: null },
+        data: { deadLetteredAt: new Date(), attemptCount: job.attemptsMade }
+      });
+    }
   });
 
   return worker;

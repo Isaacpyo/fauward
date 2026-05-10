@@ -1,0 +1,66 @@
+# Project-local Codex command policy for Fauward.
+
+prefix_rule(
+    pattern = ["npm", "run"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["npm.cmd", "run"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["npx", "prisma"],
+    decision = "prompt",
+)
+
+prefix_rule(
+    pattern = ["npx.cmd", "prisma"],
+    decision = "prompt",
+)
+
+prefix_rule(
+    pattern = ["prisma", "migrate", "reset"],
+    decision = "forbidden",
+)
+
+prefix_rule(
+    pattern = ["npx", "prisma", "migrate", "reset"],
+    decision = "forbidden",
+)
+
+prefix_rule(
+    pattern = ["npx.cmd", "prisma", "migrate", "reset"],
+    decision = "forbidden",
+)
+
+prefix_rule(
+    pattern = ["docker-compose"],
+    decision = "prompt",
+)
+
+prefix_rule(
+    pattern = ["docker", "compose"],
+    decision = "prompt",
+)
+
+prefix_rule(
+    pattern = ["git", ["status", "log", "diff", "branch", "show"]],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["node", "--version"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["npm", "--version"],
+    decision = "allow",
+)
+
+prefix_rule(
+    pattern = ["npm.cmd", "--version"],
+    decision = "allow",
+)

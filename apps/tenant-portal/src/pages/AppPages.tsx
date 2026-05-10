@@ -68,8 +68,8 @@ const teamRows: ListRow[] = Array.from({ length: 10 }).map((_, index) => ({
 }));
 
 const TEST_LOGIN = {
-  email: "fauward@gmail.com",
-  password: "Oluwaseun44!"
+  email: "tenant-demo@example.test",
+  password: "dev-only-password"
 };
 
 const SUCCESSFUL_LOGIN_DELAY_MS = 1200;

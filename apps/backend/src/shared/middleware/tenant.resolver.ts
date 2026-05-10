@@ -123,7 +123,19 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return ctx;
   }
 
-  if (path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/relay')) {
+  if (path.startsWith('/api/v1/platform') || path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/relay')) {
+    return {
+      tenantId: 'system',
+      tenantSlug: 'system',
+      plan: 'SYSTEM',
+      region: 'global',
+      isSuperAdmin: true
+    };
+  }
+
+  // Agent handle-event is a service-to-service endpoint authenticated by service token.
+  // Tenant context comes from the request body, not the hostname.
+  if (path === '/v1/agent/handle-event') {
     return {
       tenantId: 'system',
       tenantSlug: 'system',

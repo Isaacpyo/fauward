@@ -1,96 +1,69 @@
-from datetime import date, timedelta
+from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import StreamingResponse
 
-import db
 from api.auth import AuthContext, require_bearer_token, require_super_admin
+from main import limiter
+from schemas.analytics import AnalyticsSummaryResponse, ChurnRiskResponse, CohortResponse
+from services.analytics_service import (
+    DEFAULT_COHORT_LIMIT,
+    MAX_COHORT_LIMIT,
+    analytics_event_stream,
+    analytics_summary,
+    churn_risk_tenants,
+    cohort_metrics,
+    resolve_effective_tenant_id,
+    tenant_rate_limit_key,
+)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
-@router.get("/summary")
+@router.get("/summary", response_model=AnalyticsSummaryResponse)
+@limiter.limit("60/minute", key_func=tenant_rate_limit_key)
 async def summary(
+    request: Request,
     auth: Annotated[AuthContext, Depends(require_bearer_token)],
-    tenantId: str = Query(...),
+    tenantId: str = Query(..., min_length=1),
     dateFrom: date | None = Query(default=None),
     dateTo: date | None = Query(default=None),
 ) -> dict[str, Any]:
-    if tenantId != auth.tenant_id and not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    end = dateTo or date.today()
-    start = dateFrom or (end - timedelta(days=30))
-    rows = await db.fetch(
-        """
-        select date, shipments_total, on_time_rate, revenue_total, avg_delivery_hours
-        from analytics_snapshots
-        where tenant_id = $1 and date >= $2 and date <= $3
-        order by date asc
-        """,
-        tenantId,
-        start,
-        end,
-    )
-    shipments_total = sum(int(row["shipments_total"] or 0) for row in rows)
-    revenue_total = sum(float(row["revenue_total"] or 0) for row in rows)
-    weighted_on_time = (
-        sum(float(row["on_time_rate"] or 0) * int(row["shipments_total"] or 0) for row in rows) / shipments_total
-        if shipments_total
-        else 0.0
-    )
-    avg_delivery_hours = (
-        sum(float(row["avg_delivery_hours"] or 0) for row in rows) / len(rows)
-        if rows
-        else 0.0
-    )
-    return {
-        "shipmentsTotal": shipments_total,
-        "onTimeRate": round(weighted_on_time, 2),
-        "revenueTotal": round(revenue_total, 2),
-        "avgDeliveryHours": round(avg_delivery_hours, 2),
-        "dailySeries": [
-            {
-                "date": row["date"].isoformat(),
-                "shipments": row["shipments_total"],
-                "revenue": float(row["revenue_total"] or 0),
-            }
-            for row in rows
-        ],
-    }
+    return await analytics_summary(auth=auth, tenant_id=tenantId, date_from=dateFrom, date_to=dateTo)
 
 
-@router.get("/cohorts")
+@router.get("/cohorts", response_model=CohortResponse)
+@limiter.limit("30/minute", key_func=tenant_rate_limit_key)
 async def cohorts(
+    request: Request,
     auth: Annotated[AuthContext, Depends(require_bearer_token)],
-    tenantId: str = Query(...),
+    tenantId: str = Query(..., min_length=1),
+    limit: int = Query(default=DEFAULT_COHORT_LIMIT, ge=1, le=MAX_COHORT_LIMIT),
+    offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
-    if tenantId != auth.tenant_id and not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    rows = await db.fetch(
-        """
-        select signup_week, metrics
-        from cohort_metrics
-        where tenant_id = $1
-        order by signup_week desc
-        """,
-        tenantId,
-    )
-    return {
-        "tenantId": tenantId,
-        "cohorts": [{"signupWeek": row["signup_week"].isoformat(), **dict(row["metrics"])} for row in rows],
-    }
+    return await cohort_metrics(auth=auth, tenant_id=tenantId, limit=limit, offset=offset)
 
 
-@router.get("/churn-risk")
-async def churn_risk(_: Annotated[AuthContext, Depends(require_super_admin)]) -> dict[str, Any]:
-    if not await db.column_exists("tenants", "churnRisk"):
-        return {"tenants": []}
-    rows = await db.fetch(
-        """
-        select id, name, slug, "churnRisk"
-        from tenants
-        where "churnRisk" = 'AT_RISK'
-        order by name asc
-        """
+@router.get("/live")
+@limiter.limit("10/minute", key_func=tenant_rate_limit_key)
+async def analytics_live(
+    request: Request,
+    tenantId: str,
+    auth: Annotated[AuthContext, Depends(require_bearer_token)],
+) -> StreamingResponse:
+    effective_tenant_id = resolve_effective_tenant_id(auth, tenantId)
+    return StreamingResponse(
+        analytics_event_stream(tenant_id=effective_tenant_id, request=request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-    return {"tenants": [dict(row) for row in rows]}
+
+
+@router.get("/churn-risk", response_model=ChurnRiskResponse)
+@limiter.limit("30/minute", key_func=tenant_rate_limit_key)
+async def churn_risk(
+    request: Request,
+    _: Annotated[AuthContext, Depends(require_super_admin)],
+) -> dict[str, Any]:
+    return await churn_risk_tenants()

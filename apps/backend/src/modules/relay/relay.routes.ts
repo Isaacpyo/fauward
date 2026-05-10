@@ -8,10 +8,13 @@ import {
   handleListConversations,
   handleListFeedback,
   handleListMessages,
-  handleUpdateConversation
+  handleUpdateConversation,
+  type RelayConversation
 } from '@fauward/relay-api';
+import { getRelayAdminClient } from '@fauward/relay-api';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
+import { runRelayAi } from './relay.ai.service.js';
 
 function buildRelayRequest(request: FastifyRequest) {
   const headers = new Headers();
@@ -140,7 +143,27 @@ export async function registerRelayRoutes(app: FastifyInstance) {
     '/api/v1/relay/conversations',
     { preHandler: [optionalAuthenticate, requireTenantPortalAuth] },
     async (request, reply) => {
-      return forwardRelayResponse(request, reply, handleCreateConversation);
+      try {
+        const body = request.body as Record<string, unknown> | null;
+        const relayResponse = await handleCreateConversation(buildRelayRequest(request));
+
+        if (relayResponse.status === 201) {
+          try {
+            const clone = relayResponse.clone();
+            const data = (await clone.json()) as { conversation_id: string };
+            const conv = await getRelayConversationById(data.conversation_id);
+            fireRelayAi(data.conversation_id, String(body?.first_message ?? ''), conv, app);
+          } catch (error) {
+            request.log.error({ error }, 'Failed to start relay AI for new conversation');
+          }
+        }
+
+        return sendRelayResponse(reply, relayResponse);
+      } catch (error) {
+        request.log.error({ error }, 'Relay request failed');
+        const message = error instanceof Error ? error.message : 'Relay request failed';
+        return reply.status(502).send({ error: message });
+      }
     }
   );
 
@@ -157,7 +180,26 @@ export async function registerRelayRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/v1/relay/conversations/:id/messages', { preHandler: [optionalAuthenticate, requireTenantConversationAccess] }, async (request, reply) => {
-    return forwardRelayConversationResponse(request, reply, handleCreateMessage);
+    const { id: conversationId } = request.params as { id: string };
+    try {
+      const body = request.body as Record<string, unknown> | null;
+      const relayResponse = await handleCreateMessage(buildRelayRequest(request), conversationId);
+
+      if (relayResponse.status === 201 && body?.sender_type === 'customer') {
+        try {
+          const conv = await getRelayConversationById(conversationId);
+          fireRelayAi(conversationId, String(body.body ?? ''), conv, app);
+        } catch (error) {
+          request.log.error({ error, conversationId }, 'Failed to start relay AI for customer message');
+        }
+      }
+
+      return sendRelayResponse(reply, relayResponse);
+    } catch (error) {
+      request.log.error({ error, conversationId }, 'Relay conversation request failed');
+      const message = error instanceof Error ? error.message : 'Relay request failed';
+      return reply.status(502).send({ error: message });
+    }
   });
 
   app.get('/api/v1/relay/feedback', { preHandler: [authenticate] }, async (request, reply) => {
@@ -166,5 +208,54 @@ export async function registerRelayRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/relay/feedback', { preHandler: [optionalAuthenticate, requireFeedbackConversationAccess] }, async (request, reply) => {
     return forwardRelayResponse(request, reply, handleCreateFeedback);
+  });
+
+  app.post('/api/v1/tenant/relay/messages/:id/approve-and-send', { preHandler: [authenticate] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const tenantId = request.tenant?.id;
+    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+    const supabase = getRelayAdminClient();
+    const { data: message, error: readError } = await supabase
+      .from('relay_messages')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (readError || !message) return reply.status(404).send({ error: 'Relay message not found' });
+    if (message.sender_type === 'customer') return reply.status(422).send({ error: 'Customer messages cannot be approved for sending' });
+
+    const { data: conversation, error: conversationError } = await supabase
+      .from('relay_conversations')
+      .select('id, tenant_id')
+      .eq('id', message.conversation_id)
+      .single();
+    if (conversationError || !conversation) return reply.status(404).send({ error: 'Relay conversation not found' });
+    if (conversation.tenant_id !== tenantId) return reply.status(403).send({ error: 'Relay message belongs to another tenant' });
+
+    // This approval flip is the delivery signal consumed by Relay realtime clients.
+    // System status notifications from TrackingEvents are deterministic and are the only non-draft exception.
+    const { error } = await supabase
+      .from('relay_messages')
+      .update({
+        is_draft: false,
+        draft_mode: false,
+        approved_by: request.user?.sub ?? null,
+        approved_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if (error) return reply.status(400).send({ error: error.message });
+    reply.send({ sent: true, messageId: id });
+  });
+}
+
+function fireRelayAi(
+  conversationId: string,
+  message: string,
+  conversation: RelayConversation,
+  app: FastifyInstance
+): void {
+  if (conversation.ai_status === 'human_needed') return;
+  void runRelayAi(conversationId, message, conversation, app).catch((err: unknown) => {
+    app.log.error({ err, conversationId }, 'relay ai run error');
   });
 }

@@ -394,6 +394,7 @@ const eventTypeByMutationType: Record<PendingMutation["type"], string> = {
   location_update: "field.location.updated",
   exception_submit: "field.exception.reported",
   verification_submit: "field.scan.verified",
+  return_pickup: "field.return.pickup_processed",
 };
 
 const buildMutationPayload = (mutation: PendingMutation, context: SyncBatchContext) => {

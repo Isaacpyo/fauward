@@ -2,7 +2,9 @@
 
 > **Source:** Cross-referenced against the TrenyConnect admin console — a production logistics platform built by the same team. Every feature here was confirmed present in TrenyConnect and absent (or underspecified) in Fauward's base spec.
 >
-> Build these **after** completing Priorities 1–15 in [Implementation Status](./implementation-status.md).
+> Build these after completing the core implementation in [Implementation Status](./implementation-status.md).
+>
+> **Current note - 2026-05-10:** Returns management, tenant pricing/rating hardening, API usage, webhooks, shipping rules, customs, control tower, and the listed tenant-portal operational pages are now implemented. Treat this document as a backlog/reference for remaining product expansion beyond the completed May 2026 platform work.
 
 **Navigation →** [Implementation Status](./implementation-status.md) · [← README](../README.md)
 
@@ -57,15 +59,6 @@ enum ReturnStatus {
   REJECTED
 }
 
-enum ReturnReason {
-  WRONG_ITEM
-  DAMAGED
-  NOT_AS_DESCRIBED
-  NO_LONGER_NEEDED
-  REFUSED_DELIVERY
-  OTHER
-}
-
 model ReturnRequest {
   id             String       @id @default(uuid()) @db.Uuid
   tenantId       String       @db.Uuid
@@ -73,7 +66,13 @@ model ReturnRequest {
   customerId     String       @db.Uuid
   organisationId String?      @db.Uuid
   status         ReturnStatus @default(REQUESTED)
-  reason         ReturnReason
+  reason         String?
+  items          Json?
+  photos         String[]
+  labelId        String?
+  refundStatus   String?
+  reversedAt     DateTime?
+  pickupScheduledAt DateTime?
   notes          String?
   returnLabel    String?       // S3 URL for return label PDF
   handledBy      String?      @db.Uuid
@@ -96,13 +95,15 @@ Also add `returnRequests ReturnRequest[]` to `Shipment` and `User` models.
 ### Backend — `modules/returns/returns.routes.ts`
 
 ```
-GET    /api/v1/returns                ↳ list; filter by status; pagination
-POST   /api/v1/returns                ↳ customer creates; validates shipment is DELIVERED + belongs to them
-GET    /api/v1/returns/:id            ↳ detail with shipment summary
-PATCH  /api/v1/returns/:id/approve    ↳ generate return label PDF; email customer
-PATCH  /api/v1/returns/:id/reject     ↳ body: { reason }; email customer
-PATCH  /api/v1/returns/:id/status     ↳ advance lifecycle; validate transition
-POST   /api/v1/returns/:id/refund     ↳ mark REFUNDED; link to Payment refund; roles: T_ADMIN, T_FINANCE
+GET    /api/v1/tenant/returns
+POST   /api/v1/tenant/returns
+GET    /api/v1/tenant/returns/:id
+POST   /api/v1/tenant/returns/:id/approve
+POST   /api/v1/tenant/returns/:id/reject
+POST   /api/v1/tenant/returns/:id/label
+POST   /api/v1/tenant/returns/:id/receive
+GET    /api/v1/tenant/returns/analytics
+GET    /api/v1/customer/returns/:id/status
 ```
 
 Register in `app.ts`: `await registerReturnsRoutes(app)`
@@ -1027,7 +1028,7 @@ Apply to: super-admin tenant list · audit log table · queue message list.
 
 ## 16. Build Order Summary
 
-Build these **after** completing Priorities 1–15 in [Implementation Status](./implementation-status.md).
+This list is now a backlog/reference. Several items were completed in the May 2026 implementation run; check [Implementation Status](./implementation-status.md) before starting new work.
 
 | Priority | Feature | Key New Files | DB Changes |
 |:--------:|---------|---------------|------------|

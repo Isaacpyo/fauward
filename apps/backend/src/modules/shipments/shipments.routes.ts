@@ -9,6 +9,12 @@ import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { emitTrackingStatusUpdate } from '../tracking/tracking.websocket.js';
 import { notificationQueue, webhookQueue } from '../../queues/queues.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
+import { agentConfig } from '../agent/agent.config.js';
+import type { AgentEvent } from '../agent/agent.types.js';
+import { createTrackingEvent, buildStatusTitle, statusToEventType } from '../tracking/tracking-event.service.js';
+import { legacyToTrackingStatus } from '../tracking/tracking-status-mapper.js';
+import { TrackingSource, TrackingActorType, TrackingVisibility } from '@fauward/tracking-core';
+import { findAction, shippingRulesService } from '../shipping-rules/shipping-rules.service.js';
 
 export const ALLOWED_TRANSITIONS: Record<ShipmentStatus, ShipmentStatus[]> = {
   PENDING: ['PROCESSING', 'CANCELLED'],
@@ -191,6 +197,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
       const where: Prisma.ShipmentWhereInput = {
         tenantId,
+        isSandbox: request.apiKey ? request.apiKey.isSandbox : undefined,
         status: statuses.length > 0 ? { in: statuses as ShipmentStatus[] } : undefined,
         assignedDriverId: query.driverId || undefined,
         customerId: query.customerId || undefined,
@@ -281,17 +288,38 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'originAddress and destinationAddress are required' });
       }
 
-      const tenantSlug = request.tenant?.slug ?? 'TENANT';
+      const requestedServiceTier = payload.serviceTier ?? 'STANDARD';
+      const shippingRuleMatch = await shippingRulesService.evaluateForBooking(app.prisma, tenantId, {
+        ...payload,
+        serviceTier: requestedServiceTier
+      });
+      const shippingRuleActions = shippingRuleMatch?.actions ?? [];
+      const blockAction = findAction(shippingRuleActions, 'blockBooking');
+      if (shippingRuleMatch && blockAction) {
+        return reply.status(422).send({
+          error: 'BOOKING_BLOCKED',
+          rule: shippingRuleMatch.rule.name,
+          reason: typeof blockAction.value === 'string' ? blockAction.value : 'Blocked by shipping rule'
+        });
+      }
+
+      const serviceTierAction = findAction(shippingRuleActions, 'setServiceType');
+      const serviceTier = typeof serviceTierAction?.value === 'string' ? serviceTierAction.value : requestedServiceTier;
+      const carrierAction = findAction(shippingRuleActions, 'assignCarrier');
+      const assignedCarrierAccountId = typeof carrierAction?.value === 'string' ? carrierAction.value : undefined;
+      const requiresCustomsDeclaration = Boolean(findAction(shippingRuleActions, 'requireCustomsDeclaration'));
+
+      const tenantName = request.tenant?.name ?? request.tenant?.slug ?? 'TENANT';
       const trackingNumber =
         payload.trackingNumber?.toUpperCase() ??
-        (await generateTrackingNumber(app.prisma, tenantSlug));
+        (await generateTrackingNumber(app.prisma, tenantName));
 
       const items = payload.items ?? [];
       const pricing = await calculateShipmentPrice(app.prisma, {
         tenantId,
         originZoneId: payload.originZoneId,
         destZoneId: payload.destZoneId,
-        serviceTier: payload.serviceTier ?? 'STANDARD',
+        serviceTier,
         items,
         promoCode: payload.promoCode,
         insuranceTier: payload.insuranceTier,
@@ -307,10 +335,18 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
             organisationId: payload.organisationId,
             originAddress: payload.originAddress as Prisma.InputJsonValue,
             destinationAddress: payload.destinationAddress as Prisma.InputJsonValue,
-            serviceTier: payload.serviceTier ?? 'STANDARD',
+            isSandbox: request.apiKey?.isSandbox ?? false,
+            serviceTier,
+            carrierAccountId: assignedCarrierAccountId,
             estimatedDelivery: payload.estimatedDelivery ? new Date(payload.estimatedDelivery) : undefined,
-            notes: payload.notes,
-            specialInstructions: payload.specialInstructions,
+            notes: [
+              payload.notes,
+              shippingRuleMatch ? `Shipping rule applied: ${shippingRuleMatch.rule.name}` : null
+            ].filter(Boolean).join('\n') || undefined,
+            specialInstructions: [
+              payload.specialInstructions,
+              requiresCustomsDeclaration ? 'CUSTOMS_DECLARATION_REQUIRED' : null
+            ].filter(Boolean).join('\n') || undefined,
             price: pricing.total,
             currency: pricing.currency,
             weightKg: items.reduce((sum, item) => sum + Number(item.weightKg ?? 0), 0),
@@ -347,6 +383,39 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           }
         });
 
+        await tx.trackingEvent.create({
+          data: {
+            tenantId,
+            shipmentId: created.id,
+            trackingNumber: created.trackingNumber,
+            eventType: 'SHIPMENT_CREATED',
+            status: 'CREATED',
+            title: 'Shipment created',
+            source: 'TENANT_PORTAL',
+            actorType: request.user?.sub ? 'TENANT_USER' : 'SYSTEM',
+            actorId: request.user?.sub ?? null,
+            visibility: 'CUSTOMER_VISIBLE',
+            occurredAt: new Date()
+          }
+        });
+
+        await tx.trackingSnapshot.create({
+          data: {
+            tenantId,
+            shipmentId: created.id,
+            trackingNumber: created.trackingNumber,
+            currentStatus: 'CREATED',
+            operationalStatus: 'CREATED',
+            customerStatus: 'Order received',
+            currentTitle: 'Shipment created',
+            currentMessage: 'We have received your order and are preparing it for shipment.',
+            lastEventAt: new Date(),
+            estimatedDeliveryAt: created.estimatedDelivery ?? null,
+            assignedDriverId: null,
+            assignedVehicleId: null
+          }
+        });
+
         await tx.usageRecord.upsert({
           where: { tenantId_month: { tenantId, month: monthKey() } },
           create: { tenantId, month: monthKey(), shipments: 1 },
@@ -365,6 +434,48 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
             }
           }
         });
+
+        if (requiresCustomsDeclaration) {
+          const customsDeclaration = await (tx as any).customsDeclaration.create({
+            data: {
+              tenantId,
+              shipmentId: created.id,
+              type: 'DDU',
+              items: items.map((item) => ({
+                description: item.description,
+                hsCode: item.hsCode,
+                quantity: item.quantity ?? 1,
+                value: item.declaredValue ?? 0,
+                weight: item.weightKg
+              })),
+              totalValue: items.reduce((sum, item) => sum + Number(item.declaredValue ?? 0), 0),
+              currency: pricing.currency,
+              status: 'DRAFT'
+            }
+          });
+          await tx.shipment.update({
+            where: { id: created.id },
+            data: { customsDeclarationId: customsDeclaration.id } as any
+          });
+        }
+
+        if (shippingRuleMatch) {
+          await tx.auditLog.create({
+            data: {
+              tenantId,
+              actorId: request.user?.sub,
+              action: 'SHIPPING_RULE_TRIGGERED',
+              resourceType: 'SHIPMENT',
+              resourceId: created.id,
+              metadata: {
+                shipmentId: created.id,
+                ruleId: shippingRuleMatch.rule.id,
+                ruleName: shippingRuleMatch.rule.name,
+                actionsTaken: shippingRuleActions
+              } as Prisma.InputJsonValue
+            }
+          });
+        }
 
         return created;
       });
@@ -425,7 +536,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       const { id } = request.params as { id: string };
 
       const shipment = await app.prisma.shipment.findFirst({
-        where: { id, tenantId },
+        where: { id, tenantId, isSandbox: request.apiKey ? request.apiKey.isSandbox : undefined },
         include: {
           items: true,
           events: { orderBy: { timestamp: 'desc' } },
@@ -503,6 +614,70 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           }
         });
 
+        // Write canonical TrackingEvent alongside the legacy ShipmentEvent
+        const trackingStatus = legacyToTrackingStatus(status);
+        const locationCity = typeof (location as Record<string, unknown> | null)?.city === 'string'
+          ? (location as Record<string, unknown>).city as string
+          : undefined;
+        const locationLat = typeof (location as Record<string, unknown> | null)?.lat === 'number'
+          ? (location as Record<string, unknown>).lat as number
+          : undefined;
+        const locationLng = typeof (location as Record<string, unknown> | null)?.lng === 'number'
+          ? (location as Record<string, unknown>).lng as number
+          : undefined;
+
+        const trackingEventData = {
+          tenantId,
+          shipmentId: shipment.id,
+          trackingNumber: shipment.trackingNumber,
+          eventType: statusToEventType(trackingStatus),
+          status: trackingStatus,
+          title: buildStatusTitle(trackingStatus),
+          description: eventNotes || null,
+          source: 'TENANT_PORTAL' as const,
+          actorType: request.user?.sub ? ('TENANT_USER' as const) : ('SYSTEM' as const),
+          actorId: request.user?.sub ?? null,
+          visibility: 'CUSTOMER_VISIBLE' as const,
+          city: locationCity ?? null,
+          lat: locationLat ?? null,
+          lng: locationLng ?? null,
+          occurredAt: event.timestamp
+        };
+
+        const newTrackingEvent = await tx.trackingEvent.create({ data: trackingEventData });
+
+        const customerStatus = {
+          CREATED: 'Order received', BOOKED: 'Shipment booked', LABEL_GENERATED: 'Shipment prepared',
+          ASSIGNED: 'Shipment assigned', PICKUP_SCHEDULED: 'Pickup scheduled', PICKED_UP: 'Picked up',
+          AT_ORIGIN_HUB: 'Processing', DEPARTED_ORIGIN_HUB: 'In transit', IN_TRANSIT: 'In transit',
+          AT_DESTINATION_HUB: 'Arrived near destination', OUT_FOR_DELIVERY: 'Out for delivery',
+          DELIVERY_ATTEMPTED: 'Delivery attempted', DELIVERED: 'Delivered', FAILED_DELIVERY: 'Delivery issue',
+          EXCEPTION: 'Delayed', CUSTOMS_HOLD: 'Delayed', CUSTOMS_RELEASED: 'In transit',
+          RETURN_STARTED: 'Return started', RETURNED: 'Returned', CANCELLED: 'Cancelled'
+        }[trackingStatus] ?? trackingStatus;
+
+        const snapshotData = {
+          tenantId,
+          trackingNumber: shipment.trackingNumber,
+          currentStatus: trackingStatus,
+          operationalStatus: trackingStatus,
+          customerStatus,
+          currentTitle: buildStatusTitle(trackingStatus),
+          currentMessage: null as string | null,
+          lastEventId: newTrackingEvent.id,
+          lastEventAt: event.timestamp,
+          hasException: trackingStatus === 'EXCEPTION',
+          exceptionCode: null as string | null,
+          exceptionMessage: trackingStatus === 'EXCEPTION' ? (eventNotes || null) : null,
+          ...(trackingStatus === 'DELIVERED' && { deliveredAt: next.actualDelivery })
+        };
+
+        await tx.trackingSnapshot.upsert({
+          where: { shipmentId: shipment.id },
+          create: { shipmentId: shipment.id, ...snapshotData },
+          update: snapshotData
+        });
+
         await tx.outboxEvent.create({
           data: {
             aggregateType: 'shipment',
@@ -521,6 +696,18 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         });
 
         return { next, event };
+      });
+
+      void fireAgentEvent(app, {
+        eventId: `status-${shipment.id}-${updated.event.id}`,
+        type: status === 'FAILED_DELIVERY' ? 'failed_delivery' : 'status_changed',
+        tenantId,
+        shipmentId: shipment.id,
+        payload: {
+          newStatus: status,
+          previousStatus: shipment.status,
+          ...(failedReason ? { reason: failedReason } : {})
+        }
       });
 
       emitTrackingStatusUpdate({
@@ -637,6 +824,39 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           }
         });
 
+        const cancelEvent = await tx.trackingEvent.create({
+          data: {
+            tenantId,
+            shipmentId: shipment.id,
+            trackingNumber: shipment.trackingNumber,
+            eventType: 'CANCELLED',
+            status: 'CANCELLED',
+            title: 'Shipment cancelled',
+            description: 'Shipment cancelled',
+            source: 'TENANT_PORTAL',
+            actorType: request.user?.sub ? 'TENANT_USER' : 'SYSTEM',
+            actorId: request.user?.sub ?? null,
+            visibility: 'CUSTOMER_VISIBLE',
+            occurredAt: new Date()
+          }
+        });
+
+        await tx.trackingSnapshot.upsert({
+          where: { shipmentId: shipment.id },
+          create: {
+            tenantId, shipmentId: shipment.id,
+            trackingNumber: shipment.trackingNumber,
+            currentStatus: 'CANCELLED', operationalStatus: 'CANCELLED',
+            customerStatus: 'Cancelled', currentTitle: 'Shipment cancelled',
+            lastEventId: cancelEvent.id, lastEventAt: cancelEvent.occurredAt
+          },
+          update: {
+            currentStatus: 'CANCELLED', operationalStatus: 'CANCELLED',
+            customerStatus: 'Cancelled', currentTitle: 'Shipment cancelled',
+            lastEventId: cancelEvent.id, lastEventAt: cancelEvent.occurredAt
+          }
+        });
+
         return next;
       });
 
@@ -724,4 +944,21 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       reply.send({ shipments: data });
     }
   );
+}
+
+function fireAgentEvent(
+  app: FastifyInstance,
+  event: AgentEvent
+): void {
+  if (!agentConfig.serviceToken) return;
+  fetch('http://localhost:3001/v1/agent/handle-event', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${agentConfig.serviceToken}`
+    },
+    body: JSON.stringify(event)
+  }).catch((err: unknown) => {
+    app.log.warn({ err, eventId: event.eventId }, 'agent event fire failed');
+  });
 }

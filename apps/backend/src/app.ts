@@ -21,21 +21,35 @@ import { registerFinanceRoutes } from './modules/finance/finance.routes.js';
 import { registerAnalyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { registerAuditRoutes } from './modules/audit/audit.routes.js';
 import { registerDriverRoutes } from './modules/driver/driver.routes.js';
-import { registerAgentRoutes } from './modules/agents/agent.routes.js';
+import { registerAgentRoutes as registerFieldAgentRoutes } from './modules/agents/agent.routes.js';
+import { registerAgentRoutes as registerFauwardAgentRoutes } from './modules/agent/agent.routes.js';
 import { registerUsersRoutes } from './modules/users/users.routes.js';
 import { registerNotificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { registerReturnsRoutes } from './modules/returns/returns.routes.js';
 import { registerSupportRoutes } from './modules/support/support.routes.js';
 import { registerPricingRoutes } from './modules/pricing/pricing.routes.js';
+import { registerRatingRoutes } from './modules/rating/rating.routes.js';
+import { registerShippingRulesRoutes } from './modules/shipping-rules/shipping-rules.routes.js';
+import { registerCustomsRoutes } from './modules/customs/customs.routes.js';
+import { registerExceptionsRoutes } from './modules/exceptions/exceptions.routes.js';
+import { registerControlTowerRoutes } from './modules/control-tower/control-tower.routes.js';
+import { startStuckShipmentDetector } from './modules/control-tower/stuck-shipment.detector.js';
 import { registerFleetRoutes } from './modules/fleet/fleet.routes.js';
 import { registerLabelRoutes } from './modules/documents/label.routes.js';
 import { registerDocumentsRoutes } from './modules/documents/documents.routes.js';
-import { registerTrackingRoutes } from './modules/tracking/tracking.routes.js';
+import { registerPublicTrackingRoutes } from './modules/tracking/tracking.public.routes.js';
+import { registerTenantTrackingRoutes } from './modules/tracking/tracking.tenant.routes.js';
+import { registerPlatformTrackingRoutes } from './modules/tracking/tracking.platform.routes.js';
+import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
+import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
+import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
+import { registerRoutingRoutes } from './modules/routing/routing.routes.js';
+import { startRouteOptimizationWorker } from './queues/route-optimization.worker.js';
 
 function escapeRegex(source: string) {
   return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -64,7 +78,7 @@ export async function buildApp() {
       }
       callback(new Error('Origin not allowed'), false);
     },
-    allowedHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Slug'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Tenant-Slug', 'X-CSRF-Token'],
     credentials: true
   });
   await app.register(cookie);
@@ -91,13 +105,17 @@ export async function buildApp() {
       runWithTenantContext(ctx, done);
     })().catch(done);
   });
+  app.addHook('preHandler', enforceTenantStatus);
 
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
   await registerAuthRoutes(app);
   await registerShipmentRoutes(app);
   await registerTenantRoutes(app);
-  await registerTrackingRoutes(app);
+  await registerPublicTrackingRoutes(app);
+  await registerTenantTrackingRoutes(app);
+  await registerPlatformTrackingRoutes(app);
+  await registerGoTrackingRoutes(app);
   await registerApiKeyRoutes(app);
   await registerWebhookRoutes(app);
   await registerCrmRoutes(app);
@@ -107,19 +125,30 @@ export async function buildApp() {
   await registerAuditRoutes(app);
   await registerDriverRoutes(app);
   await registerFieldRoutes(app);
-  await registerAgentRoutes(app);
+  await registerFieldAgentRoutes(app);
+  await registerFauwardAgentRoutes(app);
   await registerUsersRoutes(app);
   await registerNotificationsRoutes(app);
   await registerReturnsRoutes(app);
   await registerSupportRoutes(app);
   await registerRelayRoutes(app);
   await registerPricingRoutes(app);
+  await registerRatingRoutes(app);
+  await registerShippingRulesRoutes(app);
+  await registerCustomsRoutes(app);
+  await registerExceptionsRoutes(app);
+  await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
+  await registerPlatformRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);
 
+  await registerRoutingRoutes(app);
+
   await setupTrackingWebsocket(app);
+  startStuckShipmentDetector(app);
+  startRouteOptimizationWorker();
 
   return app;
 }

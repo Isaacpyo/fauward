@@ -1,102 +1,60 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
-import db
-from api.auth import AuthContext, require_bearer_token
+from api.auth import AuthContext, require_scope
+from main import limiter
+from schemas.ocr import DocumentType, OcrQueuedResponse, OcrResultResponse
+from services.ocr_service import (
+    FAILED_QUEUE_ERROR,
+    OcrQueuePublishError,
+    build_ocr_payload_from_upload,
+    fetch_ocr_result,
+    parse_json_payload,
+    queue_ocr_parse,
+)
+from services.pdf_jobs import tenant_rate_limit_key
 from workers import publish_job
-from workers.ocr_worker import store_uploaded_ocr_file
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])
 
 
-DocumentType = Literal["return_auth", "customs_form", "bill_of_lading", "pod_photo"]
-
-
-class OcrJsonRequest(BaseModel):
-    jobId: str = Field(default_factory=lambda: str(uuid4()))
-    tenantId: str
-    documentType: DocumentType
-    fileUrl: str
-
-
-async def _json_payload(request: Request) -> OcrJsonRequest | None:
-    content_type = request.headers.get("content-type", "")
-    if "application/json" not in content_type:
-        return None
-    return OcrJsonRequest.model_validate(await request.json())
-
-
-@router.post("/parse")
+@router.post("/parse", response_model=OcrQueuedResponse, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("20/minute")
+@limiter.limit("80/hour", key_func=tenant_rate_limit_key)
 async def parse_document(
     request: Request,
-    auth: Annotated[AuthContext, Depends(require_bearer_token)],
+    auth: Annotated[AuthContext, Depends(require_scope("ocr:write"))],
     file: UploadFile | None = File(default=None),
     tenantId: str | None = Form(default=None),
     documentType: DocumentType | None = Form(default=None),
-    jobId: str | None = Form(default=None),
 ) -> dict[str, str]:
-    json_payload = await _json_payload(request)
-    if json_payload:
-        payload = json_payload
-    else:
+    payload = await parse_json_payload(request)
+    job_id: str | None = None
+    if payload is None:
         if file is None or tenantId is None or documentType is None:
-            raise HTTPException(status_code=400, detail="multipart requests require file, tenantId and documentType")
-        actual_job_id = jobId or str(uuid4())
-        content = await file.read()
-        file_url = await store_uploaded_ocr_file(
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="multipart requests require file, tenantId and documentType")
+        job_id = str(uuid4())
+        payload = await build_ocr_payload_from_upload(
+            auth=auth,
             tenant_id=tenantId,
-            job_id=actual_job_id,
-            filename=file.filename or "document.bin",
-            content=content,
-            content_type=file.content_type or "application/octet-stream",
+            document_type=documentType,
+            file=file,
+            job_id=job_id,
         )
-        payload = OcrJsonRequest(jobId=actual_job_id, tenantId=tenantId, documentType=documentType, fileUrl=file_url)
-    if payload.tenantId != auth.tenant_id and not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    await db.execute(
-        """
-        insert into parsed_documents (job_id, tenant_id, document_type, file_url, status, updated_at)
-        values ($1, $2, $3, $4, 'QUEUED', now())
-        on conflict (job_id) do update
-        set status = 'QUEUED',
-            file_url = excluded.file_url,
-            error_message = null,
-            updated_at = now()
-        """,
-        payload.jobId,
-        payload.tenantId,
-        payload.documentType,
-        payload.fileUrl,
-    )
-    publish_job("fauward:ocr:parse", payload.model_dump())
-    return {"jobId": payload.jobId, "status": "queued"}
+    try:
+        return await queue_ocr_parse(payload=payload, auth=auth, publisher=publish_job, job_id=job_id, request=request)
+    except OcrQueuePublishError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"jobId": exc.job_id, "error": FAILED_QUEUE_ERROR},
+        ) from exc
 
 
-@router.get("/result/{job_id}")
+@router.get("/result/{job_id}", response_model=OcrResultResponse)
 async def ocr_result(
     job_id: str,
-    auth: Annotated[AuthContext, Depends(require_bearer_token)],
+    auth: Annotated[AuthContext, Depends(require_scope("ocr:read"))],
 ) -> dict[str, Any]:
-    row = await db.fetchrow(
-        """
-        select job_id, tenant_id, document_type, extracted_fields, confidence_score, status, error_message
-        from parsed_documents
-        where job_id = $1
-        """,
-        job_id,
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="OCR job not found")
-    if row["tenant_id"] != auth.tenant_id and not auth.is_super_admin:
-        raise HTTPException(status_code=403, detail="Tenant mismatch")
-    return {
-        "jobId": row["job_id"],
-        "status": row["status"],
-        "documentType": row["document_type"],
-        "extractedFields": row["extracted_fields"],
-        "confidenceScore": float(row["confidence_score"] or 0),
-        "error": row["error_message"],
-    }
+    return await fetch_ocr_result(job_id, auth)

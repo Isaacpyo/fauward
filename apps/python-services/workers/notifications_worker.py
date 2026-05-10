@@ -78,6 +78,42 @@ def _send_sms(to_phone: str, body: str) -> str:
     return str(message.sid)
 
 
+def _send_push(expo_token: str, title: str, body: str, data: dict) -> str:
+    if not expo_token:
+        return "push:no-token"
+    try:
+        from exponent_server_sdk import (
+            DeviceNotRegisteredError,
+            PushClient,
+            PushMessage,
+        )
+
+        response = PushClient().publish(
+            PushMessage(
+                to=expo_token,
+                title=title,
+                body=body,
+                data=data,
+                sound="default",
+            )
+        )
+        response.validate_response()
+        return f"expo:{response.id}"
+    except DeviceNotRegisteredError as exc:
+        return f"push:error:{exc}"
+    except Exception as exc:
+        return f"push:error:{exc}"
+
+
+def _render_sms(template_key: str, context: dict) -> str:
+    sms_dir = Path(__file__).resolve().parents[1] / "templates" / "sms"
+    template_path = sms_dir / f"{template_key}.txt.j2"
+    if not template_path.exists():
+        return str(context.get("variables", {}).get("message") or template_key)
+    env = Environment(loader=FileSystemLoader(sms_dir))
+    return env.get_template(f"{template_key}.txt.j2").render(**context)
+
+
 async def _log_delivery(
     *,
     tenant_id: str,
@@ -90,14 +126,18 @@ async def _log_delivery(
 ) -> None:
     await db.execute(
         """
-        insert into notification_logs ("tenantId", channel, event, status, "providerRef", error, "sentAt", "createdAt")
-        values ($1, $2, $3, $4, $5, $6, now(), now())
+        insert into notification_logs (
+          "tenantId", channel, event, status, "providerRef", "recipientEmail",
+          error, "sentAt", "createdAt"
+        )
+        values ($1, $2, $3, $4, $5, $6, $7, now(), now())
         """,
         tenant_id,
         channel.upper(),
         template_key,
         status,
         provider_message_id,
+        recipient_email,
         error,
     )
 
@@ -136,7 +176,10 @@ async def handle_notification_job(payload: dict[str, Any]) -> dict[str, Any]:
         phone = str(recipient.get("phone") or "")
         if not phone:
             raise ValueError("SMS recipient phone is required")
-        body = str(variables.get("message") or variables.get("trackingRef") or template_key)
+        body = _render_sms(
+            template_key,
+            {"tenant": branding, "recipient": recipient, "variables": variables, "locale": locale},
+        )
         provider_message_id = await asyncio.to_thread(_send_sms, phone, body)
         await _log_delivery(
             tenant_id=tenant_id,
@@ -144,6 +187,21 @@ async def handle_notification_job(payload: dict[str, Any]) -> dict[str, Any]:
             template_key=template_key,
             recipient_email=None,
             status="SENT" if "not-configured" not in provider_message_id else "SKIPPED",
+            provider_message_id=provider_message_id,
+        )
+    elif channel == "push":
+        token = str(recipient.get("expoPushToken") or "")
+        title = str(variables.get("title") or SUBJECTS.get(template_key, template_key))
+        body_text = str(variables.get("message") or variables.get("trackingRef") or "")
+        provider_message_id = await asyncio.to_thread(
+            _send_push, token, title, body_text, variables
+        )
+        await _log_delivery(
+            tenant_id=tenant_id,
+            channel="PUSH",
+            template_key=template_key,
+            recipient_email=None,
+            status="SENT" if "error" not in provider_message_id else "FAILED",
             provider_message_id=provider_message_id,
         )
     else:

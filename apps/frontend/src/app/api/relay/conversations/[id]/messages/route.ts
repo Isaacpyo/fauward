@@ -1,17 +1,22 @@
-import { handleCreateMessage, handleListMessages } from "@fauward/relay-api";
-
 export const dynamic = "force-dynamic";
 
-type RouteContext = {
-  params: {
-    id: string;
-  };
-};
+const BACKEND = (process.env.BACKEND_URL ?? "http://localhost:3001").replace(/\/$/, "");
 
-export async function POST(request: Request, context: RouteContext) {
-  return handleCreateMessage(request, context.params.id);
+async function proxy(request: Request, path: string): Promise<Response> {
+  const url = new URL(request.url);
+  const target = `${BACKEND}/api/v1/relay${path}${url.search}`;
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.text();
+  return fetch(target, { method: request.method, headers, body });
 }
 
-export async function GET(request: Request, context: RouteContext) {
-  return handleListMessages(request, context.params.id);
+type Ctx = { params: { id: string } };
+
+export async function GET(request: Request, { params }: Ctx) {
+  return proxy(request, `/conversations/${params.id}/messages`);
+}
+
+export async function POST(request: Request, { params }: Ctx) {
+  return proxy(request, `/conversations/${params.id}/messages`);
 }

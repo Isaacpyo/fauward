@@ -574,9 +574,9 @@ export async function registerAnalyticsRoutes(app: FastifyInstance) {
       .header('Content-Type', 'text/csv')
       .header(
         'Content-Disposition',
-        `attachment; filename=\"fauward-shipments-${range.dateFrom.toISOString().slice(0, 10)}-${range.dateTo
+        `attachment; filename="fauward-shipments-${range.dateFrom.toISOString().slice(0, 10)}-${range.dateTo
           .toISOString()
-          .slice(0, 10)}.csv\"`
+          .slice(0, 10)}.csv"`
       )
       .send(toCsv(rows));
   });

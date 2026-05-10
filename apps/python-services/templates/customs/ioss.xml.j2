@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<IOSSDeclaration xmlns="urn:fauward:customs:ioss:1">
+  <DeclarationDate>{{ now }}</DeclarationDate>
+  <IOSSNumber>{{ shipment.iossNumber | default('IM0000000000') }}</IOSSNumber>
+  <Seller>
+    <Name>{{ shipment.senderName }}</Name>
+    <Country>{{ shipment.originCountry }}</Country>
+  </Seller>
+  <Buyer>
+    <Name>{{ shipment.recipientName }}</Name>
+    <Country>{{ shipment.destCountry }}</Country>
+  </Buyer>
+  <GoodsValue currency="{{ shipment.currency }}">{{ shipment.totalDeclaredValue }}</GoodsValue>
+  <VATAmount currency="{{ shipment.currency }}">{{ vat_amount }}</VATAmount>
+  <LineItems>
+    {% for item in shipment.items %}
+    <Item>
+      <Description>{{ item.description }}</Description>
+      <HSCode>{{ item.hsCode }}</HSCode>
+      <Quantity>{{ item.quantity }}</Quantity>
+      <DeclaredValue>{{ item.declaredValue }}</DeclaredValue>
+    </Item>
+    {% endfor %}
+  </LineItems>
+</IOSSDeclaration>

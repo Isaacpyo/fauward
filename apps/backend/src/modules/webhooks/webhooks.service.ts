@@ -1,12 +1,36 @@
 import type { PrismaClient } from '@prisma/client';
 import { createHmac, randomBytes, randomUUID } from 'crypto';
+import { webhookQueue } from '../../queues/queues.js';
+
+export const WEBHOOK_RETRY_DELAYS_MS = [60_000, 120_000, 240_000, 480_000, 960_000] as const;
+export const WEBHOOK_MAX_FAILURES = 5;
 
 function buildSecret() {
   return `whsec_${randomBytes(16).toString('hex')}`;
 }
 
+export function signWebhookPayload(secret: string, rawPayloadBody: string) {
+  return createHmac('sha256', secret).update(rawPayloadBody).digest('hex');
+}
+
+export function formatWebhookSignature(secret: string, rawPayloadBody: string) {
+  return `sha256=${signWebhookPayload(secret, rawPayloadBody)}`;
+}
+
+export function getWebhookRetryDelayMs(attempt: number) {
+  return WEBHOOK_RETRY_DELAYS_MS[attempt - 1] ?? null;
+}
+
+export function shouldDeadLetterWebhookAttempt(attempt: number) {
+  return attempt >= WEBHOOK_MAX_FAILURES;
+}
+
+export function getWebhookEventId(jobId?: string | number | null) {
+  return String(jobId ?? randomUUID());
+}
+
 function signPayload(secret: string, payload: string) {
-  return createHmac('sha256', secret).update(payload).digest('hex');
+  return signWebhookPayload(secret, payload);
 }
 
 export const webhooksService = {
@@ -83,6 +107,7 @@ export const webhooksService = {
     };
     const rawBody = JSON.stringify(bodyPayload);
     const signature = signPayload(endpoint.secret, rawBody);
+    const eventId = getWebhookEventId();
 
     const started = Date.now();
     let responseStatus: number | null = null;
@@ -96,8 +121,9 @@ export const webhooksService = {
           'Content-Type': 'application/json',
           'X-Webhook-Signature': `sha256=${signature}`,
           'X-Fauward-Signature': `sha256=${signature}`,
+          'X-Fauward-Event-Id': eventId,
           'X-Event-Type': eventType,
-          'X-Delivery-Id': randomUUID()
+          'X-Delivery-Id': eventId
         },
         body: rawBody
       });
@@ -116,8 +142,12 @@ export const webhooksService = {
         eventType,
         payload: bodyPayload as any,
         responseStatus: responseStatus ?? undefined,
+        responseCode: responseStatus ?? undefined,
         responseBody: responseBody ?? undefined,
         durationMs: Date.now() - started,
+        responseLatencyMs: Date.now() - started,
+        attemptCount: 1,
+        hmacSignature: `sha256=${signature}`,
         status
       }
     });
@@ -136,6 +166,72 @@ export const webhooksService = {
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
       take: 20
+    });
+  },
+  async listEndpointDeliveries(prisma: PrismaClient, tenantId: string, endpointId: string) {
+    const endpoint = await prisma.webhookEndpoint.findFirst({ where: { id: endpointId, tenantId } });
+    if (!endpoint) return null;
+    return prisma.webhookDelivery.findMany({
+      where: { tenantId, endpointId: endpoint.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+  },
+  async replay(prisma: PrismaClient, tenantId: string, endpointId: string, deliveryId: string) {
+    const delivery = await prisma.webhookDelivery.findFirst({
+      where: { id: deliveryId, tenantId, endpointId },
+      include: { endpoint: true }
+    });
+    if (!delivery || delivery.endpoint.tenantId !== tenantId) return null;
+
+    const rawBody = JSON.stringify(delivery.payload);
+    const signature = formatWebhookSignature(delivery.endpoint.secret, rawBody);
+    const eventId = getWebhookEventId();
+    const replayDelivery = await prisma.webhookDelivery.create({
+      data: {
+        tenantId,
+        endpointId: delivery.endpointId,
+        eventType: delivery.eventType,
+        payload: delivery.payload as any,
+        status: 'PENDING',
+        attempt: 1,
+        attemptCount: 0,
+        hmacSignature: signature
+      }
+    });
+
+    await webhookQueue.add(
+      delivery.eventType,
+      {
+        endpointId: delivery.endpointId,
+        eventType: delivery.eventType,
+        payload: delivery.payload,
+        tenantId: delivery.tenantId,
+        replayOfDeliveryId: delivery.id,
+        replayDeliveryId: replayDelivery.id,
+        shipmentId: typeof (delivery.payload as Record<string, unknown>)?.shipmentId === 'string'
+          ? (delivery.payload as Record<string, unknown>).shipmentId
+          : 'manual-replay'
+      },
+      {
+        jobId: eventId,
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 60_000 }
+      }
+    );
+    return { replayQueued: true, deliveryId: delivery.id, replayDeliveryId: replayDelivery.id };
+  },
+  async platformFailures(prisma: PrismaClient) {
+    return prisma.webhookDelivery.findMany({
+      where: {
+        deadLetteredAt: { not: null }
+      },
+      include: {
+        endpoint: { select: { id: true, url: true, tenantId: true } },
+        tenant: { select: { id: true, name: true, slug: true } }
+      },
+      orderBy: { deadLetteredAt: 'desc' },
+      take: 200
     });
   }
 };

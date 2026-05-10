@@ -22,7 +22,8 @@ export type PendingMutationType =
   | "pod_upload"
   | "location_update"
   | "exception_submit"
-  | "verification_submit";
+  | "verification_submit"
+  | "return_pickup";
 export type PendingMutationState = "pending" | "syncing" | "failed" | "synced";
 
 export type FieldUser = {
@@ -203,6 +204,7 @@ export const pendingMutationTypeLabel: Record<PendingMutationType, string> = {
   location_update: "Location ping",
   exception_submit: "Exception",
   verification_submit: "Verification",
+  return_pickup: "Return pickup",
 };
 
 export const stopStatusTone: Record<StopStatus, "neutral" | "info" | "success" | "warning" | "danger"> = {

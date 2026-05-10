@@ -1,6 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,22 +27,13 @@ class Settings(BaseSettings):
     queue_listeners_enabled: bool = Field(default=True, alias="PYTHON_QUEUE_LISTENERS_ENABLED")
     local_storage_dir: Path = Field(default=Path(".storage"), alias="PYTHON_LOCAL_STORAGE_DIR")
     default_email_from: str = Field(default="no-reply@fauward.com", alias="PYTHON_DEFAULT_EMAIL_FROM")
+    weather_disruption_regions: Optional[str] = Field(default="", alias="WEATHER_DISRUPTION_REGIONS")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO", alias="LOG_LEVEL")
 
     @computed_field
     @property
     def resolved_database_url(self) -> str:
         return self.database_url or self.supabase_db_url
-
-    @computed_field
-    @property
-    def sqlalchemy_database_url(self) -> str:
-        url = self.resolved_database_url
-        if url.startswith("postgres://"):
-            return url.replace("postgres://", "postgresql+asyncpg://", 1)
-        if url.startswith("postgresql://"):
-            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return url
 
 
 @lru_cache

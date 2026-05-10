@@ -9,7 +9,6 @@ import {
   resetPasswordSchema
 } from './auth.schema.js';
 import { generateQrCodeDataUrl, generateTotpSecret, verifyTotp } from '../../shared/utils/totp.js';
-import { config } from '../../config/index.js';
 
 export const authController = {
   register: async (request: FastifyRequest, reply: FastifyReply) => {
@@ -30,9 +29,6 @@ export const authController = {
     }
     const payload = parsed.data;
     let tenantId = request.tenant?.id;
-    if (!tenantId && payload.email.toLowerCase().trim() === config.platformAdmin.email) {
-      tenantId = 'system';
-    }
     if (!tenantId) {
       const matches = await request.server.prisma.user.findMany({
         where: { email: payload.email.toLowerCase(), isActive: true },

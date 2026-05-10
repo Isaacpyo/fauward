@@ -1,0 +1,11 @@
+#!/bin/bash
+echo ""
+echo "=== Fauward Dev Session ==="
+echo "Branch : $(git branch --show-current 2>/dev/null || echo 'unknown')"
+echo "Commit : $(git log -1 --oneline 2>/dev/null || echo 'none')"
+echo "Changed: $(git diff --name-only 2>/dev/null | wc -l | tr -d ' ') file(s) modified"
+echo "Staged : $(git diff --cached --name-only 2>/dev/null | wc -l | tr -d ' ') file(s) staged"
+echo ""
+echo "Docs   → docs/implementation-status.md"
+echo "==========================="
+echo ""

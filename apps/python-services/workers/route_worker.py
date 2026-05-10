@@ -1,19 +1,25 @@
 import math
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
-import db
 from celery_app import celery_app
 from config import settings
+from services.route_jobs import complete_route_job, fetch_shipments_for_tenant, mark_route_processing
 from workers import run_worker
 
 
 def _seconds_from_hhmm(value: str | None, fallback: int) -> int:
     if not value:
         return fallback
-    parsed = datetime.strptime(value, "%H:%M").time()
+    normalized = value.strip()
+    if "T" in normalized:
+        parsed_dt = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+        parsed = parsed_dt.timetz()
+    else:
+        # Backward compatibility: HH:MM is treated as the service day's local clock time.
+        parsed = datetime.strptime(normalized, "%H:%M").time()
     return parsed.hour * 3600 + parsed.minute * 60
 
 
@@ -154,11 +160,16 @@ def _solve_route(
 async def handle_route_job(payload: dict[str, Any]) -> dict[str, Any]:
     job_id = str(payload["jobId"])
     tenant_id = str(payload["tenantId"])
+    await mark_route_processing(job_id, tenant_id)
     depot = dict(payload["depot"])
     stops = list(payload.get("stops") or [])
     vehicle_capacity_kg = float(payload.get("vehicleCapacityKg") or 0)
     if not stops:
         raise ValueError("At least one stop is required")
+    shipment_ids = [str(stop.get("shipmentId")) for stop in stops if stop.get("shipmentId")]
+    found_shipments = await fetch_shipments_for_tenant(tenant_id, shipment_ids)
+    if found_shipments != set(shipment_ids):
+        raise ValueError("Route job referenced a shipment outside the tenant")
     try:
         durations, distances = _matrix_from_osrm(depot, stops)
     except Exception:
@@ -170,27 +181,7 @@ async def handle_route_job(payload: dict[str, Any]) -> dict[str, Any]:
         durations=durations,
         distances=distances,
     )
-    await db.execute(
-        """
-        insert into route_jobs (id, tenant_id, vehicle_id, ordered_stops, total_distance_m, estimated_duration_s, status, result, updated_at)
-        values ($1, $2, $3, $4::jsonb, $5, $6, 'OPTIMISED', $7::jsonb, now())
-        on conflict (id) do update
-        set ordered_stops = excluded.ordered_stops,
-            total_distance_m = excluded.total_distance_m,
-            estimated_duration_s = excluded.estimated_duration_s,
-            status = 'OPTIMISED',
-            result = excluded.result,
-            error_message = null,
-            updated_at = now()
-        """,
-        job_id,
-        tenant_id,
-        payload.get("vehicleId"),
-        db.json_dumps(result["orderedStops"]),
-        result["totalDistanceM"],
-        result["estimatedDurationS"],
-        db.json_dumps(result),
-    )
+    await complete_route_job(job_id, tenant_id, payload.get("vehicleId"), result)
     return result
 
 
