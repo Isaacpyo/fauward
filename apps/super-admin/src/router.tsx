@@ -7,7 +7,6 @@ import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
 import { QueuesPage } from "@/pages/admin/QueuesPage";
 import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
-import { SystemHealthPage } from "@/pages/admin/SystemHealthPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
@@ -15,6 +14,7 @@ import { hasPlatformSessionHint } from "@/lib/auth";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
+import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
@@ -365,6 +365,14 @@ export function AppRouter() {
           <Route path="/" element={<PillarDashboard />} />
           <Route path="/platform" element={<PlatformOverview />} />
           <Route
+            path="/platform/health"
+            element={
+              <PermissionRoute permission="platform.health.read">
+                <SystemHealthPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
             path="/platform/tenants"
             element={
               <PermissionRoute permission="platform.tenants.read">
@@ -399,7 +407,7 @@ export function AppRouter() {
           <Route path="/admin/tenants/:id" element={<NavigateToPlatformTenant />} />
           <Route path="/admin/regions" element={<RegionsPage />} />
           <Route path="/admin/revenue" element={<Navigate to="/revenue/analytics" replace />} />
-          <Route path="/admin/system" element={<SystemHealthPage />} />
+          <Route path="/admin/system" element={<Navigate to="/platform/health" replace />} />
           <Route path="/admin/queues" element={<QueuesPage />} />
           <Route path="/admin/relay" element={<RelayPage />} />
           <Route path="/admin/support-audit" element={<SupportAuditPage />} />
