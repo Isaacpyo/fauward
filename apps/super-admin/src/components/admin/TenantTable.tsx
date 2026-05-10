@@ -65,7 +65,7 @@ export function TenantTable({ rows, onImpersonate, onSuspendToggle, onOverridePl
                 <div>{row.mrr}</div>
                 <div className="font-mono text-[11px]">{row.created}</div>
                 <div className="flex flex-wrap gap-1">
-                  <Link className="rounded border border-[var(--color-border)] px-2 py-1" to={`/admin/tenants/${row.id}`}>
+                  <Link className="rounded border border-[var(--color-border)] px-2 py-1" to={`/platform/tenants/${row.id}`}>
                     View
                   </Link>
                   <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => onImpersonate(row.id)}>

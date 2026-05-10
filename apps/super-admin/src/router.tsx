@@ -1,6 +1,6 @@
 import { BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { FormEvent, type ReactNode, useEffect, useState } from "react";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
@@ -10,8 +10,6 @@ import { RevenuePage } from "@/pages/admin/RevenuePage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SystemHealthPage } from "@/pages/admin/SystemHealthPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
-import { TenantDetailPage } from "@/pages/admin/TenantDetailPage";
-import { TenantsListPage } from "@/pages/admin/TenantsListPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
@@ -19,11 +17,13 @@ import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
+import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { TrustOverview } from "@/pillars/trust/TrustOverview";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
-import { PermissionProvider } from "@fauward/internal-rbac";
+import { PermissionGate, PermissionProvider, type Permission } from "@fauward/internal-rbac";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
@@ -334,6 +334,28 @@ function LogsPage() {
   );
 }
 
+function ForbiddenRoute() {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-white p-5">
+      <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">Access denied</h1>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">You do not have permission to view this page.</p>
+    </div>
+  );
+}
+
+function PermissionRoute({ permission, children }: { permission: Permission; children: ReactNode }) {
+  return (
+    <PermissionGate permission={permission} fallback={<ForbiddenRoute />}>
+      {children}
+    </PermissionGate>
+  );
+}
+
+function NavigateToPlatformTenant() {
+  const { id } = useParams();
+  return <Navigate to={`/platform/tenants/${id ?? ""}`} replace />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -342,6 +364,22 @@ export function AppRouter() {
         <Route element={<ShellLayout />}>
           <Route path="/" element={<PillarDashboard />} />
           <Route path="/platform" element={<PlatformOverview />} />
+          <Route
+            path="/platform/tenants"
+            element={
+              <PermissionRoute permission="platform.tenants.read">
+                <TenantsListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/platform/tenants/:id"
+            element={
+              <PermissionRoute permission="platform.tenants.read">
+                <TenantDetailPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/revenue" element={<RevenueOverview />} />
           <Route path="/customer" element={<CustomerOverview />} />
           <Route path="/trust" element={<TrustOverview />} />
@@ -349,8 +387,8 @@ export function AppRouter() {
         </Route>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<DashboardPage />} />
-          <Route path="/admin/tenants" element={<TenantsListPage />} />
-          <Route path="/admin/tenants/:id" element={<TenantDetailPage />} />
+          <Route path="/admin/tenants" element={<Navigate to="/platform/tenants" replace />} />
+          <Route path="/admin/tenants/:id" element={<NavigateToPlatformTenant />} />
           <Route path="/admin/regions" element={<RegionsPage />} />
           <Route path="/admin/revenue" element={<RevenuePage />} />
           <Route path="/admin/system" element={<SystemHealthPage />} />
