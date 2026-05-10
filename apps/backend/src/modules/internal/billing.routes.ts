@@ -7,6 +7,7 @@ import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { stripeService } from '../payments/stripe.service.js';
+import { LARGE_REFUND_PENCE } from '../../config/billing.js';
 
 const readPre = [authenticatePlatformSession, requireInternalPermission('revenue.invoices.read')];
 const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.write')];
@@ -112,21 +113,28 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
 
   app.post('/api/internal/billing/refunds', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.refund')] }, async (request, reply) => {
     const body = request.body as { paymentId?: string; amount?: number; reason?: string };
-    if (!body.paymentId || !body.amount || !body.reason) return reply.status(400).send({ error: 'paymentId, amount, and reason are required' });
-    const payment = await app.prisma.payment.findUnique({ where: { id: body.paymentId } });
-    if (!payment) return reply.status(404).send({ error: 'Payment not found' });
+    const amount = Number(body.amount);
+    const reason = body.reason?.trim();
+    if (!body.paymentId || !Number.isFinite(amount) || amount <= 0 || !reason) return reply.status(400).send({ error: 'paymentId, amount, and reason are required' });
     const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    const requiresLargeApproval = body.amount >= 500 && !context.permissions.includes('revenue.invoices.refund.large');
+    if (amount >= LARGE_REFUND_PENCE && !context.permissions.includes('revenue.invoices.refund.large')) {
+      return reply.status(403).send({
+        error: 'Refunds of £500 or more require revenue.invoices.refund.large permission',
+        code: 'PERMISSION_REQUIRED',
+        required: 'revenue.invoices.refund.large'
+      });
+    }
+
+    const payment = await app.prisma.payment.findUnique({ where: { id: body.paymentId }, include: { invoice: true } });
+    if (!payment) return reply.status(404).send({ error: 'Payment not found' });
     const refund = await app.prisma.refund.create({
-      data: { tenantId: payment.tenantId, paymentId: payment.id, amount: money(body.amount), reason: body.reason, status: requiresLargeApproval ? 'PENDING_APPROVAL' : 'APPROVED', initiatedBy: request.platform!.user.id }
+      data: { tenantId: payment.tenantId, paymentId: payment.id, amount: money(amount), reason, status: 'APPROVED', initiatedBy: request.platform!.user.id }
     });
-    if (requiresLargeApproval) {
-      await app.prisma.refundApproval.create({ data: { refundId: refund.id, requestedBy: request.platform!.user.id, reason: body.reason } });
-    } else if (payment.gatewayRef) {
-      const stripeRefund = await stripeService.createRefund(payment.gatewayRef, Math.round(body.amount * 100), body.reason);
+    if (payment.gatewayRef) {
+      const stripeRefund = await stripeService.createRefund(payment.gatewayRef, amount, reason);
       await app.prisma.refund.update({ where: { id: refund.id }, data: { gatewayRef: stripeRefund.id, status: stripeRefund.status } });
     }
-    await auditBilling(request, 'invoice.refund', 'refund', refund.id, payment, refund, body.reason);
+    await auditBilling(request, 'invoice.refund', 'refund', refund.id, { payment, invoice: payment.invoice ?? null }, { refund, invoice: payment.invoice ?? null }, reason);
     reply.status(201).send(refund);
   });
 }
