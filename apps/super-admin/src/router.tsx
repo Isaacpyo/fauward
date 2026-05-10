@@ -6,7 +6,6 @@ import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
 import { QueuesPage } from "@/pages/admin/QueuesPage";
 import { RegionsPage } from "@/pages/admin/RegionsPage";
-import { RevenuePage } from "@/pages/admin/RevenuePage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SystemHealthPage } from "@/pages/admin/SystemHealthPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
@@ -20,6 +19,7 @@ import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
+import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { TrustOverview } from "@/pillars/trust/TrustOverview";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
@@ -381,6 +381,14 @@ export function AppRouter() {
             }
           />
           <Route path="/revenue" element={<RevenueOverview />} />
+          <Route
+            path="/revenue/analytics"
+            element={
+              <PermissionRoute permission="revenue.analytics.read">
+                <RevenueAnalyticsPage />
+              </PermissionRoute>
+            }
+          />
           <Route path="/customer" element={<CustomerOverview />} />
           <Route path="/trust" element={<TrustOverview />} />
           <Route path="/gtm" element={<GtmOverview />} />
@@ -390,7 +398,7 @@ export function AppRouter() {
           <Route path="/admin/tenants" element={<Navigate to="/platform/tenants" replace />} />
           <Route path="/admin/tenants/:id" element={<NavigateToPlatformTenant />} />
           <Route path="/admin/regions" element={<RegionsPage />} />
-          <Route path="/admin/revenue" element={<RevenuePage />} />
+          <Route path="/admin/revenue" element={<Navigate to="/revenue/analytics" replace />} />
           <Route path="/admin/system" element={<SystemHealthPage />} />
           <Route path="/admin/queues" element={<QueuesPage />} />
           <Route path="/admin/relay" element={<RelayPage />} />
