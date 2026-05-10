@@ -147,6 +147,12 @@ enum PlatformUserStatus {
   DISABLED
 }
 
+enum StaffStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+}
+
 enum TenantStatus {
   TRIALING
   ACTIVE
@@ -397,11 +403,82 @@ model PlatformUser {
   disabledAt         DateTime?
 
   sessions              PlatformSession[]
+  staffUser             StaffUser?
   impersonationSessions PlatformImpersonationSession[]
   planOverrides         TenantPlanOverride[]
 
   @@index([status])
   @@map("platform_users")
+}
+
+model StaffUser {
+  id             String      @id @default(uuid())
+  platformUserId String?     @unique
+  platformUser   PlatformUser? @relation(fields: [platformUserId], references: [id], onDelete: SetNull)
+  email          String      @unique
+  name           String
+  ssoProvider    String      @default("totp")
+  status         StaffStatus @default(ACTIVE)
+  mfaEnabled     Boolean     @default(false)
+  hardwareKeyId  String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  lastLoginAt    DateTime?
+
+  roleAssignments StaffRoleAssignment[]
+  sessions        StaffSession[]
+
+  @@index([status])
+  @@map("staff_users")
+}
+
+model StaffRole {
+  id          String   @id
+  name        String
+  description String
+  permissions String[]
+  isSystem    Boolean  @default(false)
+  deprecated  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments StaffRoleAssignment[]
+
+  @@map("staff_roles")
+}
+
+model StaffRoleAssignment {
+  id        String    @id @default(uuid())
+  staffId   String
+  roleId    String
+  grantedBy String?
+  grantedAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  role  StaffRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([staffId, roleId])
+  @@index([roleId])
+  @@index([expiresAt])
+  @@map("staff_role_assignments")
+}
+
+model StaffSession {
+  id                String    @id @default(uuid())
+  staffId           String
+  platformSessionId String?   @unique
+  ipAddress         String?
+  userAgent         String?
+  startedAt         DateTime  @default(now())
+  expiresAt         DateTime
+  revokedAt         DateTime?
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@index([expiresAt])
+  @@map("staff_sessions")
 }
 
 model PlatformSession {
@@ -1667,10 +1744,17 @@ model PlatformAuditLog {
   actorType              String
   actorId                String
   actorEmail             String?
+  actorRole              String?
   action                 String
+  targetType             String?
+  targetId               String?
   targetTenantId         String?
   targetUserId           String?
   impersonationSessionId String?
+  sessionId              String?
+  jitSessionId           String?
+  before                 Json?
+  after                  Json?
   reason                 String?
   metadata               Json
   ipAddress              String?
@@ -1681,6 +1765,8 @@ model PlatformAuditLog {
 
   @@index([createdAt])
   @@index([targetTenantId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([sessionId, createdAt])
   @@map("platform_audit_logs")
 }
 
