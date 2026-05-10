@@ -16,6 +16,11 @@ import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCen
 import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
+import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
+import { GtmOverview } from "@/pillars/gtm/GtmOverview";
+import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
+import { TrustOverview } from "@/pillars/trust/TrustOverview";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
 import { PermissionProvider } from "@fauward/internal-rbac";
@@ -329,15 +334,6 @@ function LogsPage() {
   );
 }
 
-function ShellPlaceholder({ title }: { title: string }) {
-  return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-white p-5">
-      <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">{title}</h1>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">This console surface is ready for the next Wave 2 scaffold.</p>
-    </div>
-  );
-}
-
 export function AppRouter() {
   return (
     <Routes>
@@ -345,11 +341,11 @@ export function AppRouter() {
       <Route element={<SuperAdminGuard />}>
         <Route element={<ShellLayout />}>
           <Route path="/" element={<PillarDashboard />} />
-          <Route path="/platform" element={<ShellPlaceholder title="Platform Operations" />} />
-          <Route path="/revenue" element={<ShellPlaceholder title="Revenue Operations" />} />
-          <Route path="/customer" element={<ShellPlaceholder title="Customer Operations" />} />
-          <Route path="/trust" element={<ShellPlaceholder title="Trust, Compliance & Security" />} />
-          <Route path="/gtm" element={<ShellPlaceholder title="Go-to-Market Operations" />} />
+          <Route path="/platform" element={<PlatformOverview />} />
+          <Route path="/revenue" element={<RevenueOverview />} />
+          <Route path="/customer" element={<CustomerOverview />} />
+          <Route path="/trust" element={<TrustOverview />} />
+          <Route path="/gtm" element={<GtmOverview />} />
         </Route>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<DashboardPage />} />
