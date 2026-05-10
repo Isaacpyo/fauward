@@ -1,17 +1,27 @@
 # Phase 0 & Phase 1 Verification Report
 **Date:** 2026-05-10
-**Commit:** 7c4196f
+**Commit:** 5afed30
+**Re-run timestamp:** 2026-05-10 17:57:12 +01:00
 **Overall verdict:** RED
+**Billing refund security finding:** GREEN
 
 ## Summary
 - Static checks: FAIL
-- Unit tests: 213 passed, 1 failed, N/A coverage
+- Unit tests: 218 passed, 0 failed, N/A coverage
 - Integration tests: 0 passed, 0 failed (blocked by missing test DB)
 - E2E tests: 0 passed, 0 failed (blocked by missing Playwright install/config)
 - Database integrity: FAIL
 - Permission guard coverage: PASS (27/27 routes, actual path `apps/backend/src/modules/internal`)
 - Audit hash chain: FAIL
 - Overall verdict: RED
+
+## Findings resolved since previous run
+- Fixed the large refund permission bypass in `apps/backend/src/modules/internal/billing.routes.ts`.
+- Added `LARGE_REFUND_PENCE = 50_000` in `apps/backend/src/config/billing.ts`.
+- Refunds at or above £500.00 now return 403 unless the staff actor has `revenue.invoices.refund.large`.
+- Blocked large refunds now happen before payment lookup, refund creation, Stripe calls, or audit writes.
+- The original failing case now passes in `apps/backend/src/routes/internal/billing.test.ts`.
+- Added adjacent boundary coverage for £499.99, exactly £500.00, £500.00 with `.large`, Stripe failure, blocked no-audit, and successful refund audit payloads.
 
 ## Phase 0 Gate Checklist
 > BLOCKED: `docs/FAUWARD_CONSOLE_TESTING_GUIDE.md` is missing from the repository, so the source checklist could not be copied verbatim.
@@ -34,7 +44,7 @@
 - [x] Audit middleware success/failure/redaction tests added
 - [x] RBAC matrix test added across 5 roles x 10 routes
 - [x] Refund permission gating test added
-- [ ] Refund permission gating passes: FAIL, large refund returns 201 instead of 403
+- [x] Refund permission gating passes: PASS, large refund returns 403 without `revenue.invoices.refund.large`
 - [ ] Coverage commands pass: FAIL, `@vitest/coverage-v8` is missing
 - [ ] Phase 1 database tables verified: FAIL/BLOCKED, no test DB and schema gaps remain
 - [ ] AuditLog hash-chain columns verified: FAIL/BLOCKED, live DB unavailable and schema uses `PlatformAuditLog` camelCase fields instead
@@ -46,14 +56,16 @@
 | @fauward/internal-audit | 3 | 11/11 | N/A (`@vitest/coverage-v8` missing) |
 | @fauward/internal-ui | 0 | 0 | N/A (`test` script missing) |
 | Shell components | 0 | 0 | N/A (`super-admin` has no `test` script) |
-| Backend /api/internal/* | 2 files including RBAC matrix | 53/54 | N/A (`@vitest/coverage-v8` missing) |
+| Backend /api/internal/* | 2 files including RBAC matrix | 58/58 | N/A (`@vitest/coverage-v8` missing) |
 | E2E critical | 1 | 0/0 not run | N/A (Playwright missing) |
 
 ## Failing tests
-- `src/routes/internal/billing.test.ts > internal billing refund permissions > rejects a large refund without revenue.invoices.refund.large`
-  - `AssertionError: expected 201 to be 403 // Object.is equality`
-  - `- Expected 403`
-  - `+ Received 201`
+None in the direct backend rerun.
+
+Evidence:
+- `npm run test --workspace=apps/backend -- src/routes/internal/billing.test.ts --coverage=false`: 8 passed.
+- `npm run test --workspace=apps/backend`: 30 files passed, 207 tests passed.
+- `pnpm --filter backend test -- billing.test.ts`: FAIL, pnpm cannot resolve `vitest` in this npm-workspace repo.
 
 ## Missing tests added in this run
 - `packages/internal-audit/src/hash.test.ts`
@@ -95,7 +107,7 @@ The following cannot be automated — a human must verify before declaring Phase
 - `pnpm typecheck` fails with `Command "typecheck" not found`.
 - `pnpm lint` fails in `apps/frontend/src/app/services/page.tsx:169:98` and `apps/frontend/src/components/marketing/Hero.tsx:43:91` for `react/no-unescaped-entities`.
 - `pnpm -r build` fails to resolve workspace binaries such as `vite`, `tsc`, and `next`.
-- `npm run build` also fails in `apps/widget` on `undici` private fields and missing `packages/tenant-db` built files.
+- `npm run build` previously failed in `apps/widget` on `undici` private fields and missing `packages/tenant-db` built files.
 - Package coverage commands fail because `@vitest/coverage-v8` is not installed.
 - `@fauward/internal-rbac`, `@fauward/internal-audit`, `@fauward/internal-ui`, and `@fauward/super-admin` have no `test` script.
 - Playwright is not installed/configured; `playwright` command is not found.
@@ -103,11 +115,10 @@ The following cannot be automated — a human must verify before declaring Phase
 - Active database safety rules forbid `prisma migrate reset`; that destructive step was not run.
 - Static schema inspection shows only `StaffUser`, `StaffRole`, `StaffRoleAssignment`, `StaffSession`, `AuditLog`, and `PlatformImpersonationSession` equivalents. Missing exact Phase 1 models: `JitAccessRequest`, `ImpersonationSession`, `DSARRequest`, `LegalHold`, `FraudSignal`, `TenantHealthScore`, `CSPlaybookRun`, `DemoTenant`.
 - `AuditLog` does not contain the requested `hash`, `prev_hash`, `jit_session_id`, or `actor_role` columns. Current hash-chain fields are on `PlatformAuditLog` as `hash`, `previousHash`, `jitSessionId`, and `actorRole`.
-- Large refund gating does not match the required behavior: without `revenue.invoices.refund.large`, the route returns 201 and creates a pending approval instead of returning 403.
 
 ## Recommendation
-GREEN  → Phase 0 + 1 complete; ready for Phase 2
+GREEN  → Billing refund permission bypass is resolved.
 
-AMBER  → Soft-launch acceptable but track these findings: not applicable
+AMBER  → Soft-launch acceptable only for the billing refund fix; the repo-level Phase 0/1 gate remains blocked.
 
-RED    → Do not proceed; fix these first: restore the missing testing guide, align package manager/test scripts, install coverage/Playwright tooling, provide a local `TEST_DATABASE_URL`, add/verify missing Phase 1 tables, align AuditLog hash-chain columns with the spec, and change large refund behavior to return 403 without `revenue.invoices.refund.large`.
+RED    → Do not proceed with full Phase 0/1 completion; fix these first: restore the missing testing guide, align package manager/test scripts, install coverage/Playwright tooling, provide a local `TEST_DATABASE_URL`, add/verify missing Phase 1 tables, and align AuditLog hash-chain columns with the spec.
