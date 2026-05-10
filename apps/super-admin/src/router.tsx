@@ -4,7 +4,6 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, usePar
 
 import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
-import { QueuesPage } from "@/pages/admin/QueuesPage";
 import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
@@ -16,6 +15,7 @@ import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
@@ -373,6 +373,14 @@ export function AppRouter() {
             }
           />
           <Route
+            path="/platform/queues"
+            element={
+              <PermissionRoute permission="platform.queues.read">
+                <QueuesListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
             path="/platform/tenants"
             element={
               <PermissionRoute permission="platform.tenants.read">
@@ -408,7 +416,7 @@ export function AppRouter() {
           <Route path="/admin/regions" element={<RegionsPage />} />
           <Route path="/admin/revenue" element={<Navigate to="/revenue/analytics" replace />} />
           <Route path="/admin/system" element={<Navigate to="/platform/health" replace />} />
-          <Route path="/admin/queues" element={<QueuesPage />} />
+          <Route path="/admin/queues" element={<Navigate to="/platform/queues" replace />} />
           <Route path="/admin/relay" element={<RelayPage />} />
           <Route path="/admin/support-audit" element={<SupportAuditPage />} />
           <Route path="/admin/logs" element={<LogsPage />} />

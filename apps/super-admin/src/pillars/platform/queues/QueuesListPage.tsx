@@ -21,7 +21,7 @@ async function fetchQueues() {
   return response.data;
 }
 
-export function QueuesPage() {
+export function QueuesListPage() {
   const [selectedQueue, setSelectedQueue] = useState<string | undefined>(undefined);
 
   const query = useQuery({
