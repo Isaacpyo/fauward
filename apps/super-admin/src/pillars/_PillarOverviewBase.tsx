@@ -1,6 +1,7 @@
 import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { DenseTable, EmptyState } from "@fauward/internal-ui";
 import { useQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { fetchBadge } from "@/lib/badges";
@@ -9,6 +10,7 @@ import type { PillarManifest, PillarServiceManifest } from "@/pillars/_manifests
 
 type PillarOverviewBaseProps = {
   manifest: PillarManifest;
+  beforeGrid?: ReactNode;
 };
 
 function StatusCell({ service }: { service: PillarServiceManifest }) {
@@ -35,7 +37,7 @@ function StatusCell({ service }: { service: PillarServiceManifest }) {
   );
 }
 
-export function PillarOverviewBase({ manifest }: PillarOverviewBaseProps) {
+export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseProps) {
   const navigate = useNavigate();
   const permissionContext = usePermission() as PlatformPermissionContext;
   const rows = manifest.services.filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
@@ -54,6 +56,8 @@ export function PillarOverviewBase({ manifest }: PillarOverviewBaseProps) {
           </div>
         </div>
       </header>
+
+      {beforeGrid}
 
       <DenseTable<PillarServiceManifest>
         data={rows}

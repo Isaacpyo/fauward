@@ -2,7 +2,6 @@ import { BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, 
 import { FormEvent, type ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { DashboardPage } from "@/pages/admin/DashboardPage";
 import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
@@ -418,7 +417,7 @@ export function AppRouter() {
           <Route path="/gtm" element={<GtmOverview />} />
         </Route>
         <Route element={<AdminLayout />}>
-          <Route path="/admin" element={<DashboardPage />} />
+          <Route path="/admin" element={<Navigate to="/" replace />} />
           <Route path="/admin/tenants" element={<Navigate to="/platform/tenants" replace />} />
           <Route path="/admin/tenants/:id" element={<NavigateToPlatformTenant />} />
           <Route path="/admin/regions" element={<RegionsPage />} />
