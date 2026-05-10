@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
+import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationStartPage } from "@/pillars/platform/impersonation/ImpersonationStartPage";
@@ -478,6 +479,14 @@ export function AppRouter() {
             }
           />
           <Route path="/customer" element={<CustomerOverview />} />
+          <Route
+            path="/customer/360/:tenantId"
+            element={
+              <PermissionRoute permission="customer.360.read">
+                <Customer360Page />
+              </PermissionRoute>
+            }
+          />
           <Route path="/trust" element={<TrustOverview />} />
           <Route path="/trust/iam" element={<Navigate to="/trust/iam/users" replace />} />
           <Route
