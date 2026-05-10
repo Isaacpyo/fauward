@@ -91,7 +91,7 @@ export function TenantsListPage() {
 
       <TenantTable
         rows={rows}
-        onImpersonate={(id) => window.open(`/admin/impersonation?tenant=${id}`, "_blank")}
+        onImpersonate={(id) => window.open(`/platform/impersonation?tenant=${id}`, "_blank")}
         onSuspendToggle={(id) => setSuspendTenant(rows.find((row) => row.id === id) ?? null)}
         onOverridePlan={(id) => setOverrideTenant(rows.find((row) => row.id === id) ?? null)}
       />

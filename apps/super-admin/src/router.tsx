@@ -3,7 +3,6 @@ import { FormEvent, type ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { DashboardPage } from "@/pages/admin/DashboardPage";
-import { ImpersonationPage } from "@/pages/admin/ImpersonationPage";
 import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
@@ -14,6 +13,7 @@ import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
+import { ImpersonationStartPage } from "@/pillars/platform/impersonation/ImpersonationStartPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
@@ -381,6 +381,14 @@ export function AppRouter() {
             }
           />
           <Route
+            path="/platform/impersonation"
+            element={
+              <PermissionRoute permission="platform.impersonation.start">
+                <ImpersonationStartPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
             path="/platform/tenants"
             element={
               <PermissionRoute permission="platform.tenants.read">
@@ -420,7 +428,7 @@ export function AppRouter() {
           <Route path="/admin/relay" element={<RelayPage />} />
           <Route path="/admin/support-audit" element={<SupportAuditPage />} />
           <Route path="/admin/logs" element={<LogsPage />} />
-          <Route path="/admin/impersonation" element={<ImpersonationPage />} />
+          <Route path="/admin/impersonation" element={<Navigate to="/platform/impersonation" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

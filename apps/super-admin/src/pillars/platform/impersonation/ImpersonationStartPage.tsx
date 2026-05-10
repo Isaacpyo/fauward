@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { ImpersonationBanner } from "@/components/admin/ImpersonationBanner";
 
-export function ImpersonationPage() {
+export function ImpersonationStartPage() {
   const [tenantQuery, setTenantQuery] = useState("");
   const [activeTenant, setActiveTenant] = useState<string | null>(null);
 
@@ -34,4 +34,3 @@ export function ImpersonationPage() {
     </div>
   );
 }
-

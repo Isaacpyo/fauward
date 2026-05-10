@@ -19,7 +19,7 @@ export function TenantDetailPage() {
             <p className="text-xs text-[var(--color-text-muted)]">domain: tenant-{id}.fauward.app | status: Active | plan: Pro</p>
           </div>
           <div className="flex flex-wrap gap-1 text-xs">
-            <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => window.open(`/admin/impersonation?tenant=${id}`, "_blank")}>
+            <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => window.open(`/platform/impersonation?tenant=${id}`, "_blank")}>
               Impersonate
             </button>
             <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => setSuspendOpen(true)}>
@@ -42,4 +42,3 @@ export function TenantDetailPage() {
     </div>
   );
 }
-
