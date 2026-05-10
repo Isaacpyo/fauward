@@ -1370,8 +1370,26 @@ model Refund {
   initiatedBy String?
   createdAt   DateTime @default(now())
 
+  approvals RefundApproval[]
+
   @@index([tenantId])
   @@map("refunds")
+}
+
+model RefundApproval {
+  id          String    @id @default(uuid())
+  refundId    String
+  refund      Refund    @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  requestedBy String
+  approvedBy  String?
+  status      String    @default("PENDING")
+  reason      String
+  createdAt   DateTime  @default(now())
+  decidedAt   DateTime?
+
+  @@index([refundId])
+  @@index([status])
+  @@map("refund_approvals")
 }
 
 model CreditNote {

@@ -46,6 +46,7 @@ import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.rout
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
 import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
+import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -151,6 +152,7 @@ export async function buildApp() {
   await registerPlatformRoutes(app);
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);
+  await registerInternalBillingRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);

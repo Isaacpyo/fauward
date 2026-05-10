@@ -71,6 +71,16 @@ export const stripeService = {
     return { id: subscription.id, status: subscription.status };
   },
 
+  async createRefund(paymentIntent: string, amountMinor: number, reason?: string) {
+    const stripe = getStripeClient();
+    const refund = await stripe.refunds.create({
+      payment_intent: paymentIntent,
+      amount: amountMinor,
+      metadata: reason ? { reason } : undefined
+    });
+    return { id: refund.id, status: refund.status ?? 'pending' };
+  },
+
   async handleWebhook(payload: Buffer, signature: string) {
     const stripe = getStripeClient();
     if (!config.stripe.webhookSecret) {
