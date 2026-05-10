@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Permission } from '@fauward/internal-rbac';
+import { LARGE_REFUND_PENCE } from '../../config/billing.js';
 
 let currentPermissions: Permission[] = [];
 
@@ -46,9 +47,17 @@ vi.mock('../../modules/payments/stripe.service.js', () => ({
 const payment = {
   id: 'pay_001',
   tenantId: 'tenant_001',
+  invoiceId: 'inv_001',
   amount: 1000,
   currency: 'GBP',
-  gatewayRef: 'pi_001'
+  gatewayRef: 'pi_001',
+  invoice: {
+    id: 'inv_001',
+    invoiceNumber: 'INV-001',
+    status: 'PAID',
+    total: 100000,
+    currency: 'GBP'
+  }
 };
 
 function createPrisma() {
@@ -117,11 +126,66 @@ describe('internal billing refund permissions', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/internal/billing/refunds',
-      payload: { paymentId: payment.id, amount: 750, reason: 'High-value refund' }
+      payload: { paymentId: payment.id, amount: 75000, reason: 'High-value refund' }
     });
 
     expect(response.statusCode).toBe(403);
     expect(prisma.refund.create).not.toHaveBeenCalled();
+    expect(createRefundMock).not.toHaveBeenCalled();
+    expect(writeAuditMock).not.toHaveBeenCalled();
+    expect(response.json()).toEqual({
+      error: 'Refunds of £500 or more require revenue.invoices.refund.large permission',
+      code: 'PERMISSION_REQUIRED',
+      required: 'revenue.invoices.refund.large'
+    });
+  });
+
+  it('requires revenue.invoices.refund.large for exactly £500.00', async () => {
+    const { app, prisma } = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/internal/billing/refunds',
+      payload: { paymentId: payment.id, amount: LARGE_REFUND_PENCE, reason: 'Boundary refund' }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(prisma.refund.create).not.toHaveBeenCalled();
+    expect(createRefundMock).not.toHaveBeenCalled();
+    expect(writeAuditMock).not.toHaveBeenCalled();
+  });
+
+  it('allows a £499.99 refund without revenue.invoices.refund.large', async () => {
+    const { app, prisma } = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/internal/billing/refunds',
+      payload: { paymentId: payment.id, amount: LARGE_REFUND_PENCE - 1, reason: 'Below threshold refund' }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(prisma.refund.create).toHaveBeenCalled();
+    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE - 1, 'Below threshold refund');
+  });
+
+  it('allows a £500.00 refund with revenue.invoices.refund.large', async () => {
+    currentPermissions = ['revenue.invoices.refund', 'revenue.invoices.refund.large'];
+    const { app, prisma } = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/internal/billing/refunds',
+      payload: { paymentId: payment.id, amount: LARGE_REFUND_PENCE, reason: 'Approved large refund' }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(prisma.refund.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'APPROVED', amount: expect.anything(), reason: 'Approved large refund' })
+      })
+    );
+    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE, 'Approved large refund');
   });
 
   it('rejects a refund without a reason', async () => {
@@ -137,13 +201,27 @@ describe('internal billing refund permissions', () => {
     expect(prisma.refund.create).not.toHaveBeenCalled();
   });
 
-  it('writes an audit entry for a successful refund', async () => {
+  it('returns 5xx and does not write audit when Stripe fails after validation', async () => {
+    createRefundMock.mockRejectedValueOnce(new Error('Stripe unavailable'));
     const { app } = await buildApp();
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/internal/billing/refunds',
-      payload: { paymentId: payment.id, amount: 25, reason: 'Duplicate payment' }
+      payload: { paymentId: payment.id, amount: 2500, reason: 'Gateway failure case' }
+    });
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(500);
+    expect(writeAuditMock).not.toHaveBeenCalled();
+  });
+
+  it('writes an audit entry with before and after invoice state for a successful refund', async () => {
+    const { app } = await buildApp();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/internal/billing/refunds',
+      payload: { paymentId: payment.id, amount: 2500, reason: 'Duplicate payment' }
     });
 
     expect(response.statusCode).toBe(201);
@@ -153,7 +231,15 @@ describe('internal billing refund permissions', () => {
         actor_id: 'staff_001',
         action: 'invoice.refund',
         target_type: 'refund',
-        reason: 'Duplicate payment'
+        reason: 'Duplicate payment',
+        before: {
+          payment,
+          invoice: payment.invoice
+        },
+        after: {
+          refund: expect.objectContaining({ paymentId: payment.id, reason: 'Duplicate payment' }),
+          invoice: payment.invoice
+        }
       })
     );
   });
