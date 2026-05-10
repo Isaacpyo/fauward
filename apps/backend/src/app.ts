@@ -45,6 +45,9 @@ import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
 import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
+import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
+import { auditMiddleware } from '@fauward/internal-audit';
+import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
 import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
@@ -99,6 +102,11 @@ export async function buildApp() {
   await registerPrisma(app);
   await registerRedis(app);
 
+  app.addHook('preHandler', auditMiddleware({ prisma: app.prisma as unknown as PlatformAuditClient, shouldAudit: (request) => {
+    const method = request.method?.toUpperCase();
+    return Boolean(request.url?.startsWith('/api/internal/') && method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
+  } }));
+
   app.addHook('onRequest', (req, reply, done) => {
     (async () => {
       const ctx = await tenantResolver(req, reply);
@@ -142,6 +150,7 @@ export async function buildApp() {
   await registerFleetRoutes(app);
   await registerPlatformRoutes(app);
   await registerInternalIamRoutes(app);
+  await registerInternalAuditRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);
