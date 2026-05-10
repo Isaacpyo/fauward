@@ -15,6 +15,9 @@ import { TenantsListPage } from "@/pages/admin/TenantsListPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
+import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
+import { ShellLayout } from "@/shell/ShellLayout";
+import { PermissionProvider } from "@fauward/internal-rbac";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
@@ -40,6 +43,7 @@ function SuperAdminGuard() {
   const [status, setStatus] = useState<"loading" | "ok" | "denied">(
     hasPlatformSessionHint() ? "loading" : "denied"
   );
+  const [user, setUser] = useState<PlatformSessionUser | null>(null);
 
   useEffect(() => {
     if (!hasPlatformSessionHint()) {
@@ -49,7 +53,19 @@ function SuperAdminGuard() {
     api
       .get("/auth/me")
       .then(({ data }) => {
-        setStatus(Array.isArray(data?.user?.permissions) ? "ok" : "denied");
+        if (!Array.isArray(data?.user?.permissions)) {
+          setStatus("denied");
+          return;
+        }
+
+        setUser({
+          id: String(data.user.id),
+          email: String(data.user.email),
+          name: typeof data.user.name === "string" ? data.user.name : null,
+          role: typeof data.user.role === "string" ? data.user.role : null,
+          permissions: data.user.permissions.map(String)
+        });
+        setStatus("ok");
       })
       .catch(() => setStatus("denied"));
   }, []);
@@ -67,7 +83,17 @@ function SuperAdminGuard() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <Outlet />;
+  if (!user) {
+    return null;
+  }
+
+  const permissionContext = buildPermissionContext(user);
+
+  return (
+    <PermissionProvider roles={permissionContext.roles} permissions={permissionContext.permissions}>
+      <Outlet context={{ user }} />
+    </PermissionProvider>
+  );
 }
 
 function LoginPage() {
@@ -302,11 +328,28 @@ function LogsPage() {
   );
 }
 
+function ShellPlaceholder({ title }: { title: string }) {
+  return (
+    <div className="rounded-lg border border-[var(--color-border)] bg-white p-5">
+      <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">{title}</h1>
+      <p className="mt-1 text-sm text-[var(--color-text-muted)]">This console surface is ready for the next Wave 2 scaffold.</p>
+    </div>
+  );
+}
+
 export function AppRouter() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<SuperAdminGuard />}>
+        <Route element={<ShellLayout />}>
+          <Route path="/" element={<ShellPlaceholder title="Pillar Dashboard" />} />
+          <Route path="/platform" element={<ShellPlaceholder title="Platform Operations" />} />
+          <Route path="/revenue" element={<ShellPlaceholder title="Revenue Operations" />} />
+          <Route path="/customer" element={<ShellPlaceholder title="Customer Operations" />} />
+          <Route path="/trust" element={<ShellPlaceholder title="Trust, Compliance & Security" />} />
+          <Route path="/gtm" element={<ShellPlaceholder title="Go-to-Market Operations" />} />
+        </Route>
         <Route element={<AdminLayout />}>
           <Route path="/admin" element={<DashboardPage />} />
           <Route path="/admin/tenants" element={<TenantsListPage />} />
@@ -319,7 +362,6 @@ export function AppRouter() {
           <Route path="/admin/support-audit" element={<SupportAuditPage />} />
           <Route path="/admin/logs" element={<LogsPage />} />
           <Route path="/admin/impersonation" element={<ImpersonationPage />} />
-          <Route path="/" element={<Navigate to="/admin" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
