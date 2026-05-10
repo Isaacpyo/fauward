@@ -119,12 +119,12 @@ function LoginPage() {
         email: email.trim().toLowerCase(),
         password,
       });
-      // Reject non-super-admin tokens immediately — never grant UI access.
+      // Reject tokens without platform permissions immediately; never grant UI access.
       if (!Array.isArray(data.user?.permissions)) {
-        setError("Access denied — SUPER_ADMIN role required");
+        setError("Access denied - platform console permission required");
         return;
       }
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/admin";
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
       setRedirecting(true);
       await wait(SUCCESSFUL_LOGIN_DELAY_MS);
       navigate(from, { replace: true });

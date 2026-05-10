@@ -18,7 +18,7 @@ export function PlanOverrideModal({ open, tenantName, onClose, onConfirm }: Plan
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
       <div className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-white p-4">
         <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Override plan</h3>
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">{tenantName ?? "Tenant"} plan override (SUPER_ADMIN only).</p>
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">{tenantName ?? "Tenant"} plan override (requires tenant write permission).</p>
         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
           {(["Starter", "Pro", "Enterprise"] as const).map((option) => (
             <button
@@ -50,4 +50,3 @@ export function PlanOverrideModal({ open, tenantName, onClose, onConfirm }: Plan
     </div>
   );
 }
-

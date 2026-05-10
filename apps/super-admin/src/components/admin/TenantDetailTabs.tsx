@@ -34,7 +34,7 @@ export function TenantDetailTabs({ tenantId }: TenantDetailTabsProps) {
         {visitedTabs.has("Billing") && tab === "Billing" ? <p>Plan, payment history, MRR, and Stripe customer link.</p> : null}
         {visitedTabs.has("Team") && tab === "Team" ? <p>Staff members, roles, and last activity.</p> : null}
         {visitedTabs.has("Config") && tab === "Config" ? <pre className="font-mono text-[11px]">{JSON.stringify({ tenant_id: tenantId, domain: "tenant.fauward.com", timezone: "Europe/London" }, null, 2)}</pre> : null}
-        {visitedTabs.has("Audit Log") && tab === "Audit Log" ? <p>Recent SUPER_ADMIN actions on this tenant.</p> : null}
+        {visitedTabs.has("Audit Log") && tab === "Audit Log" ? <p>Recent platform operator actions on this tenant.</p> : null}
       </div>
     </section>
   );
