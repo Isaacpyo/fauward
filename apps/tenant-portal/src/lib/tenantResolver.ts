@@ -28,7 +28,8 @@ export function resolveSubdomainSlug(): string | null {
     if (sub && !sub.includes(".")) return sub;
   }
 
-  return null;
+  // Unknown host (Vercel preview URLs, staging, etc.) — fall back to env var
+  return import.meta.env.VITE_DEV_TENANT_SLUG ?? "demo";
 }
 
 /**

@@ -1,8 +1,12 @@
 import axios from 'axios';
 import { clearTokens, getAccessToken, getRefreshToken, getTenantSlug, hasDevTestSession, setTokens } from './auth';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL
+  ? `${import.meta.env.VITE_API_BASE_URL}/api`
+  : '/api';
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE,
   withCredentials: true,
   timeout: 8_000
 });
