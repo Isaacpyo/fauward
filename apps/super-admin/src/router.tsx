@@ -19,6 +19,12 @@ import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
+import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
+import { InvoiceCreatePage } from "@/pillars/revenue/billing/InvoiceCreatePage";
+import { InvoiceDetailPage } from "@/pillars/revenue/billing/InvoiceDetailPage";
+import { InvoicesListPage } from "@/pillars/revenue/billing/InvoicesListPage";
+import { PaymentsPage } from "@/pillars/revenue/billing/PaymentsPage";
+import { RefundsPage } from "@/pillars/revenue/billing/RefundsPage";
 import { TrustOverview } from "@/pillars/trust/TrustOverview";
 import { AuditExportPage } from "@/pillars/trust/audit/AuditExportPage";
 import { AuditIntegrityPage } from "@/pillars/trust/audit/AuditIntegrityPage";
@@ -414,6 +420,55 @@ export function AppRouter() {
             }
           />
           <Route path="/revenue" element={<RevenueOverview />} />
+          <Route path="/revenue/billing" element={<Navigate to="/revenue/billing/invoices" replace />} />
+          <Route
+            path="/revenue/billing/invoices"
+            element={
+              <PermissionRoute permission="revenue.invoices.read">
+                <InvoicesListPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/revenue/billing/invoices/create"
+            element={
+              <PermissionRoute permission="revenue.invoices.write">
+                <InvoiceCreatePage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/revenue/billing/invoices/:id"
+            element={
+              <PermissionRoute permission="revenue.invoices.read">
+                <InvoiceDetailPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/revenue/billing/credit-notes"
+            element={
+              <PermissionRoute permission="revenue.invoices.write">
+                <CreditNotesPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/revenue/billing/refunds"
+            element={
+              <PermissionRoute permission="revenue.invoices.refund">
+                <RefundsPage />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="/revenue/billing/payments"
+            element={
+              <PermissionRoute permission="revenue.invoices.read">
+                <PaymentsPage />
+              </PermissionRoute>
+            }
+          />
           <Route
             path="/revenue/analytics"
             element={
