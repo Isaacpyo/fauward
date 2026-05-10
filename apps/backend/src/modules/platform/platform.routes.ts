@@ -19,6 +19,7 @@ import {
   verifyPlatformRefreshToken
 } from '../../services/platform-session.service.js';
 import { permissionsForPlatformRole } from '../../services/platform-permission.service.js';
+import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { writePlatformAuditLog, verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
 import { redactPlatformLogValue } from '../../services/platform-redaction.service.js';
 import { getActiveTenantPlanOverride, resolveEffectiveTenantPlan } from '../../services/platform-plan-override.service.js';
@@ -86,6 +87,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
+    const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, user);
     const mfaVerifiedAt = user.mfaEnabled ? null : null;
     const session = await app.prisma.platformSession.create({
       data: {
@@ -97,7 +99,16 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
       }
     });
-    const accessToken = signPlatformAccessToken({ platformUserId: user.id, role: user.role, sessionId: session.id, mfaVerifiedAt });
+    await app.prisma.staffSession.create({
+      data: {
+        staffId: permissionContext.staff.id,
+        platformSessionId: session.id,
+        ipAddress: ipAddress(request),
+        userAgent: userAgent(request),
+        expiresAt: session.expiresAt
+      }
+    });
+    const accessToken = signPlatformAccessToken({ platformUserId: user.id, role: user.role, permissions: permissionContext.permissions, sessionId: session.id, mfaVerifiedAt });
     const refreshToken = signPlatformRefreshToken({ platformUserId: user.id, sessionId: session.id });
 
     await app.prisma.$transaction([
@@ -121,7 +132,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
     reply.send({
       mfaRequired: user.mfaEnabled,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, permissions: permissionsForPlatformRole(user.role) }
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, roles: permissionContext.roles, permissions: permissionContext.permissions }
     });
   });
 
@@ -201,9 +212,11 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
         where: { id: session.id },
         data: { refreshTokenHash: hashPlatformToken(nextRefreshToken), expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }
       });
+      const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, session.platformUser);
       const accessToken = signPlatformAccessToken({
         platformUserId: session.platformUserId,
         role: session.platformUser.role,
+        permissions: permissionContext.permissions,
         sessionId: session.id,
         mfaVerifiedAt: session.mfaVerifiedAt
       });
@@ -216,13 +229,15 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/platform/auth/me', { preHandler: authPre() }, async (request, reply) => {
     const user = request.platform!.user;
+    const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, user);
     reply.send({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: user.role,
-        permissions: permissionsForPlatformRole(user.role),
+        roles: permissionContext.roles,
+        permissions: permissionContext.permissions,
         mfaEnabled: user.mfaEnabled,
         mfaVerifiedAt: request.platform!.session.mfaVerifiedAt?.toISOString() ?? null
       }

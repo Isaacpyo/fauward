@@ -40,6 +40,7 @@ export function randomPlatformToken() {
 export function signPlatformAccessToken(payload: {
   platformUserId: string;
   role: PlatformRole;
+  permissions?: string[];
   sessionId: string;
   mfaVerifiedAt: Date | null;
 }) {
@@ -49,7 +50,7 @@ export function signPlatformAccessToken(payload: {
       actorType: 'PLATFORM_USER',
       tenantId: 'system',
       role: payload.role,
-      permissions: permissionsForPlatformRole(payload.role),
+      permissions: payload.permissions ?? permissionsForPlatformRole(payload.role),
       sessionId: payload.sessionId,
       mfaVerifiedAt: payload.mfaVerifiedAt?.toISOString() ?? null
     },
@@ -93,7 +94,7 @@ export function verifyPlatformRefreshToken(token: string): PlatformRefreshClaims
   }) as PlatformRefreshClaims;
 }
 
-export function platformCookieOptions(path = '/api/v1/platform') {
+export function platformCookieOptions(path = '/api') {
   return {
     httpOnly: true,
     secure: config.nodeEnv === 'production',
@@ -103,7 +104,7 @@ export function platformCookieOptions(path = '/api/v1/platform') {
   };
 }
 
-export function csrfCookieOptions(path = '/api/v1/platform') {
+export function csrfCookieOptions(path = '/api') {
   return {
     httpOnly: false,
     secure: config.nodeEnv === 'production',

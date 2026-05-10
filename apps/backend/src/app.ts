@@ -44,6 +44,7 @@ import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
+import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
 import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
@@ -140,6 +141,7 @@ export async function buildApp() {
   await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
   await registerPlatformRoutes(app);
+  await registerInternalIamRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);
