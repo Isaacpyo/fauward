@@ -37,19 +37,19 @@ Isaacpyo/fauward
 Set the root directory:
 
 ```text
-apps/python-services
+services/python-services
 ```
 
 Set the Railway config file path:
 
 ```text
-/apps/python-services/railway.json
+/services/python-services/railway.json
 ```
 
 The Python service config points Railway at:
 
 ```text
-apps/python-services/Dockerfile
+services/python-services/Dockerfile
 ```
 
 If Railway has a Dockerfile path setting or variable, make sure it is not pointing to the backend Dockerfile.
@@ -63,7 +63,7 @@ RAILWAY_DOCKERFILE_PATH=apps/backend/Dockerfile
 Use this only if needed:
 
 ```env
-RAILWAY_DOCKERFILE_PATH=apps/python-services/Dockerfile
+RAILWAY_DOCKERFILE_PATH=services/python-services/Dockerfile
 ```
 
 ## Start Command

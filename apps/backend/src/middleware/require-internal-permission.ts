@@ -8,8 +8,24 @@ export function requireInternalPermission(permission: Permission) {
     if (!user) return reply.status(401).send({ error: 'Unauthorized' });
 
     const allowed = await platformUserHasStaffPermission(request.server.prisma, user, permission);
-    if (!allowed) return reply.status(403).send({ error: 'Forbidden', permission });
+    if (allowed) return undefined;
 
-    return undefined;
+    const jitGrant = await request.server.prisma.jitAccessRequest.findFirst({
+      where: {
+        requesterPlatformUserId: user.id,
+        permission,
+        status: 'APPROVED',
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      orderBy: { expiresAt: 'desc' }
+    });
+
+    if (jitGrant) {
+      request.jitSessionId = jitGrant.id;
+      return undefined;
+    }
+
+    return reply.status(403).send({ error: 'Forbidden', permission });
   };
 }

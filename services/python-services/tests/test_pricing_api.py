@@ -264,7 +264,7 @@ async def test_response_does_not_expose_internal_margin_cost_floor_or_rules(monk
 
 
 def test_rate_limit_remains_active():
-    source = Path("apps/python-services/api/pricing.py").read_text()
+    source = Path("services/python-services/api/pricing.py").read_text()
 
     assert '@limiter.limit("30/minute")' in source
     assert '@limiter.limit("120/hour", key_func=tenant_rate_limit_key)' in source

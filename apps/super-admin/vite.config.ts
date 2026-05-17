@@ -18,6 +18,10 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true
       },
+      '/api/internal': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
+      },
       '/api/relay': {
         target: 'http://localhost:5000',
         changeOrigin: true

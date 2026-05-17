@@ -192,6 +192,22 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       }
     }
 
+    if (eventType === 'radar.early_fraud_warning.created' || eventType === 'review.opened') {
+      const object = eventAny.data?.object ?? {};
+      const tenantId = String(object.metadata?.tenantId ?? object.payment_intent?.metadata?.tenantId ?? '');
+      if (tenantId) {
+        await app.prisma.fraudSignal.create({
+          data: {
+            tenantId,
+            source: 'stripe_radar',
+            signalType: eventType,
+            severity: 'HIGH',
+            payload: event as never
+          }
+        });
+      }
+    }
+
     reply.send({ received: true });
   });
 }

@@ -87,7 +87,7 @@ Internal monitoring endpoints expose queue depths only to super admins or platfo
 
 ## Quick Start
 
-From `apps/python-services`:
+From `services/python-services`:
 
 ```powershell
 python -m venv .venv
@@ -162,7 +162,7 @@ See [Security and Tenant Isolation](docs/security.md) for details.
 ## Repository Layout
 
 ```text
-apps/python-services/
+services/python-services/
   api/             FastAPI routers and dependencies
   core/            shared config, logging, errors, security, telemetry, rate-limit helpers
   schemas/         API request/response schemas

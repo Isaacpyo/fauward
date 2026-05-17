@@ -120,7 +120,7 @@ The endpoint returns JSON queue depths and updates the Prometheus gauge. Redis c
 From repo root:
 
 ```powershell
-docker compose --env-file apps/python-services/env.docker.local.example up --build python-api python-worker python-beat
+docker compose --env-file services/python-services/env.docker.local.example up --build python-api python-worker python-beat
 ```
 
 Recommended production process split:

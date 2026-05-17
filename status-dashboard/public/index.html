@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Status Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <span class="logo">◉</span>
+      <h1>Status</h1>
+    </div>
+    <div class="header-right">
+      <div class="env-counts">
+        <span class="label">Local</span>
+        <div class="count-group">
+          <span class="up" id="local-up">—</span>
+          <span class="sep">/</span>
+          <span class="down" id="local-down">—</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="env-counts">
+        <span class="label">Prod</span>
+        <div class="count-group">
+          <span class="up" id="prod-up">—</span>
+          <span class="sep">/</span>
+          <span class="down" id="prod-down">—</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <span class="badge-neutral">updated <span id="last-refresh">—</span></span>
+    </div>
+  </header>
+
+  <main>
+    <div id="grid" class="grid"></div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -156,7 +156,7 @@ const MD_FILES_TO_INGEST = [
   'FAUWARD_PLATFORM_ARCHITECTURE.md',
   'SAAS_MULTITENANCY.md',
   'apps/fauward-Go/README.md',
-  'apps/python-services/README.md',
+  'services/python-services/README.md',
 ];
 
 const ROOT = resolve(process.cwd());

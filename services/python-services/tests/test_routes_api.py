@@ -321,7 +321,7 @@ def test_get_status_returns_camel_case_and_safe_errors():
 
 
 def test_rate_limit_decorators_remain_active():
-    source = Path("apps/python-services/api/routes.py").read_text()
+    source = Path("services/python-services/api/routes.py").read_text()
 
     assert '@limiter.limit("20/minute")' in source
     assert '@limiter.limit("80/hour", key_func=tenant_rate_limit_key)' in source

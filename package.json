@@ -6,10 +6,11 @@
   "packageManager": "npm@10.9.2",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "status-dashboard"
   ],
   "scripts": {
-    "dev": "turbo run dev --filter=@fauward/backend --filter=@fauward/frontend --filter=@fauward/tenant-portal --filter=@fauward/super-admin",
+    "dev": "turbo run dev --filter=@fauward/backend --filter=@fauward/frontend --filter=@fauward/tenant-portal --filter=@fauward/super-admin --filter=@fauward/status-dashboard",
     "dev:all": "turbo run dev",
     "dev:backend": "turbo run dev --filter=@fauward/backend",
     "dev:frontend": "turbo run dev --filter=@fauward/frontend --filter=@fauward/tenant-portal",

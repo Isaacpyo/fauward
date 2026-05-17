@@ -1,13 +1,14 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
+import { getApp, getApps, initializeApp, type FirebaseOptions } from "firebase/app";
 import {
   browserLocalPersistence,
+  type Auth,
   getAuth,
   GoogleAuthProvider,
   setPersistence,
   signInWithPopup
 } from "firebase/auth";
 
-const firebaseConfig = {
+const firebaseConfig: FirebaseOptions = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -17,11 +18,33 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const requiredFirebaseKeys = ["apiKey", "authDomain", "projectId", "appId"] as const;
 
-export const firebaseAuth = getAuth(app);
+function hasFirebaseAuthConfig(config: FirebaseOptions) {
+  return requiredFirebaseKeys.every((key) => {
+    const value = config[key];
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    return trimmed.length > 0 && !trimmed.startsWith("your-");
+  });
+}
+
+const app = hasFirebaseAuthConfig(firebaseConfig)
+  ? getApps().length
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
+
+export const firebaseAuth: Auth | null = app ? getAuth(app) : null;
+
+export function isGoogleSignInConfigured() {
+  return Boolean(firebaseAuth);
+}
 
 export async function signInWithGoogle() {
+  if (!firebaseAuth) {
+    throw new Error("auth/configuration-not-found");
+  }
+
   await setPersistence(firebaseAuth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });

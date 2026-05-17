@@ -1,6 +1,6 @@
 # Fauward Python Services Technical Guide
 
-This guide is the technical entry point for maintainers of `apps/python-services`.
+This guide is the technical entry point for maintainers of `services/python-services`.
 
 The service is a FastAPI gateway plus Celery worker system. It integrates with Postgres, Redis, storage, PDF rendering, OCR libraries, route optimisation, customs helpers, pricing logic, analytics rollups, and ML model scoring.
 

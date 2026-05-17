@@ -13,8 +13,12 @@ const AuditTab = lazy(() => import("./tabs/AuditTab"));
 const PeopleTab = lazy(() => import("./tabs/PeopleTab"));
 const ConfigTab = lazy(() => import("./tabs/ConfigTab"));
 const NotesTab = lazy(() => import("./tabs/NotesTab"));
+const DunningTab = lazy(() => import("./tabs/DunningTab"));
+const IncidentsTab = lazy(() => import("./tabs/IncidentsTab"));
+const PipelineTab = lazy(() => import("./tabs/PipelineTab"));
+const AttributionTab = lazy(() => import("./tabs/AttributionTab"));
 
-const tabs = ["overview", "usage", "billing", "tickets", "health", "audit", "people", "config", "notes"] as const;
+const tabs = ["overview", "usage", "billing", "tickets", "health", "dunning", "incidents", "pipeline", "attribution", "audit", "people", "config", "notes"] as const;
 
 export function Customer360Page() {
   const { tenantId = "" } = useParams();
@@ -28,6 +32,10 @@ export function Customer360Page() {
     billing: BillingTab,
     tickets: TicketsTab,
     health: HealthTab,
+    dunning: DunningTab,
+    incidents: IncidentsTab,
+    pipeline: PipelineTab,
+    attribution: AttributionTab,
     audit: AuditTab,
     people: PeopleTab,
     config: ConfigTab,

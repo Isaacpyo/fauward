@@ -42,6 +42,15 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
       where: { tenantId },
       _count: { id: true }
     });
+    const [tickets, latestHealth, dunningEvents, incidentImpacts, contracts, pipeline, attribution] = await Promise.all([
+      app.prisma.supportVendorTicket.findMany({ where: { tenantId }, orderBy: { updatedAt: 'desc' }, take: 20 }),
+      app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
+      app.prisma.dunningEvent.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      app.prisma.incidentTenantImpact.findMany({ where: { tenantId }, include: { incident: true }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      app.prisma.customContract.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 10 }),
+      app.prisma.salesDeal.findMany({ where: { tenantId }, orderBy: { updatedAt: 'desc' }, take: 10 }),
+      app.prisma.marketingAttribution.findMany({ where: { tenantId }, orderBy: { periodStart: 'desc' }, take: 10 })
+    ]);
     reply.send({
       tenant,
       metrics: {
@@ -49,12 +58,17 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
         invoiceCount: tenant.invoices.length,
         userCount: tenant.users.length,
         notificationCount: tenant.notificationLogs.length,
-        supportTicketCount: 0,
-        healthScore: 78
+        supportTicketCount: tickets.length,
+        healthScore: latestHealth?.score ?? 78
       },
       usage: { shipmentStatusBreakdown: monthlyShipments },
-      tickets: [],
-      health: { score: 78, factors: ['Recent shipment activity', 'No connected Zendesk signal', 'Billing history available'] }
+      tickets,
+      health: latestHealth ?? { score: 78, factors: ['Recent shipment activity', 'No connected Zendesk signal', 'Billing history available'], trend: 'flat' },
+      dunning: { events: dunningEvents },
+      incidents: { impacts: incidentImpacts },
+      contracts,
+      pipeline,
+      attribution
     });
   });
 

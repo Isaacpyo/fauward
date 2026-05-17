@@ -26,7 +26,7 @@ services:
       - "8025:8025"
       - "1025:1025"
   python-api:
-    build: ./apps/python-services
+    build: ./services/python-services
     ports:
       - "8000:8000"
     environment:
@@ -48,7 +48,7 @@ services:
       - redis
     command: uvicorn main:app --host 0.0.0.0 --port 8000
   python-worker:
-    build: ./apps/python-services
+    build: ./services/python-services
     environment:
       DATABASE_URL: ${PYTHON_DATABASE_URL:-${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/fauward_dev}}
       REDIS_URL: ${PYTHON_REDIS_URL:-${REDIS_URL:-redis://redis:6379}}
@@ -68,7 +68,7 @@ services:
       - redis
     command: celery -A celery_app worker --loglevel=info -Q pdf,routes,analytics,ocr,notifications,pricing,customs,ml --pool=solo
   python-beat:
-    build: ./apps/python-services
+    build: ./services/python-services
     environment:
       DATABASE_URL: ${PYTHON_DATABASE_URL:-${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/fauward_dev}}
       REDIS_URL: ${PYTHON_REDIS_URL:-${REDIS_URL:-redis://redis:6379}}

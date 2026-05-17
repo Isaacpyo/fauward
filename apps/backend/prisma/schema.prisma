@@ -158,6 +158,7 @@ enum TenantStatus {
   ACTIVE
   SUSPENDED
   CANCELLED
+  DEMO
 }
 
 enum TenantPlan {
@@ -312,6 +313,11 @@ model Tenant {
   domainVerified     Boolean      @default(false)
   plan               TenantPlan   @default(TRIALING)
   status             TenantStatus @default(TRIALING)
+  kycStatus          String       @default("PENDING")
+  taxExempt          Boolean      @default(false)
+  taxExemptionCertificateUrl String?
+  crmDealId          String?
+  demoExpiresAt      DateTime?
   infrastructureType String       @default("SHARED")
   region             String       @default("uk_europe")
   logoUrl            String?
@@ -1790,6 +1796,861 @@ model PlatformAuditLog {
 }
 
 // ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────
+
+// Fauward Console phases 2-6 internal operations.
+
+model DunningSequence {
+  id        String   @id @default(uuid())
+  name      String
+  steps     Json
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dunningSteps DunningStep[]
+
+  @@index([active])
+  @@map("dunning_sequences")
+}
+
+model DunningStep {
+  id         String   @id @default(uuid())
+  sequenceId String
+  dayOffset  Int
+  action     String
+  template   String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  sequence DunningSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@index([sequenceId])
+  @@map("dunning_steps")
+}
+
+model DunningEvent {
+  id        String   @id @default(uuid())
+  tenantId  String
+  invoiceId String?
+  eventType String
+  attempt   Int      @default(0)
+  metadata  Json?
+  actorId   String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([invoiceId])
+  @@map("dunning_events")
+}
+
+model SaveOffer {
+  id         String   @id @default(uuid())
+  tenantId   String
+  discount   Decimal  @db.Decimal(12, 2)
+  expiresAt  DateTime
+  status     String   @default("PENDING")
+  approvedBy String?
+  reason     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("save_offers")
+}
+
+model IncidentRecord {
+  id            String   @id @default(uuid())
+  vendor        String   @default("pagerduty")
+  vendorId      String   @unique
+  title         String
+  status        String
+  severity      String?
+  serviceTags   String[] @default([])
+  postmortemUrl String?
+  payload       Json?
+  startedAt     DateTime?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  impacts IncidentTenantImpact[]
+
+  @@index([status, createdAt])
+  @@map("incident_records")
+}
+
+model IncidentTenantImpact {
+  id          String   @id @default(uuid())
+  incidentId  String
+  tenantId    String
+  impactLevel String   @default("UNKNOWN")
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  incident IncidentRecord @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentId, tenantId])
+  @@index([tenantId, createdAt])
+  @@map("incident_tenant_impacts")
+}
+
+model IncidentRunbook {
+  id        String   @id @default(uuid())
+  title     String
+  slug      String   @unique
+  body      String
+  service   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("incident_runbooks")
+}
+
+model SupportVendorTicket {
+  id             String   @id @default(uuid())
+  tenantId       String
+  vendor         String   @default("zendesk")
+  vendorId       String
+  subject        String
+  status         String
+  priority       String?
+  url            String?
+  requesterEmail String?
+  latestMessage  String?
+  sentiment      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([vendor, vendorId])
+  @@index([tenantId, updatedAt])
+  @@map("support_vendor_tickets")
+}
+
+model TenantHealthScore {
+  id         String   @id @default(uuid())
+  tenantId   String
+  score      Int
+  trend      String   @default("flat")
+  factors    Json
+  computedAt DateTime @default(now())
+
+  @@index([tenantId, computedAt])
+  @@map("tenant_health_scores")
+}
+
+model CSPlaybook {
+  id        String   @id @default(uuid())
+  name      String
+  trigger   String
+  steps     Json
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  runs CSPlaybookRun[]
+
+  @@index([active])
+  @@map("cs_playbooks")
+}
+
+model CSPlaybookRun {
+  id          String   @id @default(uuid())
+  playbookId  String?
+  tenantId    String
+  status      String   @default("PENDING")
+  steps       Json
+  currentStep Int      @default(0)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  playbook CSPlaybook? @relation(fields: [playbookId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+  @@map("cs_playbook_runs")
+}
+
+model JitAccessRequest {
+  id                      String   @id @default(uuid())
+  requesterPlatformUserId String
+  requesterStaffId        String?
+  permission              String
+  reason                  String
+  durationMinutes         Int
+  status                  String   @default("PENDING")
+  rootRequest             Boolean  @default(false)
+  hardwareKeyVerified     Boolean  @default(false)
+  expiresAt               DateTime?
+  revokedAt               DateTime?
+  deniedReason            String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  approvals JitAccessApproval[]
+
+  @@index([requesterPlatformUserId, status, expiresAt])
+  @@index([permission])
+  @@map("jit_access_requests")
+}
+
+model JitAccessApproval {
+  id                     String   @id @default(uuid())
+  requestId              String
+  approverPlatformUserId String
+  decision               String
+  notes                  String?
+  createdAt              DateTime @default(now())
+
+  request JitAccessRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, approverPlatformUserId])
+  @@index([requestId])
+  @@map("jit_access_approvals")
+}
+
+model DSARRequest {
+  id             String   @id @default(uuid())
+  tenantId       String
+  requesterEmail String
+  requestType    String
+  status         String   @default("RECEIVED")
+  notes          String?
+  exportUrl      String?
+  expiresAt      DateTime?
+  receivedAt     DateTime @default(now())
+  dueAt          DateTime
+  closedAt       DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  transitions DSARTransition[]
+
+  @@index([tenantId, status])
+  @@index([dueAt])
+  @@map("dsar_requests")
+}
+
+model DSARTransition {
+  id         String   @id @default(uuid())
+  dsarId     String
+  fromStatus String?
+  toStatus   String
+  actorId    String
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  dsar DSARRequest @relation(fields: [dsarId], references: [id], onDelete: Cascade)
+
+  @@index([dsarId, createdAt])
+  @@map("dsar_transitions")
+}
+
+model LegalHold {
+  id         String   @id @default(uuid())
+  tenantId   String?
+  scope      Json
+  reason     String
+  status     String   @default("ACTIVE")
+  createdBy  String
+  releasedBy String?
+  releasedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("legal_holds")
+}
+
+model ComplianceExport {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  dsarId      String?
+  exportType  String
+  status      String   @default("PENDING")
+  s3Key       String?
+  signedUrl   String?
+  expiresAt   DateTime?
+  requestedBy String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([status])
+  @@map("compliance_exports")
+}
+
+model FraudSignal {
+  id         String   @id @default(uuid())
+  tenantId   String
+  source     String
+  signalType String
+  severity   String   @default("MEDIUM")
+  status     String   @default("OPEN")
+  payload    Json?
+  reviewedBy String?
+  decision   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([source, createdAt])
+  @@map("fraud_signals")
+}
+
+model SuspensionRecord {
+  id             String   @id @default(uuid())
+  tenantId       String
+  reason         String
+  sourceSignalId String?
+  suspendedBy    String
+  liftedBy       String?
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  liftedAt       DateTime?
+
+  @@index([tenantId, status])
+  @@map("suspension_records")
+}
+
+model TenantAppeal {
+  id           String   @id @default(uuid())
+  tenantId     String
+  suspensionId String?
+  message      String
+  status       String   @default("OPEN")
+  resolvedBy   String?
+  resolution   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("tenant_appeals")
+}
+
+model FeatureFlagOverrideAudit {
+  id        String   @id @default(uuid())
+  flagKey   String
+  tenantId  String
+  value     Json
+  actorId   String
+  vendor    String   @default("launchdarkly")
+  vendorRef String?
+  createdAt DateTime @default(now())
+
+  @@index([flagKey, createdAt])
+  @@index([tenantId])
+  @@map("feature_flag_override_audits")
+}
+
+model SecretCredential {
+  id            String   @id @default(uuid())
+  name          String
+  dopplerId     String?  @unique
+  provider      String   @default("doppler")
+  ownerId       String?
+  expiresAt     DateTime?
+  rotationNotes String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  accessLogs SecretAccessLog[]
+
+  @@index([expiresAt])
+  @@map("secret_credentials")
+}
+
+model SecretAccessLog {
+  id            String   @id @default(uuid())
+  secretId      String
+  accessedBy    String
+  source        String
+  justification String?
+  accessedAt    DateTime @default(now())
+
+  secret SecretCredential @relation(fields: [secretId], references: [id], onDelete: Cascade)
+
+  @@index([secretId, accessedAt])
+  @@map("secret_access_logs")
+}
+
+model StaffLoginAttempt {
+  id             String   @id @default(uuid())
+  staffEmail     String
+  platformUserId String?
+  success        Boolean
+  ipAddress      String?
+  country        String?
+  userAgent      String?
+  failureReason  String?
+  createdAt      DateTime @default(now())
+
+  @@index([staffEmail, createdAt])
+  @@index([ipAddress, createdAt])
+  @@map("staff_login_attempts")
+}
+
+model SecurityAnomaly {
+  id          String   @id @default(uuid())
+  anomalyType String
+  severity    String   @default("MEDIUM")
+  actorId     String?
+  tenantId    String?
+  status      String   @default("OPEN")
+  payload     Json?
+  resolvedBy  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([actorId, createdAt])
+  @@map("security_anomalies")
+}
+
+model IpBlock {
+  id        String   @id @default(uuid())
+  ipAddress String   @unique
+  reason    String
+  expiresAt DateTime?
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("ip_blocks")
+}
+
+model KYCReview {
+  id            String   @id @default(uuid())
+  tenantId      String
+  provider      String   @default("persona")
+  inquiryId     String?  @unique
+  status        String   @default("PENDING")
+  decision      String?
+  documentS3Key String?
+  payload       Json?
+  reviewedBy    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("kyc_reviews")
+}
+
+model SanctionsScreening {
+  id         String   @id @default(uuid())
+  tenantId   String
+  provider   String   @default("complyadvantage")
+  status     String   @default("PENDING")
+  matchType  String?
+  riskLevel  String?
+  payload    Json?
+  reviewedBy String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("sanctions_screenings")
+}
+
+model IntegrationProviderStatus {
+  id               String   @id @default(uuid())
+  provider         String   @unique
+  status           String   @default("UNKNOWN")
+  lastSuccessfulAt DateTime?
+  errorRate24h     Decimal  @default(0) @db.Decimal(8, 4)
+  payload          Json?
+  checkedAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("integration_provider_statuses")
+}
+
+model TaxRegistration {
+  id              String   @id @default(uuid())
+  region          String
+  taxId           String
+  filingFrequency String
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([region, taxId])
+  @@map("tax_registrations")
+}
+
+model TaxReturn {
+  id           String   @id @default(uuid())
+  region       String
+  periodStart  DateTime
+  periodEnd    DateTime
+  taxCollected Decimal  @default(0) @db.Decimal(12, 2)
+  taxPaidOut   Decimal  @default(0) @db.Decimal(12, 2)
+  netDue       Decimal  @default(0) @db.Decimal(12, 2)
+  status       String   @default("PENDING")
+  exportUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([region, periodStart])
+  @@map("tax_returns")
+}
+
+model TaxExemption {
+  id             String   @id @default(uuid())
+  tenantId       String
+  certificateUrl String
+  status         String   @default("PENDING")
+  approvedBy     String?
+  approvedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("tax_exemptions")
+}
+
+model CustomContract {
+  id        String   @id @default(uuid())
+  tenantId  String
+  msaUrl    String?
+  termStart DateTime
+  termEnd   DateTime
+  terms     Json
+  status    String   @default("DRAFT")
+  signedAt  DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  approvals ContractApproval[]
+  overrides PricingOverride[]
+
+  @@index([tenantId, status])
+  @@map("custom_contracts")
+}
+
+model PricingOverride {
+  id              String   @id @default(uuid())
+  tenantId        String
+  contractId      String?
+  ruleType        String
+  ruleValue       Json
+  discountPercent Decimal? @db.Decimal(6, 2)
+  validFrom       DateTime
+  validTo         DateTime?
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contract CustomContract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@map("pricing_overrides")
+}
+
+model ContractApproval {
+  id         String   @id @default(uuid())
+  contractId String
+  approverId String
+  status     String   @default("PENDING")
+  conditions String?
+  approvedAt DateTime?
+  createdAt  DateTime @default(now())
+
+  contract CustomContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([contractId, status])
+  @@map("contract_approvals")
+}
+
+model SalesQuote {
+  id                 String   @id @default(uuid())
+  tenantId           String?
+  dealId             String?
+  quoteNumber        String   @unique
+  plan               String
+  termMonths         Int
+  discountPercent    Decimal  @default(0) @db.Decimal(6, 2)
+  customFeatures     Json?
+  status             String   @default("DRAFT")
+  docusignEnvelopeId String?
+  signedPdfS3Key     String?
+  createdBy          String
+  approvedBy         String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([dealId])
+  @@map("sales_quotes")
+}
+
+model MsaAgreement {
+  id            String   @id @default(uuid())
+  tenantId      String
+  signatureDate DateTime?
+  expiryDate    DateTime?
+  governingLaw  String?
+  renewalTerms  Json?
+  documentUrl   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("msa_agreements")
+}
+
+model QBRDeck {
+  id          String   @id @default(uuid())
+  tenantId    String
+  periodStart DateTime
+  periodEnd   DateTime
+  status      String   @default("DRAFT")
+  html        String?
+  notes       String?
+  pdfUrl      String?
+  pptxUrl     String?
+  nextQbrAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, periodEnd])
+  @@map("qbr_decks")
+}
+
+model QBRTemplate {
+  id        String   @id @default(uuid())
+  segment   String   @unique
+  html      String
+  css       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("qbr_templates")
+}
+
+model SalesDeal {
+  id            String   @id @default(uuid())
+  tenantId      String?
+  hubspotDealId String?  @unique
+  name          String
+  stage         String
+  amount        Decimal  @default(0) @db.Decimal(12, 2)
+  probability   Decimal  @default(0) @db.Decimal(5, 2)
+  closeDate     DateTime?
+  ownerEmail    String?
+  payload       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([stage, closeDate])
+  @@map("sales_deals")
+}
+
+model TrialActivation {
+  id                     String   @id @default(uuid())
+  tenantId               String   @unique
+  score                  Int      @default(0)
+  firstShipmentCreated   Boolean  @default(false)
+  teamInvited            Boolean  @default(false)
+  paymentMethodConnected Boolean  @default(false)
+  webhookConfigured      Boolean  @default(false)
+  customDomainSet        Boolean  @default(false)
+  interventionStatus     String   @default("NONE")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@map("trial_activations")
+}
+
+model TrialExtensionRequest {
+  id            String   @id @default(uuid())
+  tenantId      String
+  requestedDays Int
+  status        String   @default("PENDING")
+  requestedBy   String?
+  approvedBy    String?
+  reason        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("trial_extension_requests")
+}
+
+model DemoEnvironment {
+  id             String   @id @default(uuid())
+  tenantId       String   @unique
+  template       String
+  shareTokenHash String?
+  expiresAt      DateTime
+  status         String   @default("ACTIVE")
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, expiresAt])
+  @@map("demo_environments")
+}
+
+model SalesHandoff {
+  id            String   @id @default(uuid())
+  dealId        String?
+  tenantId      String
+  status        String   @default("PENDING_SALES")
+  document      Json
+  assignedCsmId String?
+  acceptedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@map("sales_handoffs")
+}
+
+model MarketingAttribution {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  periodStart DateTime
+  periodEnd   DateTime
+  source      String
+  campaign    String?
+  landingPage String?
+  weight      Decimal  @db.Decimal(8, 4)
+  revenue     Decimal  @default(0) @db.Decimal(12, 2)
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([source, periodStart])
+  @@map("marketing_attributions")
+}
+
+model PricingExperiment {
+  id                 String   @id @default(uuid())
+  vendorExperimentId String?  @unique
+  name               String
+  status             String   @default("ACTIVE")
+  variants           Json
+  metrics            Json?
+  startedAt          DateTime?
+  endedAt            DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([status])
+  @@map("pricing_experiments")
+}
+
+model Partner {
+  id               String   @id @default(uuid())
+  name             String
+  type             String
+  tier             String   @default("BRONZE")
+  status           String   @default("ACTIVE")
+  commissionConfig Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  applications  PartnerApplication[]
+  registrations PartnerDealRegistration[]
+  commissions   CommissionLedger[]
+  payouts       CommissionPayout[]
+
+  @@index([status])
+  @@map("partners")
+}
+
+model PartnerApplication {
+  id             String   @id @default(uuid())
+  partnerId      String?
+  applicantEmail String
+  companyName    String
+  type           String
+  status         String   @default("PENDING")
+  payload        Json?
+  decidedBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  partner Partner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("partner_applications")
+}
+
+model PartnerDealRegistration {
+  id          String   @id @default(uuid())
+  partnerId   String
+  leadEmail   String
+  companyName String
+  status      String   @default("REGISTERED")
+  lockedUntil DateTime
+  dealId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@unique([leadEmail])
+  @@index([partnerId, status])
+  @@map("partner_deal_registrations")
+}
+
+model CommissionLedger {
+  id        String   @id @default(uuid())
+  partnerId String
+  tenantId  String?
+  dealId    String?
+  amount    Decimal  @db.Decimal(12, 2)
+  currency  String   @default("GBP")
+  status    String   @default("EARNED")
+  period    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, period])
+  @@index([status])
+  @@map("commission_ledger")
+}
+
+model CommissionPayout {
+  id                String   @id @default(uuid())
+  partnerId         String
+  amount            Decimal  @db.Decimal(12, 2)
+  currency          String   @default("GBP")
+  status            String   @default("PENDING")
+  approvedByFinance String?
+  approvedByCfo     String?
+  stripeTransferId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId, status])
+  @@map("commission_payouts")
+}
+
+model CommissionDispute {
+  id         String   @id @default(uuid())
+  partnerId  String
+  payoutId   String?
+  message    String
+  status     String   @default("OPEN")
+  resolvedBy String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([partnerId, status])
+  @@map("commission_disputes")
+}
 
 model SsoProvider {
   id           String   @id @default(uuid())

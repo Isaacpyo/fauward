@@ -4,6 +4,7 @@ import type { ApiKey, PlatformSession, PlatformUser, PrismaClient, Tenant } from
 import type Redis from 'ioredis';
 import type { JwtPayload } from '../shared/utils/jwt.js';
 import type { PlatformJwtClaims } from '../services/platform-session.service.js';
+import type { AuditWriteInput } from '@fauward/internal-audit';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -21,6 +22,8 @@ declare module 'fastify' {
       user: PlatformUser;
       session: PlatformSession;
     };
+    jitSessionId?: string;
+    internalAudit?: Partial<Pick<AuditWriteInput, 'action' | 'target_type' | 'target_id' | 'before' | 'after' | 'reason' | 'jit_session_id'>>;
   }
 }
 

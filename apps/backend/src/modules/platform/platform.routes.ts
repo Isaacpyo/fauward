@@ -75,6 +75,16 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const passwordOk = user ? await verifyPassword(password, user.passwordHash) : false;
 
     if (!user || !passwordOk || user.status !== 'ACTIVE') {
+      await app.prisma.staffLoginAttempt.create({
+        data: {
+          staffEmail: normalizedEmail,
+          platformUserId: user?.id,
+          success: false,
+          ipAddress: ipAddress(request),
+          userAgent: userAgent(request),
+          failureReason: user?.status === 'DISABLED' ? 'disabled_user' : 'invalid_credentials'
+        }
+      });
       await writePlatformAuditLog(app.prisma, {
         actorType: 'SYSTEM',
         actorId: 'platform-auth',
@@ -128,6 +138,15 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       metadata: { mfaRequired: user.mfaEnabled },
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
+    });
+    await app.prisma.staffLoginAttempt.create({
+      data: {
+        staffEmail: user.email,
+        platformUserId: user.id,
+        success: true,
+        ipAddress: ipAddress(request),
+        userAgent: userAgent(request)
+      }
     });
 
     reply.send({

@@ -39,7 +39,7 @@ async def test_health_ready_safe_failure(monkeypatch):
 
 
 def test_refactor_layer_directories_exist():
-    root = Path("apps/python-services")
+    root = Path("services/python-services")
 
     for relative in ["api/deps.py", "core", "schemas", "services/tenant_access.py", "repositories", "migrations/versions"]:
         assert (root / relative).exists()

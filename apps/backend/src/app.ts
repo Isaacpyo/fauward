@@ -48,6 +48,7 @@ import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
 import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
 import { registerInternalCustomer360Routes } from './modules/internal/customer360.routes.js';
+import { registerInternalConsolePhaseRoutes } from './modules/internal/console-phases.routes.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -117,6 +118,18 @@ export async function buildApp() {
     })().catch(done);
   });
   app.addHook('preHandler', enforceTenantStatus);
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.method !== 'DELETE' || !request.tenant?.id) return;
+    const hold = await app.prisma.legalHold.findFirst({
+      where: {
+        status: 'ACTIVE',
+        OR: [{ tenantId: request.tenant.id }, { tenantId: null }]
+      }
+    });
+    if (hold) {
+      return reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId: request.tenant.id });
+    }
+  });
 
   app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
@@ -155,6 +168,7 @@ export async function buildApp() {
   await registerInternalAuditRoutes(app);
   await registerInternalBillingRoutes(app);
   await registerInternalCustomer360Routes(app);
+  await registerInternalConsolePhaseRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerDocumentsRoutes(app);

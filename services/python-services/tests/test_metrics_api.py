@@ -38,7 +38,7 @@ def ops_auth() -> AuthContext:
 
 @pytest.mark.asyncio
 async def test_metrics_queues_requires_auth_dependency():
-    source = Path("apps/python-services/api/metrics.py").read_text()
+    source = Path("services/python-services/api/metrics.py").read_text()
 
     assert "Depends(require_queue_metrics_access)" in source
     assert "require_bearer_token" in source

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 
+import { runWithTenantContext } from '../../context/tenant.context.js';
 import { trackingAiService } from '../tracking/tracking.ai.service.js';
 
 const TERMINAL = ['DELIVERED', 'CANCELLED', 'RETURNED'];
@@ -12,43 +13,51 @@ let sigtermHookRegistered = false;
 
 export async function detectStuckShipments(app: FastifyInstance, tenantId?: string) {
   const tenants = tenantId
-    ? [{ id: tenantId }]
-    : await app.prisma.tenant.findMany({ select: { id: true } });
+    ? await app.prisma.tenant.findMany({ where: { id: tenantId }, select: { id: true, slug: true, plan: true, region: true } })
+    : await app.prisma.tenant.findMany({ select: { id: true, slug: true, plan: true, region: true } });
   const created: unknown[] = [];
 
   for (const tenant of tenants) {
-    const defaultPolicy = await (app.prisma as any).slaPolicy.findFirst({
-      where: { tenantId: tenant.id, isDefault: true },
-      orderBy: { createdAt: 'desc' }
-    });
-    const deliveryWindowHours = defaultPolicy?.deliveryWindowHours ?? 24;
-    const cutoff = new Date(Date.now() - deliveryWindowHours * 60 * 60 * 1000);
-
-    const shipments = await app.prisma.shipment.findMany({
-      where: { tenantId: tenant.id, status: { notIn: TERMINAL as any } },
-      include: { trackingEvents: { orderBy: { occurredAt: 'desc' }, take: 1 } }
-    });
-
-    for (const shipment of shipments) {
-      const lastEvent = shipment.trackingEvents[0];
-      if (!lastEvent || lastEvent.createdAt > cutoff) continue;
-      const existing = await (app.prisma as any).exceptionCase.findFirst({
-        where: { tenantId: tenant.id, shipmentId: shipment.id, type: 'STUCK', status: { in: ['OPEN', 'IN_PROGRESS'] } }
+    await runWithTenantContext({
+      tenantId: tenant.id,
+      tenantSlug: tenant.slug,
+      plan: tenant.plan,
+      region: tenant.region,
+      isSuperAdmin: false
+    }, async () => {
+      const defaultPolicy = await (app.prisma as any).slaPolicy.findFirst({
+        where: { tenantId: tenant.id, isDefault: true },
+        orderBy: { createdAt: 'desc' }
       });
-      if (existing) continue;
-      const exception = await (app.prisma as any).exceptionCase.create({
-        data: {
-          tenantId: tenant.id,
-          shipmentId: shipment.id,
-          type: 'STUCK',
-          severity: 'HIGH',
-          status: 'OPEN',
-          notes: `No tracking update since ${lastEvent.createdAt.toISOString()}`
-        }
+      const deliveryWindowHours = defaultPolicy?.deliveryWindowHours ?? 24;
+      const cutoff = new Date(Date.now() - deliveryWindowHours * 60 * 60 * 1000);
+
+      const shipments = await app.prisma.shipment.findMany({
+        where: { tenantId: tenant.id, status: { notIn: TERMINAL as any } },
+        include: { trackingEvents: { orderBy: { occurredAt: 'desc' }, take: 1 } }
       });
-      created.push(exception);
-      await trackingAiService.diagnoseException(app.prisma, shipment.id, tenant.id);
-    }
+
+      for (const shipment of shipments) {
+        const lastEvent = shipment.trackingEvents[0];
+        if (!lastEvent || lastEvent.createdAt > cutoff) continue;
+        const existing = await (app.prisma as any).exceptionCase.findFirst({
+          where: { tenantId: tenant.id, shipmentId: shipment.id, type: 'STUCK', status: { in: ['OPEN', 'IN_PROGRESS'] } }
+        });
+        if (existing) continue;
+        const exception = await (app.prisma as any).exceptionCase.create({
+          data: {
+            tenantId: tenant.id,
+            shipmentId: shipment.id,
+            type: 'STUCK',
+            severity: 'HIGH',
+            status: 'OPEN',
+            notes: `No tracking update since ${lastEvent.createdAt.toISOString()}`
+          }
+        });
+        created.push(exception);
+        await trackingAiService.diagnoseException(app.prisma, shipment.id, tenant.id);
+      }
+    });
   }
 
   return created;

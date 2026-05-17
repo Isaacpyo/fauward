@@ -18,8 +18,13 @@ export type Customer360 = {
   };
   metrics: { shipmentCount: number; invoiceCount: number; userCount: number; notificationCount: number; supportTicketCount: number; healthScore: number };
   usage: { shipmentStatusBreakdown: Array<{ status: string; _count: { id: number } }> };
-  tickets: unknown[];
-  health: { score: number; factors: string[] };
+  tickets: Array<Record<string, unknown>>;
+  health: { score: number; trend?: string; factors: string[] | Record<string, unknown> };
+  dunning?: { events: Array<Record<string, unknown>> };
+  incidents?: { impacts: Array<Record<string, unknown>> };
+  contracts?: Array<Record<string, unknown>>;
+  pipeline?: Array<Record<string, unknown>>;
+  attribution?: Array<Record<string, unknown>>;
 };
 
 export async function fetchCustomer360(tenantId: string) {

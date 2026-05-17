@@ -640,7 +640,7 @@ apps/backend/src/modules/
 The Python layer handles compute-heavy tasks. New workers to add:
 
 ```
-apps/python-services/workers/
+services/python-services/workers/
   label_worker.py                  # ZPL + PDF label assembly
   address_validation_worker.py     # Postcodes + geocoding + landmark support
   edd_worker.py                    # Estimated delivery date prediction
@@ -1187,7 +1187,7 @@ Pages to add:
 **Inspect first:**
 - `apps/backend/src/modules/pricing/` — existing RateCard, Surcharge, WeightDiscountTier, PricingRule
 - `apps/backend/prisma/schema.prisma` — Surcharge, RateCard, WeightDiscountTier, PricingRule models
-- `apps/python-services/services/pricing_service.py` — existing pricing logic
+- `services/python-services/services/pricing_service.py` — existing pricing logic
 
 **Create:**
 - `apps/backend/src/modules/rating/rating.routes.ts`
@@ -1230,14 +1230,14 @@ GET  /api/v1/tenant/rates/carriers
 
 **Inspect first:**
 - `apps/backend/src/modules/documents/` — existing documents.routes.ts, label.routes.ts, documents.service.ts
-- `apps/python-services/workers/pdf_worker.py` — PDF generation
+- `services/python-services/workers/pdf_worker.py` — PDF generation
 - `apps/backend/prisma/schema.prisma` — ShipmentDocument model
 - `packages/theme-engine/` — tenant branding
 
 **Create:**
 - `apps/backend/src/modules/documents/label.service.ts`
 - `apps/backend/src/modules/documents/label.schema.ts`
-- `apps/python-services/workers/label_worker.py` — ZPL + PDF label rendering
+- `services/python-services/workers/label_worker.py` — ZPL + PDF label rendering
 
 **Database changes:**
 - Add `GeneratedLabel` model
@@ -1317,9 +1317,9 @@ POST   /api/v1/tenant/shipping-rules/:id/test
 **Objective:** Expose the existing Python customs worker as a first-class tenant-facing module, enabling tenants to create, manage, and submit customs declarations for cross-border shipments.
 
 **Inspect first:**
-- `apps/python-services/api/customs.py` — existing FastAPI customs endpoint
-- `apps/python-services/workers/customs_worker.py` — async customs processing
-- `apps/python-services/lib/hs_lookup.py` — HS code lookup
+- `services/python-services/api/customs.py` — existing FastAPI customs endpoint
+- `services/python-services/workers/customs_worker.py` — async customs processing
+- `services/python-services/lib/hs_lookup.py` — HS code lookup
 - `apps/backend/src/modules/shipments/` — shipment model to link declarations
 
 **Create:**
