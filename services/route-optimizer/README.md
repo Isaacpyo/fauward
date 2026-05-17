@@ -1,48 +1,124 @@
 # Fauward Route Optimizer
 
-A standalone Python microservice that provides intelligent route planning and ML-based ETA prediction for the Fauward logistics platform.
-
-## Overview
-
-Field operators using fauward-Go are assigned multiple shipment stops per day. This service takes those stops and returns an optimised visit order with per-stop ETAs — minimising total distance, total time, or both depending on the shipment service tier.
-
-The service runs independently of the Node.js backend and is called over HTTP via BullMQ workers. It requires no database connection of its own.
+A standalone Python/FastAPI microservice that provides intelligent route planning and ML-based ETA prediction for the Fauward logistics platform. Runs independently of the Node.js backend and is called over HTTP via BullMQ workers.
 
 ---
 
-## What was built
+## What it does
 
-### Algorithm
+Given a set of delivery/pickup stops, the service returns an optimised visit order with per-stop ETAs — minimising total distance, total time, or both depending on the shipment service tier. Handles up to 200 stops in under 3 seconds.
 
-Two-phase heuristic optimisation:
+It also exposes an ETA training endpoint. As fauward-Go field operators complete stops and actual arrival times are recorded, those data points are fed back to train a Random Forest model that progressively improves ETA accuracy for that tenant's typical routes.
+
+---
+
+## Architecture
+
+```
+fauward-Go (field operator PWA)
+        │  POST /field/location (live GPS)
+        │
+        ▼
+Fastify Backend  ─────────────────────────────────────────────┐
+│                                                              │
+│  modules/routing/                                            │
+│  ├── routing.routes.ts   (REST surface)                      │
+│  ├── routing.service.ts  (HTTP client + address mapper)      │
+│  └── routing.types.ts    (TypeScript schemas)                │
+│                                                              │
+│  queues/                                                     │
+│  ├── queues.ts            (routeOptimizationQueue)           │
+│  └── route-optimization.worker.ts  (BullMQ worker)          │
+│                                                              │
+└──────────────────────── Redis (BullMQ) ─────────────────────┘
+                                │
+                                ▼
+                   services/route-optimizer/   ← this service
+                   POST /v1/optimize
+                   POST /v1/eta/train
+                   GET  /v1/health
+                                │
+                                ▼
+                   PostgreSQL  (Route + RouteStop)
+                   RouteStop.sequence     ← optimised order written here
+                   RouteStop.estimatedAt  ← per-stop ETAs written here
+                   Route.optimizedAt      ← last run timestamp
+                   Route.optimizationScore ← result metadata
+```
+
+---
+
+## Data flow
+
+**1. Create route**
+```
+POST /api/v1/routes
+{ vehicleId, date, shipmentIds[] }
+→ creates Route + RouteStop rows (one PICKUP + one DROPOFF per shipment)
+```
+
+**2. Trigger optimisation**
+```
+POST /api/v1/routes/:routeId/optimize
+{ objective?, useEtaModel?, vehicleStart? }
+→ 202 Accepted — job enqueued in BullMQ immediately
+```
+
+**3. Worker runs asynchronously**
+```
+Fetches Route + stops + shipment addresses
+Extracts lat/lng from address JSON
+Calls POST /v1/optimize on this service
+Writes optimised sequence and ETAs back to RouteStop rows
+Stamps Route.optimizedAt + Route.optimizationScore
+```
+
+**4. fauward-Go reads optimised route**
+```
+GET /api/v1/field/routes  →  stops ordered by sequence, with estimatedAt per stop
+```
+
+**5. ETA feedback loop**
+```
+Operator completes stop → RouteStop.arrivedAt recorded
+POST /api/v1/routes/eta/train  (admin-triggered)
+→ collects completed stops with coordinates → POST /v1/eta/train
+→ Random Forest model retrained, improving future ETA predictions
+```
+
+---
+
+## Algorithm
 
 **Phase 1 — Nearest Neighbour**
-Starts from the vehicle's current GPS position and greedily picks the closest unvisited stop at each step. Fast initialisation at O(n²).
+Starting from the vehicle's GPS position, greedily picks the closest unvisited stop at each step. Fast initialisation at O(n²).
 
 **Phase 2 — 2-opt improvement**
-Iteratively reverses route segments to reduce total cost. Capped at 100 iterations, typically converges well within that for real-world route sizes (≤ 200 stops in under 3 seconds).
+Iteratively reverses route segments to reduce total cost. Capped at 100 iterations — converges well within that for real-world route sizes.
 
-**Objectives** (auto-selected from shipment service tier, overridable):
+**Objectives** (auto-selected from shipment service tier, overridable per request):
 
-| Tier | Objective | Optimises |
+| Value | Tier default | Optimises |
 |---|---|---|
-| EXPRESS / OVERNIGHT | MIN_TIME | Fewest minutes door-to-door |
-| STANDARD | BALANCED | Equal weight on distance and time |
-| ECONOMY | MIN_DISTANCE | Fewest kilometres driven |
+| `MIN_TIME` | EXPRESS / OVERNIGHT | Fewest minutes door-to-door |
+| `BALANCED` | STANDARD | Equal weight on distance and time |
+| `MIN_DISTANCE` | ECONOMY | Fewest kilometres driven |
 
-### ML ETA model
+---
 
-When field operators complete stops, actual arrival times are recorded. These feed a **Random Forest Regressor** that learns travel time patterns specific to the tenant's operating area.
+## ETA model
 
-Features used per leg:
+When no trained model is available (or `useEtaModel: false`), the service uses a **baseline model**: 35 km/h average speed with time-of-day adjustments (rush hour +30%, late night −15%).
+
+When trained, a **Random Forest Regressor** (50 trees, max depth 10) replaces the baseline.
+
+Features per leg:
 - Distance (km) via Haversine
 - Hour of day (sin/cos cyclical encoding)
 - Day of week (one-hot, 7 features)
 - Origin and destination coordinates
 
-Before enough real data exists, the service falls back to a baseline model: 35 km/h average with time-of-day adjustments (rush hour +30%, late night −15%).
-
-Training requires a minimum of 10 completed trips with resolvable coordinates. The trained model is persisted to `/app/data/` (joblib format) and loaded automatically on startup.
+Minimum 10 completed trips with resolvable coordinates required to trigger training. The trained model persists to `/app/data/` (joblib) and loads automatically on startup.
 
 ### Seeding
 
@@ -54,23 +130,27 @@ python scripts/seed_eta_training.py \
   --rows 200
 ```
 
-The script generates realistic trips across London, Birmingham, Manchester, Leeds, Bristol, Heathrow, Gatwick and other UK hubs with time-of-day weighted departure times and realistic speed variance.
+Generates realistic trips across London, Birmingham, Manchester, Leeds, Bristol, Heathrow, Gatwick and other UK hubs — time-of-day weighted with realistic speed variance.
 
 ---
 
-## API endpoints
+## Address → coordinate mapping
+
+Fauward stores shipment addresses as freeform JSON. The service extracts coordinates by looking for `lat`/`lng` or `latitude`/`longitude` keys. Stops without resolvable coordinates are skipped with a warning; the route still optimises over the remaining stops.
+
+Geocoding is a planned enhancement — extraction is isolated in `routing.service.ts:extractCoords()` so a provider can be added without touching the rest of the module.
+
+---
+
+## API reference
 
 ### `GET /v1/health`
-Returns service status and whether the ETA model is trained and loaded.
-
 ```json
 { "ok": true, "version": "1.0.0", "etaModelLoaded": true }
 ```
 
 ### `POST /v1/optimize`
-Optimises a route and returns an ordered stop sequence with per-stop ETAs.
 
-**Request:**
 ```json
 {
   "requestId": "uuid",
@@ -79,6 +159,7 @@ Optimises a route and returns an ordered stop sequence with per-stop ETAs.
     "capacity": 1200.0
   },
   "constraints": {
+    "maxStops": null,
     "maxKm": 150,
     "maxMinutes": 480
   },
@@ -101,23 +182,16 @@ Optimises a route and returns an ordered stop sequence with per-stop ETAs.
 }
 ```
 
-**Response includes:**
-- `orderedStopIds` — stop IDs in optimised visit order
-- `legs` — per-leg distance, duration, and ETA timestamp
-- `totalDistanceKm` / `totalDurationMinutes`
-- `feasible` — whether all constraints are satisfied
-- `violations` — list of constraint violations if any
-- `explain` — algorithm notes and score breakdown (when requested)
+Response includes `orderedStopIds[]`, per-leg `legs[]` with distance/duration/ETA, `totalDistanceKm`, `totalDurationMinutes`, `feasible`, `violations[]`, and optional `explain` breakdown.
 
 ### `POST /v1/eta/train`
-Trains the ETA model on historical trip data.
 
 ```json
 {
   "rows": [
     {
       "fromLat": 51.5074, "fromLng": -0.1278,
-      "toLat": 51.5155,   "toLng": -0.1426,
+      "toLat":   51.5155, "toLng":   -0.1426,
       "departedAt": "2026-01-10T09:00:00",
       "arrivedAt":  "2026-01-10T09:22:00"
     }
@@ -125,28 +199,19 @@ Trains the ETA model on historical trip data.
 }
 ```
 
-Minimum 10 rows required. Invalid samples (duration > 24h, distance < 100m) are filtered automatically.
-
 ---
 
-## Integration with Fauward backend
+## Fastify endpoints (backend)
 
-The backend connects via BullMQ (async) and direct HTTP (sync for health/training).
-
-**Flow:**
-1. Admin creates a route via `POST /api/v1/routes` (groups shipments by date)
-2. Admin triggers optimisation via `POST /api/v1/routes/:id/optimize`
-3. Backend enqueues a BullMQ job — returns `202 Accepted` immediately
-4. Worker picks up the job, extracts stop coordinates from shipment addresses, calls this service
-5. Optimised sequence and ETAs are written back to `RouteStop.sequence` and `RouteStop.estimatedAt`
-6. fauward-Go reads the ordered stops via `GET /api/v1/field/routes`
-
-**Vehicle start position:** the caller passes `vehicleStart` coordinates (fauward-Go sends live GPS via `POST /field/location`). Falls back to first stop's coordinates if not provided.
-
-**Environment variable required in backend:**
-```
-ROUTE_OPTIMIZER_URL=http://fauward-abf1.railway.internal:8080
-```
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/routes` | ADMIN, STAFF | Create route from shipment list |
+| `POST` | `/api/v1/routes/:id/optimize` | ADMIN, STAFF | Enqueue optimisation |
+| `GET` | `/api/v1/routes` | ADMIN, STAFF | List routes (filter by date, status) |
+| `GET` | `/api/v1/routes/:id` | ADMIN, STAFF | Get route + ordered stops + ETAs |
+| `PATCH` | `/api/v1/routes/:id/stops/:stopId/arrive` | Any authenticated | Mark stop arrival |
+| `POST` | `/api/v1/routes/eta/train` | ADMIN | Retrain ETA model from completed stops |
+| `GET` | `/api/v1/routes/health` | ADMIN | Optimizer health probe |
 
 ---
 
@@ -155,23 +220,51 @@ ROUTE_OPTIMIZER_URL=http://fauward-abf1.railway.internal:8080
 ```
 services/route-optimizer/
 ├── app/
-│   ├── main.py          FastAPI application — 3 endpoints
-│   ├── schemas.py       Pydantic request/response models
-│   ├── optimizer.py     Nearest-neighbour + 2-opt engine
-│   ├── eta_model.py     Random Forest ETA predictor (sklearn)
-│   └── utils.py         Haversine, time features, leg calculation
+│   ├── main.py            FastAPI application — 3 endpoints
+│   ├── schemas.py         Pydantic request/response models
+│   ├── optimizer.py       Nearest-neighbour + 2-opt engine
+│   ├── eta_model.py       Random Forest ETA predictor (sklearn)
+│   └── utils.py           Haversine, time features, leg calculation
 ├── scripts/
 │   └── seed_eta_training.py   Bootstrap ETA model with synthetic UK data
 ├── tests/
 │   ├── conftest.py
-│   ├── test_api.py      16 API tests
-│   └── test_optimizer.py   9 algorithm tests
+│   ├── test_api.py        16 API tests
+│   └── test_optimizer.py  9 algorithm tests
 ├── data/
-│   └── .gitkeep         Model files written here at runtime (gitignored)
+│   └── .gitkeep           Model files written here at runtime (gitignored)
 ├── Dockerfile
 ├── railway.json
 ├── requirements.txt
 └── README.md
+```
+
+---
+
+## Schema changes applied
+
+Two fields added to the `Route` Prisma model:
+
+```prisma
+optimizedAt       DateTime?   // timestamp of last successful optimisation
+optimizationScore Json?       // { distanceKm, durationMinutes, feasible, violations }
+```
+
+---
+
+## Backend files added / modified
+
+```
+apps/backend/
+├── prisma/schema.prisma                    +optimizedAt, +optimizationScore on Route
+├── src/config/index.ts                     +ROUTE_OPTIMIZER_URL env var
+├── src/queues/queues.ts                    +routeOptimizationQueue
+├── src/queues/route-optimization.worker.ts  new BullMQ async worker
+├── src/modules/routing/
+│   ├── routing.types.ts                    TypeScript mirror of Python schemas
+│   ├── routing.service.ts                  HTTP client + coordinate extractor
+│   └── routing.routes.ts                   7 Fastify endpoints
+└── src/app.ts                              registers routing module + starts worker
 ```
 
 ---
@@ -184,29 +277,28 @@ pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-Interactive docs available at `http://localhost:8001/docs`.
-
-## Running tests
+Interactive docs at `http://localhost:8001/docs`.
 
 ```bash
-cd services/route-optimizer
-python -m pytest tests/ -v
+# Run tests
+python -m pytest tests/ -v   # 25 tests, all passing
 ```
-
-25 tests, all passing.
 
 ---
 
-## Deployment
+## Deployment (Railway)
 
-Deployed on Railway as a standalone service in the Fauward project.
+| | |
+|---|---|
+| **Public URL** | `https://fauward-production-e19b.up.railway.app` |
+| **Internal URL** | `http://fauward-abf1.railway.internal:8080` |
+| **Port** | 8080 (Railway-assigned via `$PORT`) |
+| **Healthcheck** | `GET /v1/health` |
 
-- Public URL: `https://fauward-production-e19b.up.railway.app`
-- Internal URL: `http://fauward-abf1.railway.internal:8080` (used by backend)
-- Healthcheck: `GET /v1/health`
-- Port: 8080 (Railway-assigned via `$PORT`)
-
-The backend service must have `ROUTE_OPTIMIZER_URL` pointing to the internal URL for private network communication.
+Set in the **backend** Railway service:
+```
+ROUTE_OPTIMIZER_URL=http://fauward-abf1.railway.internal:8080
+```
 
 ---
 
@@ -218,5 +310,3 @@ The backend service must have `ROUTE_OPTIMIZER_URL` pointing to the internal URL
 | 50 | < 0.5s |
 | 100 | < 1.5s |
 | 200 | < 3.5s |
-
-Tested on Railway's standard compute tier.
