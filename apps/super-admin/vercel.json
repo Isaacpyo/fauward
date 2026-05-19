@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/api/v1/:path*",
+      "destination": "https://fauwardbackend-production.up.railway.app/api/v1/:path*"
+    },
+    {
+      "source": "/api/internal/:path*",
+      "destination": "https://fauwardbackend-production.up.railway.app/api/internal/:path*"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
