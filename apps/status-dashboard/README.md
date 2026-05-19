@@ -90,21 +90,35 @@ CUSTOM_DOMAIN_PROBE_HOSTS=track.vitalos.co.uk
 
 The backend also supports `VERCEL_EXPECTED_PORTAL_DOMAIN=app.fauward.com`. The dashboard flags the custom-domain setup as degraded if that domain is missing from the configured Vercel project, which catches the tenant-portal vs super-admin project mix-up.
 
-## Production serving
+## Vercel Production Serving
 
 `admin.fauward.com/status` is a Super Admin route. It can only show the live dashboard when `apps/status-dashboard` is deployed separately and Super Admin has `VITE_STATUS_DASHBOARD_URL` set to that deployed dashboard URL.
 
 Do not point `VITE_STATUS_DASHBOARD_URL` back to `https://admin.fauward.com/status`; that creates a self-iframe loop.
 
-Deploy `apps/status-dashboard` with the included Dockerfile, then set:
+Deploy `apps/status-dashboard` as its own Vercel project:
+
+| Vercel setting | Value |
+|---|---|
+| Root Directory | `apps/status-dashboard` |
+| Build Command | `npm run build` |
+| Output Directory | `public` |
+| Install Command | `npm install` |
+
+Add `status.fauward.com` to that Vercel project, then set:
 
 ```bash
 # Super Admin build env
-VITE_STATUS_DASHBOARD_URL=https://<deployed-status-dashboard-host>
+VITE_STATUS_DASHBOARD_URL=https://status.fauward.com
 
-# Status dashboard monitor env
+# Status dashboard Vercel env
+BACKEND_URL=https://<backend-host>
+STATUS_DASHBOARD_ACTIVE_ENVS=prod
 STATUS_DASHBOARD_PROD_URL=https://admin.fauward.com/status
+FAUWARD_GO_PROD_URL=https://app.fauward.com/go
 ```
+
+The Vercel deployment uses `api/index.js` as a serverless Express handler. It does not run a background `setInterval`; health snapshots refresh when the browser polls `/api/status`.
 
 ## File structure
 

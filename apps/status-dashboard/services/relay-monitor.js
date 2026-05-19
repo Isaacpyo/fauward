@@ -5,7 +5,7 @@
  *  - humanNeeded: conversations waiting for a human reply (unacknowledged)
  */
 
-const BACKEND_URL    = process.env.BACKEND_URL    ?? 'http://localhost:3001';
+const BACKEND_URL    = process.env.BACKEND_URL    ?? (process.env.VERCEL ? null : 'http://localhost:3001');
 const MONITORING_KEY = process.env.MONITORING_API_KEY ?? '';
 
 let relayHealth = {
@@ -24,6 +24,16 @@ export function getRelayHealth() {
 }
 
 export async function refreshRelayHealth() {
+  if (!BACKEND_URL) {
+    relayHealth = {
+      ...relayHealth,
+      available:   false,
+      error:       'BACKEND_URL not configured',
+      lastChecked: new Date().toISOString(),
+    };
+    return;
+  }
+
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (MONITORING_KEY) headers['Authorization'] = `Bearer ${MONITORING_KEY}`;

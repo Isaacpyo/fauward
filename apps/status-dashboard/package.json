@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "build": "node --check server.js && node --check api/index.js",
     "dev":   "node --env-file-if-exists=.env.local server.js",
     "start": "node --env-file-if-exists=.env.local server.js"
   },

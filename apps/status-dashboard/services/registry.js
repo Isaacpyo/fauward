@@ -28,6 +28,15 @@ function httpEnv(url) {
   return url ? { url, enabled: true } : null;
 }
 
+function envList(name, fallback) {
+  const value = process.env[name];
+  if (!value) return fallback;
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => ENVIRONMENTS.includes(item));
+}
+
 const RAILWAY_LOGS = 'https://railway.app/dashboard'; // TODO: replace with direct project/service log URL
 const VERCEL_LOGS  = 'https://vercel.com/dashboard';
 const SUPABASE_LOGS= `https://supabase.com/dashboard/project/${(process.env.SUPABASE_URL ?? '').split('//')[1]?.split('.')[0]}/logs/postgres`;
@@ -35,6 +44,7 @@ const SUPABASE_LOCAL_REST_URL = supabaseRestUrl(process.env.SUPABASE_LOCAL_URL ?
 const SUPABASE_LOCAL_ENABLED = envBool('SUPABASE_LOCAL_ENABLED', Boolean(process.env.SUPABASE_LOCAL_URL));
 const STATUS_DASHBOARD_PROD_URL = process.env.STATUS_DASHBOARD_PROD_URL ?? '';
 const FAUWARD_GO_PROD_URL = process.env.FAUWARD_GO_PROD_URL ?? '';
+const IS_VERCEL = Boolean(process.env.VERCEL);
 
 export const SERVICES = [
   // ── Internal tooling ───────────────────────────────────────────────────
@@ -384,7 +394,7 @@ export const QUEUES = [
 ];
 
 export const ENVIRONMENTS = ['local', 'prod', 'staging'];
-export const ACTIVE_ENVS  = ['local', 'prod'];
+export const ACTIVE_ENVS  = envList('STATUS_DASHBOARD_ACTIVE_ENVS', IS_VERCEL ? ['prod'] : ['local', 'prod']);
 
 export const THRESHOLDS = {
   timeoutMs:             5000,

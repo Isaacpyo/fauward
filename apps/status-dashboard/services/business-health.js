@@ -1,4 +1,4 @@
-const BACKEND_URL    = process.env.BACKEND_URL    ?? 'http://localhost:3001';
+const BACKEND_URL    = process.env.BACKEND_URL    ?? (process.env.VERCEL ? null : 'http://localhost:3001');
 const MONITORING_KEY = process.env.MONITORING_API_KEY ?? '';
 
 let businessHealth = {
@@ -19,6 +19,11 @@ export function getBusinessHealth() {
 }
 
 export async function refreshBusinessHealth() {
+  if (!BACKEND_URL) {
+    businessHealth = { ...businessHealth, available: false, error: 'BACKEND_URL not configured', lastChecked: new Date().toISOString() };
+    return;
+  }
+
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (MONITORING_KEY) headers['Authorization'] = `Bearer ${MONITORING_KEY}`;

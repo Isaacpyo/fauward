@@ -1,6 +1,7 @@
 import { resolveCname } from 'node:dns/promises';
+import { ACTIVE_ENVS } from './registry.js';
 
-const LOCAL_BACKEND_URL = process.env.LOCAL_BACKEND_URL ?? 'http://localhost:3001';
+const LOCAL_BACKEND_URL = process.env.LOCAL_BACKEND_URL ?? (process.env.VERCEL ? null : 'http://localhost:3001');
 const PROD_BACKEND_URL = process.env.BACKEND_URL ?? null;
 const MONITORING_KEY = process.env.MONITORING_API_KEY ?? '';
 const PROBE_HOSTS = (process.env.CUSTOM_DOMAIN_PROBE_HOSTS ?? '')
@@ -102,8 +103,8 @@ export function getCustomDomainHealth() {
 
 export async function refreshCustomDomainHealth() {
   const [local, prod, probes] = await Promise.all([
-    fetchBackendSnapshot('local', LOCAL_BACKEND_URL),
-    PROD_BACKEND_URL ? fetchBackendSnapshot('prod', PROD_BACKEND_URL) : Promise.resolve(null),
+    ACTIVE_ENVS.includes('local') ? fetchBackendSnapshot('local', LOCAL_BACKEND_URL) : Promise.resolve(null),
+    ACTIVE_ENVS.includes('prod') && PROD_BACKEND_URL ? fetchBackendSnapshot('prod', PROD_BACKEND_URL) : Promise.resolve(null),
     Promise.all(PROBE_HOSTS.map(probeHost))
   ]);
 

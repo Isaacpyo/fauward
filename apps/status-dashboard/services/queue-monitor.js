@@ -1,7 +1,7 @@
 import { QUEUES, THRESHOLDS } from './registry.js';
 
 const queueState = new Map();
-const BACKEND_URL = process.env.BACKEND_URL ?? 'http://localhost:3001';
+const BACKEND_URL = process.env.BACKEND_URL ?? (process.env.VERCEL ? null : 'http://localhost:3001');
 const MONITORING_KEY = process.env.MONITORING_API_KEY ?? '';
 
 for (const q of QUEUES) {
@@ -36,6 +36,11 @@ function deriveStatus(stats) {
 }
 
 export async function refreshQueueStats() {
+  if (!BACKEND_URL) {
+    markAllUnknown('BACKEND_URL not configured');
+    return;
+  }
+
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (MONITORING_KEY) headers['Authorization'] = `Bearer ${MONITORING_KEY}`;

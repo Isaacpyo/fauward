@@ -1,5 +1,5 @@
 import express from 'express';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -41,6 +41,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT      = process.env.PORT ? Number(process.env.PORT) : 4000;
 const HOST      = process.env.HOST ?? '0.0.0.0';
 const INTERVAL  = Number(process.env.CHECK_INTERVAL ?? 30_000);
+const REQUEST_REFRESH_MS = Number(process.env.STATUS_REQUEST_REFRESH_MS ?? 15_000);
+const IS_SERVERLESS = Boolean(process.env.VERCEL);
 
 // ── Env validation (warns only, never crashes) ────────────────────────────────
 const _origLog = console.log.bind(console);
@@ -93,15 +95,32 @@ async function runCycle() {
   ]);
 }
 
-runCycle();
-setInterval(runCycle, INTERVAL);
+let lastCycleAt = 0;
+let cyclePromise = null;
+
+export async function refreshSnapshot({ force = false } = {}) {
+  if (cyclePromise) return cyclePromise;
+  if (!force && lastCycleAt && Date.now() - lastCycleAt < REQUEST_REFRESH_MS) return;
+
+  cyclePromise = runCycle()
+    .then(() => {
+      lastCycleAt = Date.now();
+    })
+    .finally(() => {
+      cyclePromise = null;
+    });
+
+  return cyclePromise;
+}
 
 // ── Express ───────────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
-app.get('/api/status', (_req, res) => {
+app.get('/api/status', async (_req, res) => {
+  await refreshSnapshot();
+
   res.json({
     checkedAt:      new Date().toISOString(),
     interval:       INTERVAL,
@@ -127,6 +146,15 @@ app.post('/api/restart/:serviceId', async (req, res) => {
   if (!svc)   return res.status(404).json({ error: 'Service not found' });
   if (!svc.fix) return res.status(400).json({ error: 'No fix command configured for this service' });
 
+  if (IS_SERVERLESS) {
+    return res.json({
+      ok: false,
+      manualRequired: true,
+      cmd: svc.fix,
+      message: 'Restart commands are disabled on Vercel. Run the command locally or restart the owning deployment.',
+    });
+  }
+
   // Non-restartable services: return the command so the UI can show a copy prompt
   if (!svc.restartable) {
     return res.json({ ok: false, manualRequired: true, cmd: svc.fix,
@@ -147,6 +175,8 @@ app.post('/api/restart/:serviceId', async (req, res) => {
 // Kimi AI streaming diagnosis — SSE endpoint
 app.get('/api/ai-diagnose/:serviceId/:env', async (req, res) => {
   const { serviceId, env } = req.params;
+  await refreshSnapshot();
+
   const svc      = SERVICES.find(s => s.id === serviceId);
   const allState = getAllServiceState();
   const svcState = allState.find(s => s.id === serviceId);
@@ -216,8 +246,10 @@ app.get('/api/ai-providers', (_req, res) => {
   res.json({ providers: getAvailableProviders() });
 });
 
-app.get('/api/diagnose/:serviceId/:env', (req, res) => {
+app.get('/api/diagnose/:serviceId/:env', async (req, res) => {
   const { serviceId, env } = req.params;
+  await refreshSnapshot();
+
   const svc      = SERVICES.find(s => s.id === serviceId);
   const svcState = getAllServiceState().find(s => s.id === serviceId);
 
@@ -310,17 +342,33 @@ app.post('/api/python-observability/incidents/:id/resolve', async (req, res) => 
   } catch (err) { res.status(503).json({ error: err.message }); }
 });
 
-const server = app.listen(PORT, HOST, () => {
+export function startServer() {
+  void refreshSnapshot({ force: true });
+
+  const timer = setInterval(() => {
+    void refreshSnapshot({ force: true });
+  }, INTERVAL);
+  timer.unref?.();
+
+  const server = app.listen(PORT, HOST, () => {
   _origLog(`\nFauward Ops Dashboard → http://localhost:${PORT}`);
   _origLog(`Monitoring ${getAllServiceState().length} services every ${INTERVAL / 1000}s\n`);
   _origLog(`Python Observability API → ${PYTHON_API_URL}/observability`);
-});
+  });
 
-server.once('error', (err) => {
+  server.once('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     _origLog(`Status dashboard port ${PORT} is already in use. Stop the existing process or set PORT explicitly.`);
     process.exit(1);
   }
 
-  throw err;
-});
+    throw err;
+  });
+
+  return server;
+}
+
+const isCli = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isCli) startServer();
+
+export default app;
