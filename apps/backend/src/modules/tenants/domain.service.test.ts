@@ -46,9 +46,9 @@ function buildContext(existing = tenant()) {
     $transaction: vi.fn(async (callback: any) => callback(tx))
   };
   const vercel = {
-    addDomain: vi.fn(async (domain: string) => ({ name: domain, verified: false, projectId: 'prj_123' })),
-    getDomain: vi.fn(async (domain: string) => ({ name: domain, verified: false })),
-    verifyDomain: vi.fn(async (domain: string) => ({ name: domain, verified: false })),
+    addDomain: vi.fn(async (domain: string): Promise<any> => ({ name: domain, verified: false, projectId: 'prj_123' })),
+    getDomain: vi.fn(async (domain: string): Promise<any> => ({ name: domain, verified: false })),
+    verifyDomain: vi.fn(async (domain: string): Promise<any> => ({ name: domain, verified: false })),
     getDomainConfig: vi.fn(async () => ({
       configuredBy: 'CNAME',
       misconfigured: false,
@@ -90,6 +90,43 @@ describe('DomainService', () => {
       resourceId: 'track.example.com'
     }));
     expect(result.instructions.value).toBe('cname.vercel-dns-0.com');
+    expect(result.records).toEqual([
+      expect.objectContaining({ type: 'CNAME', name: 'track', value: 'cname.vercel-dns-0.com' })
+    ]);
+  });
+
+  it('returns Vercel TXT verification records when ownership proof is required', async () => {
+    const ctx = buildContext();
+    ctx.vercel.addDomain.mockResolvedValueOnce({
+      name: 'track.example.com',
+      verified: false,
+      projectId: 'prj_123',
+      verification: [
+        {
+          type: 'TXT',
+          domain: '_vercel.example.com',
+          value: 'vc-domain-verify=track.example.com,abc123',
+          reason: 'pending_domain_verification'
+        }
+      ]
+    });
+
+    const result = await ctx.service.setCustomDomain(ctx.prisma as any, {
+      tenantId: 'tenant-a',
+      domain: 'track.example.com',
+      actorUserId: 'user-a',
+      actorIp: '127.0.0.1'
+    });
+
+    expect(result.records).toEqual([
+      expect.objectContaining({ type: 'CNAME', name: 'track', host: 'track.example.com' }),
+      expect.objectContaining({
+        type: 'TXT',
+        name: '_vercel',
+        host: '_vercel.example.com',
+        value: 'vc-domain-verify=track.example.com,abc123'
+      })
+    ]);
   });
 
   it('treats setting the same non-failed domain as an idempotent no-op', async () => {
@@ -133,6 +170,7 @@ describe('DomainService', () => {
   it('maps Vercel conflicts to DomainConflictError', async () => {
     const ctx = buildContext();
     ctx.vercel.addDomain.mockRejectedValueOnce(new VercelDomainAlreadyTakenError('taken'));
+    ctx.vercel.getDomain.mockRejectedValueOnce(new Error('not found'));
 
     await expect(ctx.service.setCustomDomain(ctx.prisma as any, {
       tenantId: 'tenant-a',
@@ -140,6 +178,43 @@ describe('DomainService', () => {
     })).rejects.toBeInstanceOf(DomainConflictError);
 
     expect(ctx.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('syncs an existing Vercel project domain when add reports it already exists', async () => {
+    const ctx = buildContext();
+    ctx.vercel.addDomain.mockRejectedValueOnce(new VercelDomainAlreadyTakenError('already exists'));
+    ctx.vercel.getDomain.mockResolvedValueOnce({ name: 'track.example.com', verified: true, projectId: 'prj_123' });
+
+    const result = await ctx.service.setCustomDomain(ctx.prisma as any, {
+      tenantId: 'tenant-a',
+      domain: 'track.example.com',
+      actorUserId: 'user-a'
+    });
+
+    expect(ctx.vercel.getDomain).toHaveBeenCalledWith('track.example.com');
+    expect(ctx.tx.tenant.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        customDomain: 'track.example.com',
+        customDomainStatus: 'PENDING_DNS'
+      })
+    }));
+    expect(result.records).toEqual([
+      expect.objectContaining({ type: 'CNAME', name: 'track', value: 'cname.vercel-dns-0.com' })
+    ]);
+  });
+
+  it('does not remove a reused existing Vercel project domain if the DB write conflicts', async () => {
+    const ctx = buildContext();
+    ctx.vercel.addDomain.mockRejectedValueOnce(new VercelDomainAlreadyTakenError('already exists'));
+    ctx.vercel.getDomain.mockResolvedValueOnce({ name: 'track.example.com', verified: true, projectId: 'prj_123' });
+    ctx.prisma.$transaction.mockRejectedValueOnce({ code: 'P2002' });
+
+    await expect(ctx.service.setCustomDomain(ctx.prisma as any, {
+      tenantId: 'tenant-a',
+      domain: 'track.example.com'
+    })).rejects.toBeInstanceOf(DomainConflictError);
+
+    expect(ctx.vercel.removeDomain).not.toHaveBeenCalled();
   });
 
   it('maps Prisma P2002 conflicts and cleans up the just-added Vercel domain', async () => {
@@ -161,6 +236,7 @@ describe('DomainService', () => {
       status: 'NONE',
       domain: null,
       instructions: null,
+      records: [],
       error: null,
       verifiedAt: null,
       lastCheckAt: null
@@ -185,6 +261,29 @@ describe('DomainService', () => {
       action: 'tenant.custom_domain.status_changed',
       metadata: expect.objectContaining({ from: 'PENDING_DNS', to: 'ACTIVE' })
     }));
+  });
+
+  it('keeps status as PENDING_DNS when Vercel still requires a TXT record', async () => {
+    const ctx = buildContext(tenant({ customDomain: 'track.example.com', customDomainStatus: 'VERIFYING' }));
+    ctx.vercel.verifyDomain.mockResolvedValueOnce({
+      name: 'track.example.com',
+      verified: false,
+      verification: [
+        {
+          type: 'TXT',
+          domain: '_vercel.example.com',
+          value: 'vc-domain-verify=track.example.com,abc123',
+          reason: 'pending_domain_verification'
+        }
+      ]
+    });
+
+    const result = await ctx.service.checkStatus(ctx.prisma as any, 'tenant-a');
+
+    expect(result.status).toBe('PENDING_DNS');
+    expect(result.records).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'TXT', name: '_vercel', value: 'vc-domain-verify=track.example.com,abc123' })
+    ]));
   });
 
   it('does not audit when status is unchanged', async () => {

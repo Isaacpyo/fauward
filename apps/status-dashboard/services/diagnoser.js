@@ -113,6 +113,20 @@ function getSteps(svc, env, errorType, httpStatus) {
 
 export function diagnose(svc, env, envState) {
   if (!envState?.configured) {
+    if (svc.id === 'supabase' && env === 'local') {
+      return {
+        status:      'unconfigured',
+        likelyCause: 'Local Supabase REST monitoring is disabled. Fauward local development uses Docker Postgres on localhost:5432, not the Supabase CLI API on localhost:54321.',
+        steps:       [
+          'No action is needed for normal Fauward local development.',
+          'Use the Postgres card to monitor the local database on localhost:5432.',
+          'Only enable this check if you run the Supabase CLI stack with `supabase start`.',
+          'To enable it, set `SUPABASE_LOCAL_ENABLED=true` and `SUPABASE_LOCAL_URL=http://localhost:54321` in `apps/status-dashboard/.env.local`.',
+        ],
+        isRealOutage: false,
+      };
+    }
+
     return {
       status:      'unconfigured',
       likelyCause: 'No URL or host configured for this environment.',

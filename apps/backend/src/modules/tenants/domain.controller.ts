@@ -68,7 +68,8 @@ export const domainController = {
       return reply.send({
         ok: true,
         tenant: serializeDomainTenant(result.tenant),
-        instructions: result.instructions
+        instructions: result.instructions,
+        records: result.records
       });
     } catch (error) {
       return sendDomainError(reply, error);

@@ -99,6 +99,15 @@
         <div id="alerts-list"></div>
       </section>
 
+      <!-- Custom Domains view -->
+      <section id="section-custom-domains" class="hidden">
+        <div class="section-header">
+          <h2>Custom Domains</h2>
+          <span class="section-sub">Tenant domain provisioning, Vercel project, DNS, and routing guardrails</span>
+        </div>
+        <div id="custom-domain-grid" class="domain-grid"></div>
+      </section>
+
       <!-- Active incidents strip (always shown below services grid) -->
       <div id="incidents-strip" class="incidents-strip hidden"></div>
 
@@ -172,6 +181,26 @@
         </div>
       </div>
       <div class="modal-body" id="logs-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Domain list modal -->
+  <div class="modal-overlay hidden" id="domain-list-modal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <span class="modal-title" id="domain-modal-title">Custom Domains</span>
+        <div class="modal-header-actions">
+          <div class="filter-pills" id="domain-filter-pills">
+            <button class="filter-pill active" data-filter="all">All</button>
+            <button class="filter-pill" data-filter="ACTIVE">Active</button>
+            <button class="filter-pill" data-filter="PENDING_DNS">Pending</button>
+            <button class="filter-pill" data-filter="FAILED">Failed</button>
+          </div>
+          <button class="close-btn" id="domain-modal-close">✕</button>
+        </div>
+      </div>
+      <div class="modal-body" id="domain-modal-body"></div>
+      <div class="modal-footer" id="domain-modal-footer"></div>
     </div>
   </div>
 

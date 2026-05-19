@@ -36,7 +36,7 @@ describe('escalation sweeper', () => {
     expect(prisma.shipment.findMany).toHaveBeenCalled();
     expect(prisma.shipment.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'ship-1', escalationFlag: false },
+        where: { id: 'ship-1', tenantId: 'tenant-1', escalationFlag: false },
         data: expect.objectContaining({ escalationFlag: true }),
       })
     );

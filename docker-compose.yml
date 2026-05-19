@@ -5,7 +5,8 @@ services:
     environment:
       UPTIME_KUMA_PORT: 4000
     ports:
-      - "4000:4000"
+      # Keep 4000 free for apps/status-dashboard.
+      - "4002:4000"
     volumes:
       - uptime-kuma-data:/app/data
     restart: unless-stopped

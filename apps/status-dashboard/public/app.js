@@ -2,7 +2,7 @@ const API_BASE = window.location.pathname.startsWith('/status') ? '/status' : ''
 
 // ── State ─────────────────────────────────────────────────────────────────
 let lastData         = null;
-let activeSection    = 'services';  // services | queues | business | incidents | alerts
+let activeSection    = 'services';  // services | queues | business | incidents | alerts | custom-domains
 let activeFilter     = 'all';       // all | down | degraded | critical | core | frontend | database | worker | integration
 let selectedSvcId    = null;
 let autoRefresh      = true;
@@ -18,6 +18,9 @@ let viewType = localStorage.getItem('ops-view') ?? 'grid';
 
 // Detail panel tab
 let activeDetailTab = 'overview'; // 'overview' | 'diagnose'
+
+// Domain list modal
+let domainListModal = { filter: 'all', page: 0, perPage: 25 };
 
 // AI providers (loaded once at boot)
 let aiProviders = [];
@@ -120,7 +123,7 @@ function renderHeader(data) {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
 function renderSidebar(data) {
-  const { services, incidents, alerts, logs } = data;
+  const { services, incidents, alerts, logs, customDomains } = data;
   const openIncidents = incidents?.filter(i => i.status !== 'resolved') ?? [];
   const downCt  = services.filter(s => Object.values(s.envStates).some(e => e?.status === 'down')).length;
   const degCt   = services.filter(s => Object.values(s.envStates).some(e => e?.status === 'degraded')).length;
@@ -159,6 +162,7 @@ function renderSidebar(data) {
       <div class="sidebar-section-title">Sections</div>
       ${item('queues',    '', 'Queue Health',      (data.queues ?? []).length)}
       ${item('business',  '', 'Business Health',   null)}
+      ${item('custom-domains', '', 'Custom Domains', customDomains?.issues?.length || null, customDomains?.issues?.length ? 'warn' : '')}
       ${item('incidents', '', 'Incidents',         openIncidents.length, openIncidents.length > 0 ? 'incident' : '')}
       ${item('alerts',    '', 'Alerts',            (alerts ?? []).length)}
     </div>
@@ -490,8 +494,140 @@ function renderAlerts(alerts) {
 }
 
 // ── Section switching ─────────────────────────────────────────────────────
+function statusClass(status) {
+  if (status === 'up' || status === 'ACTIVE') return 'up';
+  if (status === 'down' || status === 'FAILED') return 'down';
+  if (status === 'degraded' || status === 'PENDING_DNS' || status === 'VERIFYING') return 'degraded';
+  return 'unknown';
+}
+
+function renderDomainSnapshot(label, snapshot) {
+  if (!snapshot) {
+    return `<div class="queue-card">
+      <div class="queue-card-top">
+        <span class="queue-name">${esc(label)}</span>
+        <span class="inc-status unknown">N/A</span>
+      </div>
+      <div class="empty-state compact">Not configured.</div>
+    </div>`;
+  }
+
+  const counts  = snapshot.counts ?? {};
+  const vercel  = snapshot.vercel ?? {};
+  const issues  = snapshot.issues ?? [];
+  const sc      = statusClass(snapshot.status);
+  const cardCls = sc === 'down' ? 'q-down' : sc === 'degraded' ? 'q-degraded' : '';
+
+  return `<div class="queue-card ${cardCls}">
+    <div class="queue-card-top">
+      <span class="queue-name">${esc(label)}</span>
+      <span class="inc-status ${sc}">${labelFor(snapshot.status ?? 'unknown')}</span>
+    </div>
+    ${snapshot.error ? `<div class="error-block" style="margin-bottom:0.6rem"><div class="error-reason"><span>!</span><span>${esc(snapshot.error)}</span></div></div>` : ''}
+    <div class="queue-metrics">
+      <div class="qm"><span class="qm-label">Total</span><span class="qm-value">${snapshot.total ?? '-'}</span></div>
+      <div class="qm"><span class="qm-label">Active</span><span class="qm-value">${counts.ACTIVE ?? 0}</span></div>
+      <div class="qm"><span class="qm-label">Pending</span><span class="qm-value">${(counts.PENDING_DNS ?? 0) + (counts.VERIFYING ?? 0)}</span></div>
+      <div class="qm"><span class="qm-label">Failed</span><span class="qm-value ${counts.FAILED ? 'crit' : ''}">${counts.FAILED ?? 0}</span></div>
+      ${vercel.projectName || vercel.projectId ? `<div class="qm" style="grid-column:1/-1"><span class="qm-label">Vercel project</span><span class="qm-value" style="font-size:0.7rem">${esc(vercel.projectName ?? vercel.projectId ?? '-')}</span></div>` : ''}
+      ${vercel.expectedPortalDomain ? `<div class="qm" style="grid-column:1/-1"><span class="qm-label">App domain guard</span><span class="qm-value ${vercel.expectedPortalDomainAttached ? '' : 'crit'}" style="font-size:0.7rem">${esc(vercel.expectedPortalDomain)} · ${vercel.expectedPortalDomainAttached ? 'attached' : 'missing'}</span></div>` : ''}
+      ${snapshot.lastChecked ? `<div class="qm" style="grid-column:1/-1"><span class="qm-label">Last sync</span><span class="qm-value" style="font-size:0.7rem" data-iso="${snapshot.lastChecked}">${timeAgo(snapshot.lastChecked)}</span></div>` : ''}
+    </div>
+    ${issues.length ? `<div class="domain-issues" style="margin-top:0.6rem">${issues.map(i => `<div class="error-reason"><span>!</span><span>${esc(i)}</span></div>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+function getAllDomains() {
+  const src = lastData?.customDomains?.prod?.domains?.length
+    ? lastData.customDomains.prod
+    : lastData?.customDomains?.local;
+  return src?.domains ?? [];
+}
+
+function renderDomainModal() {
+  const all      = getAllDomains();
+  const filtered = domainListModal.filter === 'all'
+    ? all
+    : all.filter(d => d.customDomainStatus === domainListModal.filter);
+  const total  = filtered.length;
+  const start  = domainListModal.page * domainListModal.perPage;
+  const end    = Math.min(start + domainListModal.perPage, total);
+  const page   = filtered.slice(start, end);
+
+  const titleEl = document.getElementById('domain-modal-title');
+  if (titleEl) titleEl.textContent = `Custom Domains (${total})`;
+
+  document.getElementById('domain-modal-body').innerHTML = page.length
+    ? page.map(d => `
+        <div class="modal-domain-row">
+          <span class="domain-host">${esc(d.customDomain)}</span>
+          <span class="domain-tenant">${esc(d.slug)}</span>
+          <span class="inc-status ${statusClass(d.customDomainStatus)}">${esc(d.customDomainStatus)}</span>
+        </div>`).join('')
+    : '<div class="empty-state" style="padding:1.5rem 0">No domains match this filter.</div>';
+
+  document.getElementById('domain-modal-footer').innerHTML = total > domainListModal.perPage ? `
+    <button class="icon-btn" id="domain-page-prev" ${start === 0 ? 'disabled' : ''}>‹</button>
+    <span style="font-size:0.72rem;color:var(--muted)">${start + 1}–${end} of ${total}</span>
+    <button class="icon-btn" id="domain-page-next" ${end >= total ? 'disabled' : ''}>›</button>
+  ` : `<span style="font-size:0.72rem;color:var(--muted)">${total} domain${total !== 1 ? 's' : ''}</span>`;
+}
+
+function openDomainModal() {
+  domainListModal.page = 0;
+  document.getElementById('domain-list-modal').classList.remove('hidden');
+  renderDomainModal();
+}
+
+function closeDomainModal() {
+  document.getElementById('domain-list-modal').classList.add('hidden');
+}
+
+function renderCustomDomains(data) {
+  const el = document.getElementById('custom-domain-grid');
+  if (!el) return;
+  if (!data) {
+    el.innerHTML = '<div class="empty-state">Custom-domain health unavailable.</div>';
+    return;
+  }
+
+  const probes = data.probes ?? [];
+
+  // Summary counts from whichever backend has domain data
+  const src     = data.prod?.domains?.length ? data.prod : data.local;
+  const domains = src?.domains ?? [];
+  const total   = domains.length;
+  const active  = domains.filter(d => d.customDomainStatus === 'ACTIVE').length;
+  const pending = domains.filter(d => d.customDomainStatus === 'PENDING_DNS' || d.customDomainStatus === 'VERIFYING').length;
+  const failed  = domains.filter(d => d.customDomainStatus === 'FAILED').length;
+
+  el.innerHTML = `
+    ${renderDomainSnapshot('Local', data.local)}
+    ${renderDomainSnapshot('Production', data.prod)}
+    <div class="queue-card">
+      <div class="queue-card-top">
+        <span class="queue-name">DNS Probes</span>
+        <span class="badge badge-type">${probes.length}</span>
+      </div>
+      ${probes.length ? `<div class="domain-table">${probes.map(probe => `
+        <div class="domain-row">
+          <span class="domain-host">${esc(probe.host)}</span>
+          <span class="domain-tenant">${probe.cnames?.map(esc).join(', ') || esc(probe.error ?? 'no CNAME')}</span>
+          <span class="inc-status ${statusClass(probe.status)}">${labelFor(probe.status)}</span>
+        </div>`).join('')}</div>` : '<div class="empty-state compact">Set CUSTOM_DOMAIN_PROBE_HOSTS to check public DNS.</div>'}
+    </div>
+    <div class="queue-card" style="grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+      <div>
+        <span class="queue-name">${total} domain${total !== 1 ? 's' : ''} configured</span>
+        <div style="font-size:0.65rem;color:var(--muted);margin-top:0.2rem">${active} active · ${pending} pending · ${failed} failed</div>
+      </div>
+      <button class="action-link" id="view-all-domains-btn">View all →</button>
+    </div>
+  `;
+}
+
 function showSection(section) {
-  ['services','queues','business','incidents','alerts','workers','py-incidents','config','audit'].forEach(s => {
+  ['services','queues','business','incidents','alerts','custom-domains','workers','py-incidents','config','audit'].forEach(s => {
     document.getElementById(`section-${s}`)?.classList.toggle('hidden', s !== section);
   });
 }
@@ -963,6 +1099,7 @@ function renderAll(data) {
   }
   if (activeSection === 'queues')       renderQueues(data.queues);
   if (activeSection === 'business')     renderBusinessHealth(data.businessHealth);
+  if (activeSection === 'custom-domains') renderCustomDomains(data.customDomains);
   if (activeSection === 'incidents')    renderIncidents(data.incidents);
   if (activeSection === 'alerts')       renderAlerts(data.alerts);
   if (activeSection === 'workers')      renderWorkers(pyData?.workers);
@@ -1189,6 +1326,29 @@ document.getElementById('close-detail').addEventListener('click', closeDetail);
 document.getElementById('logs-modal-close').addEventListener('click', closeLogsModal);
 document.getElementById('logs-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('logs-modal')) closeLogsModal();
+});
+
+// Domain list modal
+document.getElementById('domain-modal-close').addEventListener('click', closeDomainModal);
+document.getElementById('domain-list-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('domain-list-modal')) closeDomainModal();
+});
+document.getElementById('domain-filter-pills').addEventListener('click', e => {
+  const pill = e.target.closest('.filter-pill');
+  if (!pill) return;
+  document.querySelectorAll('#domain-filter-pills .filter-pill').forEach(p => p.classList.remove('active'));
+  pill.classList.add('active');
+  domainListModal.filter = pill.dataset.filter;
+  domainListModal.page   = 0;
+  renderDomainModal();
+});
+document.getElementById('domain-modal-footer').addEventListener('click', e => {
+  if (e.target.closest('#domain-page-prev')) { domainListModal.page--; renderDomainModal(); }
+  if (e.target.closest('#domain-page-next')) { domainListModal.page++; renderDomainModal(); }
+});
+// "View all" button is rendered dynamically — use body delegation
+document.body.addEventListener('click', e => {
+  if (e.target.closest('#view-all-domains-btn')) openDomainModal();
 });
 
 // Detail panel tabs

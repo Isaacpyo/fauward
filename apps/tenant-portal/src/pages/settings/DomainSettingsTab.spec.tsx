@@ -54,6 +54,16 @@ describe("DomainSettingsTab", () => {
       status: "PENDING_DNS",
       domain: "track.example.com",
       instructions: { type: "CNAME", name: "track", host: "track.example.com", value: "cname.vercel-dns-0.com", ttl: 3600 },
+      records: [
+        { type: "CNAME", name: "track", host: "track.example.com", value: "cname.vercel-dns-0.com", ttl: 3600 },
+        {
+          type: "TXT",
+          name: "_vercel",
+          host: "_vercel.example.com",
+          value: "vc-domain-verify=track.example.com,abc123",
+          ttl: 3600
+        }
+      ],
       error: null,
       verifiedAt: null,
       lastCheckAt: null
@@ -62,7 +72,10 @@ describe("DomainSettingsTab", () => {
     render(<DomainSettingsTab />);
 
     expect(screen.getByText("CNAME")).toBeInTheDocument();
+    expect(screen.getByText("TXT")).toBeInTheDocument();
+    expect(screen.getByText("_vercel")).toBeInTheDocument();
     expect(screen.getByText("cname.vercel-dns-0.com")).toBeInTheDocument();
+    expect(screen.getByText("vc-domain-verify=track.example.com,abc123")).toBeInTheDocument();
     expect(screen.getByTestId("domain-status-badge")).toHaveTextContent("Pending DNS");
   });
 
@@ -80,7 +93,11 @@ describe("DomainSettingsTab", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /remove domain/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    const confirmButton = screen.getByRole("button", { name: /remove domain/i });
+    expect(confirmButton).toBeDisabled();
+    await userEvent.type(screen.getByLabelText(/type track\.example\.com to confirm/i), "track.example.com");
+    expect(confirmButton).toBeEnabled();
+    await userEvent.click(confirmButton);
     expect(hookMocks.removeDomainMutate).toHaveBeenCalledWith(undefined, expect.anything());
   });
 

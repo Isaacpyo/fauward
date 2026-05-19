@@ -22,10 +22,11 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  VERCEL_API_TOKEN: z.string().min(1),
-  VERCEL_PORTAL_PROJECT_ID: z.string().min(1),
+  VERCEL_API_TOKEN: z.string().min(1).optional(),
+  VERCEL_PORTAL_PROJECT_ID: z.string().min(1).optional(),
   VERCEL_TEAM_ID: z.string().optional(),
   VERCEL_API_BASE: z.string().url().default('https://api.vercel.com'),
+  VERCEL_EXPECTED_PORTAL_DOMAIN: z.string().default('app.fauward.com'),
   RESERVED_DOMAINS: z.string().default('fauward.com,www.fauward.com,api.fauward.com,app.fauward.com'),
   FIREBASE_PROJECT_ID: z.string().default('fauward'),
   PLATFORM_SESSION_SECRET: z.string().optional(),
@@ -33,6 +34,13 @@ const envSchema = z.object({
   PLATFORM_COOKIE_DOMAIN: z.string().optional(),
   PLATFORM_ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
   PLATFORM_ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
+  ADMIN_HOSTNAME: z.string().min(1).default('admin.fauward.com'),
+  ADMIN_HARDENING_PHASE_1: z.string().default('false'),
+  ADMIN_HARDENING_PHASE_2: z.string().default('false'),
+  ADMIN_HARDENING_PHASE_3: z.string().default('false'),
+  ADMIN_HARDENING_PHASE_4: z.string().default('false'),
+  ADMIN_HARDENING_PHASE_5: z.string().default('false'),
+  ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001')
 });
 
@@ -59,6 +67,10 @@ const devOnlyPlatformSessionSecret =
   parsed.data.PLATFORM_SESSION_SECRET ?? 'dev-platform-session-secret-change-before-production';
 const devOnlyPlatformRefreshSecret =
   parsed.data.PLATFORM_REFRESH_SECRET ?? 'dev-platform-refresh-secret-change-before-production';
+
+function parseFeatureFlag(value: string) {
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
 
 export const config = {
   nodeEnv: parsed.data.NODE_ENV,
@@ -89,7 +101,8 @@ export const config = {
     apiToken: parsed.data.VERCEL_API_TOKEN,
     portalProjectId: parsed.data.VERCEL_PORTAL_PROJECT_ID,
     teamId: parsed.data.VERCEL_TEAM_ID,
-    apiBase: parsed.data.VERCEL_API_BASE
+    apiBase: parsed.data.VERCEL_API_BASE,
+    expectedPortalDomain: parsed.data.VERCEL_EXPECTED_PORTAL_DOMAIN
   },
   reservedDomains: parsed.data.RESERVED_DOMAINS.split(',')
     .map((domain) => domain.trim().toLowerCase())
@@ -103,6 +116,17 @@ export const config = {
     cookieDomain: parsed.data.PLATFORM_COOKIE_DOMAIN,
     issuer: 'fauward-platform',
     audience: 'fauward-platform-admin'
+  },
+  admin: {
+    hostname: parsed.data.ADMIN_HOSTNAME.trim().toLowerCase()
+  },
+  adminHardening: {
+    phase1: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_1),
+    phase2: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_2),
+    phase3: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_3),
+    phase4: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_4),
+    phase5: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_5),
+    phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL
 };

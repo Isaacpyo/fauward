@@ -27,7 +27,7 @@ import { PageShell } from "@/layouts/PageShell";
 import { ListPageTemplate, type ListRow } from "@/pages/ListPageTemplate";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
-import { createDevTestSession, isDevTestEmail, matchesDevTestLogin, setTokens } from "@/lib/auth";
+import { clearTokens, createDevTestSession, isDevTestEmail, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { getFirebaseAuthErrorMessage, signInWithGoogle } from "@/lib/firebase";
 import { formatPlanLabel, hasPlanAccess, type Plan } from "@/lib/plan-features";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
@@ -607,6 +607,14 @@ export function LoginPage() {
   const [resetEmail, setResetEmail] = useState(() => (isDevTestLogin ? TEST_LOGIN.email : ""));
   const [resetLoading, setResetLoading] = useState(false);
 
+  useEffect(() => {
+    clearTokens();
+    setUser(null);
+    setNotifications([]);
+    setTenant(null);
+    setAppTenant(null);
+  }, [setAppTenant, setNotifications, setTenant, setUser]);
+
   async function completeDevLogin(loginEmail = email) {
     const session = createDevTestSession(loginEmail);
     setUser(session.user);
@@ -624,6 +632,7 @@ export function LoginPage() {
     setNotice(null);
     setLoading(true);
     try {
+      clearTokens();
       if (matchesDevTestLogin(email, password)) {
         setRedirecting(true);
         await completeDevLogin();

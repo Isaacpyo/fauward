@@ -1,0 +1,22 @@
+name: Admin break-glass expiry
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+jobs:
+  prune-cloudflare-break-glass:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Remove expired temporary admin IPs
+        run: node scripts/security/prune-cloudflare-break-glass.mjs
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_ADMIN_BREAK_GLASS_LIST_ID: ${{ secrets.CF_ADMIN_BREAK_GLASS_LIST_ID }}

@@ -12,9 +12,29 @@ function parseTcpFromUrl(urlStr) {
   } catch { return null; }
 }
 
+function envBool(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === '') return defaultValue;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+}
+
+function supabaseRestUrl(baseUrl) {
+  if (!baseUrl) return null;
+  const clean = baseUrl.replace(/\/+$/, '');
+  return clean.endsWith('/rest/v1') ? `${clean}/` : `${clean}/rest/v1/`;
+}
+
+function httpEnv(url) {
+  return url ? { url, enabled: true } : null;
+}
+
 const RAILWAY_LOGS = 'https://railway.app/dashboard'; // TODO: replace with direct project/service log URL
 const VERCEL_LOGS  = 'https://vercel.com/dashboard';
 const SUPABASE_LOGS= `https://supabase.com/dashboard/project/${(process.env.SUPABASE_URL ?? '').split('//')[1]?.split('.')[0]}/logs/postgres`;
+const SUPABASE_LOCAL_REST_URL = supabaseRestUrl(process.env.SUPABASE_LOCAL_URL ?? 'http://localhost:54321');
+const SUPABASE_LOCAL_ENABLED = envBool('SUPABASE_LOCAL_ENABLED', Boolean(process.env.SUPABASE_LOCAL_URL));
+const STATUS_DASHBOARD_PROD_URL = process.env.STATUS_DASHBOARD_PROD_URL ?? '';
+const FAUWARD_GO_PROD_URL = process.env.FAUWARD_GO_PROD_URL ?? '';
 
 export const SERVICES = [
   // ── Internal tooling ───────────────────────────────────────────────────
@@ -32,7 +52,7 @@ export const SERVICES = [
     runbookUrl: null,
     environments: {
       local:   { url: 'http://localhost:4000', enabled: true },
-      prod:    { url: 'https://admin.fauward.com/status', enabled: true },
+      prod:    httpEnv(STATUS_DASHBOARD_PROD_URL),
       staging: null,
     },
     fix: 'npm run dev --workspace=apps/status-dashboard',
@@ -90,7 +110,7 @@ export const SERVICES = [
     logUrl:     VERCEL_LOGS,
     runbookUrl: null,
     environments: {
-      local:   { url: 'http://localhost:5173', enabled: true },
+      local:   { url: 'http://localhost:3000', enabled: true },
       prod:    { url: 'https://app.fauward.com', enabled: true },
       staging: null,
     },
@@ -109,7 +129,7 @@ export const SERVICES = [
     runbookUrl: null,
     environments: {
       local:   { url: 'http://localhost:5176', enabled: true },
-      prod:    { url: 'https://app.fauward.com/go', enabled: true },
+      prod:    httpEnv(FAUWARD_GO_PROD_URL),
       staging: null,
     },
     fix: 'npm run dev --filter=fauward-go',
@@ -140,7 +160,7 @@ export const SERVICES = [
     logUrl:     VERCEL_LOGS,
     runbookUrl: null,
     environments: {
-      local:   { url: 'http://localhost:5174', enabled: true },
+      local:   { url: 'http://localhost:5173', enabled: true },
       prod:    { url: 'https://admin.fauward.com', enabled: true },
       staging: null,
     },
@@ -303,7 +323,9 @@ export const SERVICES = [
     logUrl:     SUPABASE_LOGS,
     runbookUrl: 'https://status.supabase.com',
     environments: {
-      local:   { url: 'http://localhost:54321/rest/v1/', enabled: true, expectedStatus: 401 },
+      local:   SUPABASE_LOCAL_ENABLED && SUPABASE_LOCAL_REST_URL
+        ? { url: SUPABASE_LOCAL_REST_URL, enabled: true, expectedStatus: 401 }
+        : null,
       prod:    process.env.SUPABASE_URL
         ? { url: `${process.env.SUPABASE_URL}/rest/v1/`, enabled: true, expectedStatus: 401 }
         : null,

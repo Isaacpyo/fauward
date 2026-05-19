@@ -65,6 +65,7 @@ import { registerDsarRoutes } from './modules/dsar/dsar.routes.js';
 import { registerAppealRoutes } from './modules/appeals/appeals.routes.js';
 import { registerOnboardingRoutes } from './modules/onboarding/onboarding.routes.js';
 import { registerTenantHealthRoutes } from './modules/tenants/health.routes.js';
+import { createAdminHostGuard } from './middleware/admin-host-guard.js';
 
 function escapeRegex(source: string) {
   return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -129,6 +130,11 @@ export async function buildApp() {
 
   await registerPrisma(app);
   await registerRedis(app);
+
+  app.addHook('onRequest', createAdminHostGuard({
+    enabled: config.adminHardening.phase1,
+    adminHostname: config.admin.hostname
+  }));
 
   app.addHook('preHandler', auditMiddleware({ prisma: app.prisma as unknown as PlatformAuditClient, shouldAudit: (request) => {
     const method = request.method?.toUpperCase();

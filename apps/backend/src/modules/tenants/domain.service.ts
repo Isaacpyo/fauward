@@ -12,18 +12,20 @@ import {
 
 export type DomainStatus = 'NONE' | 'PENDING_DNS' | 'VERIFYING' | 'ACTIVE' | 'FAILED';
 
-export type DomainInstructions = {
-  type: 'CNAME';
+export type DomainDnsRecord = {
+  type: string;
   name: string;
   host: string;
   value: string;
   ttl: number;
+  reason?: string;
 };
 
 export type DomainStatusResult = {
   status: DomainStatus;
   domain: string | null;
-  instructions: DomainInstructions | null;
+  instructions: DomainDnsRecord | null;
+  records: DomainDnsRecord[];
   error: string | null;
   verifiedAt?: Date | null;
   lastCheckAt?: Date | null;
@@ -75,6 +77,34 @@ function canUseCname(config: VercelDomainConfig | null) {
   return config?.configuredBy === 'CNAME' && config.misconfigured !== true;
 }
 
+function relativeRecordName(host: string, domain: string) {
+  const apex = domain.split('.').slice(1).join('.');
+  if (host === domain) return domain.split('.')[0];
+  if (apex && host.endsWith(`.${apex}`)) return host.slice(0, -(apex.length + 1));
+  return host;
+}
+
+function verificationRecords(domain: string, projectDomain: VercelProjectDomain | null): DomainDnsRecord[] {
+  return (projectDomain?.verification ?? []).map((challenge) => ({
+    type: challenge.type.toUpperCase(),
+    name: relativeRecordName(challenge.domain, domain),
+    host: challenge.domain,
+    value: challenge.value,
+    ttl: 3600,
+    reason: challenge.reason
+  }));
+}
+
+function uniqueRecords(records: DomainDnsRecord[]) {
+  const seen = new Set<string>();
+  return records.filter((record) => {
+    const key = `${record.type}:${record.host}:${record.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export class DomainService {
   constructor(private readonly vercel: DomainClient = new VercelClient()) {}
 
@@ -86,9 +116,11 @@ export class DomainService {
     if (!existing) throw new DomainNotFoundError('Tenant not found');
 
     if (existing.customDomain === domain && existing.customDomainStatus !== 'FAILED') {
+      const projectDomain = await this.vercel.getDomain(domain).catch(() => null);
       return {
         tenant: existing,
-        instructions: this.dnsInstructions(domain, FALLBACK_CNAME_TARGET)
+        instructions: this.dnsInstructions(domain, FALLBACK_CNAME_TARGET),
+        records: this.dnsRecords(domain, FALLBACK_CNAME_TARGET, projectDomain)
       };
     }
 
@@ -97,13 +129,20 @@ export class DomainService {
     }
 
     let added: VercelProjectDomain;
+    let addedByThisRequest = false;
     try {
       added = await this.vercel.addDomain(domain);
+      addedByThisRequest = true;
     } catch (error) {
       if (error instanceof VercelDomainAlreadyTakenError) {
-        throw new DomainConflictError('This domain is already in use by another Fauward tenant.');
+        try {
+          added = await this.vercel.getDomain(domain);
+        } catch {
+          throw new DomainConflictError('This domain is already in use by another Fauward tenant.');
+        }
+      } else {
+        throw error;
       }
-      throw error;
     }
 
     let config: VercelDomainConfig | null = null;
@@ -147,10 +186,13 @@ export class DomainService {
 
       return {
         tenant,
-        instructions: this.dnsInstructions(domain, recommendedCname(config))
+        instructions: this.dnsInstructions(domain, recommendedCname(config)),
+        records: this.dnsRecords(domain, recommendedCname(config), added)
       };
     } catch (error) {
-      await this.vercel.removeDomain(domain).catch(() => undefined);
+      if (addedByThisRequest) {
+        await this.vercel.removeDomain(domain).catch(() => undefined);
+      }
       if (isUniqueConstraintError(error)) {
         throw new DomainConflictError('This domain is already in use by another Fauward tenant.');
       }
@@ -162,7 +204,15 @@ export class DomainService {
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) throw new DomainNotFoundError('Tenant not found');
     if (!tenant.customDomain) {
-      return { status: 'NONE', domain: null, instructions: null, error: null, verifiedAt: null, lastCheckAt: null };
+      return {
+        status: 'NONE',
+        domain: null,
+        instructions: null,
+        records: [],
+        error: null,
+        verifiedAt: null,
+        lastCheckAt: null
+      };
     }
 
     let nextStatus: DomainStatus = tenant.customDomainStatus as DomainStatus;
@@ -178,8 +228,12 @@ export class DomainService {
       }
       config = await this.vercel.getDomainConfig(tenant.customDomain);
 
+      const pendingVerificationRecords = verificationRecords(tenant.customDomain, projectDomain).length > 0;
+
       if (projectDomain.verified && canUseCname(config)) {
         nextStatus = 'ACTIVE';
+      } else if (pendingVerificationRecords) {
+        nextStatus = 'PENDING_DNS';
       } else if (canUseCname(config)) {
         nextStatus = 'VERIFYING';
       } else {
@@ -203,7 +257,11 @@ export class DomainService {
             customDomainStatus: nextStatus,
             customDomainLastCheckAt: new Date(),
             customDomainVerifiedAt:
-              nextStatus === 'ACTIVE' && previous !== 'ACTIVE' ? new Date() : tenant.customDomainVerifiedAt,
+              nextStatus === 'ACTIVE'
+                ? previous !== 'ACTIVE'
+                  ? new Date()
+                  : tenant.customDomainVerifiedAt
+                : null,
             customDomainError: errorMessage
           }
         });
@@ -228,6 +286,7 @@ export class DomainService {
       status: nextStatus,
       domain: tenant.customDomain,
       instructions: this.dnsInstructions(tenant.customDomain, recommendedCname(config)),
+      records: this.dnsRecords(tenant.customDomain, recommendedCname(config), projectDomain),
       error: errorMessage,
       verifiedAt: updated.customDomainVerifiedAt,
       lastCheckAt: updated.customDomainLastCheckAt
@@ -273,7 +332,7 @@ export class DomainService {
     );
   }
 
-  private dnsInstructions(domain: string, value: string): DomainInstructions {
+  private dnsInstructions(domain: string, value: string): DomainDnsRecord {
     return {
       type: 'CNAME',
       name: domain.split('.')[0],
@@ -281,6 +340,13 @@ export class DomainService {
       value,
       ttl: 3600
     };
+  }
+
+  private dnsRecords(domain: string, cnameValue: string, projectDomain: VercelProjectDomain | null): DomainDnsRecord[] {
+    return uniqueRecords([
+      this.dnsInstructions(domain, cnameValue),
+      ...verificationRecords(domain, projectDomain)
+    ]);
   }
 
   private async withTenantContext<T>(tenant: Tenant, fn: () => Promise<T>) {

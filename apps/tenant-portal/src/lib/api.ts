@@ -11,15 +11,29 @@ export const api = axios.create({
   timeout: 8_000
 });
 
+function isPublicAuthEndpoint(url?: string) {
+  return Boolean(url && /^\/?v1\/auth\/(login|register|forgot-password|reset-password|refresh)/.test(url));
+}
+
 // Inject the stored access token into every outgoing request.
 api.interceptors.request.use((config) => {
+  if (isPublicAuthEndpoint(config.url)) {
+    delete config.headers['Authorization'];
+    delete config.headers['X-Tenant-Slug'];
+    return config;
+  }
+
   const token = getAccessToken();
   const tenantSlug = getTenantSlug();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
+  } else {
+    delete config.headers['Authorization'];
   }
   if (tenantSlug) {
     config.headers['X-Tenant-Slug'] = tenantSlug;
+  } else {
+    delete config.headers['X-Tenant-Slug'];
   }
   return config;
 });
@@ -77,6 +91,8 @@ api.interceptors.response.use(
     } catch (refreshError) {
       drainQueue(null, refreshError);
       clearTokens();
+      delete api.defaults.headers.common['Authorization'];
+      delete api.defaults.headers.common['X-Tenant-Slug'];
       window.location.href = '/login';
       return Promise.reject(refreshError);
     } finally {

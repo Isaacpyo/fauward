@@ -18,14 +18,14 @@
     {
       "name": "Tenant Portal",
       "type": "http",
-      "url": "http://localhost:5173",
+      "url": "http://localhost:3000",
       "prod": "https://app.fauward.com",
       "fix": "npm run dev:frontend"
     },
     {
       "name": "Super Admin",
       "type": "http",
-      "url": "http://localhost:5174",
+      "url": "http://localhost:5173",
       "prod": "https://admin.fauward.com",
       "fix": "npm run dev"
     },

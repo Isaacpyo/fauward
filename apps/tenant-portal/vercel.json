@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/go",
+      "destination": "/go/index.html"
+    },
+    {
+      "source": "/go/:path*",
+      "destination": "/go/index.html"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

@@ -32,12 +32,14 @@ import { getBusinessHealth, refreshBusinessHealth }           from './services/b
 import { getIncidents, acknowledgeIncident, getIncidentAudit } from './services/incident-manager.js';
 import { getAlerts }                                          from './services/alert-manager.js';
 import { getRelayHealth, refreshRelayHealth }                 from './services/relay-monitor.js';
+import { getCustomDomainHealth, refreshCustomDomainHealth }   from './services/custom-domain-monitor.js';
 import { diagnose }                                           from './services/diagnoser.js';
 import { streamDiagnosis, getAvailableProviders, isAvailable as aiAvailable } from './services/ai-diagnoser.js';
 import { SERVICES }                                           from './services/registry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT      = process.env.PORT ? Number(process.env.PORT) : 4000;
+const HOST      = process.env.HOST ?? '0.0.0.0';
 const INTERVAL  = Number(process.env.CHECK_INTERVAL ?? 30_000);
 
 // ── Env validation (warns only, never crashes) ────────────────────────────────
@@ -87,6 +89,7 @@ async function runCycle() {
     refreshQueueStats(),
     refreshBusinessHealth(),
     refreshRelayHealth(),
+    refreshCustomDomainHealth(),
   ]);
 }
 
@@ -105,6 +108,7 @@ app.get('/api/status', (_req, res) => {
     services:       getAllServiceState(),
     queues:         getQueueState(),
     businessHealth: getBusinessHealth(),
+    customDomains:  getCustomDomainHealth(),
     incidents:      getIncidents(),
     alerts:         getAlerts(),
     relayHealth:    getRelayHealth(),
@@ -154,6 +158,25 @@ app.get('/api/ai-diagnose/:serviceId/:env', async (req, res) => {
   const envState = svc.type === 'derived'
     ? { configured: true, status: svcState.derivedStatus, error: svcState.derivedReason, history: [] }
     : (svcState.envStates?.[env] ?? { configured: false });
+
+  // Keep intentionally disabled checks out of the AI path. Otherwise a
+  // stale local Supabase probe can be interpreted as a real outage.
+  if (!envState?.configured) {
+    res.setHeader('Content-Type',  'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection',    'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    const message = svc.id === 'supabase' && env === 'local'
+      ? `### Root Cause\nLocal Supabase monitoring is not configured. Fauward local development uses Docker Postgres on localhost:5432; the Supabase CLI REST API on localhost:54321 is optional and is not required for custom-domain testing.\n\n### Fix Steps\n1. No action is needed for normal Fauward local development.\n2. Use the Postgres card for local database health.\n3. Only run \`supabase start\` if you specifically need the Supabase CLI stack.\n4. If you do run it, set \`SUPABASE_LOCAL_ENABLED=true\` and \`SUPABASE_LOCAL_URL=http://localhost:54321\` in \`apps/status-dashboard/.env.local\`.\n\n### Verify\nRestart the status dashboard and confirm Supabase local shows Not Configured while Postgres local is UP.`
+      : `### Root Cause\n${svc.name} ${env} monitoring is not configured.\n\n### Fix Steps\n1. Add a ${env} environment config for ${svc.name} in the status dashboard registry if this check should run.\n2. Leave it unconfigured if this environment is intentionally unused.\n\n### Verify\nRestart the status dashboard and confirm the service is shown as Not Configured, not Down.`;
+
+    res.write(`data: ${JSON.stringify({ token: message })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+    return;
+  }
 
   // Resolve dependency states
   const depStates = (svc.dependencies ?? []).map(depId => {
@@ -287,8 +310,17 @@ app.post('/api/python-observability/incidents/:id/resolve', async (req, res) => 
   } catch (err) { res.status(503).json({ error: err.message }); }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, HOST, () => {
   _origLog(`\nFauward Ops Dashboard → http://localhost:${PORT}`);
   _origLog(`Monitoring ${getAllServiceState().length} services every ${INTERVAL / 1000}s\n`);
   _origLog(`Python Observability API → ${PYTHON_API_URL}/observability`);
+});
+
+server.once('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    _origLog(`Status dashboard port ${PORT} is already in use. Stop the existing process or set PORT explicitly.`);
+    process.exit(1);
+  }
+
+  throw err;
 });

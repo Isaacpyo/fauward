@@ -19,7 +19,8 @@ async function copy(value: string, onCopied: () => void) {
 
 export function DnsInstructionsCard({ data, stage, onRefresh, isRefreshing }: DnsInstructionsCardProps) {
   const [copied, setCopied] = useState<string | null>(null);
-  const instructions = data.instructions;
+  const records = data.records?.length ? data.records : data.instructions ? [data.instructions] : [];
+  const hasTxtVerification = records.some((record) => record.type.toUpperCase() === "TXT");
 
   function copiedValue(value: string) {
     setCopied(value);
@@ -33,26 +34,31 @@ export function DnsInstructionsCard({ data, stage, onRefresh, isRefreshing }: Dn
           <div>
             <h3 className="text-base font-semibold text-gray-900">{data.domain}</h3>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-              {stage === "dns"
-                ? "Add this CNAME record with your DNS provider. Fauward will keep checking the Vercel verification status."
+              {stage === "dns" || hasTxtVerification
+                ? `Add ${records.length > 1 ? "these DNS records" : "this DNS record"} with your DNS provider. Fauward will keep checking the Vercel verification status.`
                 : "DNS is pointing at Vercel. SSL is being verified before traffic is routed to this domain."}
             </p>
           </div>
           <DomainStatusBadge status={data.status} />
         </div>
 
-        {instructions ? (
+        {records.length > 0 ? (
           <div className="mt-5 overflow-hidden rounded-lg border border-gray-200">
             <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] border-b border-gray-200 bg-gray-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-gray-500">
               <span>Type</span>
               <span>Name / Host</span>
               <span>Value / Target</span>
             </div>
-            <div className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 px-4 py-3 text-sm text-gray-800">
-              <code>{instructions.type}</code>
-              <CodeWithCopy value={instructions.host} copied={copied === instructions.host} onCopy={copiedValue} />
-              <CodeWithCopy value={instructions.value} copied={copied === instructions.value} onCopy={copiedValue} />
-            </div>
+            {records.map((record) => (
+              <div
+                key={`${record.type}:${record.host}:${record.value}`}
+                className="grid grid-cols-[88px_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-gray-100 px-4 py-3 text-sm text-gray-800 last:border-b-0"
+              >
+                <code>{record.type}</code>
+                <RecordName record={record} copied={copied} onCopy={copiedValue} />
+                <CodeWithCopy value={record.value} copied={copied === record.value} onCopy={copiedValue} />
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
@@ -68,6 +74,23 @@ export function DnsInstructionsCard({ data, stage, onRefresh, isRefreshing }: Dn
           </span>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function RecordName({
+  record,
+  copied,
+  onCopy
+}: {
+  record: { name: string; host: string };
+  copied: string | null;
+  onCopy: (value: string) => void;
+}) {
+  return (
+    <div className="min-w-0">
+      <CodeWithCopy value={record.name} copied={copied === record.name} onCopy={onCopy} />
+      {record.host !== record.name ? <p className="mt-1 break-all text-xs text-gray-500">{record.host}</p> : null}
     </div>
   );
 }

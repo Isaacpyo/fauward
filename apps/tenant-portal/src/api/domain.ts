@@ -5,17 +5,19 @@ import { api } from "@/lib/api";
 export type DomainStatus = "NONE" | "PENDING_DNS" | "VERIFYING" | "ACTIVE" | "FAILED";
 
 export type DomainInstructions = {
-  type: "CNAME";
+  type: string;
   name: string;
   host: string;
   value: string;
   ttl: number;
+  reason?: string;
 };
 
 export type DomainStatusResponse = {
   status: DomainStatus;
   domain: string | null;
   instructions: DomainInstructions | null;
+  records?: DomainInstructions[];
   error: string | null;
   verifiedAt: string | null;
   lastCheckAt: string | null;

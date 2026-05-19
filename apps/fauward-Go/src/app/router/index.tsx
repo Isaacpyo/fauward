@@ -15,6 +15,8 @@ import { SyncStatusScreen } from "@/features/sync/SyncStatusScreen";
 import { ScanVerifyScreen } from "@/features/verify/ScanVerifyScreen";
 import { LocationScreen } from "@/features/location/LocationScreen";
 
+const basename = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -82,4 +84,4 @@ export const router = createBrowserRouter([
       },
     ],
   },
-]);
+], { basename });

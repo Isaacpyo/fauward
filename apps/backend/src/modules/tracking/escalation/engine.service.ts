@@ -74,6 +74,7 @@ export async function flipEscalationFlag(
   const updated = await prisma.shipment.updateMany({
     where: {
       id: shipmentId,
+      tenantId,
       escalationFlag: false,
     },
     data: {
