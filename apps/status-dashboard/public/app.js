@@ -1320,6 +1320,7 @@ document.getElementById('sidebar').addEventListener('click', e => {
   if (section === 'services') activeFilter = filter || 'all';
   activeSection = section;
   if (lastData) renderAll(lastData);
+  if (isMobile()) setSidebarOpen(false);
 });
 
 document.getElementById('close-detail').addEventListener('click', closeDetail);
@@ -1458,6 +1459,34 @@ document.body.addEventListener('click', e => {
   if (!btn) return;
   fetch(`${API_BASE}/api/incidents/${btn.dataset.incId}/acknowledge`, { method: 'POST' })
     .then(() => poll());
+});
+
+// ── Sidebar toggle ────────────────────────────────────────────────────────
+function isMobile() { return window.innerWidth <= 768; }
+
+function setSidebarOpen(open) {
+  const sidebar  = document.getElementById('sidebar');
+  const overlay  = document.getElementById('sidebar-overlay');
+  sidebar.classList.toggle('collapsed', !open);
+  overlay.classList.toggle('visible', open && isMobile());
+  if (!isMobile()) localStorage.setItem('ops-sidebar', open ? 'open' : 'collapsed');
+}
+
+(function initSidebar() {
+  // Mobile: always start collapsed (drawer hidden). Desktop: restore preference.
+  const collapsed = isMobile() || localStorage.getItem('ops-sidebar') === 'collapsed';
+  document.getElementById('sidebar').classList.toggle('collapsed', collapsed);
+})();
+
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  const isOpen = !document.getElementById('sidebar').classList.contains('collapsed');
+  setSidebarOpen(!isOpen);
+});
+
+document.getElementById('sidebar-overlay').addEventListener('click', () => setSidebarOpen(false));
+
+window.addEventListener('resize', () => {
+  if (!isMobile()) document.getElementById('sidebar-overlay').classList.remove('visible');
 });
 
 // ── Theme toggle ──────────────────────────────────────────────────────────
