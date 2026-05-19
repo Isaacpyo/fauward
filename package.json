@@ -6,18 +6,18 @@
   "packageManager": "npm@10.9.2",
   "workspaces": [
     "apps/*",
-    "packages/*",
-    "status-dashboard"
+    "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev --filter=@fauward/backend --filter=@fauward/frontend --filter=@fauward/tenant-portal --filter=@fauward/super-admin --filter=@fauward/status-dashboard",
+    "dev": "turbo run dev --filter=@fauward/backend --filter=@fauward/frontend --filter=@fauward/tenant-portal --filter=@fauward/super-admin --filter=@fauward/status-dashboard --filter=fauward-go",
     "dev:all": "turbo run dev",
     "dev:backend": "turbo run dev --filter=@fauward/backend",
     "dev:frontend": "turbo run dev --filter=@fauward/frontend --filter=@fauward/tenant-portal",
     "build": "turbo run build",
     "start": "npm run start --workspace=apps/backend",
     "lint": "turbo run lint",
-    "test": "turbo run test",
+    "test": "turbo run test --",
+    "typecheck": "turbo run typecheck",
     "platform:admin:create": "npm run platform:admin:create --workspace=apps/backend"
   },
   "engines": {
@@ -27,6 +27,7 @@
     "serve": "^14.2.6"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "turbo": "^2.9.6"
   }
 }

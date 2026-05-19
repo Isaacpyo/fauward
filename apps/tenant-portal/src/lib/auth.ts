@@ -64,6 +64,25 @@ export function setTokens(accessToken: string, refreshToken: string, tenantSlug:
   localStorage.setItem(TENANT_SLUG_KEY, tenantSlug);
 }
 
+export function setImpersonationToken(accessToken: string, tenantSlug: string) {
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.setItem(TENANT_SLUG_KEY, tenantSlug);
+  localStorage.removeItem(DEV_TEST_SESSION_KEY);
+}
+
+export function decodeAccessToken<T extends Record<string, unknown> = Record<string, unknown>>(token: string): T | null {
+  const [, payload] = token.split(".");
+  if (!payload) return null;
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return JSON.parse(window.atob(padded)) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function clearTokens() {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);

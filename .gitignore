@@ -19,3 +19,15 @@ Thumbs.db
 # Claude Code — personal overrides (never commit)
 CLAUDE.local.md
 .claude/settings.local.json
+
+# Build / tool caches
+.turbo/
+.kimi/
+.next-build/
+
+# Local label storage (dev-generated artifacts)
+apps/backend/.storage/
+
+# Python
+__pycache__/
+*.pyc

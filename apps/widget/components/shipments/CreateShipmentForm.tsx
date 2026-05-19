@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Widget-adapted version of the shipment wizard.
 // Differences from apps/web version:
 //   - No router/window navigation; uses callbacks instead

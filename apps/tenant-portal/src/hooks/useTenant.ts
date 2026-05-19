@@ -50,10 +50,14 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     primaryColor?: string;
     accentColor?: string;
     defaultCurrency?: string;
+    plan?: string;
     defaultLanguage?: string;
     isRtl?: boolean;
     timezone?: string;
     status?: string;
+    suspensionReason?: string | null;
+    suspendedAt?: string | null;
+    featureFlags?: Record<string, boolean>;
     settings?: {
       currency?: string | null;
       timezone?: string | null;
@@ -68,6 +72,7 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
   return {
     tenant_id: raw.id ?? "tenant_unknown",
     name: raw.name ?? "Tenant",
+    slug: raw.slug,
     logo_url: raw.logoUrl ?? "",
     domain: raw.customDomain ?? (raw.slug ? `${raw.slug}.fauward.com` : ""),
     region: raw.region,
@@ -77,6 +82,11 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     rtl: raw.isRtl ?? false,
     currency: raw.settings?.currency ?? raw.defaultCurrency ?? "GBP",
     timezone: raw.settings?.timezone ?? raw.timezone ?? "Europe/London",
+    plan: raw.plan,
+    status: raw.status,
+    suspensionReason: raw.suspensionReason ?? null,
+    suspendedAt: raw.suspendedAt ?? null,
+    featureFlags: raw.featureFlags ?? {},
     onboarding_complete: raw.status !== "TRIALING",
     support_email: raw.settings?.notificationEmail ?? "support@fauward.com"
   };
@@ -94,6 +104,8 @@ export function useTenant() {
     queryKey: ["tenant-config"],
     queryFn: fetchTenantConfig,
     staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
     retry: 2,
     enabled: hasToken && !devSession
   });

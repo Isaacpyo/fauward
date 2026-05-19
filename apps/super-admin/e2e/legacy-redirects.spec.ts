@@ -23,7 +23,7 @@ test.beforeEach(async ({ context, page }) => {
     {
       name: 'fw_platform_csrf',
       value: 'test-csrf',
-      domain: 'localhost',
+      domain: '127.0.0.1',
       path: '/'
     }
   ]);

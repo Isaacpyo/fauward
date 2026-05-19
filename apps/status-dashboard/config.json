@@ -1,0 +1,67 @@
+{
+  "interval": 30000,
+  "services": [
+    {
+      "name": "Main API",
+      "type": "http",
+      "url": "http://localhost:3001/health",
+      "prod": "https://fauwardbackend-production.up.railway.app/health",
+      "fix": "npm run dev:backend"
+    },
+    {
+      "name": "Frontend",
+      "type": "http",
+      "url": "http://localhost:5000",
+      "prod": "https://fauward.com",
+      "fix": "npm run dev:frontend"
+    },
+    {
+      "name": "Tenant Portal",
+      "type": "http",
+      "url": "http://localhost:5173",
+      "prod": "https://app.fauward.com",
+      "fix": "npm run dev:frontend"
+    },
+    {
+      "name": "Super Admin",
+      "type": "http",
+      "url": "http://localhost:5174",
+      "prod": "https://admin.fauward.com",
+      "fix": "npm run dev"
+    },
+    {
+      "name": "Fauward Go",
+      "type": "http",
+      "url": "http://localhost:5176",
+      "prod": "https://app.fauward.com/go",
+      "fix": "npm run dev --filter=fauward-go"
+    },
+    {
+      "name": "Postgres",
+      "type": "tcp",
+      "host": "localhost",
+      "port": 5432,
+      "fix": "docker-compose up -d postgres"
+    },
+    {
+      "name": "Redis",
+      "type": "tcp",
+      "host": "localhost",
+      "port": 6379,
+      "fix": "docker-compose up -d redis"
+    },
+    {
+      "name": "MailHog SMTP",
+      "type": "tcp",
+      "host": "localhost",
+      "port": 1025,
+      "fix": "docker-compose up -d mailhog"
+    },
+    {
+      "name": "MailHog Web",
+      "type": "http",
+      "url": "http://localhost:8025",
+      "fix": "docker-compose up -d mailhog"
+    }
+  ]
+}

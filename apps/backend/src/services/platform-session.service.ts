@@ -104,7 +104,7 @@ export function platformCookieOptions(path = '/api') {
   };
 }
 
-export function csrfCookieOptions(path = '/api') {
+export function csrfCookieOptions(path = '/') {
   return {
     httpOnly: false,
     secure: config.nodeEnv === 'production',
@@ -134,7 +134,8 @@ export function verifyPlatformCsrf(header: unknown, cookies: Record<string, stri
 }
 
 export function clearPlatformCookies(reply: { clearCookie: (name: string, options: any) => unknown }) {
-  for (const name of [PLATFORM_ACCESS_COOKIE, PLATFORM_REFRESH_COOKIE, PLATFORM_CSRF_COOKIE, PLATFORM_CSRF_SIG_COOKIE]) {
-    reply.clearCookie(name, platformCookieOptions());
-  }
+  reply.clearCookie(PLATFORM_ACCESS_COOKIE, platformCookieOptions());
+  reply.clearCookie(PLATFORM_REFRESH_COOKIE, platformCookieOptions());
+  reply.clearCookie(PLATFORM_CSRF_COOKIE, csrfCookieOptions());
+  reply.clearCookie(PLATFORM_CSRF_SIG_COOKIE, platformCookieOptions());
 }

@@ -11,9 +11,9 @@ Services
   |
   | business rules, tenant checks, queue safety, audit
   v
-Repositories + db.py
+Repositories + db.py / SQLAlchemy
   |
-  | parameterized SQL through asyncpg
+  | parameterized SQL through asyncpg, SQLAlchemy for invoicing
   v
 Postgres
 
@@ -25,6 +25,8 @@ Postgres + Storage + Redis completion queues
 ```
 
 The service runs beside the Node.js backend. Node may publish jobs to Redis lists, while FastAPI endpoints can also create database job rows and publish worker payloads.
+
+The invoicing subsystem is a parallel domain module. It does not call the legacy `/pdf` queue path during invoice issue; it writes invoice-specific work to the `outbox` table for later workers.
 
 ## Layer Responsibilities
 
@@ -64,6 +66,8 @@ Business logic and workflow orchestration:
 - safe response shaping
 - storage validation
 
+`services/invoicing/` owns the invoice aggregate, state transitions, sequential issue-time numbering, content hashing, transition events, and invoice outbox writes.
+
 ### `repositories/`
 
 Small SQL wrappers around `db.fetch`, `db.fetchrow`, and `db.execute`.
@@ -71,9 +75,17 @@ Small SQL wrappers around `db.fetch`, `db.fetchrow`, and `db.execute`.
 Rules:
 
 - parameterized SQL only
-- no ORM introduced
+- existing non-invoice repositories remain asyncpg wrappers
+- invoicing uses SQLAlchemy `AsyncSession` in `services/invoicing/repository.py`
 - no business decisions
 - return plain dictionaries or primitive values
+
+### `models/`
+
+Legacy `models/*_schemas.py` files still provide Pydantic schemas for existing APIs. New SQLAlchemy ORM models live in:
+
+- `models/base.py`
+- `models/invoicing.py`
 
 ### `workers/`
 
@@ -114,9 +126,19 @@ Production deployments should still apply SQL migrations before starting the app
 6. Worker processes job and updates tenant-scoped status row.
 7. Worker publishes done/failure event.
 
+## Invoice Outbox Flow
+
+1. Invoicing service locks the draft invoice row.
+2. It validates the state transition.
+3. It locks or creates the `(tenant_id, fiscal_year)` row in `invoice_sequences`.
+4. It assigns the invoice number, freezes snapshots, stores the content hash, and writes `invoice_events`.
+5. It inserts an `outbox` row in the same transaction.
+6. Future invoice workers drain `outbox` idempotently by outbox row ID.
+
 ## Compatibility Notes
 
 - Existing route paths are preserved.
 - Existing Celery task names are preserved.
 - `workers/route_worker.py` was not renamed to avoid breaking Celery routing.
 - The old `GET /health` still exists; `/health/live` and `/health/ready` were added.
+- The legacy `/pdf` shipment-document flow remains `documents + publish_job`.

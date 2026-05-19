@@ -5,6 +5,7 @@ FastAPI and Celery services for the Fauward logistics platform.
 This service handles compute-heavy and integration-heavy workflows that sit beside the main Node.js backend:
 
 - PDF generation for invoices, labels, PODs, and manifests
+- Invoicing domain core for first-class financial documents
 - OCR parsing for logistics documents
 - Route optimisation
 - Customs HS lookup, landed-cost estimates, and declaration draft generation
@@ -16,7 +17,7 @@ This service handles compute-heavy and integration-heavy workflows that sit besi
 The current implementation has been refactored toward a layered service layout:
 
 ```text
-api -> schemas -> services -> repositories -> db/workers
+api -> schemas -> services -> repositories/db or SQLAlchemy -> workers/outbox
 ```
 
 Routes are kept stable where possible, while job IDs, tenant access, queue publishing, status lookups, and sensitive responses have been hardened for production use.
@@ -42,6 +43,21 @@ Generate tenant-scoped PDFs from trusted shipment data. The API supports:
 - `manifest`
 
 PDF jobs are queued server-side, status is tenant-scoped, and completed PDFs are downloaded through an authorized endpoint.
+
+### Invoicing Domain Core
+
+Phase 1 of the invoicing subsystem is implemented as a parallel backend module. It does not change the legacy `/pdf` shipment-document flow.
+
+The domain core provides:
+
+- tax-ready Pydantic schemas for invoices, money, addresses, line items, and tax breakdowns
+- SQLAlchemy models and Alembic migration for invoice tables
+- gapless per-tenant/fiscal-year numbering at issue time
+- immutable issued invoices with SHA-256 content hashes
+- append-only `invoice_events`
+- invoice-specific `outbox` rows for later render/email/webhook workers
+
+HTTP invoice routes are intentionally not exposed until the API phase.
 
 ### OCR
 
@@ -165,11 +181,12 @@ See [Security and Tenant Isolation](docs/security.md) for details.
 services/python-services/
   api/             FastAPI routers and dependencies
   core/            shared config, logging, errors, security, telemetry, rate-limit helpers
+  models/          legacy Pydantic schema modules plus SQLAlchemy ORM models
   schemas/         API request/response schemas
-  services/        business logic, queueing, tenant checks, audit, storage
+  services/        business logic, queueing, tenant checks, audit, storage, invoicing
   repositories/    parameterized SQL wrappers
   workers/         Celery workers and Redis-list bridge
-  migrations/      idempotent SQL migrations
+  migrations/      idempotent SQL and Alembic migrations
   lib/             storage, tax, HS lookup, model registry, provider helpers
   templates/       PDF, email, SMS, and customs templates
   tests/           pytest suites

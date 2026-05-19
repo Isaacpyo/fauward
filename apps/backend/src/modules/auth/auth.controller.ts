@@ -102,7 +102,18 @@ export const authController = {
     reply.code(204).send();
   },
   me: async (request: FastifyRequest, reply: FastifyReply) => {
-    reply.send({ user: request.user });
+    const claims = request.user;
+    reply.send({
+      user: claims
+        ? {
+            ...claims,
+            id: claims.sub,
+            full_name: claims.email,
+            plan: claims.plan?.toLowerCase(),
+            impersonated: claims.mode === 'IMPERSONATION'
+          }
+        : null
+    });
   },
   mfaSetup: async (request: FastifyRequest, reply: FastifyReply) => {
     const tenantId = request.tenant?.id;

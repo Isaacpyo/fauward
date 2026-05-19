@@ -2,27 +2,46 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Copy root workspace manifest + all app/package manifests
-# (npm workspaces requires every workspace's package.json to be present)
+# Copy root workspace manifest + every workspace's package.json
+# (npm workspaces requires all package.json files present before `npm ci`)
 COPY package*.json ./
-COPY apps/backend/package*.json      apps/backend/
-COPY apps/frontend/package*.json     apps/frontend/
+COPY apps/backend/package*.json       apps/backend/
+COPY apps/frontend/package*.json      apps/frontend/
 COPY apps/tenant-portal/package*.json apps/tenant-portal/
-COPY apps/super-admin/package*.json  apps/super-admin/
-COPY apps/agents/package*.json       apps/agents/
+COPY apps/super-admin/package*.json   apps/super-admin/
+COPY apps/agents/package*.json        apps/agents/
 COPY packages/brand/package*.json           packages/brand/
 COPY packages/design-tokens/package*.json   packages/design-tokens/
 COPY packages/domain-types/package*.json    packages/domain-types/
 COPY packages/formatting/package*.json      packages/formatting/
 COPY packages/shared-types/package*.json    packages/shared-types/
 COPY packages/theme-engine/package*.json    packages/theme-engine/
+COPY packages/tracking-core/package*.json   packages/tracking-core/
+COPY packages/pricing-core/package*.json    packages/pricing-core/
+COPY packages/relay-api/package*.json       packages/relay-api/
+COPY packages/internal-audit/package*.json  packages/internal-audit/
+COPY packages/internal-rbac/package*.json   packages/internal-rbac/
 
 RUN npm ci
 
-# Copy only backend source + prisma schema
-COPY apps/backend/src      apps/backend/src
+# ── Backend source ─────────────────────────────────────────────────────────────
+COPY apps/backend/src         apps/backend/src
 COPY apps/backend/tsconfig.json apps/backend/tsconfig.json
-COPY apps/backend/prisma   apps/backend/prisma
+COPY apps/backend/prisma      apps/backend/prisma
+
+# ── Workspace package sources ──────────────────────────────────────────────────
+# Packages whose `main` points to src/index.ts — TypeScript resolves them directly
+COPY packages/shared-types/src    packages/shared-types/src
+COPY packages/domain-types/src    packages/domain-types/src
+COPY packages/formatting/src      packages/formatting/src
+COPY packages/theme-engine/src    packages/theme-engine/src
+COPY packages/tracking-core/src   packages/tracking-core/src
+COPY packages/pricing-core/src    packages/pricing-core/src
+COPY packages/relay-api/src       packages/relay-api/src
+
+# Packages whose `main` points to dist/ — copy pre-built output
+COPY packages/internal-audit/dist  packages/internal-audit/dist
+COPY packages/internal-rbac/dist   packages/internal-rbac/dist
 
 # Generate Prisma client then compile TypeScript
 RUN cd apps/backend && npx prisma generate && npm run build

@@ -7,6 +7,12 @@ export type BillingSummary = {
   renewalDate: string;
   trialDaysRemaining?: number;
   paymentStatus: "active" | "failed" | "suspended";
+  nextRetryAt?: string | null;
+  saveOffer?: {
+    discount: number;
+    validUntil: string;
+    code: string;
+  };
   usage: {
     shipments: { used: number; limit: number };
     staff: { used: number; limit: number };

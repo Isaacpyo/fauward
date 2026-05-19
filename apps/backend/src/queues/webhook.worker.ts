@@ -127,7 +127,8 @@ export function startWebhookWorker(app: FastifyInstance) {
     {
       connection: bullmqConnection,
       concurrency: 20,
-      limiter: { max: 50, duration: 1_000 }
+      limiter: { max: 50, duration: 1_000 },
+      stalledInterval: 60_000
     }
   );
 

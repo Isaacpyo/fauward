@@ -4,7 +4,7 @@ type TenantDetailTabsProps = {
   tenantId: string;
 };
 
-const tabKeys = ["Overview", "Shipments", "Billing", "Team", "Config", "Audit Log"] as const;
+const tabKeys = ["Overview", "Shipments", "Billing", "Team", "Config", "Feature Flags", "Custom Domains", "Audit Log"] as const;
 type TabKey = (typeof tabKeys)[number];
 
 export function TenantDetailTabs({ tenantId }: TenantDetailTabsProps) {
@@ -34,6 +34,8 @@ export function TenantDetailTabs({ tenantId }: TenantDetailTabsProps) {
         {visitedTabs.has("Billing") && tab === "Billing" ? <p>Plan, payment history, MRR, and Stripe customer link.</p> : null}
         {visitedTabs.has("Team") && tab === "Team" ? <p>Staff members, roles, and last activity.</p> : null}
         {visitedTabs.has("Config") && tab === "Config" ? <pre className="font-mono text-[11px]">{JSON.stringify({ tenant_id: tenantId, domain: "tenant.fauward.com", timezone: "Europe/London" }, null, 2)}</pre> : null}
+        {visitedTabs.has("Feature Flags") && tab === "Feature Flags" ? <p>Use Platform / Feature Flags to set tenant overrides for {tenantId}.</p> : null}
+        {visitedTabs.has("Custom Domains") && tab === "Custom Domains" ? <p>Pending and verified custom domains for tenant {tenantId} surface here.</p> : null}
         {visitedTabs.has("Audit Log") && tab === "Audit Log" ? <p>Recent platform operator actions on this tenant.</p> : null}
       </div>
     </section>

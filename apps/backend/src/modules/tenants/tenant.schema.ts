@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isDomainFormatValid, normalizeDomainInput } from './domain.validator.js';
 
 const paymentProviderSchema = z.enum([
   'STRIPE',
@@ -58,5 +59,10 @@ export const settingsSchema = z.object({
 });
 
 export const domainSchema = z.object({
-  domain: z.string().min(3).max(255)
+  domain: z
+    .string()
+    .min(4)
+    .max(253)
+    .transform(normalizeDomainInput)
+    .refine(isDomainFormatValid, { message: 'Invalid domain format' })
 });

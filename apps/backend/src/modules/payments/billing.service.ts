@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { domainService } from '../tenants/domain.service.js';
 
 export async function handleDunningEvent(prisma: PrismaClient, event: {
   tenantId: string;
@@ -46,6 +47,12 @@ export async function handleDunningEvent(prisma: PrismaClient, event: {
 
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
     if (tenant?.status === 'SUSPENDED' && tenant.updatedAt < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
+      await domainService.removeCustomDomain(prisma, {
+        tenantId,
+        actorUserId: null,
+        actorIp: null,
+        actorType: 'SYSTEM'
+      });
       await prisma.tenant.update({ where: { id: tenantId }, data: { status: 'CANCELLED' } });
       await prisma.notificationLog.create({
         data: {

@@ -293,7 +293,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
         billingPlan: tenant.subscription?.plan ?? tenant.plan,
         status: tenant.status,
         shipmentCountThisMonth: tenant.shipments.length,
-        mrrContribution: Number(tenant.subscription?.plan === 'ENTERPRISE' ? 500 : tenant.plan === 'PRO' ? 79 : 29)
+        mrrContribution: tenant.status === 'DEMO' ? 0 : Number(tenant.subscription?.plan === 'ENTERPRISE' ? 500 : tenant.plan === 'PRO' ? 79 : 29)
       })),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) }
     });
@@ -363,6 +363,8 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
     });
+    await app.redis.publish(`tenant:${tenant.id}:plan-changed`, JSON.stringify({ tenantId: tenant.id, plan: payload.plan, overrideId: override.id }));
+    await app.redis.del(`tenant:${tenant.id}:cache`);
     reply.send({ override });
   });
 
@@ -370,14 +372,15 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const tenant = await app.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'SUSPENDED' } });
+    const reason = reasonFrom(request) ?? 'Platform suspension';
+    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'SUSPENDED', suspensionReason: reason, suspendedAt: new Date() } });
     await writePlatformAuditLog(app.prisma, {
       actorType: 'PLATFORM_USER',
       actorId: request.platform!.user.id,
       actorEmail: request.platform!.user.email,
       action: 'TENANT_SUSPENSION',
       targetTenantId: id,
-      reason: reasonFrom(request),
+      reason,
       metadata: { previousStatus: tenant.status, nextStatus: 'SUSPENDED' },
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
@@ -389,7 +392,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const tenant = await app.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'ACTIVE' } });
+    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null } });
     await writePlatformAuditLog(app.prisma, {
       actorType: 'PLATFORM_USER',
       actorId: request.platform!.user.id,
@@ -430,6 +433,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       plan: (await getActiveTenantPlanOverride(app.prisma, tenant.id))?.plan ?? tenant.plan,
       mfaVerified: true,
       impersonator: request.platform!.user.id,
+      impersonatorEmail: request.platform!.user.email,
       actorType: 'PLATFORM_USER',
       actorId: request.platform!.user.id,
       targetTenantId: tenant.id,
@@ -452,7 +456,14 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
     });
-    reply.send({ token, session, tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug }, expiresAt: expiresAt.toISOString() });
+    reply.send({
+      token,
+      impersonationSessionId: session.id,
+      expiresAt: expiresAt.toISOString(),
+      targetUser: { id: targetUser.id, email: targetUser.email, role: targetUser.role },
+      session,
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug }
+    });
   });
 
   app.delete('/api/v1/platform/impersonation-sessions/:id', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requirePlatformPermission('tenant:impersonate')] }, async (request, reply) => {
@@ -486,7 +497,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
     const [activeTenantCount, shipmentsToday, subscriptions] = await Promise.all([
       app.prisma.tenant.count({ where: { status: 'ACTIVE' } }),
       app.prisma.shipment.count({ where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } } }),
-      app.prisma.subscription.findMany()
+      app.prisma.subscription.findMany({ where: { tenant: { status: { not: 'DEMO' } } } })
     ]);
     const totalMRR = subscriptions.reduce((sum, sub) => sum + (sub.plan === 'ENTERPRISE' ? 500 : sub.plan === 'PRO' ? 79 : sub.plan === 'STARTER' ? 29 : 0), 0);
     reply.send({ totalMRR, activeTenantCount, shipmentsToday });

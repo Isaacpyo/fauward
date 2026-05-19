@@ -10,6 +10,7 @@ import { ProfileTab } from "@/pages/settings/ProfileTab";
 import { DomainSettingsTab } from "@/pages/settings/DomainSettingsTab";
 import { BrandingTab } from "@/pages/settings/BrandingTab";
 import { IntegrationsTab } from "@/pages/settings/IntegrationsTab";
+import { PrivacyTab } from "@/pages/settings/PrivacyTab";
 import { TenantDashboardPage } from "@/pages/dashboard/TenantDashboardPage";
 import { TenantFinancePage } from "@/pages/finance/TenantFinancePage";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -83,7 +84,8 @@ const settingsTabs = [
   { value: "api-keys", label: "API keys", minimumPlan: "pro" },
   { value: "webhooks", label: "Webhooks", minimumPlan: "pro" },
   { value: "email", label: "Email", minimumPlan: "enterprise" },
-  { value: "branding", label: "Branding", minimumPlan: "starter" }
+  { value: "branding", label: "Branding", minimumPlan: "starter" },
+  { value: "privacy", label: "Privacy", minimumPlan: "starter" }
 ] as const satisfies Array<{ value: string; label: string; minimumPlan: Plan }>;
 
 function wait(ms: number) {
@@ -529,6 +531,11 @@ export function SettingsPage() {
         {visitedTabs.has("branding") ? (
           <TabsContent value="branding" className="rounded-lg border border-gray-200 bg-white p-4">
             <BrandingTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("privacy") ? (
+          <TabsContent value="privacy" className="rounded-lg border border-gray-200 bg-white p-4">
+            <PrivacyTab />
           </TabsContent>
         ) : null}
       </Tabs>

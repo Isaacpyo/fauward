@@ -19,10 +19,39 @@ export const tenantService = {
   getCurrentTenant: async (req: FastifyRequest) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
-    const settings = await req.server.prisma.tenantSettings.findUnique({
-      where: { tenantId: tenant.id }
-    });
-    return { ...tenant, settings };
+    const now = new Date();
+    const [settings, planOverride, flagAudits] = await Promise.all([
+      req.server.prisma.tenantSettings.findUnique({
+        where: { tenantId: tenant.id }
+      }),
+      req.server.prisma.tenantPlanOverride.findFirst({
+        where: {
+          tenantId: tenant.id,
+          revokedAt: null,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+        },
+        orderBy: { createdAt: 'desc' }
+      }),
+      req.server.prisma.featureFlagOverrideAudit.findMany({
+        where: { tenantId: tenant.id },
+        orderBy: { createdAt: 'desc' },
+        take: 100
+      })
+    ]);
+    const featureFlags = flagAudits.reduce<Record<string, boolean>>((acc, audit) => {
+      if (acc[audit.flagKey] === undefined) {
+        acc[audit.flagKey] = audit.value === true;
+      }
+      return acc;
+    }, {});
+    return {
+      ...tenant,
+      plan: planOverride?.plan ?? tenant.plan,
+      billingPlan: tenant.plan,
+      activePlanOverride: planOverride,
+      featureFlags,
+      settings
+    };
   },
   updateBranding: async (req: FastifyRequest, payload: { primaryColor: string; accentColor?: string; brandName: string; logoUrl?: string }) => {
     const tenant = req.tenant;
@@ -73,12 +102,18 @@ export const tenantService = {
   setDomain: async (req: FastifyRequest, domain: string) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
-    return domainService.setCustomDomain(req.server.prisma, tenant.id, domain);
+    return domainService.setCustomDomain(req.server.prisma, {
+      tenantId: tenant.id,
+      domain,
+      actorUserId: req.apiKey ? null : req.user?.sub ?? null,
+      actorIp: req.ip,
+      actorType: req.apiKey ? 'API_KEY' : 'USER'
+    });
   },
   domainStatus: async (req: FastifyRequest) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
-    return domainService.checkDomainVerification(req.server.prisma, tenant.id);
+    return domainService.checkStatus(req.server.prisma, tenant.id);
   },
   getUsage: async (req: FastifyRequest) => {
     const tenant = req.tenant;

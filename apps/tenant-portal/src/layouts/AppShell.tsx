@@ -3,12 +3,14 @@ import { Outlet, useLocation } from "react-router-dom";
 
 import { FailedPaymentBanner } from "@/components/billing/FailedPaymentBanner";
 import { LimitReachedBanner } from "@/components/billing/LimitReachedBanner";
+import { SaveOfferBanner } from "@/components/billing/SaveOfferBanner";
 import { SuspendedOverlay } from "@/components/billing/SuspendedOverlay";
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { UsageWarningBanner } from "@/components/billing/UsageWarningBanner";
+import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { ToastStack } from "@/components/shared/ToastStack";
-import { Button } from "@/components/ui/Button";
 import { useBilling } from "@/hooks/useBilling";
 import { MobileNav } from "@/layouts/MobileNav";
 import { Sidebar } from "@/layouts/Sidebar";
@@ -18,17 +20,13 @@ import { useTenantStore } from "@/stores/useTenantStore";
 
 export function AppShell() {
   const location = useLocation();
-  const user = useAppStore((state) => state.user);
   const mobileSidebarOpen = useAppStore((state) => state.mobileSidebarOpen);
   const setMobileSidebarOpen = useAppStore((state) => state.setMobileSidebarOpen);
-  const setUser = useAppStore((state) => state.setUser);
   const tenant = useTenantStore((state) => state.tenant);
   const { summary } = useBilling();
 
-  const isImpersonating = Boolean(user?.impersonated);
-  const suspended = summary.paymentStatus === "suspended";
-  const onBillingSettings =
-    location.pathname.startsWith("/settings") && location.search.includes("tab=billing");
+  const suspended = summary.paymentStatus === "suspended" || tenant?.status === "SUSPENDED";
+  const onBillingSettings = location.pathname.startsWith("/settings") && location.search.includes("tab=billing");
   const showSuspendedOverlay = suspended && !onBillingSettings;
 
   return (
@@ -56,22 +54,10 @@ export function AppShell() {
         <TrialBanner days={summary.trialDaysRemaining ?? 0} />
         <UsageWarningBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
         <LimitReachedBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
-        <FailedPaymentBanner visible={summary.paymentStatus === "failed"} />
-
-        {isImpersonating ? (
-          <div className="sticky top-0 z-50 border-b border-amber-300 bg-amber-100 px-4 py-2 text-sm text-amber-900">
-            <div className="mx-auto flex w-full max-w-[var(--content-max-width)] items-center justify-between">
-              <span>You are viewing as {tenant?.name ?? "tenant"} — Exit impersonation</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setUser(user ? { ...user, impersonated: false } : user)}
-              >
-                Exit impersonation
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <FailedPaymentBanner visible={summary.paymentStatus === "failed"} nextRetryAt={summary.nextRetryAt} />
+        <SaveOfferBanner offer={summary.saveOffer} />
+        <ImpersonationBanner />
+        <AnnouncementBanner />
 
         <TopBar />
 
@@ -85,7 +71,7 @@ export function AppShell() {
       <MobileNav />
       <CommandPalette />
       <ToastStack />
-      <SuspendedOverlay active={showSuspendedOverlay} />
+      <SuspendedOverlay active={showSuspendedOverlay} reason={tenant?.suspensionReason} />
     </div>
   );
 }

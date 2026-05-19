@@ -1,18 +1,21 @@
-import { BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
+import { Activity, BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
 import { FormEvent, type ReactNode, useEffect, useState } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { RegionsPage } from "@/pages/admin/RegionsPage";
+import { StatusPage } from "@/pages/StatusPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
 import { api } from "@/lib/api";
 import { hasPlatformSessionHint } from "@/lib/auth";
+import { internalApi } from "@/lib/internal-api";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
+import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationStartPage } from "@/pillars/platform/impersonation/ImpersonationStartPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
@@ -40,7 +43,8 @@ import { UserDetailPage } from "@/pillars/trust/iam/UserDetailPage";
 import { UsersListPage } from "@/pillars/trust/iam/UsersListPage";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
-import { PermissionGate, PermissionProvider, type Permission } from "@fauward/internal-rbac";
+import { PermissionProvider, type Permission } from "@fauward/internal-rbac";
+import { JITGate } from "@fauward/internal-ui";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: Gauge },
@@ -53,6 +57,7 @@ const navItems = [
   { to: "/admin/support-audit", label: "Support Audit", icon: ClipboardList },
   { to: "/admin/logs", label: "Logs", icon: Logs },
   { to: "/admin/impersonation", label: "Impersonation", icon: UserCog },
+  { to: "/status", label: "Status", icon: Activity },
 ];
 
 const SUCCESSFUL_LOGIN_DELAY_MS = 1200;
@@ -334,21 +339,102 @@ function AdminLayout() {
   );
 }
 
-function LogsPage() {
+type NotificationLog = {
+  id: string;
+  tenantId: string;
+  channel: string;
+  event: string;
+  status: string;
+  error?: string | null;
+  createdAt: string;
+};
+
+function LogsPanel({ onClose }: { onClose: () => void }) {
+  const [logs, setLogs] = useState<NotificationLog[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .get<{ logs: NotificationLog[] }>("/logs")
+      .then((r) => setLogs(r.data.logs ?? []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const statusColour: Record<string, string> = {
+    SENT: "text-green-600",
+    QUEUED: "text-amber-600",
+    FAILED: "text-red-600",
+  };
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Logs</h1>
-      <div className="rounded-lg border border-[var(--color-border)] bg-white p-4">
-        <pre className="overflow-x-auto rounded-lg bg-[var(--color-surface-50)] p-4 font-mono text-[11px] leading-relaxed text-[var(--color-text-primary)]">
-{`2026-04-06T10:42:10Z  INFO  tenant=t_2  action=payment_failed
-2026-04-06T10:43:55Z  WARN  queue=webhooks.deliveries retries=3
-2026-04-06T10:44:12Z  INFO  tenant=t_1  action=upgrade_to_pro
-2026-04-06T10:46:01Z  INFO  tenant=t_8  action=signup
-2026-04-06T10:47:33Z  ERROR api route=/v1/shipments status=500`}
-        </pre>
+    <>
+      {/* backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      {/* panel */}
+      <div className="fixed inset-y-0 right-0 z-50 flex w-[480px] flex-col border-l border-[var(--color-border)] bg-white shadow-2xl">
+        {/* header */}
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-4">
+          <div className="flex items-center gap-2">
+            <Logs size={16} className="text-[var(--color-text-muted)]" />
+            <span className="text-sm font-semibold text-[var(--color-text-primary)]">Notification Logs</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-50)] hover:text-[var(--color-text-primary)]"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* body */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex h-32 items-center justify-center">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
+            </div>
+          ) : logs.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No logs found.</p>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)]">
+              {logs.map((log) => (
+                <li key={log.id} className="px-4 py-3 hover:bg-[var(--color-surface-50)]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-xs font-semibold text-[var(--color-text-primary)]">
+                        {log.event}
+                      </p>
+                      <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]">
+                        {log.channel} · {log.tenantId.slice(0, 8)}…
+                      </p>
+                      {log.error ? (
+                        <p className="mt-1 truncate font-mono text-[11px] text-red-600">{log.error}</p>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <span className={`font-mono text-[11px] font-semibold ${statusColour[log.status] ?? "text-[var(--color-text-muted)]"}`}>
+                        {log.status}
+                      </span>
+                      <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-muted)]">
+                        {new Date(log.createdAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
+}
+
+function LogsPage() {
+  return null;
 }
 
 function ForbiddenRoute() {
@@ -360,18 +446,23 @@ function ForbiddenRoute() {
   );
 }
 
+async function requestJitAccess(permission: Permission, reason: string) {
+  await internalApi.post("/jit/requests", { permission, reason, durationMinutes: 60 });
+}
+
 function PermissionRoute({ permission, children }: { permission: Permission; children: ReactNode }) {
   return (
-    <PermissionGate permission={permission} fallback={<ForbiddenRoute />}>
+    <JITGate permission={permission} requestTitle="Request elevated access" onRequest={requestJitAccess}>
       {children}
-    </PermissionGate>
+    </JITGate>
   );
 }
 
 function OpsRoute({ permission, title, description, endpoint, related, primaryAction }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; primaryAction?: string }) {
+  const Page = hasWorkflowSurface(endpoint) ? WorkflowOpsPage : InternalOpsPage;
   return (
     <PermissionRoute permission={permission}>
-      <InternalOpsPage title={title} description={description} endpoint={endpoint} related={related} primaryAction={primaryAction} />
+      <Page title={title} description={description} endpoint={endpoint} related={related} primaryAction={primaryAction} />
     </PermissionRoute>
   );
 }
@@ -533,6 +624,8 @@ export function AppRouter() {
           <Route path="/customer/success/playbooks" element={<OpsRoute permission="customer.success.read" title="CS Playbooks" description="Health-triggered customer success playbooks." endpoint="/success/playbooks" />} />
           <Route path="/customer/success/playbooks/:id/runs" element={<OpsRoute permission="customer.success.read" title="Playbook Runs" description="Sequential playbook execution status for tenant workflows." endpoint="/success/playbooks/:id/runs" />} />
           <Route path="/customer/success/health-scoring" element={<OpsRoute permission="customer.success.read" title="Health Scoring" description="Weighted model configuration for nightly health scoring." endpoint="/success/health-scoring" />} />
+          <Route path="/customer/comms" element={<OpsRoute permission="customer.comms.read" title="Communications Hub" description="Tenant-facing announcements and incident notices." endpoint="/announcements" primaryAction="New announcement" />} />
+          <Route path="/customer/onboarding" element={<OpsRoute permission="customer.onboarding.read" title="Onboarding Tracker" description="Activation funnel for recently created tenants." endpoint="/onboarding/funnel" />} />
           <Route path="/customer/qbr" element={<OpsRoute permission="customer.qbr.read" title="QBR Center" description="Quarterly business review calendar and generated decks." endpoint="/qbr" related={[{ label: "Templates", to: "/customer/qbr/templates" }]} />} />
           <Route path="/customer/qbr/templates" element={<OpsRoute permission="customer.qbr.read" title="QBR Templates" description="HTML/CSS deck templates by customer segment." endpoint="/qbr/templates" />} />
           <Route path="/customer/qbr/:tenantId" element={<OpsRoute permission="customer.qbr.read" title="Tenant QBR" description="Generated QBR decks and export status for one tenant." endpoint="/qbr/:tenantId" />} />
@@ -697,6 +790,7 @@ export function AppRouter() {
           <Route path="/admin/logs" element={<LogsPage />} />
           <Route path="/admin/impersonation" element={<Navigate to="/platform/impersonation" replace />} />
         </Route>
+        <Route path="/status" element={<StatusPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

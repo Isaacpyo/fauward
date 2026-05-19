@@ -23,12 +23,27 @@ function isReadMethod(method: string) {
   return ['GET', 'HEAD', 'OPTIONS'].includes(method);
 }
 
+function isSuspendedTenantAllowedPath(method: string, path: string) {
+  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/payments/billing-status'].includes(path)) {
+    return true;
+  }
+  if (method === 'GET' && (path === '/api/v1/tenant/announcements' || path === '/api/v1/tenants/me/announcements' || path === '/api/v1/tenants/me/health')) {
+    return true;
+  }
+  return method === 'POST' && [
+    '/api/v1/tenant/impersonation/exit',
+    '/api/v1/tenants/me/impersonation/exit',
+    '/api/v1/tenants/me/suspension-appeal'
+  ].includes(path);
+}
+
 export function requiredApiScope(method: string, path: string): string | null {
   const action = isReadMethod(method) ? 'read' : 'write';
   if (path.includes('/labels')) return `labels:${action}`;
   if (path.includes('/webhooks')) return `webhooks:${action}`;
   if (path.includes('/rates')) return `rates:${action}`;
   if (path.includes('/shipments')) return `shipments:${action}`;
+  if (path.includes('/tenant/domain')) return `domains:${action}`;
   if (path.includes('/api-keys') || path.includes('/api-usage')) return `api-keys:${action}`;
   return null;
 }
@@ -37,6 +52,7 @@ function hasScope(scopes: string[], required: string | null, method: string, pat
   if (!required) return true;
   if (scopes.includes('*')) return true;
   if (scopes.includes(required)) return true;
+  if (required.startsWith('domains:')) return false;
   return !isReadMethod(method) && hasWriteScope(scopes, path);
 }
 
@@ -131,6 +147,13 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (!userId || !tenantId) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
+    if (request.user?.mode === 'IMPERSONATION') {
+      const sessionId = request.user.impersonationSessionId;
+      const active = sessionId ? await request.server.redis.get(`platform:impersonation:${sessionId}`) : null;
+      if (!active) {
+        return reply.status(401).send({ error: 'Impersonation session expired', code: 'IMPERSONATION_EXPIRED' });
+      }
+    }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },
       select: { isActive: true }
@@ -149,7 +172,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
           })
         )?.status;
 
-      if (tenantStatus === 'SUSPENDED') {
+      if (tenantStatus === 'SUSPENDED' && !isSuspendedTenantAllowedPath(request.method, path)) {
         return reply.status(403).send({
           error: 'TENANT_SUSPENDED',
           message: 'This tenant is currently suspended. Contact support.'

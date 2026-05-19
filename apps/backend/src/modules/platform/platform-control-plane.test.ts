@@ -31,17 +31,32 @@ describe('platform control plane security primitives', () => {
       'fauward' + '@gmail'
     ];
     const offenders: string[] = [];
+    const ignoredDirectories = new Set([
+      '.git',
+      '.next',
+      '.next-build',
+      '.storage',
+      '.turbo',
+      'coverage',
+      'dist',
+      'node_modules'
+    ]);
 
     function scan(dir: string) {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        if (['.git', 'node_modules', 'dist', 'coverage'].includes(entry.name)) continue;
+        if (ignoredDirectories.has(entry.name)) continue;
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           scan(full);
           continue;
         }
         if (full.endsWith('platform-control-plane.test.ts')) continue;
-        const text = fs.readFileSync(full, 'utf8');
+        let text = '';
+        try {
+          text = fs.readFileSync(full, 'utf8');
+        } catch {
+          continue;
+        }
         if (burned.some((value) => text.includes(value))) offenders.push(path.relative(root, full));
       }
     }

@@ -4,6 +4,8 @@
     "module": "None",
     "lib": ["ES2017", "DOM"],
     "strict": true,
+    "types": [],
+    "skipLibCheck": true,
     "noEmit": true
   },
   "include": ["src/**/*"]

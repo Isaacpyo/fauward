@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { getTenantDb, getSupabaseAdmin } from "../client.js";
+import { getTenantDb, getSupabaseAdmin } from "../client";
 
 export type TenantUser = {
   id: string;

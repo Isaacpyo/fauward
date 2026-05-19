@@ -91,7 +91,7 @@ export const usageService = {
       firstShipmentCreated: shipmentCount > 0,
       staffInvited: staffCount > 1,
       paymentConnected: hasConnectedPaymentGateway(settings?.paymentGatewayKey),
-      customDomain: !!tenant.domainVerified,
+      customDomain: tenant.customDomainStatus === 'ACTIVE',
       apiKeyGenerated: false
     };
 

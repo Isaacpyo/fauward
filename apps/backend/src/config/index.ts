@@ -8,6 +8,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3001),
   SUPABASE_DB_URL: z.string().url(),
   REDIS_URL: z.string().url(),
+  REDIS_QUEUE_URL: z.string().url().optional(),
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
@@ -21,6 +22,11 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  VERCEL_API_TOKEN: z.string().min(1),
+  VERCEL_PORTAL_PROJECT_ID: z.string().min(1),
+  VERCEL_TEAM_ID: z.string().optional(),
+  VERCEL_API_BASE: z.string().url().default('https://api.vercel.com'),
+  RESERVED_DOMAINS: z.string().default('fauward.com,www.fauward.com,api.fauward.com,app.fauward.com'),
   FIREBASE_PROJECT_ID: z.string().default('fauward'),
   PLATFORM_SESSION_SECRET: z.string().optional(),
   PLATFORM_REFRESH_SECRET: z.string().optional(),
@@ -59,6 +65,7 @@ export const config = {
   port: parsed.data.PORT,
   dbUrl: parsed.data.SUPABASE_DB_URL,
   redisUrl: parsed.data.REDIS_URL,
+  redisQueueUrl: parsed.data.REDIS_QUEUE_URL ?? parsed.data.REDIS_URL,
   jwt: {
     accessSecret: parsed.data.JWT_ACCESS_SECRET,
     refreshSecret: parsed.data.JWT_REFRESH_SECRET,
@@ -78,6 +85,15 @@ export const config = {
     secretKey: parsed.data.STRIPE_SECRET_KEY ?? parsed.data.STRIPE_API_KEY,
     webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
   },
+  vercel: {
+    apiToken: parsed.data.VERCEL_API_TOKEN,
+    portalProjectId: parsed.data.VERCEL_PORTAL_PROJECT_ID,
+    teamId: parsed.data.VERCEL_TEAM_ID,
+    apiBase: parsed.data.VERCEL_API_BASE
+  },
+  reservedDomains: parsed.data.RESERVED_DOMAINS.split(',')
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean),
   firebase: {
     projectId: parsed.data.FIREBASE_PROJECT_ID
   },

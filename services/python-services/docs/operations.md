@@ -32,7 +32,7 @@
 ## Local Install
 
 ```powershell
-cd C:\Users\temit\fauward\apps\python-services
+cd C:\Users\temit\fauward\services\python-services
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -61,6 +61,7 @@ celery -A celery_app beat --loglevel=info
 
 ```powershell
 psql $env:DATABASE_URL -f migrations/versions/0001_service_hardening_indexes.sql
+python -m alembic upgrade head
 ```
 
 ## Run Tests
@@ -75,7 +76,10 @@ Focused examples:
 pytest tests/test_auth_api.py
 pytest tests/test_ocr_api.py
 pytest tests/test_routes_api.py
+pytest tests/test_invoicing_phase1.py
 ```
+
+The invoice concurrency tests are skipped unless `INVOICING_TEST_DATABASE_URL` is set. Point it at an isolated Postgres database when validating gapless sequence behavior under contention.
 
 ## Compile Check
 

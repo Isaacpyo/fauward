@@ -177,7 +177,8 @@ export function startNotificationWorker(app: FastifyInstance) {
     },
     {
       connection: bullmqConnection,
-      concurrency: 10
+      concurrency: 10,
+      stalledInterval: 60_000
     }
   );
 

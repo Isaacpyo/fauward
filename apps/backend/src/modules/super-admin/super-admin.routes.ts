@@ -61,7 +61,7 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
         plan: tenant.plan,
         status: tenant.status,
         shipmentCountThisMonth: tenant.shipments.length,
-        mrrContribution: Number(tenant.subscription?.plan === 'ENTERPRISE' ? 500 : tenant.plan === 'PRO' ? 79 : 29)
+        mrrContribution: tenant.status === 'DEMO' ? 0 : Number(tenant.subscription?.plan === 'ENTERPRISE' ? 500 : tenant.plan === 'PRO' ? 79 : 29)
       })),
       meta: {
         page,
@@ -258,7 +258,7 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
       dlqNotificationQueue.getJobCounts('waiting', 'active', 'delayed'),
       dlqWebhookQueue.getJobCounts('waiting', 'active', 'delayed'),
       dlqOutboxQueue.getJobCounts('waiting', 'active', 'delayed'),
-      app.prisma.subscription.findMany()
+      app.prisma.subscription.findMany({ where: { tenant: { status: { not: 'DEMO' } } } })
     ]);
 
     const mrr = subscriptions.reduce((sum, sub) => {

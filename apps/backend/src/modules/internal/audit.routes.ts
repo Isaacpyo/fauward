@@ -72,7 +72,7 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     reply.send({ url: `data:${body.format === 'csv' ? 'text/csv' : 'application/json'};base64,${Buffer.from(content).toString('base64')}`, format: body.format ?? 'json', rows: rows.length });
   });
 
-  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.read')] }, async (_request, reply) => {
+  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.export')] }, async (_request, reply) => {
     const result = await verifyPlatformAuditChain(app.prisma);
     reply.send({ ...result, verifiedAt: new Date().toISOString() });
   });

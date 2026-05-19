@@ -1,10 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
-import { constantTimeEquals, vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
+import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
+import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
+import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
 
 type Delegate = {
@@ -19,6 +22,19 @@ type Delegate = {
 
 type RequestWithId = { id: string };
 type RequestWithTenant = { tenantId: string };
+type WebhookVerification = {
+  signature: string;
+  timestamp: string;
+  verifiedAt: string;
+};
+
+type WebhookHmacOptions = {
+  envName: string;
+  signatureHeaderNames: string[];
+  timestampHeaderNames: string[];
+  scheme: 'pagerduty' | 'persona' | 'docusign' | 'complyadvantage';
+  webhookIdHeaderNames?: string[];
+};
 
 const DSAR_STATES = [
   'RECEIVED',
@@ -53,6 +69,11 @@ function delegate(app: FastifyInstance, name: string): Delegate {
   return (app.prisma as unknown as Record<string, Delegate>)[name];
 }
 
+function optionalDelegate(app: FastifyInstance, name: string): Delegate | null {
+  const value = (app.prisma as unknown as Record<string, Delegate | undefined>)[name];
+  return value && typeof value.upsert === 'function' ? value : null;
+}
+
 function stringValue(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
 }
@@ -76,20 +97,192 @@ function actorId(request: FastifyRequest) {
   return request.platform!.user.id;
 }
 
+function headerValue(request: FastifyRequest, name: string) {
+  const value = request.headers[name.toLowerCase()];
+  return typeof value === 'string' ? value : Array.isArray(value) ? value[0] : undefined;
+}
+
+function rawBodyString(request: FastifyRequest) {
+  if (request.rawBody) return request.rawBody.toString('utf8');
+  if (Buffer.isBuffer(request.body)) return request.body.toString('utf8');
+  if (typeof request.body === 'string') return request.body;
+  return JSON.stringify(request.body ?? {});
+}
+
+function timestampFromHeaders(request: FastifyRequest, signatureHeader: string | undefined, timestampHeaderNames: string[]) {
+  const explicit = timestampHeaderNames.map((name) => headerValue(request, name)).find(Boolean);
+  if (explicit) return explicit;
+  const embedded = signatureHeader?.split(',').map((part) => part.trim()).find((part) => part.toLowerCase().startsWith('t='));
+  return embedded?.slice(2).trim();
+}
+
+function timestampToMs(timestamp: string) {
+  if (/^\d+$/.test(timestamp)) {
+    const numeric = Number(timestamp);
+    return timestamp.length <= 10 ? numeric * 1000 : numeric;
+  }
+  const parsed = Date.parse(timestamp);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function secureStringEquals(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function hmacDigest(secret: string | Buffer, payload: string | Buffer) {
+  return createHmac('sha256', secret).update(payload).digest();
+}
+
+function signatureList(header: string | undefined, marker?: string) {
+  if (!header) return [];
+  if (!marker) return header.split(/\s+/).map((part) => part.trim()).filter(Boolean);
+
+  const normalizedMarker = marker.toLowerCase();
+  const extractMarked = (part: string) => {
+    const lowerPart = part.toLowerCase();
+    if (lowerPart.startsWith(`${normalizedMarker}=`)) return part.slice(marker.length + 1);
+    if (lowerPart.startsWith(`${normalizedMarker},`)) return part.slice(marker.length + 1);
+    return null;
+  };
+
+  return header
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .flatMap((part) => {
+      if (!part) return [];
+      const direct = extractMarked(part);
+      if (direct) return [direct];
+      const commaPart = part.split(',').map((piece) => piece.trim()).map(extractMarked).find(Boolean);
+      if (commaPart) return [commaPart];
+      return [];
+    })
+    .filter(Boolean);
+}
+
+function base64Secret(secret: string) {
+  return Buffer.from(secret, 'base64');
+}
+
+function expectedWebhookSignatures(options: WebhookHmacOptions, secret: string, timestamp: string, rawBody: string, webhookId: string | undefined) {
+  if (options.scheme === 'pagerduty') {
+    return {
+      signatures: [hmacDigest(secret, rawBody).toString('hex')],
+      marker: 'v1'
+    };
+  }
+
+  if (options.scheme === 'persona') {
+    return {
+      signatures: [hmacDigest(secret, `${timestamp}.${rawBody}`).toString('hex')],
+      marker: 'v1'
+    };
+  }
+
+  if (options.scheme === 'docusign') {
+    const digest = hmacDigest(secret, rawBody);
+    return {
+      signatures: [digest.toString('base64'), digest.toString('hex')],
+      marker: undefined
+    };
+  }
+
+  if (!webhookId) {
+    return {
+      signatures: [],
+      marker: 'v1'
+    };
+  }
+
+  const digest = hmacDigest(base64Secret(secret), `${webhookId}.${timestamp}.${rawBody}`);
+  return {
+    signatures: [digest.toString('base64')],
+    marker: 'v1'
+  };
+}
+
+function verifyWebhookHmac(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: WebhookHmacOptions
+): WebhookVerification | null {
+  const secret = process.env[options.envName];
+  if (!secret) {
+    reply.status(503).send({ error: `${options.envName}_NOT_CONFIGURED` });
+    return null;
+  }
+
+  const signatureHeader = options.signatureHeaderNames.map((name) => headerValue(request, name)).find(Boolean);
+  if (!signatureHeader) {
+    reply.status(403).send({ error: 'Invalid webhook signature' });
+    return null;
+  }
+
+  const timestamp = timestampFromHeaders(request, signatureHeader, options.timestampHeaderNames);
+  const signedAtMs = timestamp ? timestampToMs(timestamp) : null;
+  if (!timestamp || signedAtMs === null) {
+    reply.status(403).send({ error: 'Invalid webhook signature' });
+    return null;
+  }
+
+  if (Math.abs(Date.now() - signedAtMs) > 5 * 60 * 1000) {
+    reply.status(400).send({ error: 'Webhook timestamp too old' });
+    return null;
+  }
+
+  const webhookId = options.webhookIdHeaderNames?.map((name) => headerValue(request, name)).find(Boolean);
+  if (options.scheme === 'complyadvantage' && !webhookId) {
+    reply.status(403).send({ error: 'Invalid webhook signature' });
+    return null;
+  }
+
+  const { signatures: expectedCandidates, marker } = expectedWebhookSignatures(options, secret, timestamp, rawBodyString(request), webhookId);
+  const actualCandidates = signatureList(signatureHeader, marker);
+  const valid = actualCandidates.some((actual) => expectedCandidates.some((expected) => secureStringEquals(actual, expected)));
+  if (!valid) {
+    reply.status(403).send({ error: 'Invalid webhook signature' });
+    return null;
+  }
+
+  return {
+    signature: actualCandidates[0],
+    timestamp,
+    verifiedAt: new Date().toISOString()
+  };
+}
+
+function webhookPayload(body: Record<string, unknown>, verification: WebhookVerification) {
+  return { ...body, _webhookVerification: verification };
+}
+
+async function recordWebhookVerification(app: FastifyInstance, vendor: string, verification: WebhookVerification) {
+  const model = optionalDelegate(app, 'integrationProviderStatus');
+  if (!model) return;
+  const payload = { lastWebhookVerification: verification };
+  await model.upsert({
+    where: { provider: vendor },
+    create: { provider: vendor, status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), payload },
+    update: { status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), checkedAt: new Date(), payload }
+  });
+}
+
+function nestedRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function optionalJson(value: unknown) {
+  return value === undefined ? null : value;
+}
+
 function assertPermissionValue(value: unknown): Permission | null {
   return typeof value === 'string' && (PERMISSIONS as readonly string[]).includes(value) ? (value as Permission) : null;
 }
 
 async function requireNoActiveLegalHold(app: FastifyInstance, tenantId: string | undefined | null, reply: FastifyReply) {
-  if (!tenantId) return true;
-  const hold = await delegate(app, 'legalHold').findFirst({
-    where: {
-      status: 'ACTIVE',
-      OR: [{ tenantId }, { tenantId: null }]
-    }
-  });
+  const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
   if (hold) {
-    reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId });
+    reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId, holdId: hold.id });
     return false;
   }
   return true;
@@ -269,17 +462,37 @@ function registerIncidents(app: FastifyInstance) {
       create: { incidentId: id, tenantId, impactLevel: stringValue(body.impactLevel, 'AFFECTED'), notes: stringValue(body.notes) || null },
       update: { impactLevel: stringValue(body.impactLevel, 'AFFECTED'), notes: stringValue(body.notes) || null }
     });
+    const incident = await delegate(app, 'incidentRecord').findUnique({ where: { id } }) as { title?: string; resolvedAt?: Date | null } | null;
+    await app.prisma.platformAnnouncement.create({
+      data: {
+        type: 'WARNING',
+        title: incident?.title ? `Service notice: ${incident.title}` : 'Service notice',
+        body: stringValue(body.portalMessage, stringValue(body.notes, 'A Fauward service incident may be affecting your workspace.')),
+        targetAll: false,
+        tenantIds: [tenantId],
+        planTiers: [],
+        dismissible: false,
+        expiresAt: incident?.resolvedAt ?? null,
+        createdBy: actorId(request)
+      }
+    });
     await writeInternalAudit(request, 'incident.impact.annotate', 'incident', id, null, impact, stringValue(body.reason, 'Incident impact annotation'));
     reply.send(impact);
   });
 
   app.post('/api/internal/incidents/webhooks/pagerduty', async (request, reply) => {
-    const expected = process.env.PAGERDUTY_WEBHOOK_SECRET;
-    const signature = typeof request.headers['x-fauward-pagerduty-secret'] === 'string' ? request.headers['x-fauward-pagerduty-secret'] : undefined;
-    if (expected && !constantTimeEquals(expected, signature)) return reply.status(401).send({ error: 'Invalid webhook signature' });
+    const verification = verifyWebhookHmac(request, reply, {
+      envName: 'PAGERDUTY_WEBHOOK_SECRET',
+      signatureHeaderNames: ['x-pagerduty-signature'],
+      timestampHeaderNames: ['x-pagerduty-request-timestamp', 'x-pagerduty-webhook-timestamp'],
+      scheme: 'pagerduty'
+    });
+    if (!verification) return;
+    await recordWebhookVerification(app, 'pagerduty', verification);
     const body = bodyObject(request);
     const event = (body.event && typeof body.event === 'object' ? body.event : body) as Record<string, unknown>;
     const incident = (event.incident && typeof event.incident === 'object' ? event.incident : event) as Record<string, unknown>;
+    const payload = webhookPayload(body, verification);
     const vendorId = stringValue(incident.id, `pd_${Date.now()}`);
     const record = await delegate(app, 'incidentRecord').upsert({
       where: { vendorId },
@@ -289,9 +502,14 @@ function registerIncidents(app: FastifyInstance) {
         title: stringValue(incident.title, stringValue(incident.summary, 'PagerDuty incident')),
         status: stringValue(incident.status, 'triggered'),
         severity: stringValue(incident.urgency, 'medium'),
-        payload: body
+        payload
       },
-      update: { status: stringValue(incident.status, 'triggered'), payload: body }
+      update: {
+        title: stringValue(incident.title, stringValue(incident.summary, 'PagerDuty incident')),
+        status: stringValue(incident.status, 'triggered'),
+        severity: stringValue(incident.urgency, 'medium'),
+        payload
+      }
     });
     reply.send({ received: true, incident: record });
   });
@@ -305,45 +523,124 @@ function registerSupport(app: FastifyInstance) {
   app.get('/api/internal/support/tickets', { preHandler: readPre('customer.support.read') }, async (request, reply) => {
     const query = queryObject(request);
     const tenantId = query.tenantId;
-    const data = await delegate(app, 'supportVendorTicket').findMany({
+    const data = await app.prisma.supportTicket.findMany({
       where: tenantId ? { tenantId } : undefined,
       orderBy: { updatedAt: 'desc' },
-      take: 100
+      take: 100,
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        customer: { select: { id: true, email: true, firstName: true, lastName: true } },
+        messages: { orderBy: { createdAt: 'asc' }, take: 5 }
+      }
     });
-    reply.send({ data, vendor: vendorUnavailable('zendesk') });
+    reply.send({ data });
   });
 
   app.post('/api/internal/support/tickets', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
-    const vendor = vendorUnavailable('zendesk');
-    if (vendor) return reply.status(503).send({ error: 'ZENDESK_NOT_CONFIGURED', vendor });
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const created = await vendorJson<{ ticket: { id: number; url?: string; status?: string } }>('zendesk', '/tickets.json', {
-      method: 'POST',
-      body: JSON.stringify({ ticket: { subject: body.subject, comment: { body: body.message } } })
-    });
-    const ticket = await createAndAudit(
-      request,
-      delegate(app, 'supportVendorTicket'),
-      {
+    const author = await app.prisma.user.findFirst({
+      where: {
         tenantId,
-        vendor: 'zendesk',
-        vendorId: String(created.ticket.id),
-        subject: stringValue(body.subject, 'Tenant support request'),
-        status: created.ticket.status ?? 'new',
-        url: created.ticket.url,
-        latestMessage: stringValue(body.message)
+        isActive: true,
+        ...(stringValue(body.requesterEmail) ? { email: stringValue(body.requesterEmail).toLowerCase() } : {})
       },
-      'support.ticket.create',
-      'support_ticket',
-      stringValue(body.reason, 'Created support ticket')
-    );
+      orderBy: { createdAt: 'asc' }
+    });
+    const fallbackAuthor = author ?? await app.prisma.user.findFirst({
+      where: { tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true },
+      orderBy: { createdAt: 'asc' }
+    });
+    if (!fallbackAuthor) return reply.status(400).send({ error: 'No active tenant user available for ticket authoring' });
+
+    const count = await app.prisma.supportTicket.count({ where: { tenantId } });
+    const ticket = await app.prisma.supportTicket.create({
+      data: {
+        tenantId,
+        ticketNumber: `SA-${Date.now()}-${String(count + 1).padStart(4, '0')}`,
+        customerId: fallbackAuthor.id,
+        subject: stringValue(body.subject, 'Tenant support request'),
+        category: stringValue(body.category, 'OTHER') as never,
+        priority: stringValue(body.priority, 'NORMAL').toUpperCase() as never,
+        messages: {
+          create: {
+            tenantId,
+            authorId: fallbackAuthor.id,
+            body: stringValue(body.message, stringValue(body.body, 'Support ticket created from the Super Admin console.')),
+            fromSA: true,
+            platformAuthorId: actorId(request)
+          }
+        }
+      },
+      include: { messages: true }
+    });
+    await writeInternalAudit(request, 'support.ticket.create', 'support_ticket', ticket.id, null, ticket, stringValue(body.reason, 'Created support ticket'));
     reply.status(201).send(ticket);
   });
 
+  app.get('/api/internal/support/tickets/:id', { preHandler: readPre('customer.support.read') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    const ticket = await app.prisma.supportTicket.findUnique({
+      where: { id },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true } },
+        customer: { select: { id: true, email: true, firstName: true, lastName: true } },
+        assignee: { select: { id: true, email: true, firstName: true, lastName: true } },
+        messages: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, email: true, firstName: true, lastName: true } } } }
+      }
+    });
+    if (!ticket) return reply.status(404).send({ error: 'Support ticket not found' });
+    reply.send(ticket);
+  });
+
+  app.patch('/api/internal/support/tickets/:id', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    const body = bodyObject(request);
+    const before = await app.prisma.supportTicket.findUnique({ where: { id } });
+    if (!before) return reply.status(404).send({ error: 'Support ticket not found' });
+    const after = await app.prisma.supportTicket.update({
+      where: { id },
+      data: {
+        status: stringValue(body.status, before.status) as never,
+        priority: stringValue(body.priority, before.priority).toUpperCase() as never,
+        assignedTo: stringValue(body.assignedTo) || undefined
+      }
+    });
+    await writeInternalAudit(request, 'support.ticket.update', 'support_ticket', id, before, after, stringValue(body.reason, 'Support ticket update'));
+    reply.send(after);
+  });
+
+  app.post('/api/internal/support/tickets/:id/reply', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    const body = bodyObject(request);
+    const text = stringValue(body.body, stringValue(body.message));
+    if (!text) return reply.status(400).send({ error: 'body is required' });
+    const ticket = await app.prisma.supportTicket.findUnique({ where: { id } });
+    if (!ticket) return reply.status(404).send({ error: 'Support ticket not found' });
+    const author = ticket.customerId
+      ? await app.prisma.user.findFirst({ where: { id: ticket.customerId, tenantId: ticket.tenantId } })
+      : await app.prisma.user.findFirst({ where: { tenantId: ticket.tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true }, orderBy: { createdAt: 'asc' } });
+    if (!author) return reply.status(400).send({ error: 'No tenant user available for reply authoring' });
+
+    const message = await app.prisma.ticketMessage.create({
+      data: {
+        tenantId: ticket.tenantId,
+        ticketId: ticket.id,
+        authorId: author.id,
+        body: text,
+        isInternal: body.isInternal === true,
+        fromSA: true,
+        platformAuthorId: actorId(request)
+      }
+    });
+    await app.prisma.notificationLog.create({ data: { tenantId: ticket.tenantId, channel: 'EMAIL', event: 'support_ticket_reply_from_sa', status: 'QUEUED' } });
+    await writeInternalAudit(request, 'support.ticket.reply', 'support_ticket', id, ticket, message, stringValue(body.reason, 'Support ticket reply'));
+    reply.status(201).send(message);
+  });
+
   app.get('/api/internal/support/sla', { preHandler: readPre('customer.support.read') }, async (_request, reply) => {
-    const open = await delegate(app, 'supportVendorTicket').findMany({ where: { status: { in: ['new', 'open', 'pending'] } }, orderBy: { updatedAt: 'asc' }, take: 100 });
+    const open = await app.prisma.supportTicket.findMany({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { updatedAt: 'asc' }, take: 100 });
     reply.send({ data: open });
   });
 
@@ -362,7 +659,22 @@ function registerSuccess(app: FastifyInstance) {
   });
 
   app.get('/api/internal/success/at-risk', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    const data = await delegate(app, 'tenantHealthScore').findMany({ where: { score: { lt: 45 } }, orderBy: [{ score: 'asc' }, { computedAt: 'desc' }], take: 100 });
+    const scores = await app.prisma.tenantHealthScore.findMany({ where: { score: { lt: 45 } }, orderBy: [{ score: 'asc' }, { computedAt: 'desc' }], take: 200 });
+    const tenants = await app.prisma.tenant.findMany({
+      where: { id: { in: scores.map((score) => score.tenantId) } },
+      include: { subscription: true }
+    });
+    const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+    const monthlyRevenueForPlan = (plan?: string | null) => plan === 'ENTERPRISE' ? 500 : plan === 'PRO' ? 79 : plan === 'STARTER' ? 29 : 0;
+    const data = scores
+      .map((score) => {
+        const tenant = tenantById.get(score.tenantId);
+        const arr = monthlyRevenueForPlan(tenant?.subscription?.plan ?? tenant?.plan) * 12;
+        const churnProbability = Math.max(0, Math.min(1, (60 - score.score) / 60));
+        return { ...score, tenant, arr, churnProbability, riskPriority: arr * churnProbability };
+      })
+      .sort((left, right) => right.riskPriority - left.riskPriority || left.score - right.score)
+      .slice(0, 100);
     reply.send({ data });
   });
 
@@ -407,19 +719,13 @@ function registerSuccess(app: FastifyInstance) {
   });
 
   app.post('/api/internal/success/health-scoring/run', { preHandler: writePre('customer.success.write') }, async (request, reply) => {
-    const activeTenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
-    const created: unknown[] = [];
-    for (const tenant of activeTenants) {
-      const [shipments, failedPayments, tickets] = await Promise.all([
-        app.prisma.shipment.count({ where: { tenantId: tenant.id } }),
-        app.prisma.payment.count({ where: { tenantId: tenant.id, status: 'FAILED' } }),
-        delegate(app, 'supportVendorTicket').count({ where: { tenantId: tenant.id } })
-      ]);
-      const score = Math.max(0, Math.min(100, 50 + Math.min(25, shipments) - failedPayments * 10 - Math.min(15, tickets)));
-      created.push(await delegate(app, 'tenantHealthScore').create({ data: { tenantId: tenant.id, score, trend: 'flat', factors: { shipments, failedPayments, tickets } } }));
-    }
-    await writeInternalAudit(request, 'success.health_score.run', 'job', 'health-scoring', null, { count: created.length }, 'Manual health scoring run');
-    reply.send({ count: created.length, data: created });
+    const job = await scheduledJobsQueue.add(
+      'customer.health-scoring',
+      { requestedBy: actorId(request), source: 'manual-console' },
+      { jobId: `customer.health-scoring.manual.${Date.now()}` }
+    );
+    await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');
+    reply.status(202).send({ queued: true, jobId: job.id, name: job.name });
   });
 }
 
@@ -493,6 +799,13 @@ function registerJit(app: FastifyInstance) {
     reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { expiresAt: 'asc' } }));
   });
 
+  app.get('/api/internal/jit/sessions/my', { preHandler: readPre('trust.jit.request') }, async (request, reply) => {
+    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), {
+      where: { requesterPlatformUserId: actorId(request), status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { expiresAt: 'asc' }
+    }));
+  });
+
   app.post('/api/internal/jit/sessions/:id/revoke', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
     const { id } = request.params as RequestWithId;
     const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { revokedAt: new Date(), status: 'REVOKED' }, 'jit.session.revoke', 'jit_request', stringValue(bodyObject(request).reason, 'JIT revoked'));
@@ -527,8 +840,12 @@ function registerCompliance(app: FastifyInstance) {
     const next = stringValue(body.status);
     if (!DSAR_STATES.includes(next)) return reply.status(400).send({ error: 'Invalid DSAR state' });
     const model = delegate(app, 'dSARRequest');
-    const before = await model.findUnique({ where: { id } }) as { status?: string } | null;
+    const before = await model.findUnique({ where: { id } }) as { status?: string; tenantId?: string; requestType?: string } | null;
     if (!before) return reply.status(404).send({ error: 'DSAR request not found' });
+    if (before.requestType === 'ERASURE' && ['DELIVERED', 'CLOSED'].includes(next)) {
+      const allowed = await requireNoActiveLegalHold(app, before.tenantId, reply);
+      if (!allowed) return;
+    }
     const after = await model.update({ where: { id }, data: { status: next, notes: stringValue(body.notes) || undefined, closedAt: next === 'CLOSED' ? new Date() : undefined } });
     await delegate(app, 'dSARTransition').create({ data: { dsarId: id, fromStatus: before.status ?? null, toStatus: next, actorId: actorId(request), notes: stringValue(body.notes) || null } });
     await writeInternalAudit(request, 'compliance.dsar.transition', 'dsar_request', id, before, after, stringValue(body.notes, 'DSAR transition'));
@@ -545,7 +862,13 @@ function registerCompliance(app: FastifyInstance) {
 
   app.post('/api/internal/compliance/dsar/:id/deliver', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
     const { id } = request.params as RequestWithId;
-    const signedUrl = `s3://fauward-dsar/${id}?expires=${encodeURIComponent(inDays(30).toISOString())}`;
+    const dsar = await delegate(app, 'dSARRequest').findUnique({ where: { id } }) as { tenantId?: string; requestType?: string } | null;
+    if (!dsar) return reply.status(404).send({ error: 'DSAR request not found' });
+    if (dsar.requestType === 'ERASURE') {
+      const allowed = await requireNoActiveLegalHold(app, dsar.tenantId, reply);
+      if (!allowed) return;
+    }
+    const signedUrl = `https://signed.example.fauward.internal/dsar/${id}?expires=${encodeURIComponent(inDays(30).toISOString())}`;
     const after = await updateAndAudit(request, delegate(app, 'dSARRequest'), id, { exportUrl: signedUrl, expiresAt: inDays(30), status: 'DELIVERED' }, 'compliance.dsar.deliver', 'dsar_request', stringValue(bodyObject(request).reason, 'DSAR delivered'));
     reply.send(after);
   });
@@ -566,7 +889,7 @@ function registerSafety(app: FastifyInstance) {
     reply.send(await listWithMeta(delegate(app, 'fraudSignal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
   });
 
-  app.post('/api/internal/safety/fraud', { preHandler: writePre('trust.safety.read') }, async (request, reply) => {
+  app.post('/api/internal/safety/fraud', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
@@ -586,6 +909,14 @@ function registerSafety(app: FastifyInstance) {
       const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: signal.tenantId } });
       const tenantAfter = await app.prisma.tenant.update({ where: { id: signal.tenantId }, data: { status: 'SUSPENDED' } });
       await delegate(app, 'suspensionRecord').create({ data: { tenantId: signal.tenantId, sourceSignalId: id, suspendedBy: actorId(request), reason: stringValue(body.reason, 'Trust and safety suspension') } });
+      await app.prisma.notificationLog.create({
+        data: {
+          tenantId: signal.tenantId,
+          channel: 'EMAIL',
+          event: 'trust_safety_tenant_suspended',
+          status: 'QUEUED'
+        }
+      });
       await writeInternalAudit(request, 'safety.tenant.suspend', 'tenant', signal.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Trust and safety suspension'));
     }
     reply.send(updated);
@@ -597,6 +928,49 @@ function registerSafety(app: FastifyInstance) {
 
   app.get('/api/internal/safety/appeals', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'tenantAppeal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
+  });
+
+  app.get('/api/internal/safety/appeals/:id', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    const appeal = await delegate(app, 'tenantAppeal').findUnique({ where: { id } });
+    if (!appeal) return reply.status(404).send({ error: 'Appeal not found' });
+    reply.send(appeal);
+  });
+
+  app.patch('/api/internal/safety/appeals/:id', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    const body = bodyObject(request);
+    const status = stringValue(body.status).toUpperCase();
+    if (!['APPROVED', 'REJECTED', 'PENDING', 'OPEN'].includes(status)) {
+      return reply.status(400).send({ error: 'Invalid appeal status' });
+    }
+    const model = delegate(app, 'tenantAppeal');
+    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string } | null;
+    if (!before) return reply.status(404).send({ error: 'Appeal not found' });
+
+    const after = await model.update({
+      where: { id },
+      data: {
+        status,
+        resolvedBy: ['APPROVED', 'REJECTED'].includes(status) ? actorId(request) : undefined,
+        resolution: status,
+        reviewNote: stringValue(body.reviewNote, stringValue(body.reason)) || undefined
+      }
+    });
+    if (status === 'APPROVED' && before.tenantId) {
+      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: before.tenantId } });
+      const tenantAfter = await app.prisma.tenant.update({
+        where: { id: before.tenantId },
+        data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null }
+      });
+      await delegate(app, 'suspensionRecord').update({
+        where: { id: stringValue(body.suspensionId, '') },
+        data: { status: 'LIFTED', liftedBy: actorId(request), liftedAt: new Date() }
+      }).catch(() => null);
+      await writeInternalAudit(request, 'safety.appeal.approve_unsuspend', 'tenant', before.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Appeal approved'));
+    }
+    await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
+    reply.send(after);
   });
 
   app.get('/api/internal/safety/aup', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
@@ -624,13 +998,23 @@ function registerFlags(app: FastifyInstance) {
 
   app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (request, reply) => {
     const vendor = vendorUnavailable('launchdarkly');
-    if (vendor) return reply.status(503).send({ error: 'LAUNCHDARKLY_NOT_CONFIGURED', vendor });
     const { key } = request.params as { key: string };
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const audit = await createAndAudit(request, delegate(app, 'featureFlagOverrideAudit'), { flagKey: key, tenantId, value: body.value ?? false, actorId: actorId(request) }, 'flags.override.set', 'feature_flag', stringValue(body.reason, 'Feature flag override'));
-    reply.status(201).send(audit);
+    if (vendor) return reply.status(503).send({ error: 'LAUNCHDARKLY_NOT_CONFIGURED', vendor });
+    const vendorResult = await vendorJson<unknown>('launchdarkly', `/flags/default/${encodeURIComponent(key)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        environmentKey: 'production',
+        instructions: [{ kind: 'turnFlagOn' }],
+        comment: stringValue(body.reason, `Tenant override for ${tenantId}`),
+        tenantId,
+        value: body.value ?? false
+      })
+    });
+    const audit = await createAndAudit(request, delegate(app, 'featureFlagOverrideAudit'), { flagKey: key, tenantId, value: body.value ?? false, actorId: actorId(request), vendorRef: 'launchdarkly' }, 'flags.override.set', 'feature_flag', stringValue(body.reason, 'Feature flag override'));
+    reply.status(201).send({ audit, vendor: vendorResult, vendorUnavailable: vendor });
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
@@ -656,7 +1040,7 @@ function registerSecrets(app: FastifyInstance) {
     reply.send(await listWithMeta(delegate(app, 'secretAccessLog'), { orderBy: { accessedAt: 'desc' }, take: 100 }));
   });
 
-  app.patch('/api/internal/secrets/:id', { preHandler: writePre('trust.secrets.read') }, async (request, reply) => {
+  app.patch('/api/internal/secrets/:id', { preHandler: writePre('trust.secrets.write') }, async (request, reply) => {
     const { id } = request.params as RequestWithId;
     const body = bodyObject(request);
     const after = await updateAndAudit(request, delegate(app, 'secretCredential'), id, { expiresAt: body.expiresAt ? dateValue(body.expiresAt) : undefined, rotationNotes: body.rotationNotes }, 'secrets.metadata.update', 'secret_credential', stringValue(body.reason, 'Secret metadata update'));
@@ -693,7 +1077,11 @@ function registerSecurity(app: FastifyInstance) {
   app.post('/api/internal/security/sessions/:id/revoke', { preHandler: writePre('trust.security.write') }, async (request, reply) => {
     const { id } = request.params as RequestWithId;
     const before = await app.prisma.staffSession.findUnique({ where: { id } });
+    if (!before) return reply.status(404).send({ error: 'Staff session not found' });
     const after = await app.prisma.staffSession.update({ where: { id }, data: { revokedAt: new Date() } });
+    if (before.platformSessionId) {
+      await app.prisma.platformSession.updateMany({ where: { id: before.platformSessionId, revokedAt: null }, data: { revokedAt: new Date() } });
+    }
     await writeInternalAudit(request, 'security.session.revoke', 'staff_session', id, before, after, stringValue(bodyObject(request).reason, 'Session revoked'));
     reply.send(after);
   });
@@ -718,7 +1106,19 @@ function registerKyc(app: FastifyInstance) {
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const review = await createAndAudit(request, delegate(app, 'kYCReview'), { tenantId, status: 'PENDING', payload: body }, 'kyc.inquiry.create', 'kyc_review', stringValue(body.reason, 'KYC inquiry'));
+    const persona = await vendorJson<Record<string, unknown>>('persona', '/inquiries', {
+      method: 'POST',
+      body: JSON.stringify({ data: { attributes: { 'reference-id': tenantId } } })
+    });
+    const data = nestedRecord(persona.data);
+    const review = await createAndAudit(
+      request,
+      delegate(app, 'kYCReview'),
+      { tenantId, inquiryId: stringValue(data.id) || null, status: 'PENDING', payload: persona },
+      'kyc.inquiry.create',
+      'kyc_review',
+      stringValue(body.reason, 'KYC inquiry')
+    );
     reply.status(201).send(review);
   });
 
@@ -728,6 +1128,15 @@ function registerKyc(app: FastifyInstance) {
     const decision = stringValue(body.decision);
     const before = await delegate(app, 'kYCReview').findUnique({ where: { id } }) as { tenantId?: string } | null;
     if (!before) return reply.status(404).send({ error: 'KYC review not found' });
+    if (decision === 'approve' && before.tenantId) {
+      const pepMatch = await delegate(app, 'sanctionsScreening').findFirst({
+        where: { tenantId: before.tenantId, matchType: 'PEP', status: { in: ['MATCH', 'PENDING_REVIEW', 'PENDING'] } }
+      });
+      const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
+      if (pepMatch && !context.roles.includes('COMPLIANCE_ADMIN') && !context.roles.includes('ROOT')) {
+        return reply.status(403).send({ error: 'PEP match requires senior compliance approval', requiredRole: 'COMPLIANCE_ADMIN' });
+      }
+    }
     const after = await updateAndAudit(request, delegate(app, 'kYCReview'), id, { decision, status: decision === 'approve' ? 'APPROVED' : 'REJECTED', reviewedBy: actorId(request) }, 'kyc.review.decision', 'kyc_review', stringValue(body.reason, decision));
     if (decision === 'approve' && before.tenantId) {
       await app.prisma.tenant.update({ where: { id: before.tenantId }, data: { kycStatus: 'VERIFIED' } });
@@ -741,12 +1150,77 @@ function registerKyc(app: FastifyInstance) {
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const screening = await createAndAudit(request, delegate(app, 'sanctionsScreening'), { tenantId, status: 'PENDING', payload: body }, 'kyc.sanctions.screen', 'sanctions_screening', stringValue(body.reason, 'Manual sanctions screen'));
+    const result = await vendorJson<Record<string, unknown>>('complyadvantage', '/searches', {
+      method: 'POST',
+      body: JSON.stringify({ search_term: stringValue(body.searchTerm, tenantId), client_ref: tenantId })
+    });
+    const matchType = stringValue(body.matchType, stringValue(nestedRecord(result).matchType));
+    const status = stringValue(body.status, matchType ? 'MATCH' : 'PENDING');
+    const screening = await createAndAudit(
+      request,
+      delegate(app, 'sanctionsScreening'),
+      { tenantId, status, matchType: matchType || null, riskLevel: stringValue(body.riskLevel) || null, payload: { request: body, response: result } },
+      'kyc.sanctions.screen',
+      'sanctions_screening',
+      stringValue(body.reason, 'Manual sanctions screen')
+    );
+    if (status === 'MATCH' || matchType === 'PEP') {
+      await app.prisma.tenant.update({ where: { id: tenantId }, data: { kycStatus: 'PENDING_REVIEW' } });
+    }
     reply.status(201).send(screening);
   });
 
-  app.post('/api/internal/kyc/webhooks/persona', async (_request, reply) => reply.send({ received: true }));
-  app.post('/api/internal/kyc/webhooks/complyadvantage', async (_request, reply) => reply.send({ received: true }));
+  app.post('/api/internal/kyc/webhooks/persona', async (request, reply) => {
+    const verification = verifyWebhookHmac(request, reply, {
+      envName: 'PERSONA_WEBHOOK_SECRET',
+      signatureHeaderNames: ['persona-signature'],
+      timestampHeaderNames: ['persona-timestamp'],
+      scheme: 'persona'
+    });
+    if (!verification) return;
+    await recordWebhookVerification(app, 'persona', verification);
+    const body = bodyObject(request);
+    const data = nestedRecord(body.data);
+    const attributes = nestedRecord(data.attributes);
+    const inquiryId = stringValue(data.id, stringValue(body.inquiryId, stringValue(attributes.id)));
+    const tenantId = stringValue(body.tenantId, stringValue(attributes.referenceId, stringValue(attributes['reference-id'])));
+    const status = stringValue(attributes.status, stringValue(body.status, 'NEEDS_REVIEW'));
+
+    if (!inquiryId && !tenantId) return reply.status(202).send({ received: true, ignored: true, reason: 'missing inquiry or tenant reference' });
+
+    const existing = inquiryId ? await delegate(app, 'kYCReview').findFirst({ where: { inquiryId } }) as { id?: string; tenantId?: string } | null : null;
+    const review = existing?.id
+      ? await delegate(app, 'kYCReview').update({ where: { id: existing.id }, data: { status, payload: webhookPayload(body, verification) } })
+      : await delegate(app, 'kYCReview').create({ data: { tenantId: tenantId || 'unmatched-persona-webhook', inquiryId: inquiryId || null, status, payload: webhookPayload(body, verification) } });
+
+    reply.send({ received: true, review });
+  });
+
+  app.post('/api/internal/kyc/webhooks/complyadvantage', async (request, reply) => {
+    const verification = verifyWebhookHmac(request, reply, {
+      envName: 'COMPLYADVANTAGE_WEBHOOK_SECRET',
+      signatureHeaderNames: ['webhook-signature'],
+      timestampHeaderNames: ['webhook-timestamp'],
+      webhookIdHeaderNames: ['webhook-id'],
+      scheme: 'complyadvantage'
+    });
+    if (!verification) return;
+    await recordWebhookVerification(app, 'complyadvantage', verification);
+    const body = bodyObject(request);
+    const data = nestedRecord(body.data);
+    const tenantId = stringValue(body.tenantId, stringValue(body.client_ref, stringValue(data.client_ref)));
+    if (!tenantId) return reply.status(202).send({ received: true, ignored: true, reason: 'missing tenant reference' });
+
+    const matchType = stringValue(body.matchType, stringValue(data.matchType));
+    const status = stringValue(body.status, matchType ? 'MATCH' : 'PENDING_REVIEW');
+    const screening = await delegate(app, 'sanctionsScreening').create({
+      data: { tenantId, provider: 'complyadvantage', status, matchType: matchType || null, riskLevel: stringValue(body.riskLevel, stringValue(data.riskLevel)) || null, payload: webhookPayload(body, verification) }
+    });
+    if (status === 'MATCH' || matchType === 'PEP') {
+      await app.prisma.tenant.update({ where: { id: tenantId }, data: { kycStatus: 'PENDING_REVIEW' } });
+    }
+    reply.send({ received: true, screening });
+  });
 }
 
 function registerIntegrations(app: FastifyInstance) {
@@ -822,6 +1296,40 @@ function registerSubscriptions(app: FastifyInstance) {
   app.get('/api/internal/subscriptions/overrides', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'pricingOverride'), { orderBy: { createdAt: 'desc' }, take: 100 }));
   });
+
+  app.post('/api/internal/subscriptions/overrides', { preHandler: writePre('revenue.subscriptions.override') }, async (request, reply) => {
+    const body = bodyObject(request);
+    const tenantId = stringValue(body.tenantId);
+    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
+
+    const discountPercent = numberValue(body.discountPercent);
+    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
+    if (discountPercent > 25 && !context.roles.includes('CFO') && !context.roles.includes('ROOT')) {
+      return reply.status(403).send({ error: 'CFO approval required', requiredRole: 'CFO' });
+    }
+    if (discountPercent >= 10 && !context.roles.some((role) => ['SALES_MANAGER', 'SALES_DIRECTOR', 'CFO', 'ROOT'].includes(role))) {
+      return reply.status(403).send({ error: 'Sales manager approval required', requiredRole: 'SALES_MANAGER' });
+    }
+
+    const override = await createAndAudit(
+      request,
+      delegate(app, 'pricingOverride'),
+      {
+        tenantId,
+        contractId: stringValue(body.contractId) || null,
+        ruleType: stringValue(body.ruleType, 'discount_percent'),
+        ruleValue: body.ruleValue ?? { discountPercent },
+        discountPercent,
+        validFrom: dateValue(body.validFrom),
+        validTo: body.validTo ? dateValue(body.validTo) : null,
+        status: 'APPROVED'
+      },
+      'subscriptions.override.create',
+      'pricing_override',
+      stringValue(body.reason, 'Pricing override')
+    );
+    reply.status(201).send(override);
+  });
 }
 
 function registerContracts(app: FastifyInstance) {
@@ -857,11 +1365,55 @@ function registerContracts(app: FastifyInstance) {
     const vendor = vendorUnavailable('docusign');
     if (vendor) return reply.status(503).send({ error: 'DOCUSIGN_NOT_CONFIGURED', vendor });
     const { id } = request.params as RequestWithId;
-    const after = await updateAndAudit(request, delegate(app, 'salesQuote'), id, { status: 'SENT_FOR_SIGNATURE', docusignEnvelopeId: `env_${Date.now()}` }, 'contracts.quote.send_for_signature', 'sales_quote', stringValue(bodyObject(request).reason, 'Send to DocuSign'));
+    const envelope = await vendorJson<Record<string, unknown>>('docusign', `/v2.1/accounts/${process.env.DOCUSIGN_ACCOUNT_ID ?? 'default'}/envelopes`, {
+      method: 'POST',
+      body: JSON.stringify({ status: 'sent', emailSubject: `Fauward quote ${id}` })
+    });
+    const envelopeId = stringValue(envelope.envelopeId, `env_${Date.now()}`);
+    const after = await updateAndAudit(request, delegate(app, 'salesQuote'), id, { status: 'SENT_FOR_SIGNATURE', docusignEnvelopeId: envelopeId }, 'contracts.quote.send_for_signature', 'sales_quote', stringValue(bodyObject(request).reason, 'Send to DocuSign'));
     reply.send(after);
   });
 
-  app.post('/api/internal/contracts/webhooks/docusign', async (_request, reply) => reply.send({ received: true }));
+  app.post('/api/internal/contracts/webhooks/docusign', async (request, reply) => {
+    const verification = verifyWebhookHmac(request, reply, {
+      envName: 'DOCUSIGN_WEBHOOK_SECRET',
+      signatureHeaderNames: ['x-docusign-signature-1'],
+      timestampHeaderNames: ['x-docusign-timestamp', 'x-docusign-delivery-timestamp'],
+      scheme: 'docusign'
+    });
+    if (!verification) return;
+    await recordWebhookVerification(app, 'docusign', verification);
+    const body = bodyObject(request);
+    const data = nestedRecord(body.data);
+    const envelopeId = stringValue(body.envelopeId, stringValue(data.envelopeId));
+    const status = stringValue(body.status, stringValue(data.status, 'UNKNOWN')).toUpperCase();
+    if (!envelopeId) return reply.status(202).send({ received: true, ignored: true, reason: 'missing envelope id' });
+
+    const quote = await delegate(app, 'salesQuote').findFirst({ where: { docusignEnvelopeId: envelopeId } }) as { id?: string; tenantId?: string; plan?: string; termMonths?: number; customFeatures?: unknown } | null;
+    if (!quote?.id) return reply.status(202).send({ received: true, ignored: true, reason: 'quote not found' });
+
+    const updated = await delegate(app, 'salesQuote').update({
+      where: { id: quote.id },
+      data: { status: status === 'COMPLETED' ? 'SIGNED' : status, signedPdfS3Key: stringValue(body.signedPdfS3Key, stringValue(data.signedPdfS3Key)) || undefined }
+    });
+
+    let contract: unknown = null;
+    if (status === 'COMPLETED' && quote.tenantId) {
+      contract = await delegate(app, 'customContract').create({
+        data: {
+          tenantId: quote.tenantId,
+          msaUrl: stringValue(body.signedPdfS3Key, stringValue(data.signedPdfS3Key)) || null,
+          termStart: new Date(),
+          termEnd: inDays(Math.max(30, Number(quote.termMonths ?? 12) * 30)),
+          terms: { sourceQuoteId: quote.id, plan: quote.plan, customFeatures: optionalJson(quote.customFeatures), webhookVerification: verification },
+          status: 'ACTIVE',
+          signedAt: new Date()
+        }
+      });
+    }
+
+    reply.send({ received: true, quote: updated, contract });
+  });
 
   app.get('/api/internal/contracts/discounts', { preHandler: readPre('gtm.contracts.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'salesQuote'), { where: { status: 'APPROVAL_REQUIRED' }, orderBy: { createdAt: 'asc' } }));
@@ -930,7 +1482,7 @@ function registerGtm(app: FastifyInstance) {
     if (!row) return reply.status(404).send({ error: 'Extension request not found' });
     const days = Number(row.requestedDays ?? 0);
     const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    if (days > 30) return reply.status(403).send({ error: 'Trial extensions over 30 days are not allowed' });
+    if (days > 30 && !context.roles.includes('SALES_DIRECTOR') && !context.roles.includes('ROOT')) return reply.status(403).send({ error: 'SALES_DIRECTOR approval required' });
     if (days > 7 && !context.roles.includes('SALES_MANAGER') && !context.roles.includes('SALES_DIRECTOR') && !context.roles.includes('ROOT')) return reply.status(403).send({ error: 'SALES_MANAGER approval required' });
     const after = await updateAndAudit(request, delegate(app, 'trialExtensionRequest'), id, { status: 'APPROVED', approvedBy: actorId(request) }, 'trials.extension.approve', 'trial_extension', stringValue(bodyObject(request).reason, 'Trial extension approved'));
     reply.send(after);
@@ -1023,16 +1575,23 @@ function registerGtm(app: FastifyInstance) {
 
   app.post('/api/internal/commissions/payouts/:id/approve', { preHandler: writePre('revenue.commissions.payout') }, async (request, reply) => {
     const { id } = request.params as RequestWithId;
-    const payout = await delegate(app, 'commissionPayout').findUnique({ where: { id } }) as { amount?: number | string; approvedByFinance?: string | null } | null;
+    const payout = await delegate(app, 'commissionPayout').findUnique({ where: { id } }) as { amount?: number | string; approvedByFinance?: string | null; approvedByCfo?: string | null } | null;
     if (!payout) return reply.status(404).send({ error: 'Payout not found' });
     const amount = Number(payout.amount ?? 0);
     const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
     const needsCfo = amount > 5000;
+    const isCfo = context.roles.includes('CFO') || context.roles.includes('ROOT');
     if (needsCfo && !context.roles.includes('CFO') && !context.roles.includes('ROOT')) {
       const after = await updateAndAudit(request, delegate(app, 'commissionPayout'), id, { approvedByFinance: actorId(request), status: 'CFO_REQUIRED' }, 'commissions.payout.finance_approve', 'commission_payout', stringValue(bodyObject(request).reason, 'Finance approval'));
       return reply.send(after);
     }
-    const after = await updateAndAudit(request, delegate(app, 'commissionPayout'), id, { approvedByCfo: needsCfo ? actorId(request) : undefined, approvedByFinance: payout.approvedByFinance ?? actorId(request), status: 'APPROVED' }, 'commissions.payout.approve', 'commission_payout', stringValue(bodyObject(request).reason, 'Payout approved'));
+    if (needsCfo && isCfo && !payout.approvedByFinance) {
+      return reply.status(403).send({ error: 'FINANCE_ADMIN approval required before CFO approval', requiredRole: 'FINANCE_ADMIN' });
+    }
+    if (needsCfo && payout.approvedByFinance === actorId(request)) {
+      return reply.status(403).send({ error: 'Two-person approval required for payouts over GBP 5000' });
+    }
+    const after = await updateAndAudit(request, delegate(app, 'commissionPayout'), id, { approvedByCfo: needsCfo ? actorId(request) : payout.approvedByCfo ?? null, approvedByFinance: payout.approvedByFinance ?? actorId(request), status: 'APPROVED' }, 'commissions.payout.approve', 'commission_payout', stringValue(bodyObject(request).reason, 'Payout approved'));
     reply.send(after);
   });
 

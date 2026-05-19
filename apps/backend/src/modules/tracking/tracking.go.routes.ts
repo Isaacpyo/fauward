@@ -12,6 +12,7 @@ import { recordTrackingEvent, syncFieldTrackingEvents } from './tracking.service
 import { buildStatusTitle, statusToEventType } from './tracking-event.service.js';
 import { getAllowedNextStatuses } from './tracking-policy.service.js';
 import { markPodAvailable } from './tracking-snapshot.service.js';
+import { ingestTrackingPoints } from './realtime/ingest.service.js';
 
 const FIELD_ROLES = ['TENANT_ADMIN', 'TENANT_MANAGER', 'TENANT_STAFF', 'TENANT_DRIVER'] as const;
 
@@ -189,6 +190,23 @@ export async function registerGoTrackingRoutes(app: FastifyInstance) {
         lng: body.lng,
         idempotencyKey: body.idempotencyKey,
         skipTransitionCheck: true
+      });
+
+      // Also pipe into realtime ingest pipeline
+      await ingestTrackingPoints(app, {
+        tenantId: tid,
+        shipmentId: shipment.id,
+        idempotencyKey: body.idempotencyKey ?? `${shipment.id}:${Date.now()}`,
+        points: [{
+          lat: body.lat,
+          lng: body.lng,
+          accuracy: undefined,
+          ts: new Date().toISOString(),
+          status: currentStatus,
+        }],
+        source: 'driver',
+        sourceRef: request.user?.sub,
+        driverId: request.user?.sub,
       });
 
       return reply.status(201).send({ ok: true });

@@ -34,7 +34,7 @@ export type Permission =
   | 'trust.compliance.legal-hold.read' | 'trust.compliance.legal-hold.write'
   | 'trust.safety.read' | 'trust.safety.suspend'
   | 'trust.kyc.read' | 'trust.kyc.approve'
-  | 'trust.secrets.read'
+  | 'trust.secrets.read' | 'trust.secrets.write'
   | 'trust.security.read' | 'trust.security.write'
   | 'gtm.pipeline.read' | 'gtm.pipeline.write'
   | 'gtm.trials.read' | 'gtm.trials.extend'
@@ -113,6 +113,7 @@ export const PERMISSIONS = [
   'trust.kyc.read',
   'trust.kyc.approve',
   'trust.secrets.read',
+  'trust.secrets.write',
   'trust.security.read',
   'trust.security.write',
   'gtm.pipeline.read',

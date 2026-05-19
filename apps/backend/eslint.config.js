@@ -24,6 +24,10 @@ export default [
         Request: 'readonly',
         Response: 'readonly',
         AbortSignal: 'readonly',
+        URLSearchParams: 'readonly',
+        RequestInit: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
         NodeJS: 'readonly'

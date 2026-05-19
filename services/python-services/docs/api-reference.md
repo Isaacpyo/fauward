@@ -71,6 +71,20 @@ Notes:
 - shipment ownership is verified before queueing
 - worker fetches trusted shipment data
 - URL is only exposed when completed and authorized
+- this is the legacy shipment-document PDF flow; first-class invoice endpoints are not exposed yet
+
+## Invoices
+
+The first-class invoicing subsystem currently has Phase 1 domain/database support only. No public `/invoices` routes are registered until the API phase.
+
+Implemented backend pieces:
+
+- tax-ready Pydantic domain schemas
+- SQLAlchemy models and Alembic migration
+- issue-time gapless numbering per tenant and fiscal year
+- immutable issued snapshots with SHA-256 content hashes
+- append-only `invoice_events`
+- invoice `outbox` rows for later render/email/webhook workers
 
 ## OCR
 

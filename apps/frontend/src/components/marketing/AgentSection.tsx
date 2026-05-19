@@ -12,12 +12,12 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 const terminalLines = [
-  { prefix: "agent", color: "text-amber-400", text: "Scanning 847 active shipments…" },
-  { prefix: "alert", color: "text-red-400", text: "SLA breach risk detected — FW-10503 (Dubai → Riyadh)" },
-  { prefix: "action", color: "text-green-400", text: "Re-routing to Carrier B — ETA recalculated to 14:30" },
-  { prefix: "notify", color: "text-blue-400", text: "Customer notified automatically via SMS + email" },
-  { prefix: "agent", color: "text-amber-400", text: "Assigning 12 new shipments to optimal drivers…" },
-  { prefix: "done", color: "text-green-400", text: "All SLA targets on track ✓" },
+  { prefix: "scan",   color: "text-amber-400", text: "847 active shipments monitored across all tenants" },
+  { prefix: "risk",   color: "text-red-400",   text: "SLA breach risk detected — FW-7821 (Manchester → Leeds)" },
+  { prefix: "action", color: "text-green-400", text: "Driver reassignment suggested — Carrier B available" },
+  { prefix: "notify", color: "text-blue-400",  text: "Customer update prepared and queued for delivery" },
+  { prefix: "human",  color: "text-amber-300", text: "Dispatcher approval required — route change flagged" },
+  { prefix: "done",   color: "text-green-400", text: "Route updated — dispatcher confirmed · ETA 14:30 ✓" },
 ];
 
 export default function AgentSection() {
@@ -58,11 +58,12 @@ export default function AgentSection() {
               Fauward Agent — Now Available
             </p>
             <h2 className="text-3xl font-bold leading-tight text-white lg:text-4xl xl:text-5xl">
-              Your operations — on{" "}
-              <span className="gradient-text">autopilot</span>
+              Operations monitoring,
+              <br />
+              <span className="gradient-text">built for real teams.</span>
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-blue-200">
-              Fauward Agent monitors every shipment in real time, re-routes exceptions before SLAs breach, and handles driver assignment — all without a human in the loop.
+              Fauward Agent monitors shipments, flags exceptions, suggests actions, and automates approved workflows — with your dispatchers staying in control at every step.
             </p>
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link

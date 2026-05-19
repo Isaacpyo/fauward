@@ -5,12 +5,12 @@ import Redis from 'ioredis';
 import jwt from 'jsonwebtoken';
 
 import { config } from '../../config/index.js';
+import { readRange } from './realtime/stream.service.js';
+import { shipmentRoom, tenantRoom, escalationsRoom, parseRoomName } from './ws/room-names.js';
+import { canJoinRoom } from './ws/connect-authz.js';
+import type { AuthzContext } from './ws/connect-authz.js';
 
 let io: Server | null = null;
-
-function roomName(tenantId: string, trackingNumber: string) {
-  return `${tenantId}:${trackingNumber}`;
-}
 
 function extractBearerToken(raw?: string) {
   if (!raw) return null;
@@ -35,7 +35,7 @@ export async function setupTrackingWebsocket(app: FastifyInstance) {
   }
 
   io.on('connection', (socket) => {
-    let authTenantId: string | null = null;
+    let authCtx: AuthzContext = {};
 
     const tokenFromHeader = extractBearerToken(
       typeof socket.handshake.headers.authorization === 'string'
@@ -47,34 +47,86 @@ export async function setupTrackingWebsocket(app: FastifyInstance) {
       try {
         const payload = jwt.verify(tokenFromHeader, config.jwt.accessSecret) as {
           tenantId?: string;
+          role?: string;
         };
-        authTenantId = payload.tenantId ?? null;
+        authCtx = {
+          tenantId: payload.tenantId,
+          role: payload.role,
+        };
       } catch {
-        authTenantId = null;
+        // invalid token
       }
     }
 
-    socket.on('message', async (message: { type?: string; trackingNumber?: string }) => {
-      if (message?.type !== 'subscribe' || !message.trackingNumber) return;
-      const trackingNumber = message.trackingNumber.trim().toUpperCase();
-      if (!trackingNumber) return;
+    const impersonating = socket.handshake.query?.impersonating as string | undefined;
+    if (authCtx.role === 'SUPER_ADMIN' && impersonating) {
+      authCtx.impersonatingTenantId = impersonating;
+    }
 
-      const shipment = await app.prisma.shipment.findUnique({
-        where: { trackingNumber },
-        select: { tenantId: true }
-      });
-      if (!shipment) {
-        socket.emit('message', { type: 'error', code: 'NOT_FOUND' });
+    socket.on('message', async (message: { type?: string; room?: string; trackingNumber?: string; lastSeq?: number }) => {
+      if (message?.type === 'subscribe' && message.trackingNumber && !message.room) {
+        const trackingNumber = message.trackingNumber.trim().toUpperCase();
+        const shipment = await app.prisma.shipment.findUnique({
+          where: { trackingNumber },
+          select: { tenantId: true }
+        });
+        if (!shipment) {
+          socket.emit('message', { type: 'error', code: 'NOT_FOUND' });
+          return;
+        }
+        if (authCtx.tenantId && authCtx.tenantId !== shipment.tenantId) {
+          socket.emit('message', { type: 'error', code: 'FORBIDDEN' });
+          return;
+        }
+        socket.join(shipmentRoom(shipment.tenantId, trackingNumber));
+        socket.emit('message', { type: 'subscribed', trackingNumber });
         return;
       }
 
-      if (authTenantId && authTenantId !== shipment.tenantId) {
-        socket.emit('message', { type: 'error', code: 'FORBIDDEN' });
+      if (message?.type === 'subscribe' && message.room) {
+        const room = message.room;
+        if (!canJoinRoom(authCtx, room)) {
+          socket.emit('message', { type: 'error', code: 'FORBIDDEN' });
+          return;
+        }
+        socket.join(room);
+        socket.emit('message', { type: 'subscribed', room });
         return;
       }
 
-      socket.join(roomName(shipment.tenantId, trackingNumber));
-      socket.emit('message', { type: 'subscribed', trackingNumber });
+      if (message?.type === 'resubscribe' && message.room && message.lastSeq !== undefined) {
+        const room = message.room;
+        if (!canJoinRoom(authCtx, room)) {
+          socket.emit('message', { type: 'error', code: 'FORBIDDEN' });
+          return;
+        }
+        socket.join(room);
+
+        const parsed = parseRoomName(room);
+        if (parsed?.type === 'shipment' || parsed?.type === 'tenant') {
+          const tenantId = parsed.tenantId!;
+          const startSeq = message.lastSeq + 1;
+          const events = await readRange(
+            app.redis,
+            tenantId,
+            `${startSeq}-0`,
+            '+',
+            1000
+          );
+
+          if (events.length >= 1000) {
+            socket.emit('message', { type: 'resync', room });
+            return;
+          }
+
+          for (const ev of events) {
+            socket.emit('message', { type: 'event', room, data: ev.fields });
+          }
+        }
+
+        socket.emit('message', { type: 'subscribed', room });
+        return;
+      }
     });
   });
 
@@ -89,12 +141,46 @@ export function emitTrackingStatusUpdate(payload: {
   timestamp: string;
 }) {
   if (!io) return;
-  io.to(roomName(payload.tenantId, payload.trackingNumber)).emit('message', {
+  io.to(shipmentRoom(payload.tenantId, payload.trackingNumber)).emit('message', {
     type: 'status_update',
     data: {
       status: payload.status,
       location: payload.location,
       timestamp: payload.timestamp
     }
+  });
+}
+
+export function emitTrackingRealtimeUpdate(payload: {
+  tenantId: string;
+  trackingNumber: string;
+  eventType: string;
+  seq: bigint;
+  data: Record<string, unknown>;
+}) {
+  if (!io) return;
+  const room = shipmentRoom(payload.tenantId, payload.trackingNumber);
+  const tenantRm = tenantRoom(payload.tenantId);
+  const message = {
+    type: 'event',
+    eventType: payload.eventType,
+    seq: String(payload.seq),
+    data: payload.data,
+  };
+  io.to(room).emit('message', message);
+  io.to(tenantRm).emit('message', message);
+}
+
+export function emitEscalationUpdate(payload: {
+  tenantId: string;
+  shipmentId: string;
+  trackingNumber: string;
+  reason: string;
+  flaggedAt: string;
+}) {
+  if (!io) return;
+  io.to(escalationsRoom()).emit('message', {
+    type: 'escalation',
+    data: payload,
   });
 }

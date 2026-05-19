@@ -5,7 +5,8 @@
   "description": "Embeddable widget SDK — compiles to public embed.js",
   "scripts": {
     "build": "esbuild src/embed.ts --bundle --minify --format=iife --outfile=dist/embed.js --platform=browser",
-    "build:dev": "esbuild src/embed.ts --bundle --format=iife --outfile=dist/embed.dev.js --platform=browser --sourcemap"
+    "build:dev": "esbuild src/embed.ts --bundle --format=iife --outfile=dist/embed.dev.js --platform=browser --sourcemap",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "esbuild": "^0.21.5",

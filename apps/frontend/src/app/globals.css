@@ -250,6 +250,74 @@ a {
   animation-play-state: paused;
 }
 
+/* ── Dark grid (command centre sections) ─────────────────────── */
+.bg-dark-grid {
+  background-image:
+    linear-gradient(to right, rgba(59, 130, 246, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(59, 130, 246, 0.06) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ── Timeline connector fill ──────────────────────────────────── */
+.timeline-line {
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.8s ease;
+}
+.timeline-line[data-visible="true"] {
+  transform: scaleX(1);
+}
+
+/* ── Live status dot ──────────────────────────────────────────── */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.live-dot {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* ── Terminal line appear ─────────────────────────────────────── */
+@keyframes terminal-line {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.t-line {
+  opacity: 0;
+  animation: terminal-line 0.35s ease forwards;
+}
+.t-line-0 { animation-delay: 0.1s; }
+.t-line-1 { animation-delay: 0.5s; }
+.t-line-2 { animation-delay: 1.0s; }
+.t-line-3 { animation-delay: 1.5s; }
+.t-line-4 { animation-delay: 2.2s; }
+.t-line-5 { animation-delay: 3.0s; }
+
+/* ── Phone frame ──────────────────────────────────────────────── */
+.phone-frame {
+  border: 2px solid #1e3a5f;
+  border-radius: 36px;
+  background: #0a1628;
+  box-shadow:
+    0 0 0 6px #070f1f,
+    0 32px 64px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.phone-notch {
+  width: 80px;
+  height: 20px;
+  background: #070f1f;
+  border-radius: 0 0 14px 14px;
+  margin: 0 auto;
+}
+
+/* ── Status pill colours ──────────────────────────────────────── */
+.pill-transit  { background: #1d4ed8; color: #bfdbfe; }
+.pill-delivered { background: #14532d; color: #bbf7d0; }
+.pill-risk     { background: #7f1d1d; color: #fecaca; }
+.pill-assigned { background: #1e3a5f; color: #93c5fd; }
+.pill-pod      { background: #14532d; color: #6ee7b7; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

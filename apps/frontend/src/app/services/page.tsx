@@ -166,7 +166,7 @@ export default function ServicesPage() {
       <section className="bg-gray-50 py-20 lg:py-28">
         <div className="marketing-container">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-amber-600">Who it's built for</p>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-amber-600">Who it&apos;s built for</p>
             <h2 className="text-3xl font-bold text-gray-900 lg:text-4xl">
               Built for every stage of your logistics operation
             </h2>

@@ -13,6 +13,7 @@ import {
 } from "@/components/onboarding/types";
 import { Button } from "@/components/ui/Button";
 import { PageShell } from "@/layouts/PageShell";
+import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
@@ -26,6 +27,7 @@ const stepLabels = [
   "Connect Payments",
   "Go Live"
 ];
+const backendSteps = ["BRANDING", "FIRST_SHIPMENT", "TEAM", "PAYMENT", "GO_LIVE"] as const;
 
 export function OnboardingPage() {
   const tenant = useTenantStore((state) => state.tenant);
@@ -44,10 +46,23 @@ export function OnboardingPage() {
     }
   }, [state.companyName, tenant?.name]);
 
-  const next = () => setStep((current) => Math.min(stepLabels.length - 1, current + 1));
+  const markStepComplete = async (index: number) => {
+    try {
+      await api.post("/v1/tenants/me/onboarding/steps", { step: backendSteps[index] });
+      void queryClient.invalidateQueries({ queryKey: ["tenant-config"] });
+    } catch {
+      // Onboarding remains usable offline or in dev sessions; the next tenant refresh will reconcile state.
+    }
+  };
+
+  const next = () => {
+    void markStepComplete(step);
+    setStep((current) => Math.min(stepLabels.length - 1, current + 1));
+  };
   const back = () => setStep((current) => Math.max(0, current - 1));
 
   const complete = () => {
+    void markStepComplete(4);
     const nextTenant: TenantConfig = tenant
       ? {
           ...tenant,

@@ -60,7 +60,7 @@ export function startOutboxWorker(app: FastifyInstance) {
         );
       }
     }
-  }, 1_000);
+  }, 5_000);
 }
 
 export async function stopOutboxWorker() {

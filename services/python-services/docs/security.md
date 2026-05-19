@@ -112,5 +112,17 @@ Sensitive actions are audited where infrastructure is available:
 - `route_optimization_queued`
 - `pricing_quote_created`
 - `ml_model_retrain_queued`
+- `invoice.issued` in `invoice_events`
 
 Audit metadata avoids raw documents, signed URL tokens, API keys, full customs payloads, and stack traces.
+
+## Invoice Integrity Controls
+
+Issued invoices are immutable in the Phase 1 domain core. Corrections are expected to happen through later credit-note flows, not by editing issued rows.
+
+Invoice issue stores:
+
+- frozen payer and payee snapshots
+- SHA-256 content hash of the canonical issued invoice snapshot
+- append-only `invoice_events` with before/after snapshots
+- an invoice outbox row in the same transaction for asynchronous rendering

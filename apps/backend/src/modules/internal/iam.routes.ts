@@ -1,5 +1,6 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { PERMISSIONS } from '@fauward/internal-rbac';
 import { writeAudit } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { PlatformRole } from '@prisma/client';
@@ -11,6 +12,7 @@ import { generateQrCodeDataUrl, generateTotpSecret } from '../../shared/utils/to
 import { seedStaffRoles, STAFF_ROLE_DEFINITIONS, staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 
 const mutationPre = [authenticatePlatformSession, requirePlatformCsrf];
+const ROOT_HARDWARE_ASSERTION_FALLBACK = 'dev-hardware-key';
 
 function ipAddress(request: FastifyRequest) {
   const forwarded = request.headers['x-forwarded-for'];
@@ -20,6 +22,44 @@ function ipAddress(request: FastifyRequest) {
 
 function userAgent(request: FastifyRequest) {
   return typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null;
+}
+
+function expectedRootHardwareAssertion() {
+  return process.env.DEV_HARDWARE_KEY_ASSERTION ?? ROOT_HARDWARE_ASSERTION_FALLBACK;
+}
+
+function constantTimeStringEquals(left: string | undefined, right: string | undefined) {
+  if (!left || !right) return false;
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function hardwareKeyFingerprint(assertion: string) {
+  return createHash('sha256').update(assertion).digest('hex');
+}
+
+async function requireRootGrantAuthorization(
+  app: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  roleIds: readonly string[],
+  hardwareKeyAssertion?: string
+) {
+  if (!roleIds.includes('ROOT')) return null;
+
+  const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
+  if (!context.permissions.includes('trust.iam.root')) {
+    reply.status(403).send({ error: 'trust.iam.root is required to grant ROOT' });
+    return false;
+  }
+
+  if (!constantTimeStringEquals(hardwareKeyAssertion, expectedRootHardwareAssertion())) {
+    reply.status(403).send({ error: 'ROOT grant requires hardware key verification' });
+    return false;
+  }
+
+  return hardwareKeyFingerprint(hardwareKeyAssertion!);
 }
 
 async function auditIam(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
@@ -79,13 +119,12 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/internal/iam/users', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
-    const body = request.body as { email?: string; name?: string; password?: string; roleIds?: string[]; ssoProvider?: string; reason?: string };
+    const body = request.body as { email?: string; name?: string; password?: string; roleIds?: string[]; ssoProvider?: string; reason?: string; hardwareKeyAssertion?: string };
     if (!body.email || !body.name || !body.password) return reply.status(400).send({ error: 'email, name, and password are required' });
     const normalizedEmail = body.email.toLowerCase().trim();
     const roleIds = body.roleIds?.length ? body.roleIds : ['EXECUTIVE'];
-    if (roleIds.includes('ROOT') && !(await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user)).permissions.includes('trust.iam.root')) {
-      return reply.status(403).send({ error: 'trust.iam.root is required to grant ROOT' });
-    }
+    const rootGrantHardwareKeyFingerprint = await requireRootGrantAuthorization(app, request, reply, roleIds, body.hardwareKeyAssertion);
+    if (rootGrantHardwareKeyFingerprint === false) return;
 
     const created = await app.prisma.$transaction(async (tx) => {
       const platformUser = await tx.platformUser.create({
@@ -113,7 +152,15 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       return tx.staffUser.findUniqueOrThrow({ where: { id: staff.id }, include: staffSelect() });
     });
 
-    await auditIam(request, 'staff.user.create', 'staff_user', created.id, null, created, body.reason);
+    await auditIam(
+      request,
+      'staff.user.create',
+      'staff_user',
+      created.id,
+      null,
+      rootGrantHardwareKeyFingerprint ? { staffUser: created, rootGrantHardwareKeyFingerprint } : created,
+      body.reason
+    );
     reply.status(201).send(created);
   });
 
@@ -168,12 +215,11 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/internal/iam/role-assignments', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
-    const body = request.body as { staffId?: string; roleId?: string; expiresAt?: string; reason?: string };
+    const body = request.body as { staffId?: string; roleId?: string; expiresAt?: string; reason?: string; hardwareKeyAssertion?: string };
     if (!body.staffId || !body.roleId) return reply.status(400).send({ error: 'staffId and roleId are required' });
     if (body.staffId === request.platform!.user.id) return reply.status(403).send({ error: 'Staff cannot grant roles to themselves' });
-    if (body.roleId === 'ROOT' && !(await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user)).permissions.includes('trust.iam.root')) {
-      return reply.status(403).send({ error: 'trust.iam.root is required to grant ROOT' });
-    }
+    const rootGrantHardwareKeyFingerprint = await requireRootGrantAuthorization(app, request, reply, [body.roleId], body.hardwareKeyAssertion);
+    if (rootGrantHardwareKeyFingerprint === false) return;
     const assignment = await app.prisma.staffRoleAssignment.create({
       data: {
         staffId: body.staffId,
@@ -183,7 +229,15 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       },
       include: { role: true, staff: true }
     });
-    await auditIam(request, 'staff.role.assign', 'staff_role_assignment', assignment.id, null, assignment, body.reason);
+    await auditIam(
+      request,
+      'staff.role.assign',
+      'staff_role_assignment',
+      assignment.id,
+      null,
+      rootGrantHardwareKeyFingerprint ? { assignment, rootGrantHardwareKeyFingerprint } : assignment,
+      body.reason
+    );
     reply.status(201).send(assignment);
   });
 

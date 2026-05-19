@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWidgetToken } from "@/lib/widgetToken";
-import { otpStore } from "../send/route";
+import { otpStore } from "../otp-store";
 
 export const runtime = "nodejs";
 

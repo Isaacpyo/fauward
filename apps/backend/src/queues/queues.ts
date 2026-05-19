@@ -20,7 +20,7 @@ function buildBullmqConnection(redisUrl: string): ConnectionOptions {
   };
 }
 
-export const bullmqConnection = buildBullmqConnection(config.redisUrl);
+export const bullmqConnection = buildBullmqConnection(config.redisQueueUrl);
 
 export const notificationQueue = new Queue<QueuePayload>('notification', {
   connection: bullmqConnection,

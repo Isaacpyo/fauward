@@ -18,7 +18,7 @@ async function auditCustomer(request: FastifyRequest, action: string, tenantId: 
     reason: reason ?? null,
     ip_address: request.ip,
     session_id: request.platform!.session.id,
-    jit_session_id: null,
+    jit_session_id: request.jitSessionId ?? null,
     user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null
   });
 }
@@ -42,15 +42,28 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
       where: { tenantId },
       _count: { id: true }
     });
-    const [tickets, latestHealth, dunningEvents, incidentImpacts, contracts, pipeline, attribution] = await Promise.all([
-      app.prisma.supportVendorTicket.findMany({ where: { tenantId }, orderBy: { updatedAt: 'desc' }, take: 20 }),
+    const [tickets, latestHealth, dunningEvents, incidentImpacts, contracts, pipeline, attribution, apiKeys, featureFlagOverrides] = await Promise.all([
+      app.prisma.supportTicket.findMany({
+        where: { tenantId },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        include: { messages: { orderBy: { createdAt: 'desc' }, take: 3 } }
+      }),
       app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
       app.prisma.dunningEvent.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 10 }),
       app.prisma.incidentTenantImpact.findMany({ where: { tenantId }, include: { incident: true }, orderBy: { createdAt: 'desc' }, take: 10 }),
       app.prisma.customContract.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 10 }),
       app.prisma.salesDeal.findMany({ where: { tenantId }, orderBy: { updatedAt: 'desc' }, take: 10 }),
-      app.prisma.marketingAttribution.findMany({ where: { tenantId }, orderBy: { periodStart: 'desc' }, take: 10 })
+      app.prisma.marketingAttribution.findMany({ where: { tenantId }, orderBy: { periodStart: 'desc' }, take: 10 }),
+      app.prisma.apiKey.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, lastUsedAt: true, monthlyRequestCount: true, isSandbox: true, scopes: true },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      }),
+      app.prisma.featureFlagOverrideAudit.findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 50 })
     ]);
+    const totalRequestsThisMonth = apiKeys.reduce((sum, key) => sum + key.monthlyRequestCount, 0);
     reply.send({
       tenant,
       metrics: {
@@ -61,14 +74,22 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
         supportTicketCount: tickets.length,
         healthScore: latestHealth?.score ?? 78
       },
-      usage: { shipmentStatusBreakdown: monthlyShipments },
+      usage: {
+        shipmentStatusBreakdown: monthlyShipments,
+        apiUsage: {
+          keys: apiKeys,
+          totalRequestsThisMonth,
+          averagePerDay: Math.round(totalRequestsThisMonth / Math.max(1, new Date().getUTCDate()))
+        }
+      },
       tickets,
       health: latestHealth ?? { score: 78, factors: ['Recent shipment activity', 'No connected Zendesk signal', 'Billing history available'], trend: 'flat' },
       dunning: { events: dunningEvents },
       incidents: { impacts: incidentImpacts },
       contracts,
       pipeline,
-      attribution
+      attribution,
+      featureFlagOverrides
     });
   });
 
@@ -80,5 +101,20 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
     const after = await app.prisma.tenant.update({ where: { id: tenantId }, data: { internalNotes: body.internalNotes ?? '' }, select: { internalNotes: true } });
     await auditCustomer(request, 'customer360.notes.update', tenantId, before, after, body.reason);
     reply.send(after);
+  });
+
+  app.get('/api/internal/customer/360/:tenantId/api-usage', { preHandler: [authenticatePlatformSession, requireInternalPermission('customer.360.read')] }, async (request, reply) => {
+    const { tenantId } = request.params as { tenantId: string };
+    const keys = await app.prisma.apiKey.findMany({
+      where: { tenantId },
+      select: { id: true, name: true, lastUsedAt: true, monthlyRequestCount: true, isSandbox: true, scopes: true },
+      orderBy: { createdAt: 'desc' }
+    });
+    const totalRequestsThisMonth = keys.reduce((sum, key) => sum + key.monthlyRequestCount, 0);
+    reply.send({
+      keys,
+      totalRequestsThisMonth,
+      averagePerDay: Math.round(totalRequestsThisMonth / Math.max(1, new Date().getUTCDate()))
+    });
   });
 }

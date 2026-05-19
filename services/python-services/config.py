@@ -29,6 +29,21 @@ class Settings(BaseSettings):
     default_email_from: str = Field(default="no-reply@fauward.com", alias="PYTHON_DEFAULT_EMAIL_FROM")
     weather_disruption_regions: Optional[str] = Field(default="", alias="WEATHER_DISRUPTION_REGIONS")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = Field(default="INFO", alias="LOG_LEVEL")
+    # Observability / status dashboard
+    backend_url: str = Field(default="http://localhost:3001", alias="BACKEND_URL")
+    monitoring_api_key: str = Field(default="", alias="MONITORING_API_KEY")
+    python_obs_api_key: str = Field(default="", alias="PYTHON_OBS_API_KEY")
+    prod_api_url: str = Field(default="", alias="PROD_API_URL")
+    prod_frontend_url: str = Field(default="", alias="PROD_FRONTEND_URL")
+    prod_tenant_portal_url: str = Field(default="", alias="PROD_TENANT_PORTAL_URL")
+    prod_super_admin_url: str = Field(default="", alias="PROD_SUPER_ADMIN_URL")
+    prod_fauward_go_url: str = Field(default="", alias="PROD_FAUWARD_GO_URL")
+    prod_python_api_url: str = Field(default="", alias="PROD_PYTHON_API_URL")
+    prometheus_url: str = Field(default="", alias="PROMETHEUS_URL")
+    grafana_url: str = Field(default="", alias="GRAFANA_URL")
+    sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
+    flower_url: str = Field(default="", alias="FLOWER_URL")
+    loki_url: str = Field(default="", alias="LOKI_URL")
 
     @computed_field
     @property

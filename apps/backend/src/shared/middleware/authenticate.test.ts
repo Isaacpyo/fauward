@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 
-import { authenticate } from './authenticate.js';
+import { authenticate, requiredApiScope } from './authenticate.js';
 
 function makeReply() {
   const send = vi.fn();
@@ -9,6 +10,57 @@ function makeReply() {
 }
 
 describe('authenticate', () => {
+  it('maps custom-domain endpoints to exact domain scopes', () => {
+    expect(requiredApiScope('GET', '/api/v1/tenant/domain/status')).toBe('domains:read');
+    expect(requiredApiScope('PATCH', '/api/v1/tenant/domain')).toBe('domains:write');
+    expect(requiredApiScope('DELETE', '/api/v1/tenant/domain')).toBe('domains:write');
+  });
+
+  it('rejects API keys with unrelated write scopes on custom-domain writes', async () => {
+    const token = 'fw_test_domain_scope';
+    const reply = {
+      raw: { once: vi.fn() },
+      status: vi.fn().mockReturnThis(),
+      send: vi.fn()
+    };
+    const apiKey = {
+      id: 'key-1',
+      tenantId: 'tenant-1',
+      keyPrefix: 'fw_test',
+      scopes: ['shipments:write'],
+      tenant: { id: 'tenant-1', slug: 'tenant-1', plan: 'PRO' }
+    };
+    const request = {
+      method: 'PATCH',
+      url: '/api/v1/tenant/domain',
+      headers: { authorization: `Bearer ${token}` },
+      server: {
+        prisma: {
+          apiKey: {
+            findFirst: vi.fn().mockResolvedValue(apiKey)
+          }
+        }
+      }
+    } as any;
+
+    await authenticate(request, reply as any);
+
+    expect(request.server.prisma.apiKey.findFirst).toHaveBeenCalledWith({
+      where: {
+        keyHash: createHash('sha256').update(token).digest('hex'),
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: expect.any(Date) } }]
+      },
+      include: { tenant: true }
+    });
+    expect(reply.status).toHaveBeenCalledWith(403);
+    expect(reply.send).toHaveBeenCalledWith({
+      error: 'INSUFFICIENT_SCOPE',
+      required: 'domains:write',
+      provided: ['shipments:write']
+    });
+  });
+
   it('blocks suspended tenants for non-super-admin users', async () => {
     const reply = makeReply();
     const request = {

@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
+const windowsProductionDistDir = process.platform === "win32" && process.env.NODE_ENV === "production"
+  ? ".next-build"
+  : undefined;
+
 const nextConfig = {
+  ...(windowsProductionDistDir ? { distDir: windowsProductionDistDir } : {}),
   async headers() {
     return [
       {

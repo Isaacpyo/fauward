@@ -10,6 +10,8 @@ export type Customer360 = {
     status: string;
     defaultCurrency: string;
     internalNotes: string | null;
+    onboardingSteps?: Record<string, boolean>;
+    onboardingCompletedAt?: string | null;
     users: Array<{ id: string; email: string; name: string | null; role: string; lastLoginAt: string | null }>;
     shipments: Array<{ id: string; status: string; createdAt: string; trackingNumber?: string | null }>;
     invoices: Array<{ id: string; invoiceNumber: string; status: string; total: string; currency: string; createdAt: string }>;
@@ -17,7 +19,14 @@ export type Customer360 = {
     auditLogs: Array<{ id: string; action: string; resourceType: string | null; timestamp: string }>;
   };
   metrics: { shipmentCount: number; invoiceCount: number; userCount: number; notificationCount: number; supportTicketCount: number; healthScore: number };
-  usage: { shipmentStatusBreakdown: Array<{ status: string; _count: { id: number } }> };
+  usage: {
+    shipmentStatusBreakdown: Array<{ status: string; _count: { id: number } }>;
+    apiUsage?: {
+      keys: Array<{ id: string; name: string | null; lastUsedAt: string | null; monthlyRequestCount: number; isSandbox: boolean; scopes: string[] }>;
+      totalRequestsThisMonth: number;
+      averagePerDay: number;
+    };
+  };
   tickets: Array<Record<string, unknown>>;
   health: { score: number; trend?: string; factors: string[] | Record<string, unknown> };
   dunning?: { events: Array<Record<string, unknown>> };
@@ -25,6 +34,7 @@ export type Customer360 = {
   contracts?: Array<Record<string, unknown>>;
   pipeline?: Array<Record<string, unknown>>;
   attribution?: Array<Record<string, unknown>>;
+  featureFlagOverrides?: Array<{ id: string; flagKey: string; value: unknown; actorId: string; createdAt: string }>;
 };
 
 export async function fetchCustomer360(tenantId: string) {

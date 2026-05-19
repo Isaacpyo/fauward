@@ -5,6 +5,11 @@
       "cache": false,
       "persistent": true
     },
+    "@fauward/status-dashboard#dev": {
+      "cache": false,
+      "persistent": true,
+      "outputLogs": "errors-only"
+    },
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]

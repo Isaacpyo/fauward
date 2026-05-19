@@ -5,6 +5,7 @@ import { UserRole } from '@prisma/client';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
+import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -298,6 +299,8 @@ export async function registerUsersRoutes(app: FastifyInstance) {
 
       const target = await app.prisma.user.findFirst({ where: { id, tenantId } });
       if (!target) return reply.status(404).send({ error: 'User not found' });
+      const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
+      if (hold) return reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId, holdId: hold.id });
 
       await app.prisma.$transaction([
         app.prisma.user.update({ where: { id: target.id }, data: { isActive: false } }),

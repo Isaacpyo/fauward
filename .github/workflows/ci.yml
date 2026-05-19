@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, develop, 'phase/**']
   pull_request:
+  schedule:
+    - cron: '17 2 * * *'
 
 jobs:
   test:
@@ -42,7 +44,21 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
-      - run: npm test --workspace=apps/backend
-      - run: npm run build --workspace=apps/backend
-      - run: npm run build --workspace=apps/frontend
-      - run: npm run build --workspace=apps/tenant-portal
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:coverage --workspace=apps/backend
+      - run: npm run audit:chain:verify --workspace=apps/backend
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: |
+            apps/backend/coverage
+            apps/fauward-Go/coverage
+            packages/*/coverage

@@ -1,12 +1,15 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleDollarSign,
   ClipboardCheck,
   CreditCard,
+  FilePlus2,
   Lock,
+  Plus,
   ReceiptText,
   RefreshCcw,
+  Trash2,
   TrendingDown,
   TrendingUp,
   Wallet
@@ -28,9 +31,11 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
+import { Textarea } from "@/components/ui/Textarea";
 import { PageShell } from "@/layouts/PageShell";
 import { getAccessToken } from "@/lib/auth";
 import { api } from "@/lib/api";
@@ -61,6 +66,13 @@ type FinanceInvoice = {
     id: string;
     name: string;
   } | null;
+};
+
+type FinanceCustomer = {
+  id: string;
+  name: string;
+  billingEmail?: string | null;
+  isActive?: boolean;
 };
 
 type FinancePayment = {
@@ -121,15 +133,80 @@ type CustomerFinanceRow = {
 
 type BadgeVariant = "neutral" | "success" | "warning" | "error" | "info" | "primary" | "danger" | "default";
 
+type CreateInvoiceLineItem = {
+  id: string;
+  description: string;
+  quantity: string;
+  unitAmount: string;
+  taxRate: string;
+};
+
+type CreateInvoiceForm = {
+  documentTitle: string;
+  documentSubtitle: string;
+  templateAccentColor: string;
+  logoUrl: string;
+  payeeName: string;
+  payeeAddress: string;
+  payeeVatId: string;
+  payerName: string;
+  payerAddress: string;
+  payerVatId: string;
+  organisationId: string;
+  customerId: string;
+  shipmentId: string;
+  currency: string;
+  dueDate: string;
+  paymentTerms: string;
+  discountAmount: string;
+  notes: string;
+  paymentInstructions: string;
+  footerText: string;
+  lineItems: CreateInvoiceLineItem[];
+};
+
+type CreateInvoicePayloadLineItem = {
+  description: string;
+  quantity: number;
+  unitAmount: number;
+  taxRate: number;
+  amount: number;
+  taxAmount: number;
+};
+
+type CreateInvoicePayload = {
+  organisationId?: string;
+  customerId?: string;
+  shipmentId?: string;
+  currency: string;
+  dueDate?: string;
+  paymentTerms: number;
+  notes?: string;
+  lineItems: CreateInvoicePayloadLineItem[];
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
+  discountAmount: number;
+  total: number;
+};
+
 const financeTabs = [
   { value: "overview", label: "Overview", minimumPlan: "starter" },
   { value: "invoices", label: "Invoices", minimumPlan: "starter" },
+  { value: "create-invoice", label: "Create invoice", minimumPlan: "starter" },
   { value: "payments", label: "Payments", minimumPlan: "starter" },
   { value: "collections", label: "COD & Collections", minimumPlan: "pro" },
   { value: "refunds", label: "Refunds", minimumPlan: "pro" },
   { value: "settlements", label: "Settlements", minimumPlan: "pro" },
   { value: "reconciliation", label: "Reconciliation", minimumPlan: "enterprise" }
 ] as const satisfies Array<{ value: string; label: string; minimumPlan: Plan }>;
+
+type FinanceTab = (typeof financeTabs)[number];
+type FinanceTabValue = FinanceTab["value"];
+
+const financeTabByValue = Object.fromEntries(
+  financeTabs.map((tab) => [tab.value, tab])
+) as Record<FinanceTabValue, FinanceTab>;
 
 const financeRangePresets: Array<{ label: string; value: FinanceRangePreset }> = [
   { label: "Today", value: "today" },
@@ -257,6 +334,162 @@ function getErrorStatus(error: unknown) {
     return null;
   }
   return ((error as { response?: { status?: number } }).response?.status ?? null);
+}
+
+function getApiErrorMessage(error: unknown, fallback: string) {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
+    return fallback;
+  }
+  const response = (error as { response?: { data?: { error?: string; message?: string } } }).response;
+  return response?.data?.error ?? response?.data?.message ?? fallback;
+}
+
+function createLineItemId() {
+  return crypto.randomUUID();
+}
+
+function createBlankInvoiceLineItem(): CreateInvoiceLineItem {
+  return {
+    id: createLineItemId(),
+    description: "",
+    quantity: "1",
+    unitAmount: "",
+    taxRate: "0"
+  };
+}
+
+function createInitialInvoiceForm(
+  currency = "GBP",
+  defaults?: { tenantName?: string; logoUrl?: string; accentColor?: string }
+): CreateInvoiceForm {
+  return {
+    documentTitle: "INVOICE",
+    documentSubtitle: "Draft customer invoice",
+    templateAccentColor: defaults?.accentColor || "#0D1F3C",
+    logoUrl: defaults?.logoUrl ?? "",
+    payeeName: defaults?.tenantName || "Fauward tenant",
+    payeeAddress: "Company address\nCity, Postcode\nCountry",
+    payeeVatId: "",
+    payerName: "",
+    payerAddress: "",
+    payerVatId: "",
+    organisationId: "",
+    customerId: "",
+    shipmentId: "",
+    currency: currency.toUpperCase(),
+    dueDate: "",
+    paymentTerms: "14",
+    discountAmount: "0",
+    notes: "",
+    paymentInstructions: "Payment due according to the terms above. Please include the invoice number as the payment reference.",
+    footerText: "Thank you for your business.",
+    lineItems: [createBlankInvoiceLineItem()]
+  };
+}
+
+function normalizeHexColor(value: string, fallback = "#0D1F3C") {
+  return /^#[0-9A-Fa-f]{6}$/.test(value) ? value : fallback;
+}
+
+function formatCurrencyCode(amount: number, currency: string, locale = "en-GB") {
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currency || "GBP"
+    }).format(amount);
+  } catch {
+    return `${currency || "GBP"} ${amount.toFixed(2)}`;
+  }
+}
+
+function parsePositiveNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function parseNonNegativeNumber(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function roundRate(value: number) {
+  return Math.round((value + Number.EPSILON) * 10000) / 10000;
+}
+
+function calculateCreateInvoiceTotals(form: CreateInvoiceForm) {
+  const lineItems = form.lineItems
+    .map((item) => {
+      const quantity = parsePositiveNumber(item.quantity);
+      const unitAmount = parseNonNegativeNumber(item.unitAmount);
+      const taxRate = parseNonNegativeNumber(item.taxRate);
+      const amount = roundMoney(quantity * unitAmount);
+      const taxAmount = roundMoney(amount * (taxRate / 100));
+
+      return {
+        description: item.description.trim(),
+        quantity,
+        unitAmount,
+        taxRate,
+        amount,
+        taxAmount
+      };
+    })
+    .filter((item) => item.description.length > 0 && item.quantity > 0 && item.unitAmount > 0);
+
+  const subtotal = roundMoney(lineItems.reduce((sum, item) => sum + item.amount, 0));
+  const taxAmount = roundMoney(lineItems.reduce((sum, item) => sum + item.taxAmount, 0));
+  const discountAmount = Math.min(roundMoney(parseNonNegativeNumber(form.discountAmount)), roundMoney(subtotal + taxAmount));
+  const total = roundMoney(subtotal + taxAmount - discountAmount);
+  const taxRate = subtotal > 0 ? roundRate((taxAmount / subtotal) * 100) : 0;
+
+  return {
+    lineItems,
+    subtotal,
+    taxRate,
+    taxAmount,
+    discountAmount,
+    total,
+    validLineCount: lineItems.length
+  };
+}
+
+function composeCreateInvoiceNotes(form: CreateInvoiceForm) {
+  const payeeDetails = [form.payeeName.trim(), form.payeeAddress.trim()].filter(Boolean).join("\n");
+  const payerDetails = [form.payerName.trim(), form.payerAddress.trim()].filter(Boolean).join("\n");
+
+  return [
+    payeeDetails ? `Payee:\n${payeeDetails}` : "",
+    payerDetails ? `Bill to:\n${payerDetails}` : "",
+    form.notes.trim(),
+    form.paymentInstructions.trim() ? `Payment instructions:\n${form.paymentInstructions.trim()}` : "",
+    form.footerText.trim() ? `Footer:\n${form.footerText.trim()}` : "",
+    form.payeeVatId.trim() ? `Payee VAT ID: ${form.payeeVatId.trim()}` : "",
+    form.payerVatId.trim() ? `Payer VAT ID: ${form.payerVatId.trim()}` : ""
+  ].filter(Boolean).join("\n\n") || undefined;
+}
+
+function buildCreateInvoicePayload(form: CreateInvoiceForm): CreateInvoicePayload {
+  const totals = calculateCreateInvoiceTotals(form);
+
+  return {
+    organisationId: form.organisationId.trim() || undefined,
+    customerId: form.customerId.trim() || undefined,
+    shipmentId: form.shipmentId.trim() || undefined,
+    currency: form.currency.trim().toUpperCase(),
+    dueDate: form.dueDate || undefined,
+    paymentTerms: Math.trunc(parseNonNegativeNumber(form.paymentTerms)),
+    notes: composeCreateInvoiceNotes(form),
+    lineItems: totals.lineItems,
+    subtotal: totals.subtotal,
+    taxRate: totals.taxRate,
+    taxAmount: totals.taxAmount,
+    discountAmount: totals.discountAmount,
+    total: totals.total
+  };
 }
 
 function statusBadgeVariant(status: string): "success" | "warning" | "error" | "info" | "neutral" {
@@ -632,12 +865,21 @@ function LockedFinancePanel({ minimumPlan, feature }: { minimumPlan: Plan; featu
 
 export function TenantFinancePage() {
   const user = useAppStore((state) => state.user);
+  const addToast = useAppStore((state) => state.addToast);
   const tenant = useTenantStore((state) => state.tenant);
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") ?? "overview";
   const initialFinanceRange = financePresetRange("30d");
   const [financePreset, setFinancePreset] = useState<FinanceRangePreset>("30d");
   const [financeRange, setFinanceRange] = useState<DateRange>(initialFinanceRange);
+  const [createInvoiceForm, setCreateInvoiceForm] = useState<CreateInvoiceForm>(() =>
+    createInitialInvoiceForm(tenant?.currency ?? "GBP", {
+      tenantName: tenant?.name,
+      logoUrl: tenant?.logo_url,
+      accentColor: tenant?.primary_color
+    })
+  );
   const hasToken = hasApiToken();
 
   const summaryQuery = useQuery({
@@ -670,6 +912,46 @@ export function TenantFinancePage() {
     enabled: hasToken,
     retry: false,
     refetchInterval: 60_000
+  });
+
+  const customersQuery = useQuery({
+    queryKey: ["finance-customers"],
+    queryFn: async () => (await fetchJson<{ data: FinanceCustomer[] }>("/v1/crm/customers")).data,
+    enabled: hasToken && currentTab === "create-invoice",
+    retry: false,
+    staleTime: 60_000
+  });
+
+  const createInvoiceMutation = useMutation({
+    mutationFn: async (form: CreateInvoiceForm) => {
+      const response = await api.post<FinanceInvoice>("/v1/finance/invoices", buildCreateInvoicePayload(form), {
+        headers: { "Idempotency-Key": `invoice:create:${crypto.randomUUID()}` }
+      });
+      return response.data;
+    },
+    onSuccess: (invoice) => {
+      queryClient.setQueryData<FinanceInvoice[]>(["finance-invoices"], (previous = []) => [invoice, ...previous]);
+      void queryClient.invalidateQueries({ queryKey: ["finance-invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
+      setCreateInvoiceForm(createInitialInvoiceForm(invoice.currency || tenant?.currency || "GBP", {
+        tenantName: tenant?.name,
+        logoUrl: tenant?.logo_url,
+        accentColor: tenant?.primary_color
+      }));
+      setSearchParams({ tab: "invoices" });
+      addToast({
+        title: "Invoice draft created",
+        description: `${invoice.invoiceNumber} is ready to review.`,
+        variant: "success"
+      });
+    },
+    onError: (error) => {
+      addToast({
+        title: "Invoice was not created",
+        description: getApiErrorMessage(error, "Check the invoice details and try again."),
+        variant: "error"
+      });
+    }
   });
 
   const financeUnavailable =
@@ -816,6 +1098,28 @@ export function TenantFinancePage() {
     hasToken &&
     (summaryQuery.isLoading || invoicesQuery.isLoading || paymentsQuery.isLoading || creditNotesQuery.isLoading);
 
+  const customerOptions = customersQuery.data ?? [];
+  const createInvoiceTotals = useMemo(
+    () => calculateCreateInvoiceTotals(createInvoiceForm),
+    [createInvoiceForm]
+  );
+  const createInvoiceCanSubmit =
+    hasToken &&
+    createInvoiceTotals.validLineCount > 0 &&
+    createInvoiceForm.currency.trim().length === 3 &&
+    createInvoiceTotals.total >= 0;
+  const customerSelectorUnavailable = getErrorStatus(customersQuery.error) === 403;
+  const invoiceAccentColor = normalizeHexColor(createInvoiceForm.templateAccentColor, tenant?.primary_color ?? "#0D1F3C");
+  const invoiceIssueDate = new Date().toISOString().slice(0, 10);
+  const templateColorSwatches = Array.from(new Set([
+    tenant?.primary_color ?? "#0D1F3C",
+    tenant?.accent_color ?? "#D97706",
+    "#111827",
+    "#047857"
+  ].map((color) => normalizeHexColor(color, "#0D1F3C"))));
+  const formatCreateInvoiceCurrency = (amount: number) =>
+    formatCurrencyCode(amount, createInvoiceForm.currency.trim().toUpperCase() || tenant?.currency || "GBP", tenant?.locale || "en-GB");
+
   const tabItems = financeTabs.map((tab) => {
     const locked = !hasPlanAccess(user?.plan, tab.minimumPlan);
     return {
@@ -835,6 +1139,59 @@ export function TenantFinancePage() {
       return <LockedFinancePanel minimumPlan={tab.minimumPlan} feature={tab.label} />;
     }
     return content;
+  }
+
+  function updateCreateInvoiceField<K extends Exclude<keyof CreateInvoiceForm, "lineItems">>(
+    field: K,
+    value: CreateInvoiceForm[K]
+  ) {
+    setCreateInvoiceForm((previous) => ({
+      ...previous,
+      [field]: field === "currency" ? String(value).toUpperCase().slice(0, 3) : value
+    }));
+  }
+
+  function handleCreateInvoiceCustomerChange(customerId: string) {
+    const customer = customerOptions.find((item) => item.id === customerId);
+    setCreateInvoiceForm((previous) => ({
+      ...previous,
+      organisationId: customerId,
+      payerName: customer?.name ?? previous.payerName,
+      payerAddress: customer?.billingEmail ? `Billing email: ${customer.billingEmail}` : previous.payerAddress
+    }));
+  }
+
+  function updateCreateInvoiceLineItem(
+    id: string,
+    field: Exclude<keyof CreateInvoiceLineItem, "id">,
+    value: string
+  ) {
+    setCreateInvoiceForm((previous) => ({
+      ...previous,
+      lineItems: previous.lineItems.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    }));
+  }
+
+  function addCreateInvoiceLineItem() {
+    setCreateInvoiceForm((previous) => ({
+      ...previous,
+      lineItems: [...previous.lineItems, createBlankInvoiceLineItem()]
+    }));
+  }
+
+  function removeCreateInvoiceLineItem(id: string) {
+    setCreateInvoiceForm((previous) => ({
+      ...previous,
+      lineItems: previous.lineItems.length === 1
+        ? previous.lineItems
+        : previous.lineItems.filter((item) => item.id !== id)
+    }));
+  }
+
+  function handleCreateInvoiceSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!createInvoiceCanSubmit || createInvoiceMutation.isPending) return;
+    createInvoiceMutation.mutate(createInvoiceForm);
   }
 
   function handleFinancePresetChange(preset: FinanceRangePreset) {
@@ -1130,27 +1487,439 @@ export function TenantFinancePage() {
                   icon={ReceiptText}
                   title="No invoices yet"
                   description="Invoice records will appear here once shipment billing starts."
+                  ctaLabel="Create invoice"
+                  onCtaClick={() => setSearchParams({ tab: "create-invoice" })}
                 />
               ) : (
-                <Table columns={["Invoice", "Customer", "Status", "Created", "Due", "Amount"]}>
-                  {invoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
-                      <TableCell>
-                        <Link to={`/finance/${invoice.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
-                          {invoice.invoiceNumber}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{invoice.organisation?.name ?? "Unknown customer"}</TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariant(invoice.status)}>{invoice.status}</Badge>
-                      </TableCell>
-                      <TableCell>{formatDateTime(invoice.createdAt, tenant)}</TableCell>
-                      <TableCell>{invoice.dueDate ? formatDateTime(invoice.dueDate, tenant) : "Not set"}</TableCell>
-                      <TableCell>{formatCurrency(Number(invoice.total ?? 0), tenant)}</TableCell>
-                    </TableRow>
-                  ))}
-                </Table>
+                <div className="space-y-3">
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={<FilePlus2 size={14} />}
+                      onClick={() => setSearchParams({ tab: "create-invoice" })}
+                    >
+                      Create invoice
+                    </Button>
+                  </div>
+                  <Table columns={["Invoice", "Customer", "Status", "Created", "Due", "Amount"]}>
+                    {invoices.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell>
+                          <Link to={`/finance/${invoice.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
+                            {invoice.invoiceNumber}
+                          </Link>
+                        </TableCell>
+                        <TableCell>{invoice.organisation?.name ?? "Unknown customer"}</TableCell>
+                        <TableCell>
+                          <Badge variant={statusBadgeVariant(invoice.status)}>{invoice.status}</Badge>
+                        </TableCell>
+                        <TableCell>{formatDateTime(invoice.createdAt, tenant)}</TableCell>
+                        <TableCell>{invoice.dueDate ? formatDateTime(invoice.dueDate, tenant) : "Not set"}</TableCell>
+                        <TableCell>{formatCurrency(Number(invoice.total ?? 0), tenant)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </Table>
+                </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="create-invoice">
+              {renderPlanGatedTab(financeTabByValue["create-invoice"], (
+                <form className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_24rem]" onSubmit={handleCreateInvoiceSubmit}>
+                  <div className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-100 p-4">
+                    <section
+                      className="mx-auto flex min-h-[1123px] w-[794px] max-w-none flex-col bg-white p-12 shadow-sm"
+                      style={{ borderTop: `10px solid ${invoiceAccentColor}` }}
+                    >
+                      <header className="flex items-start justify-between gap-10 border-b border-gray-200 pb-8">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-3">
+                            {createInvoiceForm.logoUrl.trim() ? (
+                              <img
+                                src={createInvoiceForm.logoUrl}
+                                alt=""
+                                className="h-14 w-14 rounded-md border border-gray-200 object-contain"
+                              />
+                            ) : (
+                              <div
+                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md text-lg font-semibold text-white"
+                                style={{ backgroundColor: invoiceAccentColor }}
+                              >
+                                {(createInvoiceForm.payeeName || tenant?.name || "F").slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                            <Input
+                              value={createInvoiceForm.payeeName}
+                              onChange={(event) => updateCreateInvoiceField("payeeName", event.target.value)}
+                              className="h-12 border-transparent px-0 text-xl font-semibold focus-visible:ring-0"
+                              placeholder="Your company name"
+                            />
+                          </div>
+                          <Textarea
+                            value={createInvoiceForm.payeeAddress}
+                            onChange={(event) => updateCreateInvoiceField("payeeAddress", event.target.value)}
+                            className="mt-4 min-h-[86px] resize-none border-transparent bg-gray-50 text-sm leading-6 focus-visible:ring-0"
+                            placeholder="Your billing address"
+                          />
+                          <Input
+                            value={createInvoiceForm.payeeVatId}
+                            onChange={(event) => updateCreateInvoiceField("payeeVatId", event.target.value)}
+                            className="mt-2 h-9 border-transparent bg-gray-50 text-xs uppercase focus-visible:ring-0"
+                            placeholder="VAT ID / tax number"
+                          />
+                        </div>
+
+                        <div className="w-64 shrink-0 text-right">
+                          <Input
+                            value={createInvoiceForm.documentTitle}
+                            onChange={(event) => updateCreateInvoiceField("documentTitle", event.target.value)}
+                            className="h-14 border-transparent px-0 text-right text-4xl font-semibold focus-visible:ring-0"
+                          />
+                          <Input
+                            value={createInvoiceForm.documentSubtitle}
+                            onChange={(event) => updateCreateInvoiceField("documentSubtitle", event.target.value)}
+                            className="h-9 border-transparent px-0 text-right text-sm text-gray-500 focus-visible:ring-0"
+                          />
+                          <div className="mt-4 inline-flex rounded-full px-3 py-1 text-xs font-semibold text-white" style={{ backgroundColor: invoiceAccentColor }}>
+                            DRAFT
+                          </div>
+                          <p className="mt-3 text-xs text-gray-500">Invoice number is allocated when the draft is saved.</p>
+                        </div>
+                      </header>
+
+                      <section className="mt-8 grid grid-cols-[minmax(0,1fr)_18rem] gap-8">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-gray-500">Bill to</p>
+                          <select
+                            className="mt-3 h-10 w-full rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tenant-primary-light)]"
+                            value={createInvoiceForm.organisationId}
+                            onChange={(event) => handleCreateInvoiceCustomerChange(event.target.value)}
+                            disabled={customersQuery.isLoading || customerSelectorUnavailable}
+                          >
+                            <option value="">Select or type customer below</option>
+                            {customerOptions.map((customer) => (
+                              <option key={customer.id} value={customer.id}>
+                                {customer.name}
+                              </option>
+                            ))}
+                          </select>
+                          <Input
+                            value={createInvoiceForm.payerName}
+                            onChange={(event) => updateCreateInvoiceField("payerName", event.target.value)}
+                            className="mt-3 h-11 border-transparent bg-gray-50 text-base font-semibold focus-visible:ring-0"
+                            placeholder="Customer name"
+                          />
+                          <Textarea
+                            value={createInvoiceForm.payerAddress}
+                            onChange={(event) => updateCreateInvoiceField("payerAddress", event.target.value)}
+                            className="mt-2 min-h-[94px] resize-none border-transparent bg-gray-50 text-sm leading-6 focus-visible:ring-0"
+                            placeholder="Customer billing address"
+                          />
+                          <Input
+                            value={createInvoiceForm.payerVatId}
+                            onChange={(event) => updateCreateInvoiceField("payerVatId", event.target.value)}
+                            className="mt-2 h-9 border-transparent bg-gray-50 text-xs uppercase focus-visible:ring-0"
+                            placeholder="Customer VAT ID / tax number"
+                          />
+                        </div>
+
+                        <div className="rounded-lg bg-gray-50 p-4">
+                          <div className="grid gap-3 text-sm">
+                            <label className="space-y-1.5 font-medium text-gray-700">
+                              Issue date
+                              <Input type="date" value={invoiceIssueDate} readOnly className="h-10 bg-white" />
+                            </label>
+                            <label className="space-y-1.5 font-medium text-gray-700">
+                              Due date
+                              <Input
+                                type="date"
+                                value={createInvoiceForm.dueDate}
+                                onChange={(event) => updateCreateInvoiceField("dueDate", event.target.value)}
+                                className="h-10 bg-white"
+                              />
+                            </label>
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="space-y-1.5 font-medium text-gray-700">
+                                Terms
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={createInvoiceForm.paymentTerms}
+                                  onChange={(event) => updateCreateInvoiceField("paymentTerms", event.target.value)}
+                                  className="h-10 bg-white"
+                                />
+                              </label>
+                              <label className="space-y-1.5 font-medium text-gray-700">
+                                Currency
+                                <Input
+                                  value={createInvoiceForm.currency}
+                                  onChange={(event) => updateCreateInvoiceField("currency", event.target.value)}
+                                  maxLength={3}
+                                  className="h-10 bg-white uppercase"
+                                />
+                              </label>
+                            </div>
+                            <label className="space-y-1.5 font-medium text-gray-700">
+                              Shipment ID
+                              <Input
+                                value={createInvoiceForm.shipmentId}
+                                onChange={(event) => updateCreateInvoiceField("shipmentId", event.target.value)}
+                                className="h-10 bg-white font-mono text-xs"
+                                placeholder="Optional"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="mt-8">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase text-gray-500">Invoice items</p>
+                          <Button type="button" variant="secondary" size="sm" icon={<Plus size={14} />} onClick={addCreateInvoiceLineItem}>
+                            Add line
+                          </Button>
+                        </div>
+                        <div className="overflow-hidden rounded-lg border border-gray-200">
+                          <div
+                            className="grid items-center gap-2 px-3 py-2 text-xs font-semibold uppercase text-white"
+                            style={{
+                              backgroundColor: invoiceAccentColor,
+                              gridTemplateColumns: "minmax(0, 1fr) 64px 92px 72px 96px 40px"
+                            }}
+                          >
+                            <span>Description</span>
+                            <span>Qty</span>
+                            <span>Unit</span>
+                            <span>Tax</span>
+                            <span className="text-right">Line total</span>
+                            <span />
+                          </div>
+                          {createInvoiceForm.lineItems.map((item, index) => {
+                            const quantity = parsePositiveNumber(item.quantity);
+                            const unitAmount = parseNonNegativeNumber(item.unitAmount);
+                            const taxRate = parseNonNegativeNumber(item.taxRate);
+                            const lineTotal = roundMoney(quantity * unitAmount * (1 + taxRate / 100));
+
+                            return (
+                              <div
+                                key={item.id}
+                                className="grid items-center gap-2 border-t border-gray-200 px-3 py-2"
+                                style={{ gridTemplateColumns: "minmax(0, 1fr) 64px 92px 72px 96px 40px" }}
+                              >
+                                <Input
+                                  value={item.description}
+                                  onChange={(event) => updateCreateInvoiceLineItem(item.id, "description", event.target.value)}
+                                  className="h-9 border-transparent bg-gray-50 text-sm focus-visible:ring-0"
+                                  placeholder={`Line ${index + 1}`}
+                                />
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.quantity}
+                                  onChange={(event) => updateCreateInvoiceLineItem(item.id, "quantity", event.target.value)}
+                                  className="h-9 border-transparent bg-gray-50 text-sm focus-visible:ring-0"
+                                />
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.unitAmount}
+                                  onChange={(event) => updateCreateInvoiceLineItem(item.id, "unitAmount", event.target.value)}
+                                  className="h-9 border-transparent bg-gray-50 text-sm focus-visible:ring-0"
+                                />
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.taxRate}
+                                  onChange={(event) => updateCreateInvoiceLineItem(item.id, "taxRate", event.target.value)}
+                                  className="h-9 border-transparent bg-gray-50 text-sm focus-visible:ring-0"
+                                />
+                                <span className="text-right text-sm font-semibold text-gray-900">{formatCreateInvoiceCurrency(lineTotal)}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-9 w-9 px-0 text-red-600 hover:bg-red-50"
+                                  aria-label={`Remove line ${index + 1}`}
+                                  disabled={createInvoiceForm.lineItems.length === 1}
+                                  onClick={() => removeCreateInvoiceLineItem(item.id)}
+                                >
+                                  <Trash2 size={15} />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      <section className="mt-8 grid grid-cols-[minmax(0,1fr)_18rem] gap-8">
+                        <div className="space-y-4">
+                          <label className="block space-y-1.5 text-sm font-medium text-gray-700">
+                            Notes
+                            <Textarea
+                              value={createInvoiceForm.notes}
+                              onChange={(event) => updateCreateInvoiceField("notes", event.target.value)}
+                              className="min-h-[92px] resize-none border-transparent bg-gray-50 focus-visible:ring-0"
+                              placeholder="Optional invoice memo"
+                            />
+                          </label>
+                          <label className="block space-y-1.5 text-sm font-medium text-gray-700">
+                            Payment instructions
+                            <Textarea
+                              value={createInvoiceForm.paymentInstructions}
+                              onChange={(event) => updateCreateInvoiceField("paymentInstructions", event.target.value)}
+                              className="min-h-[92px] resize-none border-transparent bg-gray-50 focus-visible:ring-0"
+                            />
+                          </label>
+                        </div>
+
+                        <div className="space-y-3 rounded-lg bg-gray-50 p-4 text-sm">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-600">Subtotal</span>
+                            <span className="font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.subtotal)}</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-600">Tax</span>
+                            <span className="font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.taxAmount)}</span>
+                          </div>
+                          <label className="block space-y-1.5 font-medium text-gray-700">
+                            Discount
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={createInvoiceForm.discountAmount}
+                              onChange={(event) => updateCreateInvoiceField("discountAmount", event.target.value)}
+                              className="h-10 bg-white"
+                            />
+                          </label>
+                          <div className="border-t border-gray-200 pt-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="text-gray-600">Total</span>
+                              <span className="text-xl font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.total)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <footer className="mt-auto border-t border-gray-200 pt-6">
+                        <Textarea
+                          value={createInvoiceForm.footerText}
+                          onChange={(event) => updateCreateInvoiceField("footerText", event.target.value)}
+                          className="min-h-[58px] resize-none border-transparent bg-gray-50 text-center text-sm text-gray-600 focus-visible:ring-0"
+                        />
+                      </footer>
+                    </section>
+                  </div>
+
+                  <aside className="space-y-4 2xl:sticky 2xl:top-4 2xl:self-start">
+                    <section className="rounded-xl border border-gray-200 bg-white p-4">
+                      <h3 className="text-base font-semibold text-gray-900">Template controls</h3>
+                      <div className="mt-4 space-y-4">
+                        <label className="block space-y-1.5 text-sm font-medium text-gray-700">
+                          Logo URL
+                          <Input
+                            value={createInvoiceForm.logoUrl}
+                            onChange={(event) => updateCreateInvoiceField("logoUrl", event.target.value)}
+                            placeholder={tenant?.logo_url || "https://..."}
+                          />
+                        </label>
+
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-700">Accent color</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              type="color"
+                              value={invoiceAccentColor}
+                              onChange={(event) => updateCreateInvoiceField("templateAccentColor", event.target.value)}
+                              className="h-10 w-12 rounded-md border border-gray-300 bg-white p-1"
+                              aria-label="Accent color"
+                            />
+                            {templateColorSwatches.map((color) => {
+                              const swatchColor = normalizeHexColor(color, "#0D1F3C");
+                              return (
+                                <button
+                                  key={swatchColor}
+                                  type="button"
+                                  className={cn(
+                                    "h-9 w-9 rounded-full border-2",
+                                    invoiceAccentColor === swatchColor ? "border-gray-900" : "border-white ring-1 ring-gray-300"
+                                  )}
+                                  style={{ backgroundColor: swatchColor }}
+                                  aria-label={`Use ${swatchColor}`}
+                                  onClick={() => updateCreateInvoiceField("templateAccentColor", swatchColor)}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <label className="block space-y-1.5 text-sm font-medium text-gray-700">
+                          Organisation ID
+                          <Input
+                            value={createInvoiceForm.organisationId}
+                            onChange={(event) => updateCreateInvoiceField("organisationId", event.target.value)}
+                            placeholder="Optional organisation UUID"
+                          />
+                        </label>
+
+                        <label className="block space-y-1.5 text-sm font-medium text-gray-700">
+                          Customer ID
+                          <Input
+                            value={createInvoiceForm.customerId}
+                            onChange={(event) => updateCreateInvoiceField("customerId", event.target.value)}
+                            placeholder="Optional customer UUID"
+                          />
+                        </label>
+                      </div>
+                    </section>
+
+                    <section className="rounded-xl border border-gray-200 bg-white p-4">
+                      <h3 className="text-base font-semibold text-gray-900">Draft total</h3>
+                      <div className="mt-4 space-y-3 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-600">Subtotal</span>
+                          <span className="font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.subtotal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-600">Tax</span>
+                          <span className="font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.taxAmount)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-gray-600">Discount</span>
+                          <span className="font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.discountAmount)}</span>
+                        </div>
+                        <div className="border-t border-gray-200 pt-3">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-gray-600">Total</span>
+                            <span className="text-xl font-semibold text-gray-900">{formatCreateInvoiceCurrency(createInvoiceTotals.total)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="submit"
+                        className="mt-5 w-full"
+                        icon={<FilePlus2 size={16} />}
+                        loading={createInvoiceMutation.isPending}
+                        disabled={!createInvoiceCanSubmit}
+                      >
+                        Create draft invoice
+                      </Button>
+                      {!hasToken ? (
+                        <p className="mt-3 text-sm text-amber-700">Sign in with a tenant session to create invoices.</p>
+                      ) : null}
+                      {createInvoiceTotals.validLineCount === 0 ? (
+                        <p className="mt-3 text-sm text-gray-500">Add at least one billable line before creating the draft.</p>
+                      ) : null}
+                    </section>
+                  </aside>
+                </form>
+              ))}
             </TabsContent>
 
             <TabsContent value="payments">
@@ -1190,7 +1959,7 @@ export function TenantFinancePage() {
             </TabsContent>
 
             <TabsContent value="collections">
-              {renderPlanGatedTab(financeTabs[3], isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.collections, isLoading ? (
                 <SectionLoader />
               ) : (
                 <div className="space-y-4">
@@ -1258,7 +2027,7 @@ export function TenantFinancePage() {
             </TabsContent>
 
             <TabsContent value="refunds">
-              {renderPlanGatedTab(financeTabs[4], isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.refunds, isLoading ? (
                 <SectionLoader />
               ) : creditNotes.length === 0 ? (
                 <EmptyState
@@ -1291,7 +2060,7 @@ export function TenantFinancePage() {
             </TabsContent>
 
             <TabsContent value="settlements">
-              {renderPlanGatedTab(financeTabs[5], isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.settlements, isLoading ? (
                 <SectionLoader />
               ) : (
                 <div className="space-y-4">
@@ -1333,7 +2102,7 @@ export function TenantFinancePage() {
             </TabsContent>
 
             <TabsContent value="reconciliation">
-              {renderPlanGatedTab(financeTabs[6], isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.reconciliation, isLoading ? (
                 <SectionLoader />
               ) : reconciliationRows.length === 0 ? (
                 <EmptyState

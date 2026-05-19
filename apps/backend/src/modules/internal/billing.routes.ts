@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { writeAudit } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
@@ -16,8 +17,16 @@ function money(value: unknown) {
   return new Prisma.Decimal(String(value ?? '0'));
 }
 
-function numberFromDecimal(value: Prisma.Decimal | null | undefined) {
-  return Number(value ?? 0);
+function requestIdempotencyKey(request: FastifyRequest) {
+  const header = request.headers['idempotency-key'] ?? request.headers['x-idempotency-key'];
+  return typeof header === 'string' && header.trim().length > 0 ? header.trim() : null;
+}
+
+function refundIdempotencyKey(request: FastifyRequest, tenantId: string, paymentId: string, amount: number, reason: string, bodyKey?: string) {
+  const supplied = bodyKey?.trim() || requestIdempotencyKey(request);
+  if (supplied) return `refund:${tenantId}:${supplied}`;
+  const reasonHash = createHash('sha256').update(reason).digest('hex').slice(0, 24);
+  return `refund:${tenantId}:${paymentId}:${amount}:${reasonHash}`;
 }
 
 async function auditBilling(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
@@ -33,7 +42,7 @@ async function auditBilling(request: FastifyRequest, action: string, targetType:
     reason: reason ?? null,
     ip_address: request.ip,
     session_id: request.platform!.session.id,
-    jit_session_id: null,
+    jit_session_id: request.jitSessionId ?? null,
     user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null
   });
 }
@@ -112,7 +121,7 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
   });
 
   app.post('/api/internal/billing/refunds', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.refund')] }, async (request, reply) => {
-    const body = request.body as { paymentId?: string; amount?: number; reason?: string };
+    const body = request.body as { paymentId?: string; amount?: number; reason?: string; idempotencyKey?: string };
     const amount = Number(body.amount);
     const reason = body.reason?.trim();
     if (!body.paymentId || !Number.isFinite(amount) || amount <= 0 || !reason) return reply.status(400).send({ error: 'paymentId, amount, and reason are required' });
@@ -127,14 +136,27 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
 
     const payment = await app.prisma.payment.findUnique({ where: { id: body.paymentId }, include: { invoice: true } });
     if (!payment) return reply.status(404).send({ error: 'Payment not found' });
+    const stripeIdempotencyKey = refundIdempotencyKey(request, payment.tenantId, payment.id, amount, reason, body.idempotencyKey);
+    const existingRefund = await app.prisma.refund.findFirst({ where: { idempotencyKey: stripeIdempotencyKey } as unknown as Prisma.RefundWhereInput });
+    if (existingRefund) return reply.send(existingRefund);
+
+    const refundData = {
+      tenantId: payment.tenantId,
+      paymentId: payment.id,
+      amount: money(amount),
+      reason,
+      status: 'APPROVED',
+      initiatedBy: request.platform!.user.id,
+      idempotencyKey: stripeIdempotencyKey
+    };
     const refund = await app.prisma.refund.create({
-      data: { tenantId: payment.tenantId, paymentId: payment.id, amount: money(amount), reason, status: 'APPROVED', initiatedBy: request.platform!.user.id }
+      data: refundData
     });
     if (payment.gatewayRef) {
-      const stripeRefund = await stripeService.createRefund(payment.gatewayRef, amount, reason);
+      const stripeRefund = await stripeService.createRefund(payment.gatewayRef, amount, reason, stripeIdempotencyKey);
       await app.prisma.refund.update({ where: { id: refund.id }, data: { gatewayRef: stripeRefund.id, status: stripeRefund.status } });
     }
-    await auditBilling(request, 'invoice.refund', 'refund', refund.id, { payment, invoice: payment.invoice ?? null }, { refund, invoice: payment.invoice ?? null }, reason);
+    await auditBilling(request, 'invoice.refund', 'refund', refund.id, { payment, invoice: payment.invoice ?? null }, { refund, invoice: payment.invoice ?? null, stripeIdempotencyKey }, reason);
     reply.status(201).send(refund);
   });
 }

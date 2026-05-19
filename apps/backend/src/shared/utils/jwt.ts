@@ -11,6 +11,7 @@ export interface JwtPayload {
   plan: string;
   mfaVerified: boolean;
   impersonator?: string;
+  impersonatorEmail?: string;
   actorType?: 'PLATFORM_USER' | 'TENANT_USER';
   actorId?: string;
   targetTenantId?: string;

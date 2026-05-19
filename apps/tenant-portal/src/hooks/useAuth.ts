@@ -11,6 +11,32 @@ type AuthPayload = {
   notifications: NotificationItem[];
 };
 
+function normalizeUser(value: unknown): User {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid auth payload");
+  }
+  const raw = value as Partial<User> & {
+    sub?: string;
+    email?: string;
+    role?: User["role"];
+    plan?: string;
+    mode?: "IMPERSONATION";
+    impersonator?: string;
+  };
+  const plan = String(raw.plan ?? "starter").toLowerCase();
+  return {
+    ...(raw as User),
+    id: raw.id ?? raw.sub ?? "",
+    full_name: raw.full_name ?? raw.email ?? "Tenant user",
+    email: raw.email ?? "",
+    role: raw.role ?? "TENANT_STAFF",
+    plan: plan === "pro" || plan === "enterprise" ? plan : "starter",
+    impersonated: raw.impersonated ?? raw.mode === "IMPERSONATION",
+    mode: raw.mode,
+    impersonatorId: raw.impersonatorId ?? raw.impersonator
+  };
+}
+
 async function fetchAuthContext(): Promise<AuthPayload> {
   const response = await api.get<AuthPayload>("/v1/auth/me");
   const data = response.data as unknown;
@@ -22,7 +48,8 @@ async function fetchAuthContext(): Promise<AuthPayload> {
   ) {
     throw new Error("Invalid auth payload");
   }
-  return data as AuthPayload;
+  const payload = data as AuthPayload;
+  return { ...payload, user: normalizeUser(payload.user) };
 }
 
 export function useAuth() {

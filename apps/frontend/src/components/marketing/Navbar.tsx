@@ -17,22 +17,21 @@ const navItems: NavItem[] = [
     mega: {
       columns: [
         {
-          heading: "Platform",
+          heading: "Operations",
           items: [
-            { href: "/features", label: "Features", description: "Full platform overview", icon: LayoutGrid },
-            { href: "/pricing", label: "Pricing", description: "Flat-rate, no per-seat fees", icon: DollarSign },
-            { href: "/agent", label: "AI Agent", description: "Autonomous dispatch & ops", icon: Bot },
+            { href: "/features/shipment-management", label: "Shipment Ops",       description: "End-to-end lifecycle tracking",      icon: Package },
+            { href: "/customer-tracking",             label: "Customer Tracking",  description: "Branded links, no login needed",     icon: MapPin },
+            { href: "/fauward-go",                    label: "Fauward Go",         description: "Driver PWA — offline-first",          icon: Smartphone },
           ],
         },
         {
-          heading: "Capabilities",
+          heading: "Platform",
           items: [
-            { href: "/features/shipment-management", label: "Shipment Ops", description: "End-to-end lifecycle", icon: Package },
-            { href: "/features/finance", label: "Finance & Invoicing", description: "Auto-generate & collect", icon: FileText },
-            { href: "/features/white-label", label: "White-label", description: "Your brand, your domain", icon: Map },
-            { href: "/services#driver-app", label: "Driver App", description: "Offline-first mobile", icon: Smartphone },
-            { href: "/services#api-integrations", label: "API & Integrations", description: "REST, webhooks, carriers", icon: Code },
-            { href: "/services#customer-tracking", label: "Customer Tracking", description: "Public branded portal", icon: MapPin },
+            { href: "/features/finance",              label: "Finance & Invoicing",description: "Auto-invoice on delivery",           icon: FileText },
+            { href: "/agent",                         label: "Fauward Agent",      description: "Ops monitoring and automation",      icon: Bot },
+            { href: "/features/api-integrations",     label: "API & Integrations", description: "REST, webhooks, carrier connect",    icon: Code },
+            { href: "/features/white-label",          label: "White-Label",        description: "Your brand, your domain",            icon: Map },
+            { href: "/features",                      label: "All Features",       description: "Full platform overview",             icon: LayoutGrid },
           ],
         },
       ],
@@ -45,19 +44,19 @@ const navItems: NavItem[] = [
         {
           heading: "By Business Type",
           items: [
-            { href: "/services#courier-startups", label: "Courier Startups", description: "Launch in an afternoon", icon: Package },
-            { href: "/services#freight-operators", label: "Freight Operators", description: "Multi-depot operations", icon: Briefcase },
-            { href: "/services#3pl-providers", label: "3PL Providers", description: "White-label for clients", icon: LayoutGrid },
-            { href: "/services#enterprise-fleets", label: "Enterprise Fleets", description: "SSO, SLA, scale", icon: Map },
+            { href: "/services#courier-startups",   label: "Courier Startups",   description: "Launch in an afternoon",          icon: Package },
+            { href: "/services#freight-operators",  label: "Freight Operators",  description: "Multi-depot operations",          icon: Briefcase },
+            { href: "/services#3pl-providers",      label: "3PL Providers",      description: "White-label for your clients",    icon: LayoutGrid },
+            { href: "/services#enterprise-fleets",  label: "Enterprise Fleets",  description: "SSO, SLA, scale",                icon: Map },
           ],
         },
         {
-          heading: "Services",
+          heading: "Regions",
           items: [
-            { href: "/services", label: "Our Services", description: "Everything we offer", icon: Briefcase },
-            { href: "/regions/uk", label: "United Kingdom", description: "VAT, GoCardless, DPD", icon: Map },
-            { href: "/regions/africa", label: "Africa", description: "M-Pesa, Paystack", icon: Map },
-            { href: "/regions/mena", label: "MENA", description: "COD, Aramex, Checkout.com", icon: Map },
+            { href: "/services",       label: "Our Services",   description: "Everything we offer",             icon: Briefcase },
+            { href: "/regions/uk",     label: "United Kingdom", description: "UK carriers, GoCardless, VAT",    icon: Map },
+            { href: "/regions/africa", label: "Africa",         description: "M-Pesa, Paystack integration-ready", icon: Map },
+            { href: "/regions/mena",   label: "MENA",           description: "COD, Aramex, Checkout.com",      icon: Map },
           ],
         },
       ],
@@ -68,24 +67,25 @@ const navItems: NavItem[] = [
     mega: {
       columns: [
         {
-          heading: "Who We Are",
+          heading: "About",
           items: [
-            { href: "/about", label: "About Us", description: "Our story and team", icon: Info },
-            { href: "/news", label: "News & Updates", description: "Product news and insights", icon: Newspaper },
-            { href: "/careers", label: "Careers", description: "Build logistics infrastructure", icon: Users },
+            { href: "/about",    label: "About Us",       description: "Our story and team",                  icon: Info },
+            { href: "/news",     label: "News",           description: "Product updates and insights",        icon: Newspaper },
+            { href: "/careers",  label: "Careers",        description: "Build logistics infrastructure",      icon: Users },
           ],
         },
         {
-          heading: "Support",
+          heading: "Help",
           items: [
-            { href: "/support", label: "Help Centre", description: "Guides and FAQs", icon: Headphones },
-            { href: "/support#contact", label: "Contact Support", description: "Reach our team", icon: Headphones },
-            { href: "/docs", label: "Documentation", description: "Tenant setup and usage guides", icon: Code },
+            { href: "/docs",             label: "Docs",           description: "Developer and tenant documentation", icon: Code },
+            { href: "/support",          label: "Help Centre",    description: "Guides and FAQs",                    icon: Headphones },
+            { href: "/support#contact",  label: "Contact",        description: "Reach our team",                     icon: Headphones },
           ],
         },
       ],
     },
   },
+  { href: "/pricing", label: "Pricing" },
 ];
 
 function MegaMenuPanel({
@@ -197,7 +197,7 @@ export default function Navbar() {
       `}</style>
       <header
         className={`sticky top-0 z-50 transition-all duration-200 ${
-          scrolled ? "border-b border-gray-200 bg-white/95 backdrop-blur shadow-sm" : "bg-transparent"
+          scrolled ? "border-b border-gray-200 bg-white/95 backdrop-blur shadow-sm" : "bg-dark-bg/80 backdrop-blur-sm"
         }`}
       >
         <div className="marketing-container" ref={menuRef}>
@@ -207,7 +207,7 @@ export default function Navbar() {
               <span className="inline-flex w-[46px]">
                 <BrandLogo variant="mark" priority />
               </span>
-              <span className="hidden text-lg font-bold text-brand-navy sm:block">Fauward</span>
+              <span className={`hidden text-lg font-bold sm:block ${scrolled ? 'text-brand-navy' : 'text-white'}`}>Fauward</span>
             </Link>
 
             {/* Desktop nav */}
@@ -223,8 +223,10 @@ export default function Navbar() {
                       <button
                         type="button"
                         onClick={() => setActiveMenu(isOpen ? null : item.label)}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition hover:bg-gray-100 hover:text-brand-navy ${
-                          isOpen || isActive ? "bg-gray-100 text-brand-navy" : "text-gray-700"
+                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                          scrolled
+                            ? `hover:bg-gray-100 hover:text-brand-navy ${isOpen || isActive ? "bg-gray-100 text-brand-navy" : "text-gray-700"}`
+                            : `hover:bg-white/10 ${isOpen || isActive ? "text-white" : "text-white/80"}`
                         }`}
                       >
                         {item.label}
@@ -265,7 +267,7 @@ export default function Navbar() {
             <div className="hidden items-center gap-3 lg:flex">
               <Link
                 href="/login"
-                className="text-sm font-medium text-gray-700 transition hover:text-brand-navy"
+                className={`text-sm font-medium transition ${scrolled ? 'text-gray-700 hover:text-brand-navy' : 'text-white/80 hover:text-white'}`}
               >
                 Log in
               </Link>
@@ -281,7 +283,7 @@ export default function Navbar() {
             <button
               type="button"
               onClick={() => setMobileOpen((prev) => !prev)}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-gray-200 text-gray-700 lg:hidden"
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-md border lg:hidden ${scrolled ? 'border-gray-200 text-gray-700' : 'border-white/20 text-white'}`}
               aria-expanded={mobileOpen}
               aria-label="Toggle navigation"
             >

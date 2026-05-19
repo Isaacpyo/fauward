@@ -132,6 +132,12 @@ type SupportTicketsResponse = {
   total: number;
 };
 
+type TenantHealthResponse = {
+  score: number;
+  tier: "HEALTHY" | "AT_RISK" | "CRITICAL";
+  tips: string[];
+};
+
 const fallbackOverview: AnalyticsFullResponse = {
   totals: {
     shipments: { value: 124, previousValue: 111, changePct: 11.7 },
@@ -616,6 +622,14 @@ export function TenantDashboardPage() {
     refetchInterval: 60_000
   });
 
+  const healthQuery = useQuery({
+    queryKey: ["tenant-health"],
+    queryFn: () => fetchJson<TenantHealthResponse>("/v1/tenants/me/health"),
+    enabled: hasApiSession,
+    retry: false,
+    refetchInterval: 5 * 60_000
+  });
+
   const staffQuery = useQuery({
     queryKey: ["dashboard-staff-analytics", weekRange],
     queryFn: () => fetchJson<StaffAnalyticsResponse>(`/v1/analytics/staff?${weekRange}`),
@@ -709,6 +723,20 @@ export function TenantDashboardPage() {
         {!hasApiSession ? (
           <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             Dev session detected. Dashboard widgets fall back to local sample data until a real API token is present.
+          </div>
+        ) : null}
+
+        {healthQuery.data && healthQuery.data.tier !== "HEALTHY" ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="font-semibold">Your account health score is {healthQuery.data.score}/100.</p>
+              <Link to="/settings?tab=branding" className="font-semibold underline">
+                View tips
+              </Link>
+            </div>
+            {healthQuery.data.tips.length > 0 ? (
+              <p className="mt-1 text-amber-900">{healthQuery.data.tips[0]}</p>
+            ) : null}
           </div>
         ) : null}
 

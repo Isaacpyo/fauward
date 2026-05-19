@@ -45,6 +45,28 @@
 
 Normal API callers do not receive raw failure internals.
 
+## Invoice Outbox
+
+Invoicing does not publish Redis/Celery jobs during request handling. Phase 1 writes invoice-related work to the Python-owned `outbox` table inside the same transaction as the invoice state transition.
+
+Current invoice outbox event:
+
+```json
+{
+  "eventType": "render_invoice",
+  "aggregateType": "invoice",
+  "aggregateId": "invoice-id",
+  "payload": {
+    "tenantId": "tenant_123",
+    "invoiceId": "invoice-id",
+    "invoiceNumber": "INV-2026-000001",
+    "contentHashSha256": "..."
+  }
+}
+```
+
+Future invoice workers drain `outbox` rows idempotently by `outbox.id`. The legacy PDF worker and Redis list bridge remain unchanged for `/pdf/generate`.
+
 ## Redis List Bridge
 
 `workers/__init__.py` includes a Redis-list bridge that forwards Redis list payloads into Celery tasks. This keeps compatibility with Node modules that publish jobs directly to Redis.
@@ -69,6 +91,7 @@ Recommended deployment split:
 - Renders HTML templates with Jinja2.
 - Generates PDFs with WeasyPrint.
 - Stores output in configured storage.
+- Continues to serve the legacy shipment-document PDF path, not the new invoice aggregate.
 
 ### OCR Worker
 

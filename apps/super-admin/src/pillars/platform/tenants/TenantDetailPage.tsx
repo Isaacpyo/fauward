@@ -20,7 +20,7 @@ export function TenantDetailPage() {
           </div>
           <div className="flex flex-wrap gap-1 text-xs">
             <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => window.open(`/platform/impersonation?tenant=${id}`, "_blank")}>
-              Impersonate
+              Open in Portal
             </button>
             <button type="button" className="rounded border border-[var(--color-border)] px-2 py-1" onClick={() => setSuspendOpen(true)}>
               Suspend

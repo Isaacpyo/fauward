@@ -2,7 +2,7 @@
 
 > Ground truth for the May 2026 implementation run. The older April baseline is preserved in `docs/implementation-baseline-2026-04-14.md`.
 
-**Last verified:** 2026-05-10
+**Last verified:** 2026-05-18
 
 ---
 
@@ -15,7 +15,8 @@
 | Phase 3 - AI layer | 42 of 42 complete |
 | Tenant portal additions | 6 of 6 complete |
 | Global checks | 7 of 7 complete |
-| Overall | 119 of 119 complete |
+| Infrastructure | 1 of 1 complete |
+| Overall | 120 of 120 complete |
 
 Backend Vitest reached 149 passing tests. Backend, tenant portal, and Fauward-Go TypeScript checks passed in the final verification run.
 
@@ -68,6 +69,23 @@ Important field additions:
 - `ApiKey.scopes`, `isSandbox`, `lastUsedAt`, `monthlyRequestCount`
 - `ReturnRequest.reason String?`, `items`, `photos`, `labelId`, `refundStatus`, `reversedAt`, `pickupScheduledAt`
 - Relay message approval fields: `isDraft`, `approvedBy`, `approvedAt`
+
+---
+
+## Infrastructure Changes
+
+| Change | Status | Detail |
+|--------|:------:|--------|
+| Railway Redis for BullMQ | Complete | `REDIS_QUEUE_URL` routes all BullMQ traffic to Railway Redis (no per-command billing). `REDIS_URL` (Upstash) retained for cache, tracking streams, rate limiting, and SMS quotas only. Upstash command volume reduced from ~700K+/day to ~153K/day. |
+
+### Worker poll interval tuning (2026-05-18)
+
+| Worker | Before | After |
+|--------|--------|-------|
+| `ws-publisher` — `redis.keys` + XREADGROUP | 200 ms | 1 000 ms |
+| `history-writer` — `redis.keys` + XREADGROUP | 500 ms | 2 000 ms |
+| `outbox` — setInterval | 1 000 ms | 5 000 ms |
+| BullMQ stall checks (`stalledInterval`) | 30 s (default) | 60 s |
 
 ---
 

@@ -767,7 +767,7 @@ export default function DocsPage() {
                 {
                   title: "Domain",
                   description:
-                    "Use your Fauward subdomain immediately. Enterprise customers can configure a custom domain.",
+                    "Use your Fauward subdomain immediately. Pro and Enterprise customers can add a custom tracking subdomain with a Vercel CNAME record.",
                 },
                 {
                   title: "Email sender",
@@ -793,6 +793,7 @@ export default function DocsPage() {
                 "Use a clear logo that works on white backgrounds and small screens.",
                 "Choose a primary colour with enough contrast for buttons and important labels.",
                 "Preview the customer tracking page after making changes.",
+                "For a custom domain, add the CNAME shown in Settings -> Domain and wait for the status to become Live.",
                 "Send yourself a test notification to confirm the customer-facing sender name.",
                 "Review documents after brand changes if your team prints labels or PODs.",
               ]}

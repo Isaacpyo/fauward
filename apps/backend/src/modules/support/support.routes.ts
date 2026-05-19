@@ -227,6 +227,32 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     reply.status(201).send(message);
   });
 
+  app.post('/api/v1/support/tickets/:id/reply', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    const authorId = request.user?.sub;
+    const role = request.user?.role;
+    if (!tenantId) return;
+    if (!authorId) return reply.status(401).send({ error: 'Unauthorized' });
+
+    const { id } = request.params as { id: string };
+    const { body, message: messageText, isInternal = false } = request.body as { body?: string; message?: string; isInternal?: boolean };
+    const text = body ?? messageText;
+    if (!text) return reply.status(400).send({ error: 'body is required' });
+
+    const ticket = await app.prisma.supportTicket.findFirst({ where: { id, tenantId } });
+    if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
+    if (ticket.status === 'CLOSED') return reply.status(400).send({ error: 'Ticket is closed' });
+
+    const isStaff = STAFF_ROLES.includes((role ?? '') as any);
+    if (isInternal && !isStaff) return reply.status(403).send({ error: 'Only staff can add internal notes' });
+
+    const message = await app.prisma.ticketMessage.create({
+      data: { tenantId, ticketId: id, authorId, body: text, isInternal }
+    });
+
+    reply.status(201).send(message);
+  });
+
   app.patch(
     '/api/v1/support/tickets/:id',
     { preHandler: [authenticate, requireRole([...STAFF_ROLES])] },

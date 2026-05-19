@@ -1,4 +1,4 @@
-import { getTenantDb } from "../client.js";
+import { getTenantDb } from "../client";
 
 export type ShipmentStatus =
   | "PENDING"

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fauward Ops</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <!-- Apply saved theme before paint to avoid flash -->
+  <script>
+    const t = localStorage.getItem('ops-theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+  </script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ── Header ─────────────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <span class="logo">◉</span>
+      <h1>Fauward Ops</h1>
+    </div>
+    <div class="header-center" id="env-summary"></div>
+    <div class="header-right">
+      <span class="badge-neutral">updated <span id="last-refresh">—</span></span>
+      <button class="icon-btn" id="refresh-btn" title="Refresh now">↻</button>
+      <button class="icon-btn" id="pause-btn"   title="Pause auto-refresh">⏸</button>
+      <button class="icon-btn" id="theme-btn"   title="Switch to light mode">☀</button>
+
+      <!-- Notification bell -->
+      <div class="notif-wrapper">
+        <button class="icon-btn notif-btn" id="notif-btn" title="Alerts">
+          <span class="notif-icon">⚑</span>
+          <span class="notif-badge hidden" id="notif-badge">0</span>
+        </button>
+        <div class="notif-dropdown hidden" id="notif-dropdown">
+          <div class="notif-header">
+            <span>Alerts</span>
+            <button class="close-btn" id="notif-close">✕</button>
+          </div>
+          <div id="notif-list"></div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Body ───────────────────────────────────────────────────────── -->
+  <div class="body-area">
+
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar"></nav>
+
+    <!-- Main content -->
+    <main class="content" id="content">
+
+      <!-- Service grid (default view) -->
+      <section id="section-services">
+        <div class="view-toolbar">
+          <div id="biz-strip" class="biz-strip hidden"></div>
+          <div style="flex:1"></div>
+          <button class="view-btn active" id="view-grid" title="Grid view">⊞</button>
+          <button class="view-btn"        id="view-list" title="List view">≡</button>
+        </div>
+        <div id="grid" class="grid"></div>
+      </section>
+
+      <!-- Queues view -->
+      <section id="section-queues" class="hidden">
+        <div class="section-header">
+          <h2>Queue Health</h2>
+          <span class="section-sub">BullMQ workers via Redis</span>
+        </div>
+        <div id="queue-grid" class="queue-grid"></div>
+      </section>
+
+      <!-- Business health view -->
+      <section id="section-business" class="hidden">
+        <div class="section-header">
+          <h2>Business Health</h2>
+          <span class="section-sub" id="biz-mock-label"></span>
+        </div>
+        <div id="biz-grid" class="biz-grid"></div>
+      </section>
+
+      <!-- Incidents view -->
+      <section id="section-incidents" class="hidden">
+        <div class="section-header">
+          <h2>Incidents</h2>
+          <span class="section-sub">Auto-created for critical service failures</span>
+        </div>
+        <div id="incidents-list"></div>
+      </section>
+
+      <!-- Alerts view -->
+      <section id="section-alerts" class="hidden">
+        <div class="section-header">
+          <h2>Alerts</h2>
+          <span class="section-sub">Alert log (no real channel configured yet)</span>
+        </div>
+        <div id="alerts-list"></div>
+      </section>
+
+      <!-- Active incidents strip (always shown below services grid) -->
+      <div id="incidents-strip" class="incidents-strip hidden"></div>
+
+      <!-- Python Observability: Workers -->
+      <section id="section-workers" class="hidden">
+        <div class="section-header">
+          <h2>Worker Heartbeats</h2>
+          <span class="section-sub">Celery workers via Redis heartbeat + Prometheus</span>
+        </div>
+        <div id="workers-grid" class="queue-grid"></div>
+      </section>
+
+      <!-- Python Observability: Persistent Incidents -->
+      <section id="section-py-incidents" class="hidden">
+        <div class="section-header">
+          <h2>Persistent Incidents</h2>
+          <span class="section-sub">Postgres-backed — survives restarts</span>
+        </div>
+        <div id="py-incidents-list"></div>
+      </section>
+
+      <!-- Python Observability: Config Warnings -->
+      <section id="section-config" class="hidden">
+        <div class="section-header">
+          <h2>Config / Environment</h2>
+          <span class="section-sub">Env var presence check — values never exposed</span>
+        </div>
+        <div id="config-list"></div>
+      </section>
+
+      <!-- Python Observability: Audit Trail -->
+      <section id="section-audit" class="hidden">
+        <div class="section-header">
+          <h2>Audit Trail</h2>
+          <span class="section-sub">Dashboard actions logged to Postgres</span>
+        </div>
+        <div id="audit-list"></div>
+      </section>
+
+    </main>
+
+    <!-- Detail panel -->
+    <aside class="detail-panel" id="detail-panel">
+      <div class="detail-inner">
+        <div class="detail-header">
+          <div>
+            <div class="detail-name" id="detail-name"></div>
+            <div class="detail-badges" id="detail-badges"></div>
+          </div>
+          <button class="close-btn" id="close-detail">✕</button>
+        </div>
+        <div class="detail-tabs">
+          <button class="detail-tab active" data-tab="overview">Overview</button>
+          <button class="detail-tab" data-tab="diagnose">Diagnose</button>
+        </div>
+        <div class="detail-body" id="detail-body"></div>
+        <div class="detail-diagnose hidden" id="detail-diagnose"></div>
+      </div>
+    </aside>
+
+  </div><!-- /body-area -->
+
+  <!-- Logs modal -->
+  <div class="modal-overlay hidden" id="logs-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="logs-modal-title">Logs</span>
+        <div class="modal-header-actions">
+          <a class="action-link hidden" id="logs-modal-ext" target="_blank" rel="noopener noreferrer"></a>
+          <button class="close-btn" id="logs-modal-close">✕</button>
+        </div>
+      </div>
+      <div class="modal-body" id="logs-modal-body"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

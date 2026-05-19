@@ -311,8 +311,17 @@ model Tenant {
   slug               String       @unique
   customDomain       String?      @unique
   domainVerified     Boolean      @default(false)
+  customDomainStatus String       @default("NONE")
+  customDomainVerificationToken String?
+  customDomainAddedAt DateTime?   @db.Timestamptz()
+  customDomainVerifiedAt DateTime? @db.Timestamptz()
+  customDomainLastCheckAt DateTime? @db.Timestamptz()
+  customDomainError  String?
+  customDomainVercelId String?
   plan               TenantPlan   @default(TRIALING)
   status             TenantStatus @default(TRIALING)
+  suspensionReason   String?
+  suspendedAt        DateTime?
   kycStatus          String       @default("PENDING")
   taxExempt          Boolean      @default(false)
   taxExemptionCertificateUrl String?
@@ -333,6 +342,8 @@ model Tenant {
   maxStaff           Int          @default(3)
   maxShipmentsPm     Int          @default(300)
   maxOrganisations   Int          @default(10)
+  onboardingSteps    Json         @default("{}")
+  onboardingCompletedAt DateTime?
   internalNotes      String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -377,6 +388,7 @@ model Tenant {
   planOverrides                 TenantPlanOverride[]
   platformImpersonationSessions PlatformImpersonationSession[]
   trackingEvents                TrackingEvent[]
+  trackingBreadcrumbs           TrackingBreadcrumb[]
   trackingSnapshots             TrackingSnapshot[]
   trackingShares                TrackingShare[]
   proofsOfDelivery              ProofOfDelivery[]
@@ -392,6 +404,7 @@ model Tenant {
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
 
+  @@index([customDomainStatus])
   @@map("tenants")
 }
 
@@ -770,6 +783,14 @@ model Shipment {
   generatedLabels  GeneratedLabel[]
   customsDeclaration CustomsDeclaration?
   exceptionCases     ExceptionCase[]
+  trackingBreadcrumbs TrackingBreadcrumb[]
+
+  lastSeenAt          DateTime? @map("last_seen_at") @db.Timestamptz()
+  escalationFlag      Boolean  @default(false) @map("escalation_flag")
+  escalationReason    String?  @map("escalation_reason")
+  escalationFlaggedAt DateTime? @map("escalation_flagged_at") @db.Timestamptz()
+  escalationResolvedAt DateTime? @map("escalation_resolved_at") @db.Timestamptz()
+  escalationResolvedBy String?  @map("escalation_resolved_by")
 
   @@index([tenantId])
   @@index([tenantId, isSandbox])
@@ -1201,6 +1222,8 @@ model TicketMessage {
   authorId   String
   body       String
   isInternal Boolean  @default(false)
+  fromSA     Boolean  @default(false)
+  platformAuthorId String?
   createdAt  DateTime @default(now())
 
   tenant Tenant        @relation(fields: [tenantId], references: [id])
@@ -1373,6 +1396,7 @@ model Refund {
   amount      Decimal  @db.Decimal(12, 2)
   reason      String?
   gatewayRef  String?
+  idempotencyKey String? @unique
   status      String   @default("PENDING")
   initiatedBy String?
   createdAt   DateTime @default(now())
@@ -1795,6 +1819,25 @@ model PlatformAuditLog {
   @@map("platform_audit_logs")
 }
 
+model PlatformAnnouncement {
+  id          String    @id @default(uuid())
+  type        String
+  title       String
+  body        String
+  targetAll   Boolean   @default(true)
+  tenantIds   String[]  @default([])
+  planTiers   String[]  @default([])
+  cta         Json?
+  dismissible Boolean   @default(true)
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  createdBy   String
+
+  @@index([targetAll, publishedAt])
+  @@index([expiresAt])
+  @@map("platform_announcements")
+}
+
 // ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────
 
 // Fauward Console phases 2-6 internal operations.
@@ -2121,9 +2164,11 @@ model TenantAppeal {
   tenantId     String
   suspensionId String?
   message      String
+  contactEmail String?
   status       String   @default("OPEN")
   resolvedBy   String?
   resolution   String?
+  reviewNote   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -2710,6 +2755,29 @@ model TrackingEvent {
   @@index([tenantId, status])
   @@index([tenantId, occurredAt(sort: Desc)])
   @@map("tracking_events")
+}
+
+model TrackingBreadcrumb {
+  id          BigInt   @default(autoincrement())
+  tenantId    String   @map("tenant_id")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId  String   @map("shipment_id")
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  seq         BigInt
+  eventType   String   @map("event_type")
+  lat         Decimal? @db.Decimal(10, 7)
+  lng         Decimal? @db.Decimal(10, 7)
+  accuracyM   Int?     @map("accuracy_m")
+  status      String?
+  source      String
+  sourceRef   String?  @map("source_ref")
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz()
+  ingestedAt  DateTime @default(now()) @map("ingested_at") @db.Timestamptz()
+
+  @@id([tenantId, shipmentId, seq])
+  @@index([tenantId, shipmentId, occurredAt(sort: Desc)], map: "tracking_breadcrumbs_lookup")
+  @@index([tenantId, occurredAt(sort: Desc)], map: "tracking_breadcrumbs_tenant_recent")
+  @@map("tracking_breadcrumbs")
 }
 
 model TrackingSnapshot {

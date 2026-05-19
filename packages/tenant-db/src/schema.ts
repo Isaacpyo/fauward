@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { getSupabaseAdmin, tenantSchema } from "./client.js";
+import { getSupabaseAdmin, tenantSchema } from "./client";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 

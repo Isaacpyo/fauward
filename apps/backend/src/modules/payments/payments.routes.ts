@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { PaymentStatus } from '@prisma/client';
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
@@ -14,6 +15,11 @@ function getTenantId(request: FastifyRequest, reply: FastifyReply): string | nul
     return null;
   }
   return tenantId;
+}
+
+function stablePaymentIntentKey(tenantId: string, shipmentId: string, amountMinor: number, currency: string) {
+  const digest = createHash('sha256').update(`${tenantId}:${shipmentId}:${amountMinor}:${currency.toLowerCase()}`).digest('hex').slice(0, 24);
+  return `payment-intent:${digest}`;
 }
 
 export async function registerPaymentsRoutes(app: FastifyInstance) {
@@ -38,10 +44,16 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
 
     const amount = Number(shipment.price ?? 0);
     const amountMinor = Math.max(0, Math.round(amount * 100));
+    const currency = (payload.currency ?? shipment.currency ?? 'GBP').toLowerCase();
+    const stripeIdempotencyKey =
+      idempotency.type === 'new'
+        ? `payment-intent:${tenantId}:${idempotency.key}`
+        : stablePaymentIntentKey(tenantId, shipment.id, amountMinor, currency);
 
     const intent = await stripeService.createPaymentIntent({
       amountMinor,
-      currency: (payload.currency ?? shipment.currency ?? 'GBP').toLowerCase(),
+      currency,
+      idempotencyKey: stripeIdempotencyKey,
       customerId: shipment.customerId ?? undefined,
       metadata: {
         tenantId,
@@ -58,13 +70,15 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
         amount,
         currency: shipment.currency,
         status: PaymentStatus.PENDING,
-        gatewayRef: intent.id
+        gatewayRef: intent.id,
+        idempotencyKey: stripeIdempotencyKey
       },
       update: {
         amount,
         currency: shipment.currency,
         status: PaymentStatus.PENDING,
-        gatewayRef: intent.id
+        gatewayRef: intent.id,
+        idempotencyKey: stripeIdempotencyKey
       }
     });
 
@@ -81,6 +95,49 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
     }
 
     reply.send(response);
+  });
+
+  app.get('/api/v1/payments/billing-status', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+
+    const now = new Date();
+    const [tenant, overdueInvoiceCount, nextRetry, saveOffer] = await Promise.all([
+      app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { status: true } }),
+      app.prisma.invoice.count({ where: { tenantId, status: 'OVERDUE' } }),
+      app.prisma.webhookDelivery.findFirst({
+        where: { tenantId, nextRetryAt: { gt: now }, eventType: { contains: 'payment', mode: 'insensitive' } },
+        orderBy: { nextRetryAt: 'asc' },
+        select: { nextRetryAt: true }
+      }),
+      app.prisma.saveOffer.findFirst({
+        where: { tenantId, status: 'APPROVED', expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' }
+      })
+    ]);
+
+    const tenantStatus = tenant?.status ?? 'ACTIVE';
+    const status =
+      tenantStatus === 'SUSPENDED'
+        ? 'SUSPENDED'
+        : tenantStatus === 'TRIALING'
+          ? 'TRIAL'
+          : overdueInvoiceCount > 0
+            ? 'PAST_DUE'
+            : 'ACTIVE';
+
+    reply.send({
+      status,
+      overdueInvoiceCount,
+      nextRetryAt: nextRetry?.nextRetryAt?.toISOString() ?? null,
+      saveOffer: saveOffer
+        ? {
+            discount: Number(saveOffer.discount),
+            validUntil: saveOffer.expiresAt.toISOString(),
+            code: `SAVE-${saveOffer.id.slice(0, 8).toUpperCase()}`
+          }
+        : undefined
+    });
   });
 
   app.get('/api/v1/payments/:shipmentId', { preHandler: [authenticate] }, async (request, reply) => {

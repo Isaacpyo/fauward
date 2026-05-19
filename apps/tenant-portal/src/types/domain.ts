@@ -20,6 +20,12 @@ export type TenantConfig = {
   rtl: boolean;
   currency: string;
   timezone: string;
+  plan?: string;
+  status?: string;
+  slug?: string;
+  suspensionReason?: string | null;
+  suspendedAt?: string | null;
+  featureFlags?: Record<string, boolean>;
   onboarding_complete?: boolean;
   support_email?: string;
   support_phone?: string;
@@ -32,6 +38,10 @@ export type User = {
   role: TenantRole;
   avatar_url?: string;
   impersonated?: boolean;
+  mode?: "IMPERSONATION";
+  impersonationSessionId?: string;
+  impersonatorId?: string;
+  impersonatorEmail?: string;
   plan: "starter" | "pro" | "enterprise";
 };
 

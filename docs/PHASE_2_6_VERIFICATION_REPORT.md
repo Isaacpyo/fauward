@@ -1,58 +1,84 @@
 # Fauward Console Phases 2-6 Verification Report
 
-Date: 2026-05-10
+Date: 2026-05-17
 
-## Phase 2 - Customer & Reliability
+## Scope
 
-- [x] Dunning queue and timeline routes added under `/api/internal/dunning`.
-- [x] Retry limit suspension path writes audit coverage in Vitest.
-- [x] PagerDuty incident records and tenant-impact mapping routes added.
-- [x] Zendesk support ticket cache and Customer 360 Tickets tab wired.
-- [x] Tenant health score model, CS playbooks, and scheduled health scoring job added.
+This report covers the Phase 2-6 console scaffold remediation pass. The vendor baseline remains Zendesk, PagerDuty, LaunchDarkly, Doppler, Persona, ComplyAdvantage, DocuSign, HubSpot, PostHog, and Anrok.
 
-## Phase 3 - Trust Foundation
+## Remediation Summary
 
-- [x] JIT request, approval, active session, deny, and revoke routes added.
-- [x] Permission middleware checks active JIT grants when standing RBAC is absent.
-- [x] Self-approval rejection covered in Vitest.
-- [x] DSAR workflow, transition audit, data gather, delivery, and legal hold routes added.
-- [x] Tenant-scoped DELETE guard blocks active legal holds.
-- [x] Trust & Safety fraud, suspension, appeal, and placeholder rules routes added.
-- [x] LaunchDarkly flag list, override audit, and release routes added.
+- `/api/internal/*` remains the console API surface with dotted permissions from `@fauward/internal-rbac`.
+- Internal billing and Customer 360 audit helpers now propagate `jit_session_id`.
+- Production vendor webhooks fail closed when signature secrets are absent; PagerDuty, Persona, ComplyAdvantage, and DocuSign handlers persist event data after signature validation.
+- Vendor mutations for LaunchDarkly, Persona, ComplyAdvantage, and DocuSign return `503` when unconfigured.
+- Manual health scoring now returns `202` and queues `customer.health-scoring`; the worker computes the weighted 0-100 model and triggers CS playbooks on health thresholds.
+- Legal-hold checks block erasure DSAR delivery and tenant-user deletion paths.
+- Approval thresholds were tightened for KYC/PEP decisions, subscription overrides, trial extensions, quote approval, and commission payouts above GBP 5,000.
+- `DEMO` tenants are excluded from platform/super-admin MRR metrics.
+- Super-admin Phase 2-6 routes now use a workflow-capable page for high-risk services, with JIT request flow on denied permissions and an active-elevation banner.
+- Customer 360 already contained Tickets, Health, Dunning, Incidents, Contracts, Pipeline, and Attribution tabs and remains wired.
 
-## Phase 4 - SOC 2 Readiness
+## Evidence
 
-- [x] Doppler metadata-only secret inventory and expiry routes added.
-- [x] Security anomaly, login monitoring, IP block, and active session routes added.
-- [x] Persona KYC and ComplyAdvantage sanctions routes added with env-gated vendor failures.
-- [x] Integration health and outbound webhook delivery health routes added.
-- [x] Stripe Tax/Anrok tax dashboards, returns, registrations, and exemptions routes added.
-- [x] SOC 2 control mapping committed in `docs/SOC2_CONTROL_MAPPING.md`.
+| Command | Result |
+|---|---|
+| `npm run prisma:generate --workspace=apps/backend` | Failed: Windows `query_engine-windows.dll.node` rename is blocked by an existing file lock. |
+| `npm run prisma:generate --workspace=apps/backend -- --no-engine` | Passed. |
+| `npm run build --workspace=apps/backend` | Passed. |
+| `npm run test --workspace=apps/backend -- console-phases.test.ts` | Passed: 11 tests. |
+| `npm run test --workspace=apps/backend` | Passed: 218 tests. |
+| `npm run build --workspace=apps/super-admin` | Passed. |
+| `npx playwright test apps/super-admin/e2e/` | Passed: 9 tests after installing Chromium with `npx playwright install chromium`. |
 
-## Phase 5 - Enterprise Sales
+## Gate Checklist
 
-- [x] Custom contracts, pricing overrides, and subscription manager routes added.
-- [x] CPQ quote builder, approval thresholds, and DocuSign-gated signature route added.
-- [x] Large-discount CFO threshold covered in Vitest.
-- [x] QBR deck and template routes added.
+### Phase 2
 
-## Phase 6 - GTM Operations
+- [x] Dunning retry ceiling suspends tenant and writes audit.
+- [x] Save-offer issuance is permission-gated through `revenue.dunning.write`.
+- [x] Incident impact mapping persists and appears in Customer 360 data.
+- [x] Support tickets are present in Customer 360 Tickets tab.
+- [x] Health scoring runs asynchronously through BullMQ.
+- [x] At-risk queue sorts by ARR x churn probability; expansion queue uses high health score ordering.
+- [x] CS playbook runs are created on health threshold crossings.
+- [x] Phase 2 routes use RBAC matrix permissions.
 
-- [x] HubSpot pipeline, forecasting, and deal detail routes added.
-- [x] Trial scoring, expiring trial, and extension approval routes added.
-- [x] Demo environment provisioning creates real `DEMO` tenants.
-- [x] Sales handoff, PostHog attribution, pricing experiments, partners, and commissions routes added.
-- [x] Commission payout route enforces finance/CFO approval path for high values.
+### Phase 3
 
-## Verification Commands Run
+- [x] JIT self-approval is rejected; ROOT requests require hardware assertion and two approvals.
+- [x] Active JIT grants are checked by `requireInternalPermission` and audit records include `jit_session_id`.
+- [x] DSAR transitions write audit and erasure completion is blocked by active legal hold.
+- [x] Legal holds block tenant-user deletion and DSAR erasure delivery.
+- [x] Fraud suspension writes AuditLog and queues tenant notification.
+- [x] LaunchDarkly override mutation fails closed when unconfigured and audits local override attempts when configured.
 
-- [x] `prisma validate --schema apps/backend/prisma/schema.prisma`
-- [x] `prisma generate --schema apps/backend/prisma/schema.prisma --no-engine`
-- [x] `tsc --noEmit` in `apps/backend`
-- [x] `tsc --noEmit` in `apps/super-admin`
-- [x] `vitest run --config vitest.config.ts src/routes/internal/console-phases.test.ts`
+### Phase 4
 
-## Notes
+- [x] Secret APIs remain metadata-only; no secret values are returned.
+- [x] Security session revocation revokes the linked platform session.
+- [x] Security anomaly job blocks failed-login IP spikes.
+- [x] Persona and ComplyAdvantage webhook handlers persist reviews/screenings after signature validation.
+- [x] PEP approval requires senior compliance role.
+- [x] Integration health and webhook health routes remain read-only operational views.
 
-- Full Prisma generate with engine failed locally because Windows had the existing query engine DLL locked by a running Node process. `--no-engine` generated TypeScript client types successfully.
-- Real vendor mutations fail closed when the corresponding env vars are absent; read views show local Fauward data and degraded vendor state.
+### Phase 5
+
+- [x] Subscription override approval thresholds enforce manager/CFO roles.
+- [x] Quote approvals enforce discount thresholds.
+- [x] DocuSign send fails closed when unconfigured.
+- [x] DocuSign completion webhook updates quote state and creates a signed contract.
+- [x] QBR generation route remains queued and workflow-visible.
+
+### Phase 6
+
+- [x] Trial extension thresholds enforce SALES_MANAGER and SALES_DIRECTOR paths.
+- [x] Demo tenants are created with `status=DEMO`.
+- [x] DEMO tenants are excluded from MRR metrics in platform and legacy super-admin dashboards.
+- [x] Commission payout approval requires Finance plus CFO for amounts above GBP 5,000.
+- [x] Playwright covers mocked workflow submission across Platform, Customer, Trust, GTM, and Revenue pillars.
+
+## Remaining Gaps
+
+- Native Prisma engine generation is blocked locally by a Windows DLL file lock. `--no-engine` generation succeeds and backend TypeScript build passes.
+- Some Phase 4-6 vendor read pages still use degraded local views by design until live credentials are present.

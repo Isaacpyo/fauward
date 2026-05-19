@@ -53,6 +53,13 @@ type InvoicePayload = {
   status?: BillingSummary["invoices"][number]["status"];
 };
 
+type BillingStatusPayload = {
+  status?: "ACTIVE" | "PAST_DUE" | "SUSPENDED" | "TRIAL" | "TRIAL_EXPIRED";
+  overdueInvoiceCount?: number;
+  nextRetryAt?: string | null;
+  saveOffer?: BillingSummary["saveOffer"];
+};
+
 function normalizePlan(plan?: string): BillingSummary["plan"] {
   const normalized = plan?.toLowerCase();
   if (normalized === "pro" || normalized === "enterprise") return normalized;
@@ -66,21 +73,24 @@ function planAmount(plan: BillingSummary["plan"]) {
 }
 
 function paymentStatus(status?: string): BillingSummary["paymentStatus"] {
+  if (status === "PAST_DUE" || status === "TRIAL_EXPIRED") return "failed";
   if (status === "SUSPENDED") return "suspended";
   if (status === "CANCELLED") return "failed";
   return "active";
 }
 
 async function fetchBillingSummary(): Promise<BillingSummary> {
-  const [tenantResult, usageResult, invoicesResult] = await Promise.allSettled([
+  const [tenantResult, usageResult, invoicesResult, billingStatusResult] = await Promise.allSettled([
     api.get<TenantBillingPayload>("/v1/tenant/me"),
     api.get<UsagePayload>("/v1/tenant/usage"),
-    api.get<{ data: InvoicePayload[] }>("/v1/finance/invoices")
+    api.get<{ data: InvoicePayload[] }>("/v1/finance/invoices"),
+    api.get<BillingStatusPayload>("/v1/payments/billing-status")
   ]);
 
   const tenant = tenantResult.status === "fulfilled" ? tenantResult.value.data : {};
   const usage = usageResult.status === "fulfilled" ? usageResult.value.data : {};
   const invoices = invoicesResult.status === "fulfilled" ? invoicesResult.value.data.data : [];
+  const billingStatus = billingStatusResult.status === "fulfilled" ? billingStatusResult.value.data : {};
   const plan = normalizePlan(tenant.plan);
   const apiLimit = plan === "enterprise" ? 500_000 : plan === "pro" ? 50_000 : 0;
 
@@ -90,7 +100,9 @@ async function fetchBillingSummary(): Promise<BillingSummary> {
     amount: planAmount(plan),
     renewalDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
     trialDaysRemaining: tenant.status === "TRIALING" ? 14 : undefined,
-    paymentStatus: paymentStatus(tenant.status),
+    paymentStatus: paymentStatus(billingStatus.status ?? tenant.status),
+    nextRetryAt: billingStatus.nextRetryAt,
+    saveOffer: billingStatus.saveOffer,
     usage: {
       shipments: {
         used: usage.shipments?.used ?? 0,
@@ -122,6 +134,7 @@ export function useBilling() {
     queryKey: ["billing-summary"],
     queryFn: fetchBillingSummary,
     staleTime: 30_000,
+    refetchInterval: (query) => (query.state.data?.paymentStatus && query.state.data.paymentStatus !== "active" ? 60_000 : false),
     retry: 1,
     enabled: canFetchBilling
   });

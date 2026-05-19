@@ -17,6 +17,7 @@ declare module 'fastify' {
     tenant?: Tenant;
     user?: JwtPayload;
     apiKey?: ApiKey;
+    rawBody?: Buffer;
     platform?: {
       claims: PlatformJwtClaims;
       user: PlatformUser;

@@ -3,6 +3,17 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 const suspensionMessage = 'This tenant is currently suspended. Contact support.';
 
 const readOnlyAllowedPrefixes = ['/api/v1/tracking/'];
+const suspendedTenantAllowedPaths = new Set([
+  'GET /api/v1/tenant/me',
+  'GET /api/v1/tenants/me',
+  'GET /api/v1/tenant/announcements',
+  'GET /api/v1/tenants/me/announcements',
+  'GET /api/v1/tenants/me/health',
+  'GET /api/v1/payments/billing-status',
+  'POST /api/v1/tenant/impersonation/exit',
+  'POST /api/v1/tenants/me/impersonation/exit',
+  'POST /api/v1/tenants/me/suspension-appeal'
+]);
 const blockedMutationPrefixes = [
   '/api/v1/shipments',
   '/api/v1/users',
@@ -23,6 +34,9 @@ export async function enforceTenantStatus(request: FastifyRequest, reply: Fastif
   if (!tenant || tenant.status !== 'SUSPENDED') return;
 
   const path = request.url.split('?')[0];
+  if (suspendedTenantAllowedPaths.has(`${request.method} ${path}`)) {
+    return;
+  }
   if (path.startsWith('/api/v1/platform') || readOnlyAllowedPrefixes.some((prefix) => path.startsWith(prefix))) {
     return;
   }

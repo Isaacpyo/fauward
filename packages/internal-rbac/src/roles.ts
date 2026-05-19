@@ -113,6 +113,7 @@ const trustWrite: Permission[] = [
   'trust.compliance.legal-hold.write',
   'trust.safety.suspend',
   'trust.kyc.approve',
+  'trust.secrets.write',
   'trust.security.write'
 ];
 
@@ -155,7 +156,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   [Role.CS_DIRECTOR]: unique(['platform.tenants.read', ...customerWrite, 'revenue.analytics.read']),
   [Role.TRUST_ANALYST]: unique([...trustRead, 'trust.jit.request', 'trust.safety.suspend']),
   [Role.LEGAL_COUNSEL]: unique(['trust.audit.read', 'trust.audit.export', 'trust.compliance.dsar.read', 'trust.compliance.legal-hold.read', 'trust.compliance.legal-hold.write']),
-  [Role.SECURITY_ENGINEER]: unique([...trustRead, 'trust.security.write', 'trust.jit.request', 'trust.jit.approve', 'platform.health.read', 'platform.integrations.read']),
+  [Role.SECURITY_ENGINEER]: unique([...trustRead, 'trust.secrets.write', 'trust.security.write', 'trust.jit.request', 'trust.jit.approve', 'platform.health.read', 'platform.integrations.read']),
   [Role.COMPLIANCE_ADMIN]: unique([...trustWrite, 'trust.iam.write']),
   [Role.SALES_REP]: unique(['gtm.pipeline.read', 'gtm.pipeline.write', 'gtm.trials.read', 'gtm.trials.extend', 'gtm.demos.read', 'gtm.demos.write', 'gtm.contracts.read']),
   [Role.SALES_MANAGER]: unique([...gtmWrite, 'gtm.contracts.discount.large']),

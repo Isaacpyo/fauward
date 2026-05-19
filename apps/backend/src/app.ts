@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { Readable } from 'node:stream';
 import sensible from '@fastify/sensible';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
@@ -41,6 +42,7 @@ import { registerPublicTrackingRoutes } from './modules/tracking/tracking.public
 import { registerTenantTrackingRoutes } from './modules/tracking/tracking.tenant.routes.js';
 import { registerPlatformTrackingRoutes } from './modules/tracking/tracking.platform.routes.js';
 import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.js';
+import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.realtime.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
@@ -57,6 +59,12 @@ import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
 import { registerRoutingRoutes } from './modules/routing/routing.routes.js';
 import { startRouteOptimizationWorker } from './queues/route-optimization.worker.js';
+import { registerMonitoringRoutes } from './modules/internal/monitoring.routes.js';
+import { registerAnnouncementRoutes } from './modules/announcements/announcements.routes.js';
+import { registerDsarRoutes } from './modules/dsar/dsar.routes.js';
+import { registerAppealRoutes } from './modules/appeals/appeals.routes.js';
+import { registerOnboardingRoutes } from './modules/onboarding/onboarding.routes.js';
+import { registerTenantHealthRoutes } from './modules/tenants/health.routes.js';
 
 function escapeRegex(source: string) {
   return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -74,6 +82,22 @@ function isAllowedCorsOrigin(origin: string) {
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
+
+  app.addHook('preParsing', (request, _reply, payload, done) => {
+    if (!request.url.includes('/webhooks/')) {
+      done(null, payload);
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    payload.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    payload.on('error', done);
+    payload.on('end', () => {
+      const rawBody = Buffer.concat(chunks);
+      request.rawBody = rawBody;
+      done(null, Readable.from([rawBody]));
+    });
+  });
 
   await app.register(sensible);
   await app.register(helmet);
@@ -93,6 +117,7 @@ export async function buildApp() {
   await app.register(rateLimit, {
     global: false,
     errorResponseBuilder: (_request, context) => ({
+      statusCode: context.ban ? 403 : 429,
       error: 'Rate limit exceeded',
       code: 'RATE_LIMITED',
       retryAfter: Number(context.after ?? 60),
@@ -131,15 +156,86 @@ export async function buildApp() {
     }
   });
 
-  app.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+  // ── Health / readiness / version endpoints ─────────────────────────────
+  app.get('/live', async () => ({ status: 'ok' }));
+
+  app.get('/ready', async (_req, reply) => {
+    const checks: Record<string, { status: string; latencyMs?: number }> = {};
+
+    try {
+      const t = Date.now();
+      await app.prisma.$queryRaw`SELECT 1`;
+      checks.postgres = { status: 'up', latencyMs: Date.now() - t };
+    } catch {
+      checks.postgres = { status: 'down' };
+    }
+
+    try {
+      const t = Date.now();
+      await app.redis.ping();
+      checks.redis = { status: 'up', latencyMs: Date.now() - t };
+    } catch {
+      checks.redis = { status: 'down' };
+    }
+
+    const allUp = Object.values(checks).every(c => c.status === 'up');
+    return reply.status(allUp ? 200 : 503).send({
+      status: allUp ? 'up' : 'degraded',
+      checks,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  app.get('/health', async (_req, reply) => {
+    const t0 = Date.now();
+    const checks: Record<string, { status: string; latencyMs: number }> = {};
+
+    await Promise.allSettled([
+      (async () => {
+        const t = Date.now();
+        try { await app.prisma.$queryRaw`SELECT 1`; checks.postgres = { status: 'up', latencyMs: Date.now() - t }; }
+        catch { checks.postgres = { status: 'down', latencyMs: Date.now() - t }; }
+      })(),
+      (async () => {
+        const t = Date.now();
+        try { await app.redis.ping(); checks.redis = { status: 'up', latencyMs: Date.now() - t }; }
+        catch { checks.redis = { status: 'down', latencyMs: Date.now() - t }; }
+      })(),
+    ]);
+
+    const allUp = Object.values(checks).every(c => c.status === 'up');
+    return reply.status(allUp ? 200 : 207).send({
+      status:      allUp ? 'up' : 'degraded',
+      service:     'main-api',
+      environment: config.nodeEnv,
+      timestamp:   new Date().toISOString(),
+      latencyMs:   Date.now() - t0,
+      dependencies: checks,
+    });
+  });
+
+  app.get('/version', async () => ({
+    service:     'main-api',
+    version:     process.env.APP_VERSION  ?? '0.0.0',
+    commit:      process.env.GIT_COMMIT   ?? 'unknown',
+    branch:      process.env.GIT_BRANCH   ?? 'unknown',
+    buildTime:   process.env.BUILD_TIME   ?? 'unknown',
+    environment: config.nodeEnv,
+  }));
 
   await registerAuthRoutes(app);
   await registerShipmentRoutes(app);
   await registerTenantRoutes(app);
+  await registerAnnouncementRoutes(app);
+  await registerDsarRoutes(app);
+  await registerAppealRoutes(app);
+  await registerOnboardingRoutes(app);
+  await registerTenantHealthRoutes(app);
   await registerPublicTrackingRoutes(app);
   await registerTenantTrackingRoutes(app);
   await registerPlatformTrackingRoutes(app);
   await registerGoTrackingRoutes(app);
+  await registerRealtimeTrackingRoutes(app);
   await registerApiKeyRoutes(app);
   await registerWebhookRoutes(app);
   await registerCrmRoutes(app);
@@ -174,6 +270,7 @@ export async function buildApp() {
   await registerDocumentsRoutes(app);
 
   await registerRoutingRoutes(app);
+  await registerMonitoringRoutes(app);
 
   await setupTrackingWebsocket(app);
   startStuckShipmentDetector(app);

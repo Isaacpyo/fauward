@@ -76,6 +76,7 @@ function createPrisma() {
       findUnique: vi.fn(async () => payment)
     },
     refund: {
+      findFirst: vi.fn(async () => null as unknown),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...refund, ...data })),
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...refund, ...data })),
       findMany: vi.fn(async () => [])
@@ -166,7 +167,7 @@ describe('internal billing refund permissions', () => {
 
     expect(response.statusCode).toBe(201);
     expect(prisma.refund.create).toHaveBeenCalled();
-    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE - 1, 'Below threshold refund');
+    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE - 1, 'Below threshold refund', expect.stringMatching(/^refund:/));
   });
 
   it('allows a £500.00 refund with revenue.invoices.refund.large', async () => {
@@ -185,7 +186,7 @@ describe('internal billing refund permissions', () => {
         data: expect.objectContaining({ status: 'APPROVED', amount: expect.anything(), reason: 'Approved large refund' })
       })
     );
-    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE, 'Approved large refund');
+    expect(createRefundMock).toHaveBeenCalledWith(payment.gatewayRef, LARGE_REFUND_PENCE, 'Approved large refund', expect.stringMatching(/^refund:/));
   });
 
   it('rejects a refund without a reason', async () => {
@@ -238,9 +239,30 @@ describe('internal billing refund permissions', () => {
         },
         after: {
           refund: expect.objectContaining({ paymentId: payment.id, reason: 'Duplicate payment' }),
-          invoice: payment.invoice
+          invoice: payment.invoice,
+          stripeIdempotencyKey: expect.stringMatching(/^refund:/)
         }
       })
     );
+  });
+
+  it('returns an existing refund and does not call Stripe when the same idempotency key is retried', async () => {
+    const existingRefund = { id: 'refund_existing', paymentId: payment.id, idempotencyKey: 'refund:tenant_001:refund-key-001' };
+    const prisma = createPrisma();
+    prisma.refund.findFirst.mockResolvedValueOnce(existingRefund);
+    const { app } = await buildApp(prisma);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/internal/billing/refunds',
+      headers: { 'Idempotency-Key': 'refund-key-001' },
+      payload: { paymentId: payment.id, amount: 2500, reason: 'Duplicate payment' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(existingRefund);
+    expect(prisma.refund.create).not.toHaveBeenCalled();
+    expect(createRefundMock).not.toHaveBeenCalled();
+    expect(writeAuditMock).not.toHaveBeenCalled();
   });
 });

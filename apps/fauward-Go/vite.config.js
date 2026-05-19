@@ -37,6 +37,9 @@ export default defineConfig({
             }
         })
     ],
+    server: {
+        port: 5176
+    },
     resolve: {
         alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url))

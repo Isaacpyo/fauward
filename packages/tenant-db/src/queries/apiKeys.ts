@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { getSupabaseAdmin } from "../client.js";
+import { getSupabaseAdmin } from "../client";
 
 export type ApiKey = {
   id: string;

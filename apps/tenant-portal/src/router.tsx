@@ -62,6 +62,7 @@ import { AuditLogPage } from "@/features/admin/audit/AuditLogPage";
 import { Button } from "@/components/ui/Button";
 import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess, type FeatureKey } from "@/lib/plan-features";
 import { useAppStore } from "@/stores/useAppStore";
+import { ImpersonateCallbackPage } from "@/pages/auth/ImpersonateCallbackPage";
 
 function AuthGuard() {
   const location = useLocation();
@@ -125,6 +126,8 @@ function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children
 export function AppRouter() {
   return (
     <Routes>
+      <Route path="/auth/impersonate" element={<ImpersonateCallbackPage />} />
+
       <Route element={<GuestGuard />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

@@ -2,7 +2,7 @@
 
 This guide is the technical entry point for maintainers of `services/python-services`.
 
-The service is a FastAPI gateway plus Celery worker system. It integrates with Postgres, Redis, storage, PDF rendering, OCR libraries, route optimisation, customs helpers, pricing logic, analytics rollups, and ML model scoring.
+The service is a FastAPI gateway plus Celery worker system. It integrates with Postgres, Redis, storage, PDF rendering, OCR libraries, route optimisation, customs helpers, pricing logic, analytics rollups, ML model scoring, and the Phase 1 invoicing domain core.
 
 ## Deep-Dive Documents
 
@@ -47,7 +47,17 @@ python-services/
     pricing.py
     routes.py
 
+  models/
+    base.py
+    invoicing.py
+
   services/
+    invoicing/
+      database.py
+      numbering.py
+      repository.py
+      schemas.py
+      state.py
     tenant_access.py
     audit_service.py
     job_service.py
@@ -90,8 +100,11 @@ python-services/
     route_worker.py
 
   migrations/
+    env.py
     versions/
+      0002_invoicing_phase1.py
 
+  alembic.ini
   main.py
   db.py
   celery_app.py
@@ -103,12 +116,14 @@ Some legacy module names remain intentionally for backward compatibility:
 - `models/*_schemas.py` remains as the original schema location; `schemas/*.py` re-exports or adds current API schemas.
 - `services/pdf_jobs.py`, `services/customs_declarations.py`, and `services/route_jobs.py` remain; `pdf_service.py`, `customs_service.py`, and `route_service.py` are compatibility entry points.
 - `workers/route_worker.py` remains because Celery task names and queue routing already reference it.
+- Invoicing uses SQLAlchemy/Alembic for its aggregate and migrations. Existing asyncpg-based services remain unchanged.
 
 ## Refactor Principles
 
 - Routes handle validation, dependencies, service calls, and response models.
 - Services handle business rules, tenant access, queueing, status shaping, audit logging, and storage validation.
 - Repositories wrap `db.fetch`, `db.fetchrow`, and `db.execute` with parameterized SQL.
+- Invoicing services use SQLAlchemy `AsyncSession`; the domain package owns transition, numbering, event, and outbox rules.
 - Workers update rows tenant-safely and fetch trusted source-of-truth data from the database when available.
 - Existing public routes are preserved unless a safer endpoint was added.
 
@@ -150,6 +165,14 @@ Some legacy module names remain intentionally for backward compatibility:
 - Queue labels come only from the static worker queue map.
 - Health endpoints support liveness/readiness checks.
 
+### Invoicing Phase 1
+
+- `draft -> issued` transition allocates invoice numbers inside the same database transaction.
+- Numbering locks `invoice_sequences` rows with `SELECT ... FOR UPDATE`.
+- Issued invoices store frozen payer/payee snapshots and a SHA-256 content hash.
+- `invoice_events` is append-only and records before/after snapshots for transitions.
+- Invoice render work is written to the Python-owned `outbox` table. The existing `/pdf` flow still uses `documents` plus `publish_job`.
+
 ## New and Updated Features
 
 - Server-side PDF, OCR, customs declaration, and route job IDs.
@@ -166,13 +189,15 @@ Some legacy module names remain intentionally for backward compatibility:
 - Audit logging for sensitive queue/request actions.
 - Readiness and liveness endpoints.
 - Migration file for service hardening indexes.
+- Alembic migration for invoicing Phase 1 domain tables.
+- SQLAlchemy async session setup for the invoicing aggregate.
 
 ## Main Commands
 
 Install:
 
 ```powershell
-cd C:\Users\temit\fauward\apps\python-services
+cd C:\Users\temit\fauward\services\python-services
 python -m pip install -r requirements.txt
 ```
 
@@ -180,6 +205,7 @@ Run migrations:
 
 ```powershell
 psql $env:DATABASE_URL -f migrations/versions/0001_service_hardening_indexes.sql
+python -m alembic upgrade head
 ```
 
 Run tests:

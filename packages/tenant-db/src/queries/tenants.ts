@@ -1,4 +1,4 @@
-import { getSupabaseAdmin } from "../client.js";
+import { getSupabaseAdmin } from "../client";
 
 export type Tenant = {
   id: string;

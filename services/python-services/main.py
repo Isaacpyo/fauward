@@ -47,6 +47,7 @@ from api.customs import router as customs_router  # noqa: E402
 from api.health import router as health_router  # noqa: E402
 from api.metrics import router as metrics_router  # noqa: E402
 from api.ml import router as ml_router  # noqa: E402
+from api.observability import router as observability_router  # noqa: E402
 from api.ocr import router as ocr_router  # noqa: E402
 from api.pdf import router as pdf_router  # noqa: E402
 from api.pricing import router as pricing_router  # noqa: E402
@@ -61,6 +62,7 @@ app.include_router(customs_router)
 app.include_router(ml_router)
 app.include_router(metrics_router)
 app.include_router(health_router)
+app.include_router(observability_router)
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 

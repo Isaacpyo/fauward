@@ -1,73 +1,317 @@
-import type { PrismaClient } from '@prisma/client';
-import dns from 'dns/promises';
+import { randomBytes } from 'node:crypto';
+import { Prisma, type PrismaClient, type Tenant } from '@prisma/client';
+import { tenantStorage, runWithTenantContext } from '../../context/tenant.context.js';
+import { DomainBusinessError, assertDomainIsAllowed, normalizeDomainInput } from './domain.validator.js';
+import {
+  VercelApiError,
+  VercelClient,
+  VercelDomainAlreadyTakenError,
+  type VercelDomainConfig,
+  type VercelProjectDomain
+} from './infrastructure/vercel.client.js';
 
-function isValidDomain(domain: string) {
-  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain);
+export type DomainStatus = 'NONE' | 'PENDING_DNS' | 'VERIFYING' | 'ACTIVE' | 'FAILED';
+
+export type DomainInstructions = {
+  type: 'CNAME';
+  name: string;
+  host: string;
+  value: string;
+  ttl: number;
+};
+
+export type DomainStatusResult = {
+  status: DomainStatus;
+  domain: string | null;
+  instructions: DomainInstructions | null;
+  error: string | null;
+  verifiedAt?: Date | null;
+  lastCheckAt?: Date | null;
+};
+
+export class DomainConflictError extends Error {
+  code = 'DOMAIN_TAKEN';
 }
 
-function normalizeDomain(domain: string) {
-  return domain
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/.*$/, '')
-    .replace(/\.$/, '');
+export class DomainNotFoundError extends Error {
+  code = 'DOMAIN_NOT_FOUND';
 }
 
-function buildCname(domain: string) {
-  return { host: domain, value: 'cname.fauward.com', type: 'CNAME' };
+type DomainAuditArgs = {
+  tenantId: string;
+  actorUserId?: string | null;
+  actorIp?: string | null;
+  actorType?: string;
+  action: string;
+  target: string;
+  metadata?: Record<string, unknown>;
+};
+
+type DomainMutationArgs = {
+  tenantId: string;
+  actorUserId?: string | null;
+  actorIp?: string | null;
+  actorType?: string;
+};
+
+type DomainSetArgs = DomainMutationArgs & {
+  domain: string;
+};
+
+type DomainClient = Pick<VercelClient, 'addDomain' | 'getDomain' | 'verifyDomain' | 'getDomainConfig' | 'removeDomain'>;
+
+const FALLBACK_CNAME_TARGET = 'cname.vercel-dns.com';
+const GENERIC_UPSTREAM_ERROR = 'Unable to verify the domain with Vercel right now.';
+
+function isUniqueConstraintError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002';
 }
 
-export const domainService = {
-  async setCustomDomain(prisma: PrismaClient, tenantId: string, domain: string) {
-    const normalizedDomain = normalizeDomain(domain);
+function recommendedCname(config: VercelDomainConfig | null) {
+  return config?.recommendedCNAME?.sort((a, b) => a.rank - b.rank)[0]?.value ?? FALLBACK_CNAME_TARGET;
+}
 
-    if (!isValidDomain(normalizedDomain)) {
-      throw { statusCode: 400, error: 'Invalid domain format' };
+function canUseCname(config: VercelDomainConfig | null) {
+  return config?.configuredBy === 'CNAME' && config.misconfigured !== true;
+}
+
+export class DomainService {
+  constructor(private readonly vercel: DomainClient = new VercelClient()) {}
+
+  async setCustomDomain(prisma: PrismaClient, args: DomainSetArgs) {
+    const domain = normalizeDomainInput(args.domain);
+    assertDomainIsAllowed(domain);
+
+    const existing = await prisma.tenant.findUnique({ where: { id: args.tenantId } });
+    if (!existing) throw new DomainNotFoundError('Tenant not found');
+
+    if (existing.customDomain === domain && existing.customDomainStatus !== 'FAILED') {
+      return {
+        tenant: existing,
+        instructions: this.dnsInstructions(domain, FALLBACK_CNAME_TARGET)
+      };
     }
 
-    const existing = await prisma.tenant.findFirst({
-      where: { customDomain: normalizedDomain, id: { not: tenantId } }
-    });
-    if (existing) {
-      throw { statusCode: 409, error: 'Domain already in use' };
+    if (existing.customDomain && existing.customDomain !== domain) {
+      await this.vercel.removeDomain(existing.customDomain).catch(() => undefined);
     }
 
-    await prisma.tenant.update({
-      where: { id: tenantId },
-      data: { customDomain: normalizedDomain, domainVerified: false }
-    });
-
-    return {
-      domain: normalizedDomain,
-      cname: buildCname(normalizedDomain),
-      status: 'PENDING_DNS'
-    };
-  },
-
-  async checkDomainVerification(prisma: PrismaClient, tenantId: string) {
-    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant?.customDomain) {
-      return { status: 'NOT_CONFIGURED', domain: null, cname: null };
+    let added: VercelProjectDomain;
+    try {
+      added = await this.vercel.addDomain(domain);
+    } catch (error) {
+      if (error instanceof VercelDomainAlreadyTakenError) {
+        throw new DomainConflictError('This domain is already in use by another Fauward tenant.');
+      }
+      throw error;
     }
-    if (tenant.domainVerified) {
-      return { status: 'ACTIVE', domain: tenant.customDomain, cname: buildCname(tenant.customDomain) };
+
+    let config: VercelDomainConfig | null = null;
+    try {
+      config = await this.vercel.getDomainConfig(domain);
+    } catch {
+      config = null;
     }
 
     try {
-      const records = await dns.resolveCname(tenant.customDomain);
-      const pointsToUs = records.some((r) => r.endsWith('fauward.com') || r.endsWith('cloudfront.net'));
+      const tenant = await this.withTenantContext(existing, () =>
+        prisma.$transaction(async (tx) => {
+          const updated = await tx.tenant.update({
+            where: { id: args.tenantId },
+            data: {
+              customDomain: domain,
+              domainVerified: false,
+              customDomainStatus: 'PENDING_DNS',
+              customDomainAddedAt: new Date(),
+              customDomainVerifiedAt: null,
+              customDomainLastCheckAt: null,
+              customDomainError: null,
+              customDomainVerificationToken: randomBytes(16).toString('hex'),
+              customDomainVercelId: added.projectId ?? null
+            }
+          });
 
-      if (pointsToUs) {
-        await prisma.tenant.update({
-          where: { id: tenantId },
-          data: { domainVerified: true }
-        });
-        return { status: 'ACTIVE', domain: tenant.customDomain, cname: buildCname(tenant.customDomain) };
+          await this.writeAudit(tx as PrismaClient, {
+            tenantId: args.tenantId,
+            actorUserId: args.actorUserId ?? null,
+            actorIp: args.actorIp ?? null,
+            actorType: args.actorType ?? 'USER',
+            action: 'tenant.custom_domain.set',
+            target: domain,
+            metadata: { previousDomain: existing.customDomain, verification: added.verification ?? [] }
+          });
+
+          return updated;
+        })
+      );
+
+      return {
+        tenant,
+        instructions: this.dnsInstructions(domain, recommendedCname(config))
+      };
+    } catch (error) {
+      await this.vercel.removeDomain(domain).catch(() => undefined);
+      if (isUniqueConstraintError(error)) {
+        throw new DomainConflictError('This domain is already in use by another Fauward tenant.');
       }
-      return { status: 'PENDING_DNS', domain: tenant.customDomain, cname: buildCname(tenant.customDomain) };
-    } catch {
-      return { status: 'PENDING_DNS', domain: tenant.customDomain, cname: buildCname(tenant.customDomain) };
+      throw error;
     }
   }
-};
+
+  async checkStatus(prisma: PrismaClient, tenantId: string): Promise<DomainStatusResult> {
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new DomainNotFoundError('Tenant not found');
+    if (!tenant.customDomain) {
+      return { status: 'NONE', domain: null, instructions: null, error: null, verifiedAt: null, lastCheckAt: null };
+    }
+
+    let nextStatus: DomainStatus = tenant.customDomainStatus as DomainStatus;
+    let errorMessage: string | null = null;
+    let projectDomain: VercelProjectDomain | null = null;
+    let config: VercelDomainConfig | null = null;
+
+    try {
+      try {
+        projectDomain = await this.vercel.verifyDomain(tenant.customDomain);
+      } catch {
+        projectDomain = await this.vercel.getDomain(tenant.customDomain);
+      }
+      config = await this.vercel.getDomainConfig(tenant.customDomain);
+
+      if (projectDomain.verified && canUseCname(config)) {
+        nextStatus = 'ACTIVE';
+      } else if (canUseCname(config)) {
+        nextStatus = 'VERIFYING';
+      } else {
+        nextStatus = 'PENDING_DNS';
+      }
+    } catch (error) {
+      nextStatus = 'FAILED';
+      errorMessage = GENERIC_UPSTREAM_ERROR;
+      if (error instanceof VercelApiError) {
+        errorMessage = 'Unable to verify the domain with Vercel right now.';
+      }
+    }
+
+    const previous = tenant.customDomainStatus;
+    const updated = await this.withTenantContext(tenant, () =>
+      prisma.$transaction(async (tx) => {
+        const row = await tx.tenant.update({
+          where: { id: tenantId },
+          data: {
+            domainVerified: nextStatus === 'ACTIVE',
+            customDomainStatus: nextStatus,
+            customDomainLastCheckAt: new Date(),
+            customDomainVerifiedAt:
+              nextStatus === 'ACTIVE' && previous !== 'ACTIVE' ? new Date() : tenant.customDomainVerifiedAt,
+            customDomainError: errorMessage
+          }
+        });
+
+        if (previous !== nextStatus) {
+          await this.writeAudit(tx as PrismaClient, {
+            tenantId,
+            actorUserId: null,
+            actorIp: null,
+            actorType: 'SYSTEM',
+            action: 'tenant.custom_domain.status_changed',
+            target: tenant.customDomain!,
+            metadata: { from: previous, to: nextStatus, error: errorMessage }
+          });
+        }
+
+        return row;
+      })
+    );
+
+    return {
+      status: nextStatus,
+      domain: tenant.customDomain,
+      instructions: this.dnsInstructions(tenant.customDomain, recommendedCname(config)),
+      error: errorMessage,
+      verifiedAt: updated.customDomainVerifiedAt,
+      lastCheckAt: updated.customDomainLastCheckAt
+    };
+  }
+
+  async removeCustomDomain(prisma: PrismaClient, args: DomainMutationArgs) {
+    const tenant = await prisma.tenant.findUnique({ where: { id: args.tenantId } });
+    if (!tenant) throw new DomainNotFoundError('Tenant not found');
+    if (!tenant.customDomain) return tenant;
+
+    await this.vercel.removeDomain(tenant.customDomain).catch(() => undefined);
+
+    return this.withTenantContext(tenant, () =>
+      prisma.$transaction(async (tx) => {
+        const updated = await tx.tenant.update({
+          where: { id: args.tenantId },
+          data: {
+            customDomain: null,
+            domainVerified: false,
+            customDomainStatus: 'NONE',
+            customDomainAddedAt: null,
+            customDomainVerifiedAt: null,
+            customDomainLastCheckAt: null,
+            customDomainError: null,
+            customDomainVerificationToken: null,
+            customDomainVercelId: null
+          }
+        });
+
+        await this.writeAudit(tx as PrismaClient, {
+          tenantId: args.tenantId,
+          actorUserId: args.actorUserId ?? null,
+          actorIp: args.actorIp ?? null,
+          actorType: args.actorType ?? 'USER',
+          action: 'tenant.custom_domain.removed',
+          target: tenant.customDomain!,
+          metadata: { previousStatus: tenant.customDomainStatus }
+        });
+
+        return updated;
+      })
+    );
+  }
+
+  private dnsInstructions(domain: string, value: string): DomainInstructions {
+    return {
+      type: 'CNAME',
+      name: domain.split('.')[0],
+      host: domain,
+      value,
+      ttl: 3600
+    };
+  }
+
+  private async withTenantContext<T>(tenant: Tenant, fn: () => Promise<T>) {
+    if (tenantStorage.getStore()) return fn();
+    return runWithTenantContext(
+      {
+        tenantId: tenant.id,
+        tenantSlug: tenant.slug,
+        plan: tenant.plan,
+        region: tenant.region,
+        isSuperAdmin: false
+      },
+      fn
+    );
+  }
+
+  private writeAudit(prisma: PrismaClient, args: DomainAuditArgs) {
+    return prisma.auditLog.create({
+      data: {
+        tenantId: args.tenantId,
+        actorId: args.actorUserId ?? null,
+        actorType: args.actorType ?? 'USER',
+        actorIp: args.actorIp ?? null,
+        action: args.action,
+        resourceType: 'TENANT_CUSTOM_DOMAIN',
+        resourceId: args.target,
+        metadata: (args.metadata ?? {}) as Prisma.InputJsonValue
+      }
+    });
+  }
+}
+
+export { DomainBusinessError };
+export const domainService = new DomainService();

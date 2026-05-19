@@ -1,27 +1,37 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { tenantController } from './tenant.controller.js';
-import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
 import { config } from '../../config/index.js';
 import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
+import { registerDomainRoutes } from './domain.routes.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
+  app.get('/api/v1/tenants/me', { preHandler: [authenticate] }, tenantController.me);
   app.patch('/api/v1/tenant/branding', { preHandler: [authenticate] }, tenantController.updateBranding);
   app.patch('/api/v1/tenant/settings', { preHandler: [authenticate] }, tenantController.updateSettings);
 
-  app.patch(
-    '/api/v1/tenant/domain',
-    { preHandler: [authenticate, requireFeature('customDomain')] },
-    tenantController.setDomain
-  );
-  app.get(
-    '/api/v1/tenant/domain/status',
-    { preHandler: [authenticate, requireFeature('customDomain')] },
-    tenantController.domainStatus
-  );
+  async function exitImpersonation(request: FastifyRequest, reply: FastifyReply) {
+    const sessionId = request.user?.impersonationSessionId;
+    const tenantId = request.tenant?.id ?? request.user?.tenantId;
+    if (!sessionId || request.user?.mode !== 'IMPERSONATION') {
+      return reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId ?? ''}` });
+    }
+
+    await app.prisma.platformImpersonationSession.updateMany({
+      where: { id: sessionId, targetTenantId: tenantId, revokedAt: null },
+      data: { revokedAt: new Date() }
+    });
+    await app.redis.del(`platform:impersonation:${sessionId}`);
+    reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId}` });
+  }
+
+  app.post('/api/v1/tenant/impersonation/exit', { preHandler: [authenticate] }, exitImpersonation);
+  app.post('/api/v1/tenants/me/impersonation/exit', { preHandler: [authenticate] }, exitImpersonation);
+
+  await registerDomainRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);

@@ -6,6 +6,7 @@ import { config } from '../../config/index.js';
 export type PaymentIntentInput = {
   amountMinor: number;
   currency: string;
+  idempotencyKey: string;
   customerId?: string;
   metadata?: Record<string, string>;
 };
@@ -27,12 +28,13 @@ function getStripeClient() {
 export const stripeService = {
   async createPaymentIntent(input: PaymentIntentInput) {
     const stripe = getStripeClient();
-    const intent = await stripe.paymentIntents.create({
+    const params: Stripe.PaymentIntentCreateParams = {
       amount: input.amountMinor,
       currency: input.currency.toLowerCase(),
       customer: input.customerId,
       metadata: input.metadata ?? {}
-    });
+    };
+    const intent = await stripe.paymentIntents.create(params, { idempotencyKey: input.idempotencyKey });
 
     return {
       id: intent.id,
@@ -71,13 +73,14 @@ export const stripeService = {
     return { id: subscription.id, status: subscription.status };
   },
 
-  async createRefund(paymentIntent: string, amountMinor: number, reason?: string) {
+  async createRefund(paymentIntent: string, amountMinor: number, reason: string | undefined, idempotencyKey: string) {
     const stripe = getStripeClient();
-    const refund = await stripe.refunds.create({
+    const params: Stripe.RefundCreateParams = {
       payment_intent: paymentIntent,
       amount: amountMinor,
-      metadata: reason ? { reason } : undefined
-    });
+      metadata: reason ? { reason, idempotencyKey } : { idempotencyKey }
+    };
+    const refund = await stripe.refunds.create(params, { idempotencyKey });
     return { id: refund.id, status: refund.status ?? 'pending' };
   },
 

@@ -8,12 +8,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWidgetToken } from "@/lib/widgetToken";
+import { otpStore } from "../otp-store";
 
 export const runtime = "nodejs";
 
 // Simple in-process OTP store — replace with Redis in production
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
-
 function generateOtp(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -80,6 +79,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ sent: true });
 }
-
-// Export the store so /verify can access it (same process)
-export { otpStore };

@@ -153,6 +153,7 @@ PATCH  /tenant/branding
 PATCH  /tenant/settings
 PATCH  /tenant/domain                     Pro+
 GET    /tenant/domain/status
+DELETE /tenant/domain                     Pro+
 GET    /tenant/usage
 GET    /tenant/onboarding
 GET    /tenant/plan-features
@@ -161,6 +162,11 @@ PATCH  /tenant/email-templates/:key
 PATCH  /tenant/email-settings
 POST   /tenant/email-templates/:key/test
 ```
+
+Custom domain status responses use the state union `NONE | PENDING_DNS | VERIFYING | ACTIVE | FAILED`.
+Pro and Enterprise tenants receive DNS instructions with a Vercel CNAME target from `GET /tenant/domain/status`;
+Starter tenants receive `403 PLAN_REQUIRED`. Fauward routes traffic for custom domains only after the tenant row
+has `customDomainStatus = ACTIVE`.
 
 ### API Keys & Webhooks *(Pro+)*
 

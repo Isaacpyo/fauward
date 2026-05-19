@@ -21,7 +21,17 @@ const config: Config = {
         success: "#16A34A",
         warning: "#D97706",
         error: "#DC2626",
-        info: "#2563EB"
+        info: "#2563EB",
+        dark: {
+          bg:       "#070f1f",
+          surface:  "#0a1628",
+          card:     "#0f1f38",
+          border:   "#1e3a5f",
+          elevated: "#152a4a"
+        },
+        electric: {
+          blue: "#3b82f6"
+        }
       },
       borderRadius: {
         sm: "4px",
@@ -44,10 +54,25 @@ const config: Config = {
         pulseDot: {
           "0%, 100%": { opacity: "1", transform: "scale(1)" },
           "50%": { opacity: "0.45", transform: "scale(0.8)" }
+        },
+        timelineFill: {
+          "0%": { transform: "scaleX(0)" },
+          "100%": { transform: "scaleX(1)" }
+        },
+        statusPulse: {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.55" }
+        },
+        terminalLine: {
+          "0%": { opacity: "0", transform: "translateY(6px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" }
         }
       },
       animation: {
-        "pulse-dot": "pulseDot 1.6s ease-in-out infinite"
+        "pulse-dot":     "pulseDot 1.6s ease-in-out infinite",
+        "timeline-fill": "timelineFill 0.8s ease forwards",
+        "status-pulse":  "statusPulse 2s ease-in-out infinite",
+        "terminal-line": "terminalLine 0.35s ease forwards"
       }
     }
   },
