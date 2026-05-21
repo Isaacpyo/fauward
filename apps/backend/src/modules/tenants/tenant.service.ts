@@ -46,6 +46,13 @@ export const tenantService = {
     }, {});
     return {
       ...tenant,
+      displayName: tenant.name,
+      branding: {
+        primary: tenant.primaryColor,
+        accent: tenant.accentColor,
+        radius: '8px',
+        logoUrl: tenant.logoUrl
+      },
       plan: planOverride?.plan ?? tenant.plan,
       billingPlan: tenant.plan,
       activePlanOverride: planOverride,

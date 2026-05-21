@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { Tenant } from '@prisma/client';
 import { config } from '../../config/index.js';
 import type { TenantContext } from '../../context/tenant.context.js';
 
@@ -17,10 +18,15 @@ function extractSlugFromHost(host: string, platformDomain: string) {
   return slug;
 }
 
+type TenantSlugSource = 'path' | 'header' | 'subdomain' | 'query';
+
 function isPlatformDomain(host: string, platformDomain: string): boolean {
   const normalized = normalizeHost(host);
   const domain = platformDomain.toLowerCase();
-  return normalized === domain || RESERVED_SUBDOMAINS.has(normalized.replace(`.${domain}`, ''));
+  if (normalized === domain) return true;
+  if (!normalized.endsWith(`.${domain}`)) return false;
+  const subdomain = normalized.slice(0, -(domain.length + 1));
+  return RESERVED_SUBDOMAINS.has(subdomain);
 }
 
 const PUBLIC_PATHS = new Set([
@@ -72,7 +78,50 @@ async function findActiveTenantByCustomDomain(req: FastifyRequest, host: string)
   });
 }
 
-async function resolveTrackingTenant(req: FastifyRequest, path: string) {
+function extractSlugFromPath(path: string) {
+  const match = path.match(/^\/api\/v1\/t\/([^/]+)/);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function tenantContext(tenant: Tenant): TenantContext {
+  return {
+    tenantId: tenant.id,
+    tenantSlug: tenant.slug,
+    plan: tenant.plan,
+    region: tenant.region,
+    isSuperAdmin: false
+  };
+}
+
+async function resolveTenantBySlug(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  slug: string,
+  source: TenantSlugSource,
+  path: string
+): Promise<Tenant | null> {
+  const normalizedSlug = slug.toLowerCase();
+  const tenant = await req.server.prisma.tenant.findUnique({ where: { slug: normalizedSlug } });
+  if (tenant) return tenant;
+
+  const historical = await req.server.prisma.tenantSlugHistory.findUnique({
+    where: { oldSlug: normalizedSlug },
+    include: { tenant: true }
+  });
+  if (!historical || historical.expiresAt <= new Date()) return null;
+
+  if (source === 'path') {
+    const location = path.replace(`/t/${slug}`, `/t/${historical.tenant.slug}`);
+    reply.status(301).header('Location', location).send();
+    return null;
+  }
+
+  reply.header('X-Tenant-Slug-Deprecated', normalizedSlug);
+  reply.header('X-Tenant-Slug-Current', historical.tenant.slug);
+  return historical.tenant;
+}
+
+async function resolveTrackingTenant(req: FastifyRequest, reply: FastifyReply, path: string) {
   if (!path.startsWith('/api/v1/tracking/')) return null;
 
   const hostHeader = req.headers.host ?? '';
@@ -86,13 +135,13 @@ async function resolveTrackingTenant(req: FastifyRequest, path: string) {
   if (identifier) {
     const byId = await req.server.prisma.tenant.findUnique({ where: { id: identifier } });
     if (byId) return byId;
-    const bySlug = await req.server.prisma.tenant.findUnique({ where: { slug: identifier } });
+    const bySlug = await resolveTenantBySlug(req, reply, identifier, 'query', path);
     if (bySlug) return bySlug;
   }
 
   const slug = extractSlugFromHost(hostHeader, config.platformDomain);
   if (slug) {
-    const byHostSlug = await req.server.prisma.tenant.findUnique({ where: { slug } });
+    const byHostSlug = await resolveTenantBySlug(req, reply, slug, 'subdomain', path);
     if (byHostSlug) return byHostSlug;
   }
 
@@ -103,52 +152,35 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
   const path = req.url.split('?')[0];
   const hostHeader = req.headers.host ?? '';
   const host = normalizeHost(hostHeader);
+  const pathSlug = extractSlugFromPath(path);
 
   if (SYSTEM_PATHS.has(path)) {
     return systemContext();
   }
 
   if (path.startsWith('/api/v1/tracking/')) {
-    const tenant = await resolveTrackingTenant(req, path);
+    const tenant = await resolveTrackingTenant(req, reply, path);
     if (!tenant) {
       reply.status(404).send({ error: 'Business not found', code: 'TENANT_NOT_FOUND' });
       return null;
     }
     req.tenant = tenant;
-    return {
-      tenantId: tenant.id,
-      tenantSlug: tenant.slug,
-      plan: tenant.plan,
-      region: tenant.region,
-      isSuperAdmin: false
-    };
+    return tenantContext(tenant);
   }
 
   if (PUBLIC_PATHS.has(path)) {
     const byCustomDomain = await findActiveTenantByCustomDomain(req, host);
     if (byCustomDomain) {
       req.tenant = byCustomDomain;
-      return {
-        tenantId: byCustomDomain.id,
-        tenantSlug: byCustomDomain.slug,
-        plan: byCustomDomain.plan,
-        region: byCustomDomain.region,
-        isSuperAdmin: false
-      };
+      return tenantContext(byCustomDomain);
     }
 
     const tenantSlugFromQuery = typeof req.query === 'object' ? (req.query as { tenant?: string }).tenant : undefined;
     if (typeof tenantSlugFromQuery === 'string' && tenantSlugFromQuery.trim().length > 0) {
-      const tenant = await req.server.prisma.tenant.findUnique({ where: { slug: tenantSlugFromQuery.trim() } });
+      const tenant = await resolveTenantBySlug(req, reply, tenantSlugFromQuery.trim(), 'query', path);
       if (tenant) {
         req.tenant = tenant;
-        return {
-          tenantId: tenant.id,
-          tenantSlug: tenant.slug,
-          plan: tenant.plan,
-          region: tenant.region,
-          isSuperAdmin: false
-        };
+        return tenantContext(tenant);
       }
     }
 
@@ -165,24 +197,29 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return systemContext();
   }
 
-  let tenant = null;
+  let tenant: Tenant | null = null;
 
-  if (host) {
+  if (pathSlug) {
+    tenant = await resolveTenantBySlug(req, reply, pathSlug, 'path', path);
+    if (!tenant && reply.sent) return null;
+  }
+
+  const headerSlug = req.headers['x-tenant-slug'];
+  if (!tenant && typeof headerSlug === 'string' && headerSlug.trim().length > 0) {
+    tenant = await resolveTenantBySlug(req, reply, headerSlug.trim(), 'header', path);
+  }
+
+  if (!tenant && host) {
     tenant = await findActiveTenantByCustomDomain(req, host);
   }
 
-  if (isPlatformDomain(host, config.platformDomain)) {
+  if (!tenant && isPlatformDomain(host, config.platformDomain)) {
     return systemContext();
   }
 
   const slug = extractSlugFromHost(host, config.platformDomain);
   if (!tenant && slug) {
-    tenant = await req.server.prisma.tenant.findUnique({ where: { slug } });
-  }
-
-  const headerSlug = req.headers['x-tenant-slug'];
-  if (!tenant && typeof headerSlug === 'string') {
-    tenant = await req.server.prisma.tenant.findUnique({ where: { slug: headerSlug } });
+    tenant = await resolveTenantBySlug(req, reply, slug, 'subdomain', path);
   }
 
   if (!tenant) {
@@ -197,12 +234,5 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
 
   req.tenant = tenant;
 
-  const ctx: TenantContext = {
-    tenantId: tenant.id,
-    tenantSlug: tenant.slug,
-    plan: tenant.plan,
-    region: tenant.region,
-    isSuperAdmin: false
-  };
-  return ctx;
+  return tenantContext(tenant);
 }

@@ -2,7 +2,8 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
-import { getAccessToken, getDevTestSession, getDevTestSessionSnapshot } from "@/lib/auth";
+import { getAccessToken, getDevTestSession, getDevTestSessionSnapshot, getTenantSlug } from "@/lib/auth";
+import { resolvePathTenantSlug } from "@/lib/tenantResolver";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { applyTenantConfig } from "@/theme/tenant";
@@ -49,6 +50,12 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     logoUrl?: string | null;
     primaryColor?: string;
     accentColor?: string;
+    displayName?: string;
+    branding?: {
+      primary?: string;
+      accent?: string;
+      logoUrl?: string | null;
+    };
     defaultCurrency?: string;
     plan?: string;
     defaultLanguage?: string;
@@ -71,13 +78,13 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
 
   return {
     tenant_id: raw.id ?? "tenant_unknown",
-    name: raw.name ?? "Tenant",
+    name: raw.displayName ?? raw.name ?? "Tenant",
     slug: raw.slug,
-    logo_url: raw.logoUrl ?? "",
+    logo_url: raw.branding?.logoUrl ?? raw.logoUrl ?? "",
     domain: raw.customDomain ?? (raw.slug ? `${raw.slug}.fauward.com` : ""),
     region: raw.region,
-    primary_color: raw.primaryColor ?? "#0D1F3C",
-    accent_color: raw.accentColor ?? "#D97706",
+    primary_color: raw.branding?.primary ?? raw.primaryColor ?? "#0D1F3C",
+    accent_color: raw.branding?.accent ?? raw.accentColor ?? "#D97706",
     locale: raw.defaultLanguage ?? "en-GB",
     rtl: raw.isRtl ?? false,
     currency: raw.settings?.currency ?? raw.defaultCurrency ?? "GBP",
@@ -99,9 +106,10 @@ export function useTenant() {
   const devSessionSnapshot = getDevTestSessionSnapshot();
   const devSession = useMemo(() => getDevTestSession(), [devSessionSnapshot]);
   const hasToken = Boolean(getAccessToken());
+  const tenantSlug = resolvePathTenantSlug() ?? getTenantSlug();
 
   const query = useQuery({
-    queryKey: ["tenant-config"],
+    queryKey: ["tenant-config", tenantSlug],
     queryFn: fetchTenantConfig,
     staleTime: 5 * 60_000,
     refetchInterval: 5 * 60_000,

@@ -30,6 +30,20 @@ async function buildApp(tenants: Array<ReturnType<typeof tenant>>) {
         if (where.slug) return tenants.find((row) => row.slug === where.slug) ?? null;
         return null;
       })
+    },
+    tenantSlugHistory: {
+      findUnique: vi.fn(async ({ where, include }: any) => {
+        const row = where.oldSlug === 'old-tenant'
+          ? {
+              tenantId: 'tenant-a',
+              oldSlug: 'old-tenant',
+              expiresAt: new Date(Date.now() + 60_000),
+              tenant: tenants.find((tenantRow) => tenantRow.id === 'tenant-a')
+            }
+          : null;
+        if (!row) return null;
+        return include?.tenant ? row : { tenantId: row.tenantId, oldSlug: row.oldSlug, expiresAt: row.expiresAt };
+      })
     }
   };
 
@@ -41,6 +55,7 @@ async function buildApp(tenants: Array<ReturnType<typeof tenant>>) {
     })().catch(done);
   });
   app.get('/api/v1/tenant/me', async (request: any) => ({ slug: request.tenant?.slug }));
+  app.get('/api/v1/t/:tenantSlug/tenant/me', async (request: any) => ({ slug: request.tenant?.slug }));
   app.get('/api/v1/tracking/:trackingNumber', async (request: any) => ({ slug: request.tenant?.slug }));
   app.post('/api/v1/auth/login', async (request: any) => ({ slug: request.tenant?.slug ?? 'system' }));
   return { app, prisma };
@@ -149,6 +164,50 @@ describe('tenantResolver custom domains', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ slug: 'tenant-a' });
+  });
+
+  it('resolves path tenant slug before platform host system context', async () => {
+    const ctx = await buildApp([tenant({ id: 'tenant-a', slug: 'tenant-a' })]);
+    apps.push(ctx);
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/t/tenant-a/tenant/me',
+      headers: { host: 'app.fauward.com' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ slug: 'tenant-a' });
+  });
+
+  it('redirects old path slugs to the current slug', async () => {
+    const ctx = await buildApp([tenant({ id: 'tenant-a', slug: 'tenant-a' })]);
+    apps.push(ctx);
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/t/old-tenant/tenant/me',
+      headers: { host: 'app.fauward.com' }
+    });
+
+    expect(response.statusCode).toBe(301);
+    expect(response.headers.location).toBe('/api/v1/t/tenant-a/tenant/me');
+  });
+
+  it('attaches current tenant and deprecation headers for old header slugs', async () => {
+    const ctx = await buildApp([tenant({ id: 'tenant-a', slug: 'tenant-a' })]);
+    apps.push(ctx);
+
+    const response = await ctx.app.inject({
+      method: 'GET',
+      url: '/api/v1/tenant/me',
+      headers: { host: 'app.fauward.com', 'x-tenant-slug': 'old-tenant' }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ slug: 'tenant-a' });
+    expect(response.headers['x-tenant-slug-deprecated']).toBe('old-tenant');
+    expect(response.headers['x-tenant-slug-current']).toBe('tenant-a');
   });
 
   it('does not query tenants for platform probe routes', async () => {

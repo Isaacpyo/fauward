@@ -1,5 +1,6 @@
 import axios from 'axios';
-import { clearTokens, getAccessToken, getRefreshToken, getTenantSlug, hasDevTestSession, setTokens } from './auth';
+import { clearTokens, getAccessToken, getRefreshToken, getTenantSlug, hasDevTestSession, setTenantSlug, setTokens } from './auth';
+import { resolvePathTenantSlug } from './tenantResolver';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
@@ -24,7 +25,7 @@ api.interceptors.request.use((config) => {
   }
 
   const token = getAccessToken();
-  const tenantSlug = getTenantSlug();
+  const tenantSlug = resolvePathTenantSlug() ?? getTenantSlug();
   if (token) {
     config.headers['Authorization'] = `Bearer ${token}`;
   } else {
@@ -52,7 +53,22 @@ function drainQueue(token: string | null, error: unknown = null) {
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const currentSlug = response.headers['x-tenant-slug-current'];
+    const deprecatedSlug = response.headers['x-tenant-slug-deprecated'];
+    if (typeof currentSlug === 'string' && currentSlug && typeof deprecatedSlug === 'string' && deprecatedSlug) {
+      setTenantSlug(currentSlug);
+      const pathSlug = resolvePathTenantSlug();
+      if (pathSlug === deprecatedSlug && window.location.pathname.includes(`/t/${deprecatedSlug}`)) {
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${window.location.pathname.replace(`/t/${deprecatedSlug}`, `/t/${currentSlug}`)}${window.location.search}`
+        );
+      }
+    }
+    return response;
+  },
   async (error) => {
     const original = error.config as typeof error.config & { _retry?: boolean };
     if (error.response?.status !== 401 || original._retry) {

@@ -403,9 +403,38 @@ model Tenant {
   aiAgentRuns                   AiAgentRun[]
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
+  slugHistory                   TenantSlugHistory[]
+  widgetDomains                 TenantWidgetDomain[]
 
   @@index([customDomainStatus])
   @@map("tenants")
+}
+
+model TenantSlugHistory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId  String   @map("tenant_id")
+  oldSlug   String   @unique @map("old_slug")
+  changedAt DateTime @default(now()) @map("changed_at")
+  expiresAt DateTime @map("expires_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("tenant_slug_history")
+}
+
+model TenantWidgetDomain {
+  id         String    @id @default(dbgenerated("gen_random_uuid()::text"))
+  tenantId   String    @map("tenant_id")
+  host       String    @unique
+  verifiedAt DateTime? @map("verified_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("tenant_widget_domains")
 }
 
 model PlatformUser {

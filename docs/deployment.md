@@ -124,6 +124,10 @@ For a single-server deployment a reverse proxy (`proxy.js`) routes traffic by su
 | `admin.fauward.com` | super-admin | 3004 |
 | `api.fauward.com` | backend | 3001 |
 
+`app.fauward.com` and the wildcard `*.fauward.com` belong to the tenant portal surface. The portal uses `/t/:tenantSlug/*` on `app.fauward.com` and tenant subdomains such as `{slug}.fauward.com` for white-label tracking/customer surfaces.
+
+The shipment widget is a separate surface. It is reached through `fauward.com/ship/*` via the marketing project rewrite, or through tenant-owned widget domains stored in `tenant_widget_domains`. Do not point `*.fauward.com` at the widget project, and do not store widget domains in `Tenant.customDomain`.
+
 ---
 
 ## Common Deploy Errors & Fixes

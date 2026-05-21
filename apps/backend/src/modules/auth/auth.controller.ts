@@ -18,8 +18,19 @@ export const authController = {
       reply.status(201).send(result);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to register';
-      const statusCode = message === 'Email already in use' ? 409 : 400;
-      reply.status(statusCode).send({ error: message });
+      if (message === 'Email already in use') {
+        return reply.status(409).send({ error: 'EMAIL_TAKEN', message });
+      }
+      if (message === 'RESERVED_SLUG') {
+        return reply.status(409).send({ error: 'RESERVED_SLUG', message: 'That URL is reserved. Pick another.' });
+      }
+      if (message === 'INVALID_SLUG') {
+        return reply.status(400).send({
+          error: 'INVALID_SLUG',
+          message: 'Slug must be 2-40 lowercase letters, numbers, and hyphens with no leading or trailing hyphen.'
+        });
+      }
+      reply.status(400).send({ error: message });
     }
   },
   login: async (request: FastifyRequest, reply: FastifyReply) => {

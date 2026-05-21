@@ -11,6 +11,11 @@ const PLATFORM_HOSTS = new Set(["fauward.com", "www.fauward.com", "app.fauward.c
 const DEV_HOSTS = new Set(["localhost", "127.0.0.1"]);
 const FAUWARD_APEX = "fauward.com";
 
+export function resolvePathTenantSlug(pathname = window.location.pathname): string | null {
+  const [, first, slug] = pathname.split("/");
+  return first === "t" && slug ? slug.toLowerCase() : null;
+}
+
 export function resolveSubdomainSlug(): string | null {
   const hostname = window.location.hostname.toLowerCase();
 
@@ -46,6 +51,7 @@ export function isValidSlug(slug: string): boolean {
 export function tenantUrl(slug: string): string {
   const base = import.meta.env.VITE_PLATFORM_URL ?? "https://fauward.com";
   // In dev, just return the local URL
-  if (slug === "demo" && import.meta.env.DEV) return window.location.origin;
-  return `https://${slug}.${FAUWARD_APEX}`;
+  if (import.meta.env.DEV) return `${window.location.origin}/t/${slug}`;
+  if (base.includes("app.fauward.com")) return `${base.replace(/\/$/, "")}/t/${slug}`;
+  return `https://app.${FAUWARD_APEX}/t/${slug}`;
 }

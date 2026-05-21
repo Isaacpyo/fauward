@@ -64,6 +64,10 @@ export function setTokens(accessToken: string, refreshToken: string, tenantSlug:
   localStorage.setItem(TENANT_SLUG_KEY, tenantSlug);
 }
 
+export function setTenantSlug(tenantSlug: string) {
+  localStorage.setItem(TENANT_SLUG_KEY, tenantSlug);
+}
+
 export function setImpersonationToken(accessToken: string, tenantSlug: string) {
   localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
@@ -120,6 +124,7 @@ export function createDevTestSession(email: string): DevTestSession {
     tenant: {
       tenant_id: `tenant_${account.slug}`,
       name: account.tenantName,
+      slug: account.slug,
       logo_url: '',
       domain: `${account.slug}.fauward.com`,
       region: account.plan === 'starter' ? 'africa' : account.plan === 'pro' ? 'africa' : 'europe',

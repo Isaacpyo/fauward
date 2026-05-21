@@ -20,7 +20,7 @@ Use this procedure when super-admin access is blocked by edge allowlisting, futu
 
 1. Pause destructive admin operations.
 2. Use direct database access from the approved recovery workstation.
-3. Identify the affected platform/admin user records by email only. The allowlisted emails are `fauward@gmail.com` and `admin@fauward.com`.
+3. Identify the affected platform/admin user records by email only. The allowlisted founder recovery email is documented offline; the platform fallback is `admin@fauward.com`.
 4. Re-enable one founder account using the phase-specific recovery runbook:
    - Phase 2: clear revoked admin session state and issue a new password reset through the admin auth realm.
    - Phase 3 onward: mark the user for WebAuthn re-enrollment and remove only the lost credential rows for that user. Do not remove the last credential from another active super-admin.
