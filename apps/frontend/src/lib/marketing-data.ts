@@ -191,107 +191,269 @@ export const STAT_HIGHLIGHTS: StatHighlight[] = [
 export type MarketingFeature = {
   slug: string;
   title: string;
+  eyebrow: string;
   shortDescription: string;
   pageDescription: string;
   imageSrc: string;
   bullets: string[];
   cards: Array<{ title: string; description: string }>;
+  metrics?: Array<{ value: string; label: string }>;
+  workflow?: Array<{ step: string; title: string; description: string }>;
+  useCases?: Array<{ persona: string; benefit: string }>;
+  integrations?: string[];
+  faqs?: Array<{ question: string; answer: string }>;
+  highlightWord?: string;
+  accent?: "amber" | "blue" | "purple";
 };
 
 export const MARKETING_FEATURES: MarketingFeature[] = [
   {
     slug: "shipment-management",
     title: "Stop losing track of where things are",
+    eyebrow: "Shipment Operations",
+    highlightWord: "where things are",
+    accent: "blue",
     shortDescription:
       "Every shipment moves through a clear, auditable lifecycle — your dispatchers and customers always know the status.",
     pageDescription:
-      "Keep operations aligned with a canonical shipment state machine from PENDING to DELIVERED, with clear handling for branch outcomes.",
+      "Keep operations aligned with a canonical shipment state machine from PENDING to DELIVERED, with clear handling for branch outcomes — failed deliveries, reattempts, returns, and exceptions all map to known states with explicit transitions.",
     imageSrc: "/images/screens/portal-tracking.svg",
     bullets: [
       "Know which shipments are at risk before customers complain",
       "Fauward Go operators confirm handoffs without phone calls",
-      "Customers self-serve on a branded tracking page"
+      "Customers self-serve on a branded tracking page",
+      "Configure SLAs per service-level and route type",
+      "Bulk operations: import, assign, and reroute shipments in batches",
+      "Webhook events fire on every state transition for downstream automation",
     ],
     cards: [
       {
         title: "One source of truth",
         description:
-          "Dispatch, finance, and Fauward Go operators all read from the same live state — no reconciliation needed."
+          "Dispatch, finance, and Fauward Go operators all read from the same live state — no reconciliation needed.",
       },
       {
         title: "Fewer support tickets",
         description:
-          "Proactive status updates cut inbound 'where is my parcel?' queries by removing the uncertainty."
+          "Proactive status updates cut inbound 'where is my parcel?' queries by removing the uncertainty.",
       },
       {
         title: "Audit trail for disputes",
         description:
-          "Every status transition is timestamped with actor and notes, making proof-of-delivery disputes resolvable in seconds."
-      }
-    ]
+          "Every status transition is timestamped with actor and notes, making proof-of-delivery disputes resolvable in seconds.",
+      },
+    ],
+    metrics: [
+      { value: "60%", label: "Drop in WISMO calls" },
+      { value: "< 1s", label: "State propagation latency" },
+      { value: "100%", label: "Auditable transitions" },
+      { value: "12+", label: "Lifecycle states modelled" },
+    ],
+    workflow: [
+      { step: "01", title: "Booking created", description: "A shipment enters as PENDING via portal, API, or bulk CSV import — instantly visible to dispatch." },
+      { step: "02", title: "Assigned to operator", description: "Fauward Agent or dispatch picks the right Fauward Go operator and routes the job; state becomes ASSIGNED." },
+      { step: "03", title: "Out for delivery", description: "Driver collects, Fauward Go captures GPS waypoints, and the state moves through IN_TRANSIT with live ETA." },
+      { step: "04", title: "Proof captured", description: "Photo, OTP, and signature confirm delivery; the shipment moves to DELIVERED and the customer is notified automatically." },
+      { step: "05", title: "Exceptions handled", description: "Failed deliveries map to FAILED with a reason code, triggering a reattempt workflow or return-to-sender." },
+    ],
+    useCases: [
+      { persona: "Couriers", benefit: "Replace WhatsApp chaos with a clean assignment + tracking board" },
+      { persona: "Freight operators", benefit: "Multi-leg shipments with hub transfers, all visible in one view" },
+      { persona: "3PLs", benefit: "Per-client tenant scope keeps every customer's shipments isolated" },
+    ],
+    integrations: ["Royal Mail", "DPD", "Evri", "Aramex", "DHL Africa", "M-Pesa proof", "Stripe", "Webhook API"],
+    faqs: [
+      { question: "Can I customise the lifecycle states?", answer: "The core states (PENDING → DELIVERED) are fixed for semantic safety, but per-tenant substates and reason codes are fully configurable." },
+      { question: "How are exceptions surfaced?", answer: "Failed deliveries, SLA breaches, and route anomalies are surfaced in real time on the dispatcher dashboard and via webhooks — and optionally escalated by Fauward Agent." },
+      { question: "Does it work with my existing carriers?", answer: "Yes. We have pre-built connectors for major UK and global carriers, plus a generic carrier-events webhook for anything custom." },
+    ],
   },
   {
     slug: "finance",
     title: "Get paid without chasing invoices",
+    eyebrow: "Finance & Invoicing",
+    highlightWord: "chasing invoices",
+    accent: "amber",
     shortDescription:
       "Invoice creation to collection in one screen — overdue reminders run automatically.",
     pageDescription:
-      "Track invoice states from DRAFT to PAID, automate reminders for OVERDUE accounts, and keep tenant-level reporting consistent.",
+      "Track invoice states from DRAFT to PAID, automate reminders for OVERDUE accounts, and keep tenant-level reporting consistent. Auto-invoice on POD confirmation, accept payments across every regional gateway, and reconcile cash-on-delivery without a spreadsheet.",
     imageSrc: "/images/screens/portal-finance.svg",
     bullets: [
       "See every unpaid invoice across all customers at a glance",
       "Automated overdue reminders stop the manual follow-up cycle",
-      "Finance and operations share one ledger — no CSV exports between teams"
+      "Finance and operations share one ledger — no CSV exports between teams",
+      "Auto-invoice on proof-of-delivery confirmation",
+      "Multi-currency, VAT-ready, and COD reconciliation built in",
+      "Payment gateways: Stripe, GoCardless, M-Pesa, Paystack, HyperPay, Checkout.com",
     ],
     cards: [
       {
         title: "Cash flow visibility",
         description:
-          "Monitor invoiced, paid, and overdue totals from a single finance dashboard."
+          "Monitor invoiced, paid, and overdue totals from a single finance dashboard.",
       },
       {
         title: "Reduced manual follow-up",
         description:
-          "Automated reminder workflows lower finance overhead and speed up collection."
+          "Automated reminder workflows lower finance overhead and speed up collection.",
       },
       {
         title: "Audit-ready records",
         description:
-          "Every invoice action is timestamped for compliance and reconciliation."
-      }
-    ]
+          "Every invoice action is timestamped for compliance and reconciliation.",
+      },
+    ],
+    metrics: [
+      { value: "47%", label: "Faster cash collection" },
+      { value: "0", label: "Manual follow-up emails" },
+      { value: "6+", label: "Payment gateways supported" },
+      { value: "VAT-ready", label: "Invoice formats per region" },
+    ],
+    workflow: [
+      { step: "01", title: "Delivery confirmed", description: "Driver captures POD in Fauward Go — photo, OTP, or signature." },
+      { step: "02", title: "Invoice auto-generated", description: "The shipment's price card runs and produces a draft invoice; tax, discounts, and surcharges are applied automatically." },
+      { step: "03", title: "Sent to customer", description: "Invoice + payment link delivered via email and SMS in the customer's preferred channel." },
+      { step: "04", title: "Reminders escalate", description: "If unpaid past terms, the system fires reminder 1, 2, and 3 — and flags the account for collections review." },
+      { step: "05", title: "Reconciled on payment", description: "Webhook from gateway marks invoice PAID and posts to the ledger; finance dashboards update instantly." },
+    ],
+    useCases: [
+      { persona: "Finance teams", benefit: "Live aged-debt board replaces end-of-month spreadsheet drudgery" },
+      { persona: "COO / owner", benefit: "DSO drops as reminders run themselves on every overdue account" },
+      { persona: "Customer success", benefit: "Customer portal lets clients self-serve invoice copies and statements" },
+    ],
+    integrations: ["Stripe", "GoCardless", "M-Pesa", "Paystack", "HyperPay", "Checkout.com", "Xero", "QuickBooks"],
+    faqs: [
+      { question: "Can I customise invoice templates?", answer: "Yes — logo, colours, footer notes, payment terms, and locale are all configurable per tenant. Branded PDFs go out under your domain." },
+      { question: "Does it support multi-currency?", answer: "Invoices can be issued in any supported currency. Conversion to your reporting currency happens on the ledger using the market rate at payment time." },
+      { question: "How are COD shipments reconciled?", answer: "Drivers confirm cash collected in Fauward Go, depot settlement records cash drops, and the invoice is auto-marked PAID with a cash audit trail." },
+    ],
   },
   {
     slug: "white-label",
     title: "Launch under your own brand in minutes",
+    eyebrow: "White-Label Platform",
+    highlightWord: "your own brand",
+    accent: "purple",
     shortDescription:
       "Your logo, domain, and colour palette — provisioned in minutes, not sprints.",
     pageDescription:
-      "Launch a branded tenant portal and tracking pages quickly while preserving semantic logistics status colours across all customers.",
+      "Launch a branded tenant portal and tracking pages quickly while preserving semantic logistics status colours across all customers. Custom domain, themed CSS variables, branded emails and SMS — your customers never see Fauward.",
     imageSrc: "/images/screens/portal-overview.svg",
     bullets: [
       "Your customers see your brand on every screen — not Fauward's",
       "Custom domain for public shipment tracking",
-      "Tenant theme applied instantly from API configuration"
+      "Tenant theme applied instantly from API configuration",
+      "Branded emails, SMS templates, and customer notifications",
+      "Per-tenant CSS variable injection — design tokens you control",
+      "Role-based access for staff, drivers, and customers — all under your identity",
     ],
     cards: [
       {
         title: "Live in minutes",
         description:
-          "Provision a fully branded platform without a single line of custom engineering work."
+          "Provision a fully branded platform without a single line of custom engineering work.",
       },
       {
         title: "Consistent status semantics",
         description:
-          "Delivery success, warning, and error states stay universally readable for safety."
+          "Delivery success, warning, and error states stay universally readable for safety.",
       },
       {
         title: "Enterprise-ready controls",
         description:
-          "Role-based access for operators, finance teams, and customers — all under your identity."
-      }
-    ]
-  }
+          "Role-based access for operators, finance teams, and customers — all under your identity.",
+      },
+    ],
+    metrics: [
+      { value: "< 10 min", label: "Time to brand-live" },
+      { value: "0", label: "Lines of custom code" },
+      { value: "100%", label: "White-label coverage" },
+      { value: "SSL", label: "Auto-provisioned per domain" },
+    ],
+    workflow: [
+      { step: "01", title: "Configure your brand", description: "Upload logo, set primary/secondary colours, choose typography from the admin panel." },
+      { step: "02", title: "Point your domain", description: "Add a CNAME record — SSL certificates auto-provision via Let's Encrypt." },
+      { step: "03", title: "Theme propagates instantly", description: "CSS variables update across the tenant portal, Fauward Go, customer tracking, and email templates in seconds." },
+      { step: "04", title: "Customers see your brand", description: "Tracking links, emails, SMS, invoices — every customer touchpoint is fully branded as yours." },
+    ],
+    useCases: [
+      { persona: "Courier startups", benefit: "Look like an enterprise on day one without an engineering team" },
+      { persona: "3PL providers", benefit: "Spin up branded portals for every client — each isolated and themed" },
+      { persona: "Established freight", benefit: "Modernise your customer experience without rebuilding from scratch" },
+    ],
+    integrations: ["Custom DNS", "Let's Encrypt SSL", "SendGrid templates", "Twilio SMS", "API webhook events"],
+    faqs: [
+      { question: "Can each of my clients have their own domain?", answer: "Yes — under a single Fauward account you can provision unlimited tenants, each with their own custom domain, theme, and isolated data." },
+      { question: "Is the customer tracking page fully white-labelled?", answer: "Completely. The public tracking page lives on your domain, uses your logo and colours, and has zero Fauward branding." },
+      { question: "Can I A/B test brand variations?", answer: "Theme variants can be enabled per tenant, but customer-facing A/B testing is not a built-in feature today." },
+    ],
+  },
+  {
+    slug: "api-integrations",
+    title: "Connect Fauward to your existing stack",
+    eyebrow: "API & Integrations",
+    highlightWord: "existing stack",
+    accent: "blue",
+    shortDescription:
+      "REST API, webhooks, and pre-built carrier connectors — all documented and versioned.",
+    pageDescription:
+      "Fauward is API-first. Every action in the platform is available via REST, every state transition fires a webhook, and pre-built connectors cover the most common carriers and payment gateways. Build on top, sync to your ERP, or trigger downstream automation — without scraping screens.",
+    imageSrc: "/images/screens/portal-overview.svg",
+    bullets: [
+      "REST API with full OpenAPI documentation",
+      "Webhook events fire on every lifecycle transition",
+      "Pre-built carrier connectors — DHL, Royal Mail, Aramex, GIG, DPD",
+      "ERP and WMS sync via standard event payloads",
+      "Sandbox environment for safe end-to-end testing",
+      "Versioned API with deprecation notice policy",
+    ],
+    cards: [
+      {
+        title: "API-first architecture",
+        description:
+          "Everything in the dashboard is also in the API. Build a custom workflow on top without waiting for product roadmap.",
+      },
+      {
+        title: "Webhook events",
+        description:
+          "Subscribe to shipment, invoice, and POD events. Trigger downstream systems in real time without polling.",
+      },
+      {
+        title: "Pre-built connectors",
+        description:
+          "Skip the integration build. Royal Mail, DPD, Aramex, GIG, DHL, Stripe, M-Pesa, and Paystack are ready to flip on.",
+      },
+    ],
+    metrics: [
+      { value: "200+", label: "REST endpoints documented" },
+      { value: "30+", label: "Webhook event types" },
+      { value: "8+", label: "Pre-built carrier connectors" },
+      { value: "v1 / v2", label: "Stable versioned API" },
+    ],
+    workflow: [
+      { step: "01", title: "Get your API key", description: "Create a sandbox key from the dashboard. No approval queue — develop immediately." },
+      { step: "02", title: "Build against sandbox", description: "Hit the same endpoints with sandbox data. State transitions and webhook events fire end-to-end." },
+      { step: "03", title: "Subscribe to webhooks", description: "Point your endpoint at events you care about — shipment.dispatched, invoice.paid, pod.captured, and more." },
+      { step: "04", title: "Connect carriers + gateways", description: "Flip on Royal Mail, DPD, Stripe, M-Pesa — credentials live in the admin panel, not your codebase." },
+      { step: "05", title: "Promote to live", description: "Swap to your production key. Sandbox stays available for regression testing." },
+    ],
+    useCases: [
+      { persona: "Engineering teams", benefit: "Stop scraping carrier screens — one API for every label, status, and POD" },
+      { persona: "Ops + automation", benefit: "Trigger Zapier, n8n, or your own scripts on every shipment event" },
+      { persona: "Finance ERP teams", benefit: "Sync paid invoices and credit notes to Xero, NetSuite, or QuickBooks in near-real-time" },
+    ],
+    integrations: [
+      "Royal Mail", "DPD", "Evri", "Aramex", "GIG Logistics", "DHL", "Stripe", "GoCardless",
+      "M-Pesa", "Paystack", "Checkout.com", "HyperPay", "Zapier", "n8n", "Xero", "QuickBooks",
+    ],
+    faqs: [
+      { question: "Is the API rate-limited?", answer: "Yes, generously. Pro accounts get 600 requests/min, Enterprise gets 2,000 requests/min. Burst headroom is documented per endpoint." },
+      { question: "What does webhook delivery look like?", answer: "At-least-once delivery, exponential backoff retries for 24 hours, HMAC-signed payloads. Failed deliveries surface in the admin panel." },
+      { question: "Do you support GraphQL?", answer: "Not today — REST + webhooks cover the use cases we see. We do publish OpenAPI 3.1 specs so SDK generation is one command away." },
+      { question: "Can I build my own carrier connector?", answer: "Yes. The carrier-events webhook lets you push status updates from any source into a shipment's lifecycle. Custom-carrier shipments work end-to-end." },
+    ],
+  },
 ];
 
 // ─── Screenshot Showcase (used on landing page) ───────────────────────────────
@@ -323,7 +485,7 @@ export const SCREENSHOT_SHOWCASE_ITEMS: ScreenshotItem[] = [
 // ─── Regions ──────────────────────────────────────────────────────────────────
 
 export type RegionInfo = {
-  slug: "uk" | "africa" | "mena" | "global";
+  slug: "uk" | "africa" | "asia" | "global";
   name: string;
   label: string;
   summary: string;
@@ -334,15 +496,15 @@ export type RegionInfo = {
 export const REGIONS: RegionInfo[] = [
   {
     slug: "uk",
-    name: "United Kingdom",
-    label: "UK",
-    summary: "Operate multi-depot courier and freight workflows with regional compliance awareness.",
+    name: "UK & Europe",
+    label: "UK & Europe",
+    summary: "Operate multi-depot courier and freight workflows across the UK and European markets with regional compliance awareness.",
     highlights: [
-      "VAT-ready invoicing flows",
-      "Urban and nationwide route planning support",
-      "Local support coverage in GMT business hours"
+      "VAT-ready invoicing flows for UK and EU markets",
+      "Urban and nationwide route planning across Europe",
+      "Local support coverage in GMT and CET business hours"
     ],
-    badges: ["Stripe", "GoCardless", "DPD", "Royal Mail", "Evri"]
+    badges: ["Stripe", "GoCardless", "DPD", "Royal Mail", "Evri", "DHL Europe"]
   },
   {
     slug: "africa",
@@ -358,15 +520,15 @@ export const REGIONS: RegionInfo[] = [
     badges: ["M-Pesa", "Paystack", "Flutterwave", "GIG Logistics", "DHL Africa"]
   },
   {
-    slug: "mena",
-    name: "MENA",
-    label: "MENA",
+    slug: "asia",
+    name: "Asia",
+    label: "Asia",
     summary:
-      "Handle COD, Aramex, and hub-and-spoke operations with payment flexibility and local onboarding playbooks.",
+      "Handle COD, Aramex, and hub-and-spoke operations across the Middle East, GCC, and Asia with payment flexibility and local onboarding playbooks.",
     highlights: [
       "Flexible COD and invoice management",
       "Hub-and-spoke operational modelling",
-      "Regional onboarding and support playbooks"
+      "Regional onboarding and support playbooks across Asia"
     ],
     badges: ["Aramex", "SMSA", "COD workflows", "Checkout.com", "HyperPay"]
   },
@@ -434,7 +596,7 @@ export type MiniTestimonial = {
 export const MINI_TESTIMONIALS: MiniTestimonial[] = [
   { quote: "The API docs are actually readable.", name: "Dev lead, UK courier startup" },
   { quote: "Genuinely 10 minutes to first shipment.", name: "MD, freight business, Nairobi" },
-  { quote: "Finance stopped asking me where the invoices were.", name: "Ops manager, MENA fleet operator" }
+  { quote: "Finance stopped asking me where the invoices were.", name: "Ops manager, Asia fleet operator" }
 ];
 
 // ─── FAQ ──────────────────────────────────────────────────────────────────────
@@ -704,7 +866,7 @@ export const TEAM_MEMBERS: TeamMember[] = [
   {
     name: "Temitope Agbola",
     role: "Founder & CEO",
-    bio: "Built logistics software for operators across Africa and MENA before founding Fauward. Former Head of Engineering at a pan-African courier network.",
+    bio: "Built logistics software for operators across Africa and Asia before founding Fauward. Former Head of Engineering at a pan-African courier network.",
     initials: "TA",
   },
   {
@@ -768,7 +930,7 @@ export type CompanyMilestone = {
 export const COMPANY_MILESTONES: CompanyMilestone[] = [
   { year: "2021", event: "Founded in London — first internal prototype built for a Lagos-based courier" },
   { year: "2022", event: "Closed seed round; launched beta across UK and West Africa" },
-  { year: "2023", event: "Launched MENA region; crossed 10,000 shipments processed per month" },
+  { year: "2023", event: "Launched Asia region; crossed 10,000 shipments processed per month" },
   { year: "2024", event: "Released API v2, webhooks, and white-label multi-tenancy" },
   { year: "2025", event: "Launched Fauward Agent — policy-controlled AI operations layer for logistics" },
 ];
@@ -797,9 +959,9 @@ export const NEWS_ARTICLES: NewsArticle[] = [
     featured: true,
   },
   {
-    slug: "mena-expansion",
+    slug: "asia-expansion",
     category: "Company",
-    title: "Fauward expands MENA coverage with Checkout.com and HyperPay integrations",
+    title: "Fauward expands Asia coverage with Checkout.com and HyperPay integrations",
     summary:
       "Gulf-based logistics operators can now accept card payments through Checkout.com and HyperPay — fully embedded in the Fauward invoicing flow.",
     publishedAt: "2025-03-22",

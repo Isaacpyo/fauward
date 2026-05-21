@@ -1,94 +1,109 @@
+'use client';
+
 import Link from "next/link";
-import { NEWS_ARTICLES } from "@/lib/marketing-data";
+import { motion } from "framer-motion";
+import { ArrowRight, Sparkles } from "lucide-react";
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-}
+const MotionLink = motion(Link);
+const EASE = [0.22, 1, 0.36, 1] as const;
 
-const CATEGORY_COLORS: Record<string, string> = {
-  Product: "bg-blue-50 text-blue-700 border-blue-200",
-  Company: "bg-purple-50 text-purple-700 border-purple-200",
-  Engineering: "bg-green-50 text-green-700 border-green-200",
-  Insights: "bg-amber-50 text-amber-700 border-amber-200",
+const headerContainer = {
+  hidden: { opacity: 0 },
+  show:   {
+    opacity: 1,
+    transition: { staggerChildren: 0.15, delayChildren: 0.05 },
+  },
+};
+
+const headerItem = {
+  hidden: { opacity: 0, y: 20, filter: "blur(8px)" },
+  show:   {
+    opacity: 1,
+    y: 0,
+    filter: "blur(0px)",
+    transition: { duration: 0.7, ease: EASE },
+  },
 };
 
 export default function NewsSection() {
-  const featured = NEWS_ARTICLES.find((a) => a.featured);
-  const rest = NEWS_ARTICLES.filter((a) => !a.featured).slice(0, 4);
-
   return (
     <section className="bg-gray-50 py-20 lg:py-28">
       <div className="marketing-container">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-amber-600">News & Updates</p>
-            <h2 className="text-3xl font-bold text-gray-900 lg:text-4xl">Latest from Fauward</h2>
-          </div>
-          <Link
-            href="/news"
-            className="shrink-0 text-sm font-semibold text-amber-600 underline-animate transition hover:text-amber-700"
+        <motion.div
+          className="mx-auto flex max-w-2xl flex-col items-center text-center"
+          variants={headerContainer}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true, amount: 0.4 }}
+        >
+          <motion.div variants={headerItem} className="mb-4 inline-block">
+            <span className="relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+              <Sparkles size={12} className="text-amber-500" />
+              <span className="relative z-10">News &amp; Updates</span>
+              <motion.span
+                aria-hidden
+                className="absolute inset-0 -z-0"
+                initial={{ x: "-120%" }}
+                animate={{ x: "120%" }}
+                transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 2.4, ease: "easeInOut" }}
+                style={{
+                  background:
+                    "linear-gradient(120deg, transparent 0%, transparent 35%, rgba(255,255,255,0.85) 50%, transparent 65%, transparent 100%)",
+                }}
+              />
+            </span>
+          </motion.div>
+
+          <motion.h2
+            variants={headerItem}
+            className="text-3xl font-bold leading-tight text-gray-900 md:text-4xl"
           >
-            View all articles →
-          </Link>
-        </div>
+            Latest from{" "}
+            <span className="relative inline-block">
+              <span className="bg-gradient-to-r from-amber-500 via-amber-600 to-orange-500 bg-clip-text text-transparent">
+                Fauward
+              </span>
+              <motion.span
+                aria-hidden
+                className="absolute -bottom-1 left-0 h-[3px] rounded-full bg-gradient-to-r from-amber-400 via-amber-600 to-orange-500"
+                initial={{ width: 0 }}
+                whileInView={{ width: "100%" }}
+                viewport={{ once: true, amount: 0.6 }}
+                transition={{ duration: 1, delay: 0.5, ease: EASE }}
+              />
+            </span>
+          </motion.h2>
 
-        <div className="mt-10 grid gap-6 lg:grid-cols-[1.4fr,1fr]">
-          {/* Featured article */}
-          {featured && (
-            <Link
-              href={`/news/${featured.slug}`}
-              className="card-lift group flex flex-col justify-between overflow-hidden rounded-2xl border border-gray-200 bg-white p-8 shadow-sm"
+          <motion.p variants={headerItem} className="mt-4 text-base leading-relaxed text-gray-600">
+            Product releases, engineering deep-dives, and operator stories — straight from the team.
+          </motion.p>
+
+          <motion.div variants={headerItem} className="mt-8">
+            <MotionLink
+              href="/news"
+              whileHover={{ y: -2, scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              transition={{ type: "spring", stiffness: 380, damping: 22 }}
+              className="group relative inline-flex h-12 items-center gap-2 overflow-hidden rounded-lg bg-amber-500 px-7 text-sm font-semibold text-gray-900 shadow-[0_8px_24px_-8px_rgba(245,158,11,0.55)]"
             >
-              <div>
-                <div className="mb-4 flex items-center gap-3">
-                  <span
-                    className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${CATEGORY_COLORS[featured.category] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}
-                  >
-                    {featured.category}
-                  </span>
-                  <span className="text-xs text-gray-500">{featured.readMinutes} min read</span>
-                </div>
-                <h3 className="text-xl font-bold leading-snug text-gray-900 group-hover:text-amber-700 transition lg:text-2xl">
-                  {featured.title}
-                </h3>
-                <p className="mt-3 text-sm leading-relaxed text-gray-600 line-clamp-3">{featured.summary}</p>
-              </div>
-              <div className="mt-6 flex items-center justify-between">
-                <span className="text-xs text-gray-500">{formatDate(featured.publishedAt)}</span>
-                <span className="inline-flex items-center gap-1 text-sm font-semibold text-amber-600">
-                  Read article
-                  <svg className="h-4 w-4 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
-                </span>
-              </div>
-            </Link>
-          )}
-
-          {/* Recent articles */}
-          <div className="flex flex-col gap-4">
-            {rest.map((article) => (
-              <Link
-                key={article.slug}
-                href={`/news/${article.slug}`}
-                className="card-lift group flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${CATEGORY_COLORS[article.category] ?? "bg-gray-100 text-gray-600 border-gray-200"}`}
-                  >
-                    {article.category}
-                  </span>
-                  <span className="text-xs text-gray-400">{article.readMinutes} min read</span>
-                </div>
-                <h3 className="text-sm font-bold leading-snug text-gray-900 group-hover:text-amber-700 transition line-clamp-2">
-                  {article.title}
-                </h3>
-                <span className="text-xs text-gray-400">{formatDate(article.publishedAt)}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
+              <span className="relative z-10 inline-flex items-center gap-2">
+                Visit the newsroom
+                <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
+              </span>
+              <motion.span
+                aria-hidden
+                className="absolute inset-0 -z-0"
+                initial={{ x: "-100%" }}
+                whileHover={{ x: "100%" }}
+                transition={{ duration: 0.7, ease: EASE }}
+                style={{
+                  background:
+                    "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%)",
+                }}
+              />
+            </MotionLink>
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );

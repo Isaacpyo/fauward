@@ -60,10 +60,10 @@ const channels = [
 ];
 
 const offices = [
-  { region: "United Kingdom", detail: "London & Manchester", flag: "🇬🇧" },
+  { region: "UK & Europe", detail: "London, Manchester, Amsterdam", flag: "🇬🇧" },
   { region: "West Africa", detail: "Lagos, Accra", flag: "🌍" },
   { region: "East Africa", detail: "Nairobi", flag: "🌍" },
-  { region: "MENA", detail: "Dubai, Riyadh, Cairo", flag: "🌐" },
+  { region: "Asia", detail: "Dubai, Riyadh, Singapore", flag: "🌏" },
 ];
 
 export default function ContactPage() {

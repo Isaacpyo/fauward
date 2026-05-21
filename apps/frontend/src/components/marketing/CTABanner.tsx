@@ -28,29 +28,29 @@ export default function CTABanner({
       `}</style>
       <section className="py-16 lg:py-24">
         <div className="marketing-container">
-          <div className="relative overflow-hidden rounded-2xl bg-[#0d1f3c] px-6 py-12 md:px-16 md:py-16">
+          <div className="relative overflow-hidden rounded-2xl border border-blue-100 bg-blue-50 px-6 py-12 md:px-16 md:py-16">
             {/* Amber radial glow top-right */}
             <div
-              className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-500/20 blur-3xl"
+              className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-amber-300/30 blur-3xl"
               aria-hidden
             />
 
             <div className="relative flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
               <div className="max-w-2xl">
-                <h2 className="text-3xl font-bold text-white lg:text-4xl">{title}</h2>
-                <p className="mt-4 text-lg leading-relaxed text-blue-100">{description}</p>
+                <h2 className="text-3xl font-bold text-gray-900 lg:text-4xl">{title}</h2>
+                <p className="mt-4 text-lg leading-relaxed text-gray-700">{description}</p>
               </div>
               <div className="flex shrink-0 flex-col gap-3 sm:flex-row md:flex-col lg:flex-row">
                 <Link
                   href={ctaHref}
-                  className="banner-cta-pulse inline-flex h-12 items-center justify-center rounded-lg bg-amber-500 px-7 text-base font-semibold text-white transition hover:bg-amber-400"
+                  className="banner-cta-pulse inline-flex h-12 items-center justify-center rounded-lg bg-amber-500 px-7 text-base font-semibold text-gray-900 transition hover:bg-amber-400"
                 >
                   {ctaLabel}
                 </Link>
                 {secondaryLabel && secondaryHref && (
                   <Link
                     href={secondaryHref}
-                    className="inline-flex h-12 items-center justify-center rounded-lg border border-white/30 px-7 text-base font-semibold text-white transition hover:bg-white/10"
+                    className="inline-flex h-12 items-center justify-center rounded-lg border border-gray-300 bg-white px-7 text-base font-semibold text-gray-800 transition hover:bg-gray-50"
                   >
                     {secondaryLabel}
                   </Link>
@@ -60,9 +60,9 @@ export default function CTABanner({
 
             {/* Trust badges */}
             <div className="relative mt-6 flex flex-wrap items-center gap-4">
-              <span className="text-sm text-blue-200">🔒 No card required</span>
-              <span className="text-sm text-blue-200">✓ 14-day free trial</span>
-              <span className="text-sm text-blue-200">✓ Cancel anytime</span>
+              <span className="text-sm text-gray-600">🔒 No card required</span>
+              <span className="text-sm text-gray-600">✓ 14-day free trial</span>
+              <span className="text-sm text-gray-600">✓ Cancel anytime</span>
             </div>
           </div>
         </div>

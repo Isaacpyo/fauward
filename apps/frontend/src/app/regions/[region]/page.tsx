@@ -86,43 +86,43 @@ const REGION_DETAIL: Record<string, {
     ],
     ctaNote: "Serving Nigeria, Kenya, Ghana, Tanzania, Uganda, and South Africa",
   },
-  mena: {
-    headline: "Logistics platform for MENA operators — COD, Aramex, and regional compliance built in",
+  asia: {
+    headline: "Logistics platform for Asia operators — COD, Aramex, and regional compliance built in",
     intro:
-      "Fauward's MENA coverage handles the payment flexibility, hub-and-spoke routing, and regional compliance requirements of Gulf, Levant, and North African logistics operations — without expensive custom development.",
+      "Fauward's Asia coverage handles the payment flexibility, hub-and-spoke routing, and regional compliance requirements of Middle East, GCC, South Asia, and Southeast Asia logistics operations — without expensive custom development.",
     paymentMethods: [
-      { name: "Checkout.com", note: "Card payments optimised for MENA card networks" },
+      { name: "Checkout.com", note: "Card payments optimised for Asia card networks" },
       { name: "HyperPay", note: "GCC-region payment gateway with mada and KNET support" },
       { name: "COD workflows", note: "Structured cash-on-delivery reconciliation and settlement" },
       { name: "Tabby / Tamara", note: "BNPL for e-commerce delivery clients" },
     ],
-    carriers: ["Aramex", "SMSA Express", "Fetchr", "Naqel", "Quiqup", "DHL MENA"],
+    carriers: ["Aramex", "SMSA Express", "Fetchr", "Naqel", "Quiqup", "DHL Asia"],
     regulatory: [
       "UAE Federal Decree-Law No. 45/2021 (PDPL) – compliant data handling",
       "KSA PDPL – sensitive data handling with configurable localisation",
       "DIFC and ADGM compatible data architecture",
-      "VAT/GST-ready invoice generation for UAE, KSA, Bahrain, and Jordan",
+      "VAT/GST-ready invoice generation for UAE, KSA, Bahrain, Jordan, India, and Singapore",
     ],
     operationalHighlights: [
       {
         title: "Hub-and-spoke routing",
-        body: "Model your GCC hub network in Fauward — from central sorting facilities in Dubai or Riyadh to last-mile spokes across the UAE, KSA, Kuwait, and Bahrain.",
+        body: "Model your hub network in Fauward — from central sorting facilities in Dubai, Riyadh, Singapore, or Mumbai to last-mile spokes across the region.",
       },
       {
-        title: "Arabic-locale customer notifications",
-        body: "Send shipment status updates in Arabic or English — right-to-left rendering, localised SMS templates, and WhatsApp notification support.",
+        title: "Localised customer notifications",
+        body: "Send shipment status updates in Arabic, English, and local languages — right-to-left rendering, localised SMS templates, and WhatsApp notification support.",
       },
       {
-        title: "Ramadan and public holiday routing",
-        body: "Configure operational calendars per country, so cut-off times, SLA calculations, and driver scheduling automatically account for public holidays.",
+        title: "Holiday-aware routing",
+        body: "Configure operational calendars per country, so cut-off times, SLA calculations, and driver scheduling automatically account for Ramadan, Diwali, Lunar New Year, and public holidays.",
       },
     ],
-    ctaNote: "Serving UAE, KSA, Qatar, Kuwait, Bahrain, Jordan, Egypt, and Morocco",
+    ctaNote: "Serving UAE, KSA, Qatar, Kuwait, Bahrain, Jordan, India, Singapore, Malaysia, and Indonesia",
   },
   global: {
     headline: "One account. Three regions. Consistent operations across every market",
     intro:
-      "For logistics businesses operating across the UK, Africa, and MENA simultaneously, Fauward provides one account, one dashboard, and one API — with tenant-level isolation, per-region compliance, and unified KPI reporting.",
+      "For logistics businesses operating across the UK & Europe, Africa, and Asia simultaneously, Fauward provides one account, one dashboard, and one API — with tenant-level isolation, per-region compliance, and unified KPI reporting.",
     paymentMethods: [
       { name: "Multi-currency ledger", note: "GBP, USD, EUR, NGN, KES, AED, SAR and more" },
       { name: "Per-region gateways", note: "Each tenant routes through the correct regional payment processor" },

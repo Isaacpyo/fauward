@@ -2,7 +2,22 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { motion } from "framer-motion";
+import { ArrowRight, Check, Sparkles } from "lucide-react";
+
 import BrandLogo from "@/components/marketing/BrandLogo";
+
+const MotionLink = motion(Link);
+const EASE = [0.22, 1, 0.36, 1] as const;
+
+const container = {
+  hidden: { opacity: 0 },
+  show:   { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
+};
+const item = {
+  hidden: { opacity: 0, y: 16, filter: "blur(6px)" },
+  show:   { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.55, ease: EASE } },
+};
 
 const footerColumns = [
   {
@@ -29,9 +44,9 @@ const footerColumns = [
   {
     title: "Regions",
     links: [
-      { href: "/regions/uk", label: "United Kingdom" },
+      { href: "/regions/uk", label: "UK & Europe" },
       { href: "/regions/africa", label: "Africa" },
-      { href: "/regions/mena", label: "MENA" },
+      { href: "/regions/asia", label: "Asia" },
       { href: "/regions/global", label: "Global" },
     ],
   },
@@ -98,75 +113,83 @@ export default function Footer() {
   }
 
   return (
-    <footer className="border-t border-gray-200 bg-[#0a1628]">
-      {/* Top strip */}
-      <div className="border-b border-white/10">
-        <div className="marketing-container py-10">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <h3 className="text-xl font-bold text-white">Launch your logistics platform today.</h3>
-              <p className="mt-1 text-sm text-blue-200">14-day free trial · No card required · Live in 10 minutes.</p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/signup"
-                className="inline-flex h-11 items-center justify-center rounded-lg bg-amber-600 px-7 text-sm font-semibold text-white transition hover:bg-amber-700"
-              >
-                Start Free Trial
-              </Link>
-              <Link
-                href="/support#contact"
-                className="inline-flex h-11 items-center justify-center rounded-lg border border-white/20 px-7 text-sm font-semibold text-white transition hover:bg-white/10"
-              >
-                Talk to Sales
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
+    <footer className="relative overflow-hidden border-t border-white/10 bg-[#0a1628]">
+      {/* Subtle gradient + glow accents */}
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -left-32 top-0 h-96 w-96 rounded-full bg-amber-500/10 blur-3xl"
+        animate={{ opacity: [0.4, 0.7, 0.4] }}
+        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+      />
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -right-32 bottom-0 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl"
+        animate={{ opacity: [0.3, 0.55, 0.3] }}
+        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+      />
 
-      {/* Main footer grid */}
-      <div className="marketing-container py-14">
+      <motion.div
+        className="marketing-container relative py-14 lg:py-16"
+        variants={container}
+        initial="hidden"
+        whileInView="show"
+        viewport={{ once: true, amount: 0.1 }}
+      >
         <div className="grid gap-12 lg:grid-cols-[1.4fr,3fr]">
           {/* Brand column */}
-          <div className="space-y-5">
-            <div className="w-[44px]">
+          <motion.div variants={item} className="space-y-5">
+            <motion.div whileHover={{ scale: 1.04, rotate: -2 }} transition={{ type: "spring", stiffness: 320, damping: 20 }} className="w-[44px]">
               <BrandLogo variant="mark" />
-            </div>
-            <p className="max-w-sm text-sm leading-relaxed text-blue-200">
+            </motion.div>
+
+            <p className="max-w-sm text-sm leading-relaxed text-blue-200/90">
               Launch a fully branded logistics platform — shipment ops, invoicing, driver app, and customer tracking. No code. No per-seat fees.
             </p>
 
             <div className="space-y-1.5">
               {[
-                { label: "UK", detail: "London, Manchester" },
-                { label: "Africa", detail: "Lagos, Nairobi, Accra" },
-                { label: "MENA", detail: "Dubai, Riyadh, Cairo" },
-              ].map((r) => (
-                <div key={r.label} className="flex items-center gap-2 text-xs text-blue-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                { label: "UK & Europe", detail: "London, Manchester, Amsterdam" },
+                { label: "Africa",      detail: "Lagos, Nairobi, Accra" },
+                { label: "Asia",        detail: "Dubai, Riyadh, Singapore" },
+              ].map((r, i) => (
+                <motion.div
+                  key={r.label}
+                  initial={{ opacity: 0, x: -8 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, amount: 0.4 }}
+                  transition={{ delay: 0.2 + i * 0.08, duration: 0.4, ease: EASE }}
+                  className="flex items-center gap-2 text-xs text-blue-300"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.6)]" />
                   <span className="font-medium text-white">{r.label}</span>
-                  <span>—</span>
+                  <span className="text-blue-500">—</span>
                   <span>{r.detail}</span>
-                </div>
+                </motion.div>
               ))}
             </div>
 
             {/* Newsletter */}
-            <form className="space-y-2 pt-2" onSubmit={handleSubscribe}>
+            <motion.form
+              variants={item}
+              className="space-y-2.5 pt-3"
+              onSubmit={handleSubscribe}
+            >
               <div>
-                <label htmlFor="newsletter-email" className="block text-xs font-semibold uppercase tracking-widest text-blue-300">
-                  Newsletter
+                <label htmlFor="newsletter-email" className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-300">
+                  <Sparkles size={11} /> Newsletter
                 </label>
                 <p className="mt-0.5 text-xs text-blue-400">Monthly product updates and logistics ops insights. No spam.</p>
               </div>
               {subscribed ? (
-                <p className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/40 bg-green-900/30 px-4 py-2.5 text-sm font-semibold text-green-400">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-                  </svg>
-                  You&apos;re on the list ✓
-                </p>
+                <motion.p
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 320, damping: 22 }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/40 bg-green-900/30 px-4 py-2.5 text-sm font-semibold text-green-300"
+                >
+                  <Check size={14} strokeWidth={3} />
+                  You&apos;re on the list
+                </motion.p>
               ) : (
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
@@ -175,65 +198,88 @@ export default function Footer() {
                     type="email"
                     autoComplete="email"
                     placeholder="you@company.com"
-                    className="h-10 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm text-white placeholder-blue-300 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500"
+                    className="h-11 w-full rounded-lg border border-white/15 bg-white/10 px-3 text-sm text-white placeholder-blue-300/70 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40"
                   />
-                  <button
+                  <motion.button
                     type="submit"
-                    className="inline-flex h-10 items-center justify-center rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white transition hover:bg-amber-700"
+                    whileHover={{ y: -1, scale: 1.02 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                    className="group relative inline-flex h-11 items-center justify-center gap-1.5 overflow-hidden rounded-lg bg-amber-500 px-5 text-sm font-semibold text-gray-900 shadow-lg shadow-amber-500/30"
                   >
-                    Subscribe
-                  </button>
+                    <span className="relative z-10 inline-flex items-center gap-1.5">
+                      Subscribe
+                      <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" />
+                    </span>
+                    <motion.span
+                      aria-hidden
+                      className="absolute inset-0 -z-0"
+                      initial={{ x: "-100%" }}
+                      whileHover={{ x: "100%" }}
+                      transition={{ duration: 0.6, ease: EASE }}
+                      style={{ background: "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%)" }}
+                    />
+                  </motion.button>
                 </div>
               )}
-            </form>
-          </div>
+            </motion.form>
+          </motion.div>
 
           {/* Link columns */}
-          <div className="grid gap-8 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 lg:grid-cols-5">
             {footerColumns.map((column) => (
-              <div key={column.title}>
-                <h3 className="mb-4 text-xs font-bold uppercase tracking-widest text-blue-300">{column.title}</h3>
+              <motion.div key={column.title} variants={item}>
+                <h3 className="mb-4 text-xs font-bold uppercase tracking-[0.18em] text-amber-300">{column.title}</h3>
                 <ul className="space-y-2.5">
                   {column.links.map((link) => (
                     <li key={link.href}>
                       <Link
                         href={link.href}
-                        className="text-sm text-blue-200 transition hover:text-amber-400"
+                        className="group relative inline-flex items-center gap-1.5 text-sm text-blue-200/85 transition hover:text-white"
                       >
-                        {link.label}
+                        <span className="absolute -left-3 inline-block h-px w-0 bg-amber-400 transition-all duration-300 group-hover:w-2" aria-hidden />
+                        <span className="transition-transform duration-300 group-hover:translate-x-1">{link.label}</span>
                       </Link>
                     </li>
                   ))}
                 </ul>
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <motion.div
+          variants={item}
+          className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-6 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="space-y-1">
             <p className="text-xs text-blue-400">© {new Date().getFullYear()} Fauward Ltd. All rights reserved.</p>
             <p className="text-xs text-blue-500">
               Fauward Ltd is registered in England &amp; Wales. Company No: [pending]. Registered office: [address]. VAT No: [pending].
             </p>
           </div>
-          <div className="flex items-center gap-4">
-            {socialLinks.map((link) => (
-              <a
+          <div className="flex items-center gap-2">
+            {socialLinks.map((link, i) => (
+              <motion.a
                 key={link.label}
                 href={link.href}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-300 transition hover:text-amber-400"
+                initial={{ opacity: 0, y: 6 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.4 }}
+                transition={{ delay: 0.1 + i * 0.06, duration: 0.4, ease: EASE }}
+                whileHover={{ y: -2, scale: 1.05 }}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-blue-300 transition hover:border-amber-500/50 hover:bg-amber-500/10 hover:text-amber-400"
+                aria-label={link.label}
               >
                 {link.icon}
-                {link.label}
-              </a>
+              </motion.a>
             ))}
           </div>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     </footer>
   );
 }

@@ -67,13 +67,20 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="bg-gray-50 py-16 lg:py-24">
+      <section className="bg-slate-50 py-16 lg:py-24">
         <div className="marketing-container">
-          <h2 className="text-3xl font-semibold text-gray-900">Compare plans in detail</h2>
-          <p className="mt-3 text-lg text-gray-600">Review plan capabilities for shipment operations, billing, integrations, and support.</p>
-          <div className="mt-8">
-            <FeatureComparisonTable />
+          <div className="mx-auto mb-10 max-w-2xl text-center">
+            <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
+              Side-by-side
+            </span>
+            <h2 className="text-3xl font-bold leading-tight text-gray-900 md:text-4xl">
+              Compare plans in detail
+            </h2>
+            <p className="mt-3 text-lg text-gray-600">
+              Review plan capabilities for shipment operations, billing, integrations, and support.
+            </p>
           </div>
+          <FeatureComparisonTable />
         </div>
       </section>
 

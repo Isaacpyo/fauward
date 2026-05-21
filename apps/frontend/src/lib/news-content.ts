@@ -42,18 +42,18 @@ export const NEWS_ARTICLE_DETAILS: Record<string, NewsArticleDetail> = {
       },
     ],
   },
-  "mena-expansion": {
+  "asia-expansion": {
     lead:
-      "The latest regional rollout expands Fauward's payments coverage across MENA so operators can manage card collections, settlement visibility, and invoicing from the same tenant environment.",
+      "The latest regional rollout expands Fauward's payments coverage across Asia so operators can manage card collections, settlement visibility, and invoicing from the same tenant environment.",
     sections: [
       {
         heading: "Regional payment coverage",
         paragraphs: [
-          "Checkout.com and HyperPay are now available inside the Fauward billing workflow for eligible MENA customers, giving operators more flexibility than a one-gateway stack.",
+          "Checkout.com and HyperPay are now available inside the Fauward billing workflow for eligible Asia customers, giving operators more flexibility than a one-gateway stack.",
           "This matters most for businesses handling a mix of account billing, immediate card payments, and region-specific operational requirements around reconciliation and customer trust.",
         ],
         bullets: [
-          "Embedded invoice payment flow for supported MENA markets",
+          "Embedded invoice payment flow for supported Asia markets",
           "Shared reporting between finance and operations teams",
           "Fewer handoffs between payment records and delivery records",
         ],
@@ -66,7 +66,7 @@ export const NEWS_ARTICLE_DETAILS: Record<string, NewsArticleDetail> = {
         ],
       },
       {
-        heading: "What MENA teams can expect",
+        heading: "What Asia teams can expect",
         paragraphs: [
           "The expanded coverage is paired with region-aware onboarding guidance so teams can deploy quickly without rebuilding their finance process from scratch.",
           "The result is a more consistent handoff between dispatch, proof-of-delivery, invoicing, and payment collection for fast-moving regional operations.",
