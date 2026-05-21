@@ -147,6 +147,9 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (!userId || !tenantId) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
+    if (role !== 'SUPER_ADMIN' && request.tenant?.id && request.tenant.id !== tenantId) {
+      return reply.status(403).send({ error: 'TENANT_MISMATCH' });
+    }
     if (request.user?.mode === 'IMPERSONATION') {
       const sessionId = request.user.impersonationSessionId;
       const active = sessionId ? await request.server.redis.get(`platform:impersonation:${sessionId}`) : null;

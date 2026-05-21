@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 
 import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
 import { domainService } from '../modules/tenants/domain.service.js';
+import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
 type ScheduledJobData = Record<string, unknown>;
@@ -120,6 +121,11 @@ export async function registerScheduledJobs() {
     repeat: { pattern: '0 * * * *', tz: 'UTC' }
   });
 
+  await scheduledJobsQueue.add('tenant.slug-history.cleanup', {}, {
+    jobId: 'tenant.slug-history.cleanup.daily',
+    repeat: { pattern: '20 2 * * *', tz: 'UTC' }
+  });
+
   await scheduledJobsQueue.add('finance.fx-rate-refresh', {}, {
     jobId: 'finance.fx-rate-refresh.daily',
     repeat: { pattern: '0 6 * * *', tz: 'UTC' }
@@ -187,6 +193,12 @@ export async function startScheduledWorker(app: FastifyInstance) {
           where: { expiresAt: { lt: new Date() } }
         });
         app.log.info({ deleted: result.count }, 'Scheduled idempotency cleanup finished');
+        return;
+      }
+
+      if (job.name === 'tenant.slug-history.cleanup') {
+        const result = await cleanupExpiredSlugHistory(app.prisma);
+        app.log.info(result, 'Scheduled tenant slug-history cleanup finished');
         return;
       }
 

@@ -1,5 +1,5 @@
-import { Link, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import type { ReactElement } from "react";
+import { Link, Navigate, Outlet, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { useEffect, type ReactElement } from "react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { AppShell } from "@/layouts/AppShell";
@@ -63,6 +63,7 @@ import { Button } from "@/components/ui/Button";
 import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess, type FeatureKey } from "@/lib/plan-features";
 import { useAppStore } from "@/stores/useAppStore";
 import { ImpersonateCallbackPage } from "@/pages/auth/ImpersonateCallbackPage";
+import { setTenantSlug } from "@/lib/auth";
 
 function AuthGuard() {
   const location = useLocation();
@@ -81,8 +82,11 @@ function AuthGuard() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  if (tenant?.onboarding_complete === false && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
+  const tenantPathMatch = location.pathname.match(/^\/t\/([^/]+)/);
+  const onboardingPath = tenantPathMatch ? `/t/${tenantPathMatch[1]}/onboarding` : "/onboarding";
+
+  if (tenant?.onboarding_complete === false && location.pathname !== onboardingPath) {
+    return <Navigate to={onboardingPath} replace />;
   }
 
   return <Outlet />;
@@ -119,6 +123,69 @@ function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children
   return children;
 }
 
+function TenantPathScope() {
+  const { tenantSlug } = useParams<{ tenantSlug: string }>();
+
+  useEffect(() => {
+    if (tenantSlug) setTenantSlug(tenantSlug);
+  }, [tenantSlug]);
+
+  return <Outlet />;
+}
+
+function WorkspaceRoutes() {
+  return (
+    <>
+      <Route index element={<DashboardPage />} />
+      <Route path="shipments" element={<ShipmentsListPage />} />
+      <Route path="fauward-go" element={<FauwardGoPage />} />
+      <Route path="shipments/:id" element={<ShipmentDetailPage />} />
+      <Route path="shipments/create" element={<CreateShipmentPage />} />
+      <Route path="rates" element={<RatesPage />} />
+      <Route path="shipping-rules" element={<ShippingRulesPage />} />
+      <Route path="labels" element={<LabelsPage />} />
+      <Route path="customs/:shipmentId" element={<CustomsDeclarationPage />} />
+      <Route path="developer" element={<DeveloperPage />} />
+      <Route path="routes" element={<RoutesPage />} />
+      <Route path="dispatch" element={<DispatchPage />} />
+      <Route path="crm" element={<CrmPage />} />
+      <Route path="crm/:id" element={<CrmDetailPage />} />
+      <Route path="finance" element={<FinancePage />} />
+      <Route path="finance/:id" element={<FinanceDetailPage />} />
+      <Route path="analytics" element={<PlanFeatureRoute feature="analytics"><AnalyticsPage /></PlanFeatureRoute>} />
+      <Route path="team" element={<TeamPage />} />
+      <Route path="team-legacy" element={<LegacyTeamPage />} />
+      <Route path="settings" element={<SettingsPage />} />
+      <Route path="profile" element={<Navigate to="settings?tab=profile" replace />} />
+      <Route path="onboarding" element={<OnboardingPage />} />
+      <Route path="returns" element={<ReturnsListPage />} />
+      <Route path="returns/:id" element={<ReturnDetailPage />} />
+      <Route path="support" element={<TicketsListPage />} />
+      <Route path="support/:id" element={<TicketDetailPage />} />
+      <Route path="activity" element={<ActivityTimelinePage />} />
+      <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
+      <Route path="messaging" element={<PlanFeatureRoute feature="messaging"><MessagingPage /></PlanFeatureRoute>} />
+      <Route path="agent" element={<PlanFeatureRoute feature="agent"><AgentPage /></PlanFeatureRoute>} />
+      <Route path="reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
+      <Route path="operations/live-map" element={<LiveMapPage />} />
+      <Route path="fleet" element={<PlanFeatureRoute feature="fleet"><FleetPage /></PlanFeatureRoute>} />
+      <Route path="pricing" element={<PricingOverviewPage />} />
+      <Route path="pricing/zones" element={<ZonesPage />} />
+      <Route path="pricing/rate-cards" element={<RateCardsPage />} />
+      <Route path="pricing/service-tiers" element={<ServiceTiersPage />} />
+      <Route path="pricing/surcharges" element={<SurchargesPage />} />
+      <Route path="pricing/insurance" element={<InsurancePage />} />
+      <Route path="pricing/weight-tiers" element={<WeightTiersPage />} />
+      <Route path="pricing/rules" element={<PlanFeatureRoute feature="automation"><PricingRulesPage /></PlanFeatureRoute>} />
+      <Route path="pricing/promo-codes" element={<PlanFeatureRoute feature="advancedPricing"><PromoCodesPage /></PlanFeatureRoute>} />
+      <Route path="pricing/tax" element={<TaxPage />} />
+      <Route path="pricing/currencies" element={<PlanFeatureRoute feature="advancedPricing"><CurrencyRatesPage /></PlanFeatureRoute>} />
+      <Route path="pricing/settings" element={<PlanFeatureRoute feature="advancedPricing"><PricingSettingsPage /></PlanFeatureRoute>} />
+      <Route path="pricing/calculator" element={<PricingCalculatorPage />} />
+    </>
+  );
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -135,54 +202,17 @@ export function AppRouter() {
         <Route path="/book" element={<PublicBookingPage />} />
       </Route>
 
+      <Route path="/t/:tenantSlug/*" element={<TenantPathScope />}>
+        <Route element={<AuthGuard />}>
+          <Route element={<AppShell />}>
+            {WorkspaceRoutes()}
+          </Route>
+        </Route>
+      </Route>
+
       <Route element={<AuthGuard />}>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/shipments" element={<ShipmentsListPage />} />
-          <Route path="/fauward-go" element={<FauwardGoPage />} />
-          <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
-          <Route path="/shipments/create" element={<CreateShipmentPage />} />
-          <Route path="/rates" element={<RatesPage />} />
-          <Route path="/shipping-rules" element={<ShippingRulesPage />} />
-          <Route path="/labels" element={<LabelsPage />} />
-          <Route path="/customs/:shipmentId" element={<CustomsDeclarationPage />} />
-          <Route path="/developer" element={<DeveloperPage />} />
-          <Route path="/routes" element={<RoutesPage />} />
-          <Route path="/dispatch" element={<DispatchPage />} />
-          <Route path="/crm" element={<CrmPage />} />
-          <Route path="/crm/:id" element={<CrmDetailPage />} />
-          <Route path="/finance" element={<FinancePage />} />
-          <Route path="/finance/:id" element={<FinanceDetailPage />} />
-          <Route path="/analytics" element={<PlanFeatureRoute feature="analytics"><AnalyticsPage /></PlanFeatureRoute>} />
-          <Route path="/team" element={<TeamPage />} />
-          <Route path="/team-legacy" element={<LegacyTeamPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/profile" element={<Navigate to="/settings?tab=profile" replace />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
-          <Route path="/returns" element={<ReturnsListPage />} />
-          <Route path="/returns/:id" element={<ReturnDetailPage />} />
-          <Route path="/support" element={<TicketsListPage />} />
-          <Route path="/support/:id" element={<TicketDetailPage />} />
-          <Route path="/activity" element={<ActivityTimelinePage />} />
-          <Route path="/audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
-          <Route path="/messaging" element={<PlanFeatureRoute feature="messaging"><MessagingPage /></PlanFeatureRoute>} />
-          <Route path="/agent" element={<PlanFeatureRoute feature="agent"><AgentPage /></PlanFeatureRoute>} />
-          <Route path="/reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
-          <Route path="/operations/live-map" element={<LiveMapPage />} />
-          <Route path="/fleet" element={<PlanFeatureRoute feature="fleet"><FleetPage /></PlanFeatureRoute>} />
-          <Route path="/pricing" element={<PricingOverviewPage />} />
-          <Route path="/pricing/zones" element={<ZonesPage />} />
-          <Route path="/pricing/rate-cards" element={<RateCardsPage />} />
-          <Route path="/pricing/service-tiers" element={<ServiceTiersPage />} />
-          <Route path="/pricing/surcharges" element={<SurchargesPage />} />
-          <Route path="/pricing/insurance" element={<InsurancePage />} />
-          <Route path="/pricing/weight-tiers" element={<WeightTiersPage />} />
-          <Route path="/pricing/rules" element={<PlanFeatureRoute feature="automation"><PricingRulesPage /></PlanFeatureRoute>} />
-          <Route path="/pricing/promo-codes" element={<PlanFeatureRoute feature="advancedPricing"><PromoCodesPage /></PlanFeatureRoute>} />
-          <Route path="/pricing/tax" element={<TaxPage />} />
-          <Route path="/pricing/currencies" element={<PlanFeatureRoute feature="advancedPricing"><CurrencyRatesPage /></PlanFeatureRoute>} />
-          <Route path="/pricing/settings" element={<PlanFeatureRoute feature="advancedPricing"><PricingSettingsPage /></PlanFeatureRoute>} />
-          <Route path="/pricing/calculator" element={<PricingCalculatorPage />} />
+          {WorkspaceRoutes()}
         </Route>
       </Route>
 

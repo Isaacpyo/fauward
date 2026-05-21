@@ -6,6 +6,7 @@ import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
 import { config } from '../../config/index.js';
 import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
 import { registerDomainRoutes } from './domain.routes.js';
+import { registerTenantSlugRoutes } from './slug.routes.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
@@ -32,6 +33,7 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   app.post('/api/v1/tenants/me/impersonation/exit', { preHandler: [authenticate] }, exitImpersonation);
 
   await registerDomainRoutes(app);
+  await registerTenantSlugRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);

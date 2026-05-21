@@ -621,7 +621,7 @@ export function LoginPage() {
     setNotifications([]);
     setTenant(session.tenant);
     setAppTenant(session.tenant);
-    const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
+    const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? `/t/${session.tenant.slug ?? "demo"}`;
     await wait(SUCCESSFUL_LOGIN_DELAY_MS);
     navigate?.(from, { replace: true });
   }
@@ -641,7 +641,7 @@ export function LoginPage() {
 
       const { data } = await api.post("/v1/auth/login", { email, password });
       setTokens(data.accessToken, data.refreshToken, data.tenantSlug);
-      const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
+      const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? `/t/${data.tenantSlug}`;
       setRedirecting(true);
       await wait(SUCCESSFUL_LOGIN_DELAY_MS);
       navigate?.(from, { replace: true });
@@ -826,7 +826,40 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
+  const navigate = useNavigate ? useNavigate() : null;
   const [showPassword, setShowPassword] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [desiredSlug, setDesiredSlug] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleRegister(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const payload = {
+        fullName,
+        email,
+        companyName,
+        desiredSlug: desiredSlug.trim() ? desiredSlug.trim().toLowerCase() : undefined,
+        region: "uk_europe",
+        plan: "starter",
+        password
+      };
+      const { data } = await api.post("/v1/auth/register", payload);
+      setTokens(data.accessToken, data.refreshToken, data.tenant.slug);
+      navigate?.(data.redirectUrl ?? `/t/${data.tenant.slug}/onboarding`, { replace: true });
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
+      setError(axiosErr.response?.data?.message ?? axiosErr.response?.data?.error ?? "Unable to create account.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12">
@@ -834,23 +867,27 @@ export function RegisterPage() {
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
           <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
           <p className="mt-1.5 text-sm text-gray-500">Get started with your tenant workspace.</p>
-          <div className="mt-6 space-y-4">
+          <form className="mt-6 space-y-4" onSubmit={handleRegister}>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-name">Full name</label>
-              <Input id="reg-name" type="text" autoComplete="name" placeholder="Jane Smith" />
+              <Input id="reg-name" type="text" autoComplete="name" placeholder="Jane Smith" value={fullName} onChange={(event) => setFullName(event.target.value)} required />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-email">Work email</label>
-              <Input id="reg-email" type="email" autoComplete="email" placeholder="jane@company.com" />
+              <Input id="reg-email" type="email" autoComplete="email" placeholder="jane@company.com" value={email} onChange={(event) => setEmail(event.target.value)} required />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-company">Company</label>
-              <Input id="reg-company" type="text" autoComplete="organization" placeholder="Acme Logistics" />
+              <Input id="reg-company" type="text" autoComplete="organization" placeholder="Acme Logistics" value={companyName} onChange={(event) => setCompanyName(event.target.value)} required />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-slug">Workspace URL</label>
+              <Input id="reg-slug" type="text" autoComplete="off" placeholder="acme-logistics" value={desiredSlug} onChange={(event) => setDesiredSlug(event.target.value.toLowerCase())} />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="reg-password">Password</label>
               <div className="relative">
-                <Input id="reg-password" type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Min 8 characters" className="pr-11" />
+                <Input id="reg-password" type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Min 8 characters" className="pr-11" value={password} onChange={(event) => setPassword(event.target.value)} required />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
@@ -865,8 +902,11 @@ export function RegisterPage() {
                 </button>
               </div>
             </div>
-            <Button className="w-full" size="lg">Create account</Button>
-          </div>
+            {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+            <Button className="w-full" size="lg" type="submit" disabled={loading}>
+              {loading ? "Creating account..." : "Create account"}
+            </Button>
+          </form>
         </div>
       </div>
     </div>

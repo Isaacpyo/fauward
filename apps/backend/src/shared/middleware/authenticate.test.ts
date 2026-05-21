@@ -84,6 +84,29 @@ describe('authenticate', () => {
     });
   });
 
+  it('rejects authenticated users resolving a different tenant context', async () => {
+    const reply = makeReply();
+    const request = {
+      url: '/api/v1/t/tenant-b/shipments',
+      jwtVerify: vi.fn().mockResolvedValue(undefined),
+      tenant: { id: 'tenant-b', status: 'ACTIVE' },
+      user: { sub: 'user-1', tenantId: 'tenant-a', role: 'TENANT_ADMIN', mfaVerified: true },
+      server: {
+        prisma: {
+          user: { findFirst: vi.fn() },
+          tenant: { findUnique: vi.fn() }
+        }
+      }
+    } as any;
+
+    await authenticate(request, reply as any);
+
+    expect(reply.status).toHaveBeenCalledWith(403);
+    expect(reply.send).toHaveBeenCalledWith({ error: 'TENANT_MISMATCH' });
+    expect(request.server.prisma.user.findFirst).not.toHaveBeenCalled();
+    expect(request.server.prisma.tenant.findUnique).not.toHaveBeenCalled();
+  });
+
   it('requires mfa for super-admin routes', async () => {
     const reply = makeReply();
     const request = {

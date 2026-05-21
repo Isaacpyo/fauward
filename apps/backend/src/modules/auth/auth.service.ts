@@ -5,6 +5,8 @@ import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload,
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
 import { verifyFirebaseIdToken } from './firebase-token.js';
+import { isReservedSlug } from '../tenants/reserved-slugs.js';
+import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
 
 type RegisterPayload = {
   companyName: string;
@@ -12,6 +14,8 @@ type RegisterPayload = {
   email: string;
   plan?: 'starter' | 'pro' | 'enterprise';
   password: string;
+  fullName?: string;
+  desiredSlug?: string;
 };
 
 type LoginPayload = {
@@ -42,32 +46,35 @@ const tenantPlanBySignupPlan: Record<NonNullable<RegisterPayload['plan']>, Tenan
   enterprise: TenantPlan.ENTERPRISE
 };
 
-function slugify(input: string) {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '')
-    .slice(0, 60);
-}
-
-async function ensureUniqueSlug(prisma: PrismaClient, base: string) {
-  let slug = base || 'tenant';
-  let counter = 1;
-  while (await prisma.tenant.findUnique({ where: { slug } })) {
-    slug = `${base}-${counter}`;
-    counter += 1;
-    if (counter > 50) {
-      slug = `${base}-${randomBytes(3).toString('hex')}`;
-      break;
-    }
-  }
-  return slug;
-}
-
 function monthKey(date = new Date()) {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${year}-${month}`;
+}
+
+function splitFullName(fullName?: string) {
+  const parts = fullName?.trim().split(/\s+/).filter(Boolean) ?? [];
+  if (parts.length === 0) return { firstName: undefined, lastName: undefined };
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' ') || undefined
+  };
+}
+
+function resolveDesiredSlug(payload: RegisterPayload) {
+  const requested = payload.desiredSlug?.trim().toLowerCase();
+  if (requested) {
+    if (!isValidSlugFormat(requested)) {
+      throw new Error('INVALID_SLUG');
+    }
+    if (isReservedSlug(requested)) {
+      throw new Error('RESERVED_SLUG');
+    }
+    return requested;
+  }
+
+  const derived = deriveSlug(payload.companyName);
+  return derived.length >= 2 ? derived : 'workspace';
 }
 
 function buildJwtPayload(user: { id: string; email: string; role: string; tenantId: string }, tenant: { slug: string; plan: string }) {
@@ -93,11 +100,12 @@ export const authService = {
       throw new Error('Email already in use');
     }
 
-    const baseSlug = slugify(payload.companyName);
-    const slug = await ensureUniqueSlug(prisma, baseSlug);
+    const baseSlug = resolveDesiredSlug(payload);
+    const slug = await findAvailableSlug(prisma, baseSlug);
     const passwordHash = await hashPassword(payload.password);
     const usageMonth = monthKey();
     const selectedPlan = tenantPlanBySignupPlan[payload.plan ?? 'starter'];
+    const { firstName, lastName } = splitFullName(payload.fullName);
 
     const result = await prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
@@ -214,7 +222,9 @@ export const authService = {
           tenantId: tenant.id,
           email,
           passwordHash,
-          role: 'TENANT_ADMIN'
+          role: 'TENANT_ADMIN',
+          firstName,
+          lastName
         }
       });
 
@@ -225,6 +235,29 @@ export const authService = {
           status: 'TRIALING',
           billingCycle: 'MONTHLY'
         }
+      });
+
+      await tx.outboxEvent.createMany({
+        data: [
+          {
+            aggregateType: 'tenant',
+            aggregateId: tenant.id,
+            eventType: 'tenant.created',
+            payload: { tenantId: tenant.id, slug: tenant.slug }
+          },
+          {
+            aggregateType: 'tenant',
+            aggregateId: tenant.id,
+            eventType: 'tenant.verification_email.requested',
+            payload: { tenantId: tenant.id, userId: user.id, email: user.email }
+          },
+          {
+            aggregateType: 'tenant',
+            aggregateId: tenant.id,
+            eventType: 'tenant.subdomain.provision.requested',
+            payload: { tenantId: tenant.id, slug: tenant.slug }
+          }
+        ]
       });
 
       return { tenant, user };
@@ -247,10 +280,17 @@ export const authService = {
     });
 
     return {
-      tenant: { id: result.tenant.id, slug: result.tenant.slug, status: result.tenant.status },
+      tenant: {
+        id: result.tenant.id,
+        slug: result.tenant.slug,
+        name: result.tenant.name,
+        displayName: result.tenant.name,
+        status: result.tenant.status
+      },
       user: { id: result.user.id, email: result.user.email, role: result.user.role },
       accessToken,
-      refreshToken
+      refreshToken,
+      redirectUrl: `/t/${result.tenant.slug}/onboarding`
     };
   },
   login: async (payload: LoginPayload, prisma: PrismaClient, tenantId: string) => {

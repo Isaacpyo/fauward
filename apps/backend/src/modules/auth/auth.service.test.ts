@@ -7,17 +7,21 @@ import { signRefreshToken } from '../../shared/utils/jwt.js';
 describe('authService', () => {
   it('register creates tenant and admin user', async () => {
     const tx = {
-      tenant: { create: vi.fn().mockResolvedValue({ id: 'tenant-1', slug: 'acme', status: 'TRIALING', plan: 'TRIALING' }) },
+      tenant: { create: vi.fn().mockResolvedValue({ id: 'tenant-1', name: 'Acme Logistics', slug: 'acme-logistics', status: 'TRIALING', plan: 'TRIALING' }) },
       tenantSettings: { create: vi.fn().mockResolvedValue({}) },
       emailTemplateConfig: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       surcharge: { createMany: vi.fn().mockResolvedValue({ count: 6 }) },
       usageRecord: { create: vi.fn().mockResolvedValue({}) },
       user: { create: vi.fn().mockResolvedValue({ id: 'user-1', email: 'owner@acme.com', role: 'TENANT_ADMIN', tenantId: 'tenant-1' }) },
-      subscription: { create: vi.fn().mockResolvedValue({ id: 'sub-1' }) }
+      subscription: { create: vi.fn().mockResolvedValue({ id: 'sub-1' }) },
+      outboxEvent: { createMany: vi.fn().mockResolvedValue({ count: 3 }) }
     };
 
     const prisma = {
       tenant: {
+        findUnique: vi.fn().mockResolvedValue(null)
+      },
+      tenantSlugHistory: {
         findUnique: vi.fn().mockResolvedValue(null)
       },
       user: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -37,6 +41,9 @@ describe('authService', () => {
 
     expect(tx.tenant.create).toHaveBeenCalledTimes(1);
     expect(tx.user.create).toHaveBeenCalledTimes(1);
+    expect(tx.outboxEvent.createMany).toHaveBeenCalledTimes(1);
+    expect(result.tenant.slug).toBe('acme-logistics');
+    expect(result.redirectUrl).toBe('/t/acme-logistics/onboarding');
     expect(result.user.email).toBe('owner@acme.com');
     expect(prisma.refreshToken.create).toHaveBeenCalledTimes(1);
   });
@@ -57,6 +64,52 @@ describe('authService', () => {
         prisma
       )
     ).rejects.toThrow('Email already in use');
+  });
+
+  it('does not create refresh tokens when signup transaction fails', async () => {
+    const transactionError = new Error('user create failed');
+    const tx = {
+      tenant: {
+        create: vi.fn().mockResolvedValue({
+          id: 'tenant-1',
+          name: 'Acme Logistics',
+          slug: 'acme-logistics',
+          status: 'TRIALING',
+          plan: 'TRIALING'
+        })
+      },
+      tenantSettings: { create: vi.fn().mockResolvedValue({}) },
+      emailTemplateConfig: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      surcharge: { createMany: vi.fn().mockResolvedValue({ count: 6 }) },
+      usageRecord: { create: vi.fn().mockResolvedValue({}) },
+      user: { create: vi.fn().mockRejectedValue(transactionError) },
+      subscription: { create: vi.fn() },
+      outboxEvent: { createMany: vi.fn() }
+    };
+    const prisma = {
+      tenant: { findUnique: vi.fn().mockResolvedValue(null) },
+      tenantSlugHistory: { findUnique: vi.fn().mockResolvedValue(null) },
+      user: { findFirst: vi.fn().mockResolvedValue(null) },
+      refreshToken: { create: vi.fn() },
+      $transaction: vi.fn(async (cb: (db: typeof tx) => unknown) => cb(tx))
+    } as any;
+
+    await expect(
+      authService.register(
+        {
+          companyName: 'Acme Logistics',
+          region: 'uk',
+          email: 'owner@acme.com',
+          password: 'password123'
+        },
+        prisma
+      )
+    ).rejects.toThrow(transactionError);
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.subscription.create).not.toHaveBeenCalled();
+    expect(tx.outboxEvent.createMany).not.toHaveBeenCalled();
+    expect(prisma.refreshToken.create).not.toHaveBeenCalled();
   });
 
   it('rejects login with wrong password', async () => {

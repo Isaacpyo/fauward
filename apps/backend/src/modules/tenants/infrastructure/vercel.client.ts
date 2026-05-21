@@ -45,11 +45,16 @@ export type VercelClientOptions = {
   teamId?: string;
 };
 
+function requireVercelOption(value: string | undefined, key: string) {
+  if (!value) throw new Error(`Missing required Vercel option: ${key}`);
+  return value;
+}
+
 function defaultOptions(): VercelClientOptions {
   return {
     apiBase: config.vercel.apiBase,
-    apiToken: config.vercel.apiToken,
-    portalProjectId: config.vercel.portalProjectId,
+    apiToken: requireVercelOption(config.vercel.apiToken, 'VERCEL_API_TOKEN'),
+    portalProjectId: requireVercelOption(config.vercel.portalProjectId, 'VERCEL_PORTAL_PROJECT_ID'),
     teamId: config.vercel.teamId
   };
 }
