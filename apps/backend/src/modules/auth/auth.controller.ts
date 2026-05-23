@@ -114,16 +114,32 @@ export const authController = {
   },
   me: async (request: FastifyRequest, reply: FastifyReply) => {
     const claims = request.user;
+    if (!claims?.sub) {
+      return reply.send({ user: null });
+    }
+    const tenantId = request.tenant?.id;
+    const dbUser = await request.server.prisma.user.findFirst({
+      where: { id: claims.sub, ...(tenantId ? { tenantId } : {}) },
+      select: { id: true, email: true, firstName: true, lastName: true, phone: true, role: true }
+    });
+    const fullName = dbUser
+      ? [dbUser.firstName, dbUser.lastName].filter(Boolean).join(' ') || dbUser.email
+      : claims.email;
     reply.send({
-      user: claims
-        ? {
-            ...claims,
-            id: claims.sub,
-            full_name: claims.email,
-            plan: claims.plan?.toLowerCase(),
-            impersonated: claims.mode === 'IMPERSONATION'
-          }
-        : null
+      user: {
+        ...claims,
+        id: claims.sub,
+        sub: claims.sub,
+        email: dbUser?.email ?? claims.email,
+        firstName: dbUser?.firstName ?? null,
+        lastName: dbUser?.lastName ?? null,
+        phone: dbUser?.phone ?? null,
+        role: dbUser?.role ?? claims.role,
+        fullName,
+        full_name: fullName,
+        plan: claims.plan?.toLowerCase(),
+        impersonated: claims.mode === 'IMPERSONATION'
+      }
     });
   },
   mfaSetup: async (request: FastifyRequest, reply: FastifyReply) => {

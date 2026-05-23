@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BackLink } from "@/components/common/BackLink";
 import { ScreenHeader } from "@/components/common/ScreenHeader";
@@ -8,10 +9,16 @@ import { stopStatusLabel, stopStatusTone, workflowStageLabel } from "@/types/fie
 export const RouteDetailScreen = () => {
   const { routeId } = useParams();
   const route = useFieldDataStore((state) => state.routes.find((item) => item.id === routeId));
-  const stops = useFieldDataStore((state) =>
-    state.stops
-      .filter((stop) => stop.routeId === routeId)
-      .sort((left, right) => left.sequence - right.sequence),
+  // Subscribe to the raw stops array; filter/sort in useMemo so the selector
+  // returns a stable reference and doesn't trip Zustand's strict equality
+  // into an infinite re-render loop.
+  const allStops = useFieldDataStore((state) => state.stops);
+  const stops = useMemo(
+    () =>
+      allStops
+        .filter((stop) => stop.routeId === routeId)
+        .sort((left, right) => left.sequence - right.sequence),
+    [allStops, routeId],
   );
 
   if (!route) {

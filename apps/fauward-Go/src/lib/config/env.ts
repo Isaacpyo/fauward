@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const envSchema = z.object({
   VITE_APP_NAME: z.string().min(1).default("Fauward Go"),
-  VITE_API_BASE_URL: z.string().min(1).default("http://localhost:8080"),
+  VITE_API_BASE_URL: z.string().min(1).default("http://localhost:3001"),
   VITE_SENTRY_DSN: z.string().default(""),
   VITE_ENABLE_LOCATION: z.enum(["true", "false"]).default("true"),
   VITE_ENABLE_BACKGROUND_SYNC: z.enum(["true", "false"]).default("true"),

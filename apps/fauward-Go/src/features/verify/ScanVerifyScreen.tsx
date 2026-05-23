@@ -11,11 +11,18 @@ const detectorFormats: BarcodeFormat[] = ["qr_code", "code_128", "ean_13", "ean_
 
 export const ScanVerifyScreen = () => {
   const [searchParams] = useSearchParams();
-  const stops = useFieldDataStore((state) =>
-    state.stops.filter(
-      (stop) =>
-        (stop.status === "assigned" || stop.status === "in_progress") && stop.verificationCodes.length > 0,
-    ),
+  // Subscribe to the raw stops array so Zustand returns a stable reference;
+  // filtering inside the selector created a new array every render which
+  // Zustand treated as a state change → infinite re-render loop.
+  const allStops = useFieldDataStore((state) => state.stops);
+  const stops = useMemo(
+    () =>
+      allStops.filter(
+        (stop) =>
+          (stop.status === "assigned" || stop.status === "in_progress") &&
+          stop.verificationCodes.length > 0,
+      ),
+    [allStops],
   );
   const scanVerifications = useFieldDataStore((state) => state.scanVerifications);
   const recordScanVerification = useFieldDataStore((state) => state.recordScanVerification);

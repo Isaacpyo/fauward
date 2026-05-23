@@ -5,6 +5,24 @@ import twilio from 'twilio';
 
 import { config } from '../../config/index.js';
 import { bullmqConnection } from '../../queues/queues.js';
+import { tenantStorage, type TenantContext } from '../../context/tenant.context.js';
+
+// Workers run outside Fastify's request scope, so AsyncLocalStorage is empty.
+// The Prisma tenant-scoping plugin then refuses every NotificationLog write
+// with "[SECURITY] Tenant context missing", which is why this queue used to
+// pile up 100% failed jobs even though the API key and template were right.
+// We wrap each job in a SUPER_ADMIN context so the plugin lets writes through
+// (the job data already carries the correct tenantId, which is what the
+// rows are persisted with).
+function buildWorkerContext(tenantId: string): TenantContext {
+  return {
+    tenantId,
+    tenantSlug: '',
+    plan: 'SYSTEM',
+    region: 'global',
+    isSuperAdmin: true
+  };
+}
 
 type NotificationJobData = {
   tenantId?: unknown;
@@ -127,7 +145,8 @@ export function startNotificationWorker(app: FastifyInstance) {
 
   worker = new Worker<NotificationJobData>(
     'notification',
-    async (job) => {
+    async (job) =>
+      tenantStorage.run(buildWorkerContext(String(job.data.tenantId ?? '')), async () => {
       const tenantId = String(job.data.tenantId ?? '');
       if (!tenantId) return;
 
@@ -191,7 +210,7 @@ export function startNotificationWorker(app: FastifyInstance) {
         });
         throw error;
       }
-    },
+      }),
     {
       connection: bullmqConnection,
       concurrency: 10,

@@ -154,13 +154,20 @@ const collectItems = (payload: unknown, keys: string[]) => {
 
 const normalizeUser = (payload: unknown): FieldUser => {
   const source = isRecord(payload) ? payload : {};
+  const firstName = readString(source, ["firstName", "first_name"]);
+  const lastName = readString(source, ["lastName", "last_name"]);
+  const composedName = [firstName, lastName].filter(Boolean).join(" ").trim();
 
   return {
     id: readString(source, ["id", "userId", "sub"], "field-user") ?? "field-user",
     tenantId: readString(source, ["tenantId", "tenant_id"], "tenant") ?? "tenant",
-    name: readString(source, ["name", "fullName"], "Field operator") ?? "Field operator",
+    name:
+      readString(source, ["name", "fullName", "full_name"]) ??
+      (composedName.length > 0 ? composedName : undefined) ??
+      readString(source, ["email"], "") ??
+      "",
     email: readString(source, ["email"], "") ?? "",
-    role: readString(source, ["role"], "Field operator") ?? "Field operator",
+    role: readString(source, ["role"], "TENANT_STAFF") ?? "TENANT_STAFF",
     tenantLabel:
       readString(source, ["tenantLabel", "tenantName", "tenant", "tenantSlug"], "Assigned tenant") ??
       "Assigned tenant",
@@ -490,6 +497,14 @@ export const fieldApi = {
     await apiRequest("/api/v1/auth/logout", {
       method: "POST",
       token,
+    });
+  },
+
+  async changeAccessCode(token: string, currentPassword: string, newPassword: string) {
+    await apiRequest("/api/v1/users/me", {
+      method: "PATCH",
+      token,
+      body: { currentPassword, newPassword },
     });
   },
 
