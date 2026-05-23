@@ -71,18 +71,17 @@ export const LoginScreen = () => {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5 py-8">
-      <section className="panel-accent overflow-hidden p-6">
-        <p className="eyebrow">Secured field access</p>
-        <div className="mt-2">
-          <BrandLogo />
+      <form className="panel-accent space-y-5 overflow-hidden p-6" onSubmit={handleSubmit}>
+        <div>
+          <p className="eyebrow">Secured field access</p>
+          <div className="mt-2">
+            <BrandLogo />
+          </div>
+          <p className="mt-3 text-sm leading-6 text-stone-600">
+            Sign in to access your assigned jobs and field tools.
+          </p>
         </div>
-        <p className="mt-4 text-sm leading-6 text-stone-600">
-          Sign in to access your assigned jobs and field tools, including verification,
-          confirmation capture, location updates, and sync controls.
-        </p>
-      </section>
 
-      <form className="panel mt-5 space-y-4 p-5" onSubmit={handleSubmit}>
         <div>
           <label htmlFor="email" className="mb-2 block tiny-label">
             Operator email
