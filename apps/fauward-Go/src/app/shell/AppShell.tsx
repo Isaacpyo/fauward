@@ -2,6 +2,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { SyncBanner } from "@/components/sync/SyncBanner";
 import { useAuthStore } from "@/store/useAuthStore";
+import { formatRoleLabel } from "@/lib/utils/labels";
 
 const navItems = [
   { to: "/", label: "Home" },
@@ -11,6 +12,9 @@ const navItems = [
 
 export const AppShell = () => {
   const user = useAuthStore((state) => state.user);
+  const subtitleParts = [user?.tenantLabel, formatRoleLabel(user?.role)].filter(
+    (part) => Boolean(part) && part !== "Assigned tenant"
+  );
 
   return (
     <div className="min-h-screen">
@@ -20,9 +24,9 @@ export const AppShell = () => {
           <div className="flex items-start justify-between gap-4">
             <div>
               <BrandLogo compact />
-              <p className="mt-2 text-sm text-stone-600">
-                {user?.tenantLabel} - {user?.role}
-              </p>
+              {subtitleParts.length > 0 ? (
+                <p className="mt-2 text-sm text-stone-600">{subtitleParts.join(" · ")}</p>
+              ) : null}
             </div>
           </div>
         </header>

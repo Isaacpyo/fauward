@@ -6,23 +6,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useFieldDataStore } from "@/store/useFieldDataStore";
 import { fieldApi } from "@/lib/api/fieldApi";
 import { ApiError } from "@/lib/api/http";
-
-function formatRoleLabel(role: string): string {
-  switch (role) {
-    case "TENANT_ADMIN":
-      return "Admin";
-    case "TENANT_MANAGER":
-      return "Manager";
-    case "TENANT_FINANCE":
-      return "Finance";
-    case "TENANT_STAFF":
-      return "Staff";
-    case "TENANT_DRIVER":
-      return "Field Operator";
-    default:
-      return role;
-  }
-}
+import { formatRoleLabel } from "@/lib/utils/labels";
 
 export const SettingsScreen = () => {
   const user = useAuthStore((state) => state.user);

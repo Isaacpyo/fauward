@@ -68,7 +68,7 @@ const envSchema = z.object({
   ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
   TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
-  FAUWARD_GO_URL: z.string().url().default('https://go.fauward.com')
+  FAUWARD_GO_URL: z.string().url().default('https://fauward.com/go')
 });
 
 const parsed = envSchema.safeParse(process.env);

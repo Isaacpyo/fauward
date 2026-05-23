@@ -117,11 +117,21 @@ export const authController = {
     if (!claims?.sub) {
       return reply.send({ user: null });
     }
-    const tenantId = request.tenant?.id;
-    const dbUser = await request.server.prisma.user.findFirst({
-      where: { id: claims.sub, ...(tenantId ? { tenantId } : {}) },
-      select: { id: true, email: true, firstName: true, lastName: true, phone: true, role: true }
-    });
+    // /v1/auth/me is a PUBLIC_PATH so the tenant resolver doesn't always
+    // set request.tenant — fall back to the tenantId in the JWT claim.
+    const tenantId = request.tenant?.id ?? claims.tenantId;
+    const [dbUser, dbTenant] = await Promise.all([
+      request.server.prisma.user.findFirst({
+        where: { id: claims.sub, ...(tenantId ? { tenantId } : {}) },
+        select: { id: true, email: true, firstName: true, lastName: true, phone: true, role: true }
+      }),
+      tenantId
+        ? request.server.prisma.tenant.findUnique({
+            where: { id: tenantId },
+            select: { id: true, slug: true, name: true }
+          })
+        : Promise.resolve(null)
+    ]);
     const fullName = dbUser
       ? [dbUser.firstName, dbUser.lastName].filter(Boolean).join(' ') || dbUser.email
       : claims.email;
@@ -137,6 +147,9 @@ export const authController = {
         role: dbUser?.role ?? claims.role,
         fullName,
         full_name: fullName,
+        tenantId: dbTenant?.id ?? request.tenant?.id ?? claims.tenantId,
+        tenantSlug: dbTenant?.slug ?? request.tenant?.slug ?? claims.tenantSlug,
+        tenantName: dbTenant?.name ?? request.tenant?.name ?? null,
         plan: claims.plan?.toLowerCase(),
         impersonated: claims.mode === 'IMPERSONATION'
       }

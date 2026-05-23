@@ -57,6 +57,32 @@ function resolveSendgridTemplateId(templateKey: string): string | undefined {
   return undefined;
 }
 
+// Subjects live in code so we don't need to set them per-version in the
+// SendGrid template editor (some templates were created with the subject
+// field empty, producing "(no subject)" inboxes).
+function resolveSubject(templateKey: string, data: Record<string, unknown>): string | undefined {
+  const tenantName = typeof data.tenantName === 'string' ? data.tenantName : 'Fauward';
+  const isReset = data.isReset === true;
+  switch (templateKey) {
+    case 'staff_invite':
+      return isReset
+        ? 'Your Fauward access code has been reset'
+        : `You've been added to ${tenantName} on Fauward`;
+    case 'password_reset':
+      return 'Reset your Fauward password';
+    case 'trial_expiring':
+      return 'Your Fauward trial is ending soon';
+    case 'trial_expiry':
+      return 'Your Fauward trial has ended';
+    case 'usage_warning_80':
+      return 'You are approaching your Fauward usage limit';
+    case 'usage_limit_reached':
+      return 'You have reached your Fauward usage limit';
+    default:
+      return undefined; // let the SendGrid template's own subject take over
+  }
+}
+
 async function sendEmail(
   app: FastifyInstance,
   jobData: NotificationJobData,
@@ -86,6 +112,10 @@ async function sendEmail(
     }
   });
 
+  const dynamicData: Record<string, unknown> =
+    jobData.data && typeof jobData.data === 'object' ? (jobData.data as Record<string, unknown>) : {};
+  const subject = resolveSubject(templateKey, dynamicData);
+
   const [response] = await sgMail.send({
     to: String(jobData.to),
     from: {
@@ -94,8 +124,8 @@ async function sendEmail(
     },
     replyTo: tenantSettings?.emailReplyTo ?? undefined,
     templateId: sendgridTemplateId,
-    dynamicTemplateData:
-      jobData.data && typeof jobData.data === 'object' ? (jobData.data as Record<string, unknown>) : {}
+    ...(subject ? { subject } : {}),
+    dynamicTemplateData: dynamicData
   });
 
   const providerRef = response?.headers?.['x-message-id'];
