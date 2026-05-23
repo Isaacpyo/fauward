@@ -75,6 +75,15 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // A 401 from a public auth endpoint (login, register, forgot/reset password, refresh
+    // itself) is the backend telling us the credentials are wrong — not that our session
+    // expired. Attempting to refresh would clobber any stored tokens and the hard
+    // window.location redirect below would wipe the error message before it ever rendered,
+    // making failed logins look like silent reloads.
+    if (isPublicAuthEndpoint(original.url)) {
+      return Promise.reject(error);
+    }
+
     if (hasDevTestSession()) {
       return Promise.reject(error);
     }
@@ -109,7 +118,12 @@ api.interceptors.response.use(
       clearTokens();
       delete api.defaults.headers.common['Authorization'];
       delete api.defaults.headers.common['X-Tenant-Slug'];
-      window.location.href = '/login';
+      // If we're already on /login, don't hard-reload — that wipes any in-flight
+      // form state and the user's error message. The caller's catch will surface
+      // the failure and AuthGuard handles route protection on the next nav.
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

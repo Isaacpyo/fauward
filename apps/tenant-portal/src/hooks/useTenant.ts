@@ -9,6 +9,12 @@ import { useTenantStore } from "@/stores/useTenantStore";
 import { applyTenantConfig } from "@/theme/tenant";
 import type { TenantConfig } from "@/types/domain";
 
+// The fallback is a stub for transient `/v1/tenant/me` failures (slow network,
+// HMR mid-fetch, brief backend hiccups). It must NOT set onboarding_complete to
+// `false` — AuthGuard treats that as "incomplete" and bounces every protected
+// page to /onboarding, which traps users any time a tenant fetch blips.
+// Leaving it `true` keeps the user where they were; real tenant data overrides
+// this as soon as the fetch succeeds.
 const fallbackTenant: TenantConfig = {
   tenant_id: "tenant_demo",
   name: "Fauward Demo Tenant",
@@ -20,7 +26,7 @@ const fallbackTenant: TenantConfig = {
   rtl: false,
   currency: "GBP",
   timezone: "Europe/London",
-  onboarding_complete: false,
+  onboarding_complete: true,
   support_email: "support@fauward.com",
   support_phone: "+44 20 7946 0000"
 };
@@ -64,6 +70,7 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     status?: string;
     suspensionReason?: string | null;
     suspendedAt?: string | null;
+    onboardingCompletedAt?: string | null;
     featureFlags?: Record<string, boolean>;
     settings?: {
       currency?: string | null;
@@ -94,7 +101,11 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     suspensionReason: raw.suspensionReason ?? null,
     suspendedAt: raw.suspendedAt ?? null,
     featureFlags: raw.featureFlags ?? {},
-    onboarding_complete: raw.status !== "TRIALING",
+    // Trust the backend's explicit completion timestamp. Billing status
+    // (TRIALING vs ACTIVE) is unrelated to whether the operator has set
+    // up their workspace — treating them as equivalent traps every new
+    // tenant in /onboarding even after they've finished the wizard.
+    onboarding_complete: raw.onboardingCompletedAt != null || raw.status === "ACTIVE",
     support_email: raw.settings?.notificationEmail ?? "support@fauward.com"
   };
 }
