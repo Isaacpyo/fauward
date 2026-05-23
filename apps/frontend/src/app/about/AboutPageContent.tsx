@@ -10,12 +10,11 @@ import {
   TrendingUp,
   Banknote,
   ServerCog,
-  Compass,
   type LucideIcon,
 } from "lucide-react";
 
 import CompetitorComparison from "@/components/marketing/CompetitorComparison";
-import { COMPANY_VALUES, COMPANY_MILESTONES } from "@/lib/marketing-data";
+import { COMPANY_VALUES } from "@/lib/marketing-data";
 
 import AboutHero from "./AboutHero";
 
@@ -86,14 +85,6 @@ const STORY_STATS = [
   { value: "£0",     label: "Per-seat charges — ever",   icon: Banknote    as LucideIcon, accent: { bg: "#f5f3ff", text: "#6d28d9" } },
 ];
 
-const MILESTONE_ICONS: LucideIcon[] = [Compass, TrendingUp, Globe, ServerCog, Sparkles];
-const MILESTONE_ACCENTS = [
-  { bg: "#fffbeb", text: "#b45309", border: "#fde68a" },
-  { bg: "#eff6ff", text: "#1d4ed8", border: "#bfdbfe" },
-  { bg: "#ecfdf5", text: "#047857", border: "#a7f3d0" },
-  { bg: "#f5f3ff", text: "#6d28d9", border: "#ddd6fe" },
-  { bg: "#fef2f2", text: "#b91c1c", border: "#fecaca" },
-];
 
 
 export default function AboutPageContent() {
@@ -249,91 +240,6 @@ export default function AboutPageContent() {
             </motion.div>
           </motion.div>
 
-          {/* Journey timeline */}
-          <div className="mx-auto mt-20 max-w-5xl">
-            <motion.div
-              className="mx-auto mb-12 max-w-2xl text-center"
-              variants={headerContainer}
-              initial="hidden"
-              whileInView="show"
-              viewport={{ once: true, amount: 0.4 }}
-            >
-              <motion.div variants={headerItem} className="mb-4 inline-block">
-                <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-700">
-                  The journey
-                </span>
-              </motion.div>
-              <motion.h3 variants={headerItem} className="text-3xl font-bold leading-tight text-gray-900 md:text-4xl">
-                <GradientHeading before="From prototype to" gradient="platform" />
-              </motion.h3>
-              <motion.p variants={headerItem} className="mt-3 text-base text-gray-600">
-                Five years of shipping the boring, reliable infrastructure operators actually need.
-              </motion.p>
-            </motion.div>
-
-            <div className="relative">
-              {/* Vertical connector line on lg+ */}
-              <div className="pointer-events-none absolute left-1/2 top-2 hidden h-[calc(100%-1rem)] w-px -translate-x-1/2 lg:block">
-                <motion.div
-                  className="h-full w-px origin-top bg-gradient-to-b from-amber-300 via-blue-300 to-purple-300"
-                  initial={{ scaleY: 0 }}
-                  whileInView={{ scaleY: 1 }}
-                  viewport={{ once: true, amount: 0.2 }}
-                  transition={{ duration: 1.4, ease: EASE }}
-                />
-              </div>
-
-              <div className="space-y-10 lg:space-y-14">
-                {COMPANY_MILESTONES.map((m, i) => {
-                  const Icon = MILESTONE_ICONS[i] ?? Sparkles;
-                  const accent = MILESTONE_ACCENTS[i] ?? MILESTONE_ACCENTS[0];
-                  const reverse = i % 2 === 1;
-                  return (
-                    <motion.div
-                      key={m.year}
-                      initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
-                      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-                      viewport={{ once: true, amount: 0.3 }}
-                      transition={{ delay: i * 0.1, duration: 0.6, ease: EASE }}
-                      className={`grid items-center gap-6 lg:grid-cols-[1fr_auto_1fr] ${reverse ? "lg:[&>*:first-child]:order-3" : ""}`}
-                    >
-                      {/* Card side */}
-                      <div className={`lg:${reverse ? "text-left lg:pl-10" : "text-right lg:pr-10"}`}>
-                        <motion.div
-                          whileHover={{ y: -3 }}
-                          transition={{ type: "spring", stiffness: 320, damping: 22 }}
-                          className="inline-block rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:shadow-md"
-                        >
-                          <div
-                            className="mb-2 inline-flex items-center gap-2 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest"
-                            style={{ background: accent.bg, color: accent.text, borderColor: accent.border }}
-                          >
-                            <Icon size={11} /> {m.year}
-                          </div>
-                          <p className="text-sm leading-relaxed text-gray-700">{m.event}</p>
-                        </motion.div>
-                      </div>
-
-                      {/* Center node */}
-                      <motion.div
-                        initial={{ scale: 0 }}
-                        whileInView={{ scale: 1 }}
-                        viewport={{ once: true, amount: 0.5 }}
-                        transition={{ delay: i * 0.1 + 0.2, type: "spring", stiffness: 320, damping: 18 }}
-                        className="relative z-10 mx-auto hidden h-12 w-12 items-center justify-center rounded-2xl border-2 bg-white shadow-md lg:flex"
-                        style={{ borderColor: accent.text, color: accent.text }}
-                      >
-                        <Icon size={18} />
-                      </motion.div>
-
-                      {/* Spacer on the opposite side (kept empty so the centred node is centred on the grid) */}
-                      <div className="hidden lg:block" />
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
