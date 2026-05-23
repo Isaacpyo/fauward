@@ -111,7 +111,7 @@ function PhoneMockup() {
           <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
             <div>
               <div className="text-xs font-bold text-white">Fauward Go</div>
-              <div className="text-[10px] text-gray-500">Marcus Osei · Driver</div>
+              <div className="text-[10px] text-gray-500">Marcus Osei · Operator</div>
             </div>
             <div className="flex items-center gap-1">
               <span className="relative flex h-1.5 w-1.5">
@@ -265,7 +265,7 @@ export default function FauwardGoSection() {
               variants={headerItem}
               className="mt-5 text-lg leading-relaxed text-blue-100/80"
             >
-              Fauward Go is the driver and field agent PWA. It works offline, captures proof, confirms OTP, and syncs automatically — so your team can focus on delivering, not reporting.
+              Fauward Go is the field operator PWA — mobile-first for shipment creation, warehouse intake, dispatch, pickup, linehaul, delivery, and returns. It works offline, captures proof, confirms OTP, and syncs automatically — so your team focuses on the field, not the paperwork.
             </motion.p>
 
             <motion.ul variants={headerItem} className="mt-7 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
