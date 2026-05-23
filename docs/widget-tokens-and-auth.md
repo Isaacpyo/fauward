@@ -72,4 +72,4 @@ Required scopes:
 
 The admin route also requires `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, and `EDGE_CONFIG_ID` in the widget production environment to manage Vercel project domains and update Edge Config.
 
-See also [Custom Domains](custom-domains.md) and [Environment](environment.md).
+See also [Custom Domains](widget-custom-domains.md) and [Environment](widget-environment.md).

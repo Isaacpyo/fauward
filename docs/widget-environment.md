@@ -95,4 +95,4 @@ The first six have local demo fallbacks through `lib/firebaseEnv.ts`; production
 
 - Unset. The deployment uses the personal Hobby account `isaacpyo04`, not a team.
 
-See also [Deployment](deployment.md) and [Known Gaps](known-gaps.md).
+See also [Deployment](widget-deployment.md) and [Known Gaps](widget-known-gaps.md).

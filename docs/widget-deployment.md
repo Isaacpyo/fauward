@@ -74,4 +74,4 @@ Expected:
 - Token route reaches the widget and returns 401 without an API key.
 - Shipment route reaches the widget and returns 401 without a widget token.
 
-See also [Environment](environment.md), [Routing and Middleware](routing-and-middleware.md), and [Known Gaps](known-gaps.md).
+See also [Environment](widget-environment.md), [Routing and Middleware](widget-routing-and-middleware.md), and [Known Gaps](widget-known-gaps.md).

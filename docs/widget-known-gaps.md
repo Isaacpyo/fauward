@@ -52,4 +52,4 @@ The production widget build currently completes with a non-blocking React hook l
 
 This did not block the Phase 2 production deploy, but it should be cleaned up before the form receives more payment or checkout changes.
 
-See also [Environment](environment.md), [Deployment](deployment.md), and [Routing and Middleware](routing-and-middleware.md).
+See also [Environment](widget-environment.md), [Deployment](widget-deployment.md), and [Routing and Middleware](widget-routing-and-middleware.md).

@@ -77,4 +77,4 @@ Custom-domain administration requires these production env vars on `fauward-widg
 
 `VERCEL_TOKEN` is now set in the `fauward-widget` Production environment. It must be a personal user token for account `isaacpyo04`; automation tokens cannot mint user tokens and should not be used as a substitute.
 
-See also [Routing and Middleware](routing-and-middleware.md), [Tokens and Auth](tokens-and-auth.md), and [Deployment](deployment.md).
+See also [Routing and Middleware](widget-routing-and-middleware.md), [Tokens and Auth](widget-tokens-and-auth.md), and [Deployment](widget-deployment.md).

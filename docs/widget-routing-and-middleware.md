@@ -41,4 +41,4 @@ All three rewrites are required. The embed SDK defaults to `https://fauward.com/
 
 `fauward.com` currently redirects to `www.fauward.com` with 307, then the rewrites apply on the canonical host.
 
-See also [Architecture](architecture.md), [Tokens and Auth](tokens-and-auth.md), and [Deployment](deployment.md).
+See also [Architecture](widget-architecture.md), [Tokens and Auth](widget-tokens-and-auth.md), and [Deployment](widget-deployment.md).

@@ -31,4 +31,4 @@ Supabase is accessed through `@fauward/tenant-db` from Node paths only. Tenant l
 
 Edge Config stores a read-optimized host-to-slug map under the single key `domains`. Middleware reads this map at the edge. The map is derived data and is updated only by `app/api/admin/domains`; it should not be hand-edited.
 
-See also [Routing and Middleware](routing-and-middleware.md), [Custom Domains](custom-domains.md), and [Tokens and Auth](tokens-and-auth.md).
+See also [Routing and Middleware](widget-routing-and-middleware.md), [Custom Domains](widget-custom-domains.md), and [Tokens and Auth](widget-tokens-and-auth.md).

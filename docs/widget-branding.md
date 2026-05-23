@@ -39,4 +39,4 @@ If `branding.logoUrl` is present, the hosted page renders the tenant logo in the
 
 If `logoUrl` is null, the logo area is omitted and the page still renders safely with the tenant `displayName`.
 
-See also [Architecture](architecture.md) and [Routing and Middleware](routing-and-middleware.md).
+See also [Architecture](widget-architecture.md) and [Routing and Middleware](widget-routing-and-middleware.md).
