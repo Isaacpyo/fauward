@@ -67,6 +67,12 @@ export function TeamPage() {
   const [isCreateOpen, setCreateOpen] = useState(false);
   const [issuedCode, setIssuedCode] = useState<AccessCodeIssued | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pendingSuspend, setPendingSuspend] = useState<TeamUser | null>(null);
+  const [pendingReset, setPendingReset] = useState<TeamUser | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<TeamUser | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pendingRoleChange, setPendingRoleChange] = useState<TeamUser | null>(null);
+  const [pendingNextRole, setPendingNextRole] = useState<string>("TENANT_STAFF");
   const debouncedSearch = useDebouncedValue(search, 300);
 
   const usersQuery = useQuery({
@@ -82,21 +88,34 @@ export function TeamPage() {
     mutationFn: async ({ id, suspend }: { id: string; suspend: boolean }) => {
       await api.patch(`/v1/users/${id}/${suspend ? "suspend" : "activate"}`);
     },
-    onSuccess: refreshUsers
+    onSuccess: async () => {
+      setPendingSuspend(null);
+      await refreshUsers();
+    }
   });
 
   const roleMutation = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: string }) => {
       await api.patch(`/v1/users/${id}/role`, { role });
     },
-    onSuccess: refreshUsers
+    onSuccess: async () => {
+      setPendingRoleChange(null);
+      await refreshUsers();
+    }
   });
 
-  const removeMutation = useMutation({
+  const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/v1/users/${id}`);
+      await api.delete(`/v1/users/${id}/permanent`);
     },
-    onSuccess: refreshUsers
+    onSuccess: async () => {
+      setPendingDelete(null);
+      setDeleteError(null);
+      await refreshUsers();
+    },
+    onError: (err) => {
+      setDeleteError(getApiErrorMessage(err, "Unable to delete this user."));
+    }
   });
 
   const resetMutation = useMutation({
@@ -110,6 +129,7 @@ export function TeamPage() {
       return { target, payload: response.data };
     },
     onSuccess: ({ target, payload }) => {
+      setPendingReset(null);
       setIssuedCode({
         userId: payload.id,
         email: payload.email,
@@ -157,12 +177,9 @@ export function TeamPage() {
     }
   }
 
-  function handleResetAccessCode(target: TeamUser) {
-    const ok = window.confirm(
-      `Generate a new access code for ${target.fullName}? Their current code will stop working immediately.`
-    );
-    if (!ok) return;
-    resetMutation.mutate(target);
+  function openRoleChange(target: TeamUser) {
+    setPendingNextRole(target.role);
+    setPendingRoleChange(target);
   }
 
   function handleCloseIssued() {
@@ -212,26 +229,19 @@ export function TeamPage() {
                     {
                       key: "change-role",
                       label: "Change role",
-                      onSelect: () => {
-                        const nextRole = window.prompt("Enter new role", member.role);
-                        if (!nextRole) return;
-                        roleMutation.mutate({ id: member.id, role: nextRole });
-                      }
+                      onSelect: () => openRoleChange(member)
                     },
                     {
                       key: "reset-code",
                       label: "Reset access code",
-                      onSelect: () => handleResetAccessCode(member)
+                      onSelect: () => setPendingReset(member)
                     },
                     member.isActive
                       ? {
                           key: "suspend",
                           label: "Suspend",
                           destructive: true,
-                          onSelect: () => {
-                            const ok = window.confirm("This user will immediately lose access. Continue?");
-                            if (ok) suspendMutation.mutate({ id: member.id, suspend: true });
-                          }
+                          onSelect: () => setPendingSuspend(member)
                         }
                       : {
                           key: "activate",
@@ -239,13 +249,10 @@ export function TeamPage() {
                           onSelect: () => suspendMutation.mutate({ id: member.id, suspend: false })
                         },
                     {
-                      key: "remove",
-                      label: "Remove",
+                      key: "delete",
+                      label: "Delete permanently",
                       destructive: true,
-                      onSelect: () => {
-                        const ok = window.confirm("Deactivate this user?");
-                        if (ok) removeMutation.mutate(member.id);
-                      }
+                      onSelect: () => setPendingDelete(member)
                     }
                   ]}
                 />
@@ -298,6 +305,145 @@ export function TeamPage() {
             </div>
           </div>
         ) : null}
+      </Dialog>
+
+      <Dialog
+        open={pendingSuspend !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSuspend(null);
+        }}
+        title="Suspend access"
+        description={
+          pendingSuspend
+            ? `${pendingSuspend.fullName || pendingSuspend.email} will immediately lose access. You can reactivate them at any time.`
+            : ""
+        }
+      >
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setPendingSuspend(null)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={suspendMutation.isPending}
+            onClick={() => {
+              if (pendingSuspend) suspendMutation.mutate({ id: pendingSuspend.id, suspend: true });
+            }}
+          >
+            {suspendMutation.isPending ? "Suspending…" : "Suspend"}
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingReset !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingReset(null);
+        }}
+        title="Reset access code"
+        description={
+          pendingReset
+            ? `Generate a new access code for ${pendingReset.fullName || pendingReset.email}? Their current code will stop working immediately and the new code will be emailed to them.`
+            : ""
+        }
+      >
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={() => setPendingReset(null)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={resetMutation.isPending}
+            onClick={() => {
+              if (pendingReset) resetMutation.mutate(pendingReset);
+            }}
+          >
+            {resetMutation.isPending ? "Generating…" : "Generate new code"}
+          </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingRoleChange !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRoleChange(null);
+        }}
+        title="Change role"
+        description={
+          pendingRoleChange
+            ? `Update the role for ${pendingRoleChange.fullName || pendingRoleChange.email}.`
+            : ""
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500">Role</label>
+            <Select value={pendingNextRole} onValueChange={setPendingNextRole} options={ROLE_OPTIONS} />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setPendingRoleChange(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={roleMutation.isPending || pendingNextRole === pendingRoleChange?.role}
+              onClick={() => {
+                if (pendingRoleChange) roleMutation.mutate({ id: pendingRoleChange.id, role: pendingNextRole });
+              }}
+            >
+              {roleMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        title="Delete permanently"
+        description={
+          pendingDelete
+            ? `Permanently remove ${pendingDelete.fullName || pendingDelete.email} and all their data from this workspace. This cannot be undone.`
+            : ""
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            If this user has shipments, tickets, or other records attached to them, the deletion will fail —
+            suspend them instead.
+          </div>
+          {deleteError ? (
+            <div className="rounded-md border border-red-300 bg-red-100 p-3 text-sm text-red-800">{deleteError}</div>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setPendingDelete(null);
+                setDeleteError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => {
+                if (pendingDelete) deleteMutation.mutate(pendingDelete.id);
+              }}
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </div>
+        </div>
       </Dialog>
     </PageShell>
   );

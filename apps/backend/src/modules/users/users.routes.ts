@@ -439,6 +439,67 @@ export async function registerUsersRoutes(app: FastifyInstance) {
     }
   );
 
+  app.delete(
+    '/api/v1/users/:id/permanent',
+    { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] },
+    async (request, reply) => {
+      const tenantId = getTenantId(request, reply);
+      if (!tenantId) return;
+      const actorId = request.user?.sub;
+      if (!actorId) return reply.status(401).send({ error: 'Unauthorized' });
+
+      const { id } = request.params as { id: string };
+      if (id === actorId) {
+        return reply.status(400).send({ error: 'You cannot delete yourself' });
+      }
+
+      const target = await app.prisma.user.findFirst({ where: { id, tenantId } });
+      if (!target) return reply.status(404).send({ error: 'User not found' });
+
+      const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
+      if (hold) return reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId, holdId: hold.id });
+
+      try {
+        await app.prisma.$transaction(async (tx) => {
+          // Write the audit log first — auditLog.resourceId is a plain String,
+          // not a FK, so it survives the user delete and preserves the trail.
+          await tx.auditLog.create({
+            data: {
+              tenantId,
+              actorId,
+              action: 'USER_DELETE_PERMANENT',
+              resourceType: 'USER',
+              resourceId: target.id,
+              metadata: { email: target.email, role: target.role }
+            }
+          });
+
+          // Best-effort cleanup of dependents that don't cascade. If any other
+          // FKs reference the user (tickets, returns, shipments…) the final
+          // delete throws P2003 and the transaction rolls back, leaving the
+          // user intact — admin gets a 409 with a useful hint.
+          await tx.refreshToken.deleteMany({ where: { userId: target.id } });
+          await tx.passwordResetToken.deleteMany({ where: { userId: target.id } });
+          await tx.inAppNotification.deleteMany({ where: { userId: target.id } });
+
+          await tx.user.delete({ where: { id: target.id } });
+        });
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === 'P2003' || code === 'P2014') {
+          return reply.status(409).send({
+            error:
+              'This user has shipments, tickets, or other records attached and cannot be permanently deleted. Suspend them instead.'
+          });
+        }
+        request.log.error({ err, userId: target.id }, 'Failed to permanently delete user');
+        return reply.status(500).send({ error: 'Failed to delete user' });
+      }
+
+      reply.status(204).send();
+    }
+  );
+
   app.patch(
     '/api/v1/users/:id/suspend',
     { preHandler: [authenticate, requireRole(['TENANT_ADMIN', 'SUPER_ADMIN'])] },
