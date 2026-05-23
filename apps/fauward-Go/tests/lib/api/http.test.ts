@@ -49,7 +49,7 @@ describe("apiRequest", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8080/api/v1/field/jobs", {
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3001/api/v1/field/jobs", {
       method: "POST",
       headers: {
         Accept: "application/json",
