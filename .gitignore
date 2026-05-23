@@ -31,3 +31,4 @@ apps/backend/.storage/
 # Python
 __pycache__/
 *.pyc
+.vercel
