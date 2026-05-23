@@ -83,7 +83,7 @@ export default function PrivacyPolicyPage() {
 
           <div>
             <h2 className="mb-3 text-xl font-bold text-gray-900">6. International transfers</h2>
-            <p>Fauward operates across the UK, Africa, and MENA. Where personal data is transferred outside the UK or European Economic Area, we rely on UK International Data Transfer Agreements (IDTAs) or EU Standard Contractual Clauses (SCCs), or we transfer to countries with an adequacy decision.</p>
+            <p>Fauward operates across the UK & Europe, Africa, and Asia. Where personal data is transferred outside the UK or European Economic Area, we rely on UK International Data Transfer Agreements (IDTAs) or EU Standard Contractual Clauses (SCCs), or we transfer to countries with an adequacy decision.</p>
           </div>
 
           <div>

@@ -7,7 +7,7 @@ import { PRICING_PLANS, type PricingPlan } from "@/lib/marketing-data";
 
 type PlanId = PricingPlan["id"];
 type BusinessType = "courier" | "freight" | "last_mile" | "ecommerce" | "third_party_logistics" | "other";
-type RegionId = "uk" | "west_africa" | "east_africa" | "mena" | "global";
+type RegionId = "uk" | "west_africa" | "east_africa" | "asia" | "global";
 
 type FormValues = {
   name: string;
@@ -32,10 +32,10 @@ const BUSINESS_TYPES: Array<{ id: BusinessType; label: string; description: stri
 ];
 
 const REGIONS: Array<{ id: RegionId; label: string; note: string }> = [
-  { id: "uk", label: "United Kingdom", note: "GBP, VAT-ready invoicing, GoCardless support." },
+  { id: "uk", label: "UK & Europe", note: "GBP & EUR, VAT-ready invoicing, GoCardless support." },
   { id: "west_africa", label: "West Africa", note: "Nigeria, Ghana, COD and Paystack-ready workflows." },
   { id: "east_africa", label: "East Africa", note: "Kenya and regional delivery with M-Pesa-aware operations." },
-  { id: "mena", label: "MENA", note: "GCC, Egypt, COD, HyperPay and Checkout.com coverage." },
+  { id: "asia", label: "Asia", note: "GCC, India, Southeast Asia, COD, HyperPay and Checkout.com coverage." },
   { id: "global", label: "Global / multi-region", note: "Run distributed tenant operations across markets." }
 ];
 

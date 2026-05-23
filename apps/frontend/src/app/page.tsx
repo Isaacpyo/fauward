@@ -2,23 +2,15 @@ import type { Metadata } from "next";
 
 import AgentSection from "@/components/marketing/AgentSection";
 import BusinessSection from "@/components/marketing/BusinessSection";
-import CompetitorComparison from "@/components/marketing/CompetitorComparison";
 import CTABanner from "@/components/marketing/CTABanner";
-import CustomerTrackingSection from "@/components/marketing/CustomerTrackingSection";
-import FAQAccordion from "@/components/marketing/FAQAccordion";
 import FadeInOnScroll from "@/components/marketing/FadeInOnScroll";
 import FauwardGoSection from "@/components/marketing/FauwardGoSection";
-import FinanceWorkflowPanel from "@/components/marketing/FinanceWorkflowPanel";
 import Hero from "@/components/marketing/Hero";
 import NewsSection from "@/components/marketing/NewsSection";
 import PlatformModulesGrid from "@/components/marketing/PlatformModulesGrid";
 import PricingCards from "@/components/marketing/PricingCards";
-import ProblemSection from "@/components/marketing/ProblemSection";
 import RegionStrip from "@/components/marketing/RegionStrip";
-import ServicesSection from "@/components/marketing/ServicesSection";
 import ShipmentLifecycleTimeline from "@/components/marketing/ShipmentLifecycleTimeline";
-import SocialProof from "@/components/marketing/SocialProof";
-import TestimonialCarousel from "@/components/marketing/TestimonialCarousel";
 import StructuredData from "@/components/seo/StructuredData";
 import {
   GENERAL_FAQ_GROUPS,
@@ -57,17 +49,7 @@ export default function LandingPage() {
       {/* 1. Hero — dark command centre with mockup */}
       <Hero />
 
-      {/* 2. Social proof strip */}
-      <FadeInOnScroll>
-        <SocialProof />
-      </FadeInOnScroll>
-
-      {/* 3. Problem section — pain cards */}
-      <FadeInOnScroll>
-        <ProblemSection />
-      </FadeInOnScroll>
-
-      {/* 4. Platform modules grid */}
+      {/* 2. Platform modules grid */}
       <FadeInOnScroll>
         <PlatformModulesGrid />
       </FadeInOnScroll>
@@ -75,21 +57,6 @@ export default function LandingPage() {
       {/* 5. Shipment lifecycle timeline */}
       <FadeInOnScroll>
         <ShipmentLifecycleTimeline />
-      </FadeInOnScroll>
-
-      {/* 6. Fauward Go — field operations PWA */}
-      <FadeInOnScroll>
-        <FauwardGoSection />
-      </FadeInOnScroll>
-
-      {/* 7. Customer tracking */}
-      <FadeInOnScroll>
-        <CustomerTrackingSection />
-      </FadeInOnScroll>
-
-      {/* 8. Finance & invoicing workflow */}
-      <FadeInOnScroll>
-        <FinanceWorkflowPanel />
       </FadeInOnScroll>
 
       {/* 9. Fauward Agent */}
@@ -102,14 +69,9 @@ export default function LandingPage() {
         <BusinessSection />
       </FadeInOnScroll>
 
-      {/* 11. Services overview */}
+      {/* 6. Fauward Go — field operations PWA */}
       <FadeInOnScroll>
-        <ServicesSection />
-      </FadeInOnScroll>
-
-      {/* 12. Competitor comparison */}
-      <FadeInOnScroll>
-        <CompetitorComparison />
+        <FauwardGoSection />
       </FadeInOnScroll>
 
       {/* 13. Pricing teaser */}
@@ -124,7 +86,7 @@ export default function LandingPage() {
                 Pay for the platform, not per person. Bring your whole team.
               </p>
             </div>
-            <PricingCards condensed showToggle={false} showPricingLink showDifferentiator />
+            <PricingCards condensed showToggle showPricingLink />
           </div>
         </section>
       </FadeInOnScroll>
@@ -134,19 +96,9 @@ export default function LandingPage() {
         <RegionStrip />
       </FadeInOnScroll>
 
-      {/* 15. Testimonials */}
-      <FadeInOnScroll>
-        <TestimonialCarousel />
-      </FadeInOnScroll>
-
       {/* 16. News */}
       <FadeInOnScroll>
         <NewsSection />
-      </FadeInOnScroll>
-
-      {/* 17. FAQ */}
-      <FadeInOnScroll>
-        <FAQAccordion groups={GENERAL_FAQ_GROUPS} />
       </FadeInOnScroll>
 
       {/* 18. Final CTA */}

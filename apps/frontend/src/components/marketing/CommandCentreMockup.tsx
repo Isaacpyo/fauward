@@ -19,8 +19,8 @@ const FEED = [
 export function CommandCentreMockup() {
   return (
     <div
-      className="relative rounded-xl overflow-hidden border border-dark-border shadow-2xl"
-      style={{ background: '#0a1628', animation: 'badge-float 5s ease-in-out infinite' }}
+      className="relative rounded-xl overflow-hidden border border-dark-border shadow-2xl transition-transform duration-500 ease-out hover:scale-[1.03]"
+      style={{ background: '#0a1628' }}
     >
       {/* Browser chrome */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-dark-border" style={{ background: '#070f1f' }}>
