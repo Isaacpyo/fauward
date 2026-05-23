@@ -16,6 +16,31 @@ const envSchema = z.object({
   MFA_ISSUER: z.string().default('Fauward'),
   PLATFORM_DOMAIN: z.string().default('fauward.com'),
   SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_FROM_EMAIL: z.string().email().default('support@fauward.com'),
+  SENDGRID_FROM_NAME: z.string().default('Fauward'),
+  SENDGRID_TEMPLATE_STAFF_INVITE: z.string().optional(),
+  SENDGRID_TEMPLATE_PASSWORD_RESET: z.string().optional(),
+  SENDGRID_TEMPLATE_BOOKING_CONFIRMED: z.string().optional(),
+  SENDGRID_TEMPLATE_SHIPMENT_PICKED_UP: z.string().optional(),
+  SENDGRID_TEMPLATE_OUT_FOR_DELIVERY: z.string().optional(),
+  SENDGRID_TEMPLATE_DELIVERED: z.string().optional(),
+  SENDGRID_TEMPLATE_FAILED_DELIVERY: z.string().optional(),
+  SENDGRID_TEMPLATE_SHIPMENT_EXCEPTION: z.string().optional(),
+  SENDGRID_TEMPLATE_INVOICE_SENT: z.string().optional(),
+  SENDGRID_TEMPLATE_INVOICE_OVERDUE: z.string().optional(),
+  SENDGRID_TEMPLATE_PAYMENT_RECEIVED: z.string().optional(),
+  SENDGRID_TEMPLATE_RETURN_APPROVED: z.string().optional(),
+  SENDGRID_TEMPLATE_RETURN_RECEIVED: z.string().optional(),
+  SENDGRID_TEMPLATE_RETURN_REFUNDED: z.string().optional(),
+  SENDGRID_TEMPLATE_TICKET_CREATED: z.string().optional(),
+  SENDGRID_TEMPLATE_TICKET_REPLY_FROM_STAFF: z.string().optional(),
+  SENDGRID_TEMPLATE_TICKET_REPLY_FROM_CUSTOMER: z.string().optional(),
+  SENDGRID_TEMPLATE_TICKET_RESOLVED: z.string().optional(),
+  SENDGRID_TEMPLATE_TRIAL_EXPIRING: z.string().optional(),
+  SENDGRID_TEMPLATE_TRIAL_EXPIRY: z.string().optional(),
+  SENDGRID_TEMPLATE_USAGE_WARNING_80: z.string().optional(),
+  SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED: z.string().optional(),
+  SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT: z.string().optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM: z.string().optional(),
@@ -41,7 +66,9 @@ const envSchema = z.object({
   ADMIN_HARDENING_PHASE_4: z.string().default('false'),
   ADMIN_HARDENING_PHASE_5: z.string().default('false'),
   ADMIN_HARDENING_PHASE_6: z.string().default('false'),
-  ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001')
+  ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
+  TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
+  FAUWARD_GO_URL: z.string().url().default('https://go.fauward.com')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -87,6 +114,36 @@ export const config = {
   mfaIssuer: parsed.data.MFA_ISSUER,
   platformDomain: parsed.data.PLATFORM_DOMAIN,
   sendgridApiKey: parsed.data.SENDGRID_API_KEY,
+  sendgrid: {
+    apiKey: parsed.data.SENDGRID_API_KEY,
+    fromEmail: parsed.data.SENDGRID_FROM_EMAIL,
+    fromName: parsed.data.SENDGRID_FROM_NAME,
+    templateIds: {
+      staff_invite: parsed.data.SENDGRID_TEMPLATE_STAFF_INVITE,
+      password_reset: parsed.data.SENDGRID_TEMPLATE_PASSWORD_RESET,
+      booking_confirmed: parsed.data.SENDGRID_TEMPLATE_BOOKING_CONFIRMED,
+      shipment_picked_up: parsed.data.SENDGRID_TEMPLATE_SHIPMENT_PICKED_UP,
+      out_for_delivery: parsed.data.SENDGRID_TEMPLATE_OUT_FOR_DELIVERY,
+      delivered: parsed.data.SENDGRID_TEMPLATE_DELIVERED,
+      failed_delivery: parsed.data.SENDGRID_TEMPLATE_FAILED_DELIVERY,
+      shipment_exception: parsed.data.SENDGRID_TEMPLATE_SHIPMENT_EXCEPTION,
+      invoice_sent: parsed.data.SENDGRID_TEMPLATE_INVOICE_SENT,
+      invoice_overdue: parsed.data.SENDGRID_TEMPLATE_INVOICE_OVERDUE,
+      payment_received: parsed.data.SENDGRID_TEMPLATE_PAYMENT_RECEIVED,
+      return_approved: parsed.data.SENDGRID_TEMPLATE_RETURN_APPROVED,
+      return_received: parsed.data.SENDGRID_TEMPLATE_RETURN_RECEIVED,
+      return_refunded: parsed.data.SENDGRID_TEMPLATE_RETURN_REFUNDED,
+      ticket_created: parsed.data.SENDGRID_TEMPLATE_TICKET_CREATED,
+      ticket_reply_from_staff: parsed.data.SENDGRID_TEMPLATE_TICKET_REPLY_FROM_STAFF,
+      ticket_reply_from_customer: parsed.data.SENDGRID_TEMPLATE_TICKET_REPLY_FROM_CUSTOMER,
+      ticket_resolved: parsed.data.SENDGRID_TEMPLATE_TICKET_RESOLVED,
+      trial_expiring: parsed.data.SENDGRID_TEMPLATE_TRIAL_EXPIRING,
+      trial_expiry: parsed.data.SENDGRID_TEMPLATE_TRIAL_EXPIRY,
+      usage_warning_80: parsed.data.SENDGRID_TEMPLATE_USAGE_WARNING_80,
+      usage_limit_reached: parsed.data.SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED,
+      ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT
+    } as Record<string, string | undefined>
+  },
   twilio: {
     accountSid: parsed.data.TWILIO_ACCOUNT_SID,
     authToken: parsed.data.TWILIO_AUTH_TOKEN,
@@ -128,5 +185,7 @@ export const config = {
     phase5: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_5),
     phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
   },
-  routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL
+  routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
+  tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,
+  fauwardGoUrl: parsed.data.FAUWARD_GO_URL
 };

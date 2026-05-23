@@ -20,6 +20,7 @@
         "prisma:migrate": "prisma migrate dev",
         "staff:roles:seed": "tsx src/scripts/seed-staff-roles.ts",
         "platform:admin:create": "tsx src/scripts/platform-admin-create.ts",
+        "tenant:user:create": "tsx src/scripts/tenant-user-create.ts",
         "audit:chain:verify": "tsx scripts/verify-audit-chain.ts",
         "tracking:migrate": "tsx src/scripts/migrate-tracking.ts"
     },

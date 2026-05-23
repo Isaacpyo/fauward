@@ -32,6 +32,13 @@ export const dlqNotificationQueue = new Queue<Record<string, unknown>>('dlq-noti
   connection: bullmqConnection
 });
 
+function resolveSendgridTemplateId(templateKey: string): string | undefined {
+  const direct = config.sendgrid.templateIds[templateKey];
+  if (direct) return direct;
+  if (templateKey.startsWith('d-')) return templateKey;
+  return undefined;
+}
+
 async function sendEmail(
   app: FastifyInstance,
   jobData: NotificationJobData,
@@ -44,21 +51,31 @@ async function sendEmail(
     throw new Error('Missing recipient for EMAIL notification');
   }
 
+  const templateKey = String(jobData.template ?? '');
+  const sendgridTemplateId = resolveSendgridTemplateId(templateKey);
+  if (!sendgridTemplateId) {
+    throw new Error(
+      `No SendGrid template configured for "${templateKey}". Set SENDGRID_TEMPLATE_${templateKey.toUpperCase()} in env.`
+    );
+  }
+
   const tenantSettings = await app.prisma.tenantSettings.findUnique({
     where: { tenantId },
     select: {
       notificationEmail: true,
-      emailFromName: true
+      emailFromName: true,
+      emailReplyTo: true
     }
   });
 
   const [response] = await sgMail.send({
     to: String(jobData.to),
     from: {
-      email: tenantSettings?.notificationEmail ?? 'noreply@fauward.com',
-      name: tenantSettings?.emailFromName ?? 'Fauward'
+      email: tenantSettings?.notificationEmail ?? config.sendgrid.fromEmail,
+      name: tenantSettings?.emailFromName ?? config.sendgrid.fromName
     },
-    templateId: String(jobData.template ?? ''),
+    replyTo: tenantSettings?.emailReplyTo ?? undefined,
+    templateId: sendgridTemplateId,
     dynamicTemplateData:
       jobData.data && typeof jobData.data === 'object' ? (jobData.data as Record<string, unknown>) : {}
   });

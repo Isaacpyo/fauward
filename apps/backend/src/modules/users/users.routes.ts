@@ -6,6 +6,54 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
+import { sendEmail } from '../notifications/notifications.service.js';
+import { config } from '../../config/index.js';
+
+function formatRoleLabel(role: UserRole): string {
+  if (role === 'TENANT_DRIVER') return 'Field Operator';
+  return role
+    .replace(/^TENANT_/, '')
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function buildLoginUrl(role: UserRole): string {
+  return role === 'TENANT_DRIVER' ? `${config.fauwardGoUrl}/login` : `${config.tenantPortalUrl}/login`;
+}
+
+function generateAccessCode(): string {
+  return randomBytes(12).toString('base64url');
+}
+
+async function enqueueAccessCodeEmail(
+  app: FastifyInstance,
+  args: {
+    tenantId: string;
+    tenantName: string;
+    user: { id: string; email: string; firstName: string | null; role: UserRole };
+    accessCode: string;
+    isReset: boolean;
+  }
+) {
+  try {
+    await sendEmail(app, {
+      tenantId: args.tenantId,
+      userId: args.user.id,
+      to: args.user.email,
+      template: 'staff_invite',
+      data: {
+        firstName: args.user.firstName ?? '',
+        tenantName: args.tenantName,
+        role: formatRoleLabel(args.user.role),
+        accessCode: args.accessCode,
+        loginUrl: buildLoginUrl(args.user.role),
+        isReset: args.isReset
+      }
+    });
+  } catch (err) {
+    app.log.error({ err, userId: args.user.id }, 'Failed to enqueue staff access-code email');
+  }
+}
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -130,6 +178,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
         select: {
           id: true,
           email: true,
+          phone: true,
           role: true,
           firstName: true,
           lastName: true,
@@ -144,6 +193,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
         users: users.map((user) => ({
           id: user.id,
           email: user.email,
+          phone: user.phone,
           role: user.role,
           fullName: [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email,
           firstName: user.firstName,
@@ -170,29 +220,35 @@ export async function registerUsersRoutes(app: FastifyInstance) {
         role?: string;
         firstName?: string;
         lastName?: string;
+        phone?: string;
       };
 
       if (!payload.email) return reply.status(400).send({ error: 'email is required' });
-      const email = payload.email.toLowerCase();
+      const email = payload.email.toLowerCase().trim();
       const role = roleFromString(payload.role ?? 'TENANT_STAFF');
       if (!role || role === 'SUPER_ADMIN') {
         return reply.status(400).send({ error: 'Invalid role' });
       }
+
+      const phone = payload.phone?.trim() || undefined;
+      const firstName = payload.firstName?.trim() || undefined;
+      const lastName = payload.lastName?.trim() || undefined;
 
       const existing = await app.prisma.user.findFirst({ where: { tenantId, email } });
       if (existing) {
         return reply.status(409).send({ error: 'User with this email already exists' });
       }
 
-      const temporaryPassword = randomBytes(12).toString('base64url');
+      const temporaryPassword = generateAccessCode();
       const user = await app.prisma.$transaction(async (tx) => {
         const created = await tx.user.create({
           data: {
             tenantId,
             email,
             role,
-            firstName: payload.firstName,
-            lastName: payload.lastName,
+            firstName,
+            lastName,
+            phone,
             passwordHash: await hashPassword(temporaryPassword),
             invitedBy: actorId,
             isActive: true
@@ -213,23 +269,87 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           }
         });
 
-        await tx.notificationLog.create({
-          data: {
-            tenantId,
-            userId: created.id,
-            channel: 'EMAIL',
-            event: 'staff_invite',
-            status: 'QUEUED'
-          }
-        });
-
         return created;
+      });
+
+      await enqueueAccessCodeEmail(app, {
+        tenantId,
+        tenantName: request.tenant?.name ?? '',
+        user: { id: user.id, email: user.email, firstName: user.firstName, role: user.role },
+        accessCode: temporaryPassword,
+        isReset: false
       });
 
       reply.status(201).send({
         id: user.id,
         email: user.email,
+        phone: user.phone,
+        firstName: user.firstName,
+        lastName: user.lastName,
         role: user.role,
+        temporaryPassword
+      });
+    }
+  );
+
+  app.post(
+    '/api/v1/users/:id/reset-access-code',
+    { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] },
+    async (request, reply) => {
+      const tenantId = getTenantId(request, reply);
+      if (!tenantId) return;
+      const actorId = request.user?.sub;
+      if (!actorId) return reply.status(401).send({ error: 'Unauthorized' });
+
+      const { id } = request.params as { id: string };
+      if (id === actorId) {
+        return reply
+          .status(400)
+          .send({ error: 'Use forgot-password to reset your own access code' });
+      }
+
+      const target = await app.prisma.user.findFirst({ where: { id, tenantId } });
+      if (!target) return reply.status(404).send({ error: 'User not found' });
+
+      const temporaryPassword = generateAccessCode();
+      await app.prisma.$transaction([
+        app.prisma.user.update({
+          where: { id: target.id },
+          data: { passwordHash: await hashPassword(temporaryPassword) }
+        }),
+        app.prisma.passwordResetToken.updateMany({
+          where: { userId: target.id, usedAt: null },
+          data: { usedAt: new Date() }
+        }),
+        app.prisma.auditLog.create({
+          data: {
+            tenantId,
+            actorId,
+            action: 'USER_ACCESS_CODE_RESET',
+            resourceType: 'USER',
+            resourceId: target.id,
+            metadata: { role: target.role }
+          }
+        })
+      ]);
+
+      await enqueueAccessCodeEmail(app, {
+        tenantId,
+        tenantName: request.tenant?.name ?? '',
+        user: {
+          id: target.id,
+          email: target.email,
+          firstName: target.firstName,
+          role: target.role
+        },
+        accessCode: temporaryPassword,
+        isReset: true
+      });
+
+      reply.send({
+        id: target.id,
+        email: target.email,
+        role: target.role,
         temporaryPassword
       });
     }
