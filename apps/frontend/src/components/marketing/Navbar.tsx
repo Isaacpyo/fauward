@@ -21,7 +21,6 @@ import {
   Code,
   MapPin,
   Users,
-  Sparkles,
   ArrowRight,
 } from "lucide-react";
 
@@ -177,11 +176,7 @@ function MegaMenuPanel({
           );
         })}
       </div>
-      <div className="flex items-center justify-between gap-4 border-t border-gray-100 bg-gradient-to-br from-amber-50 to-orange-50 px-6 py-3.5">
-        <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-amber-500" />
-          <p className="text-xs font-medium text-amber-900">First shipment live in under 10 minutes — no engineer required.</p>
-        </div>
+      <div className="flex items-center justify-end gap-4 border-t border-gray-100 bg-gradient-to-br from-amber-50 to-orange-50 px-6 py-3.5">
         <MotionLink
           href="/signup"
           onClick={onClose}
