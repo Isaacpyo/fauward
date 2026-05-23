@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import CTABanner from "@/components/marketing/CTABanner";
-import FAQAccordion from "@/components/marketing/FAQAccordion";
+import FAQRedirectTab from "@/components/marketing/FAQRedirectTab";
 import FeatureComparisonTable from "@/components/marketing/FeatureComparisonTable";
 import PricingCards from "@/components/marketing/PricingCards";
 import StructuredData from "@/components/seo/StructuredData";
@@ -84,7 +84,13 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <FAQAccordion groups={BILLING_FAQ_GROUPS} />
+      <FAQRedirectTab
+        eyebrow="Billing FAQs"
+        title="Pricing questions?"
+        description="Browse the full FAQ in our Help Centre — answers on billing, plans, regional gateways, and more."
+        ctaLabel="Visit the Help Centre"
+        ctaHref="/support#faq"
+      />
       <CTABanner title="Need a plan tailored to your operation?" description="Enterprise controls, SSO, custom SLA, and dedicated support can be configured around your operation." ctaLabel="Talk to Sales" ctaHref="/support#contact" />
     </>
   );

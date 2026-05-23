@@ -3,15 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Sparkles,
-  ChevronDown,
 } from "lucide-react";
 
+import FAQRedirectTab from "@/components/marketing/FAQRedirectTab";
 import FinanceWorkflowPanel from "@/components/marketing/FinanceWorkflowPanel";
 import type { MarketingFeature } from "@/lib/marketing-data";
 
@@ -54,42 +53,6 @@ function highlightTitle(title: string, highlight?: string) {
       </span>
       {title.slice(idx + highlight.length)}
     </>
-  );
-}
-
-function FaqItem({ q, a, i }: { q: string; a: string; i: number }) {
-  const [open, setOpen] = useState(i === 0);
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.3 }}
-      transition={{ delay: i * 0.08, duration: 0.5, ease: EASE }}
-      className="overflow-hidden rounded-xl border border-gray-200 bg-white"
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
-      >
-        <span className="text-sm font-semibold text-gray-900">{q}</span>
-        <motion.span
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ duration: 0.3 }}
-          className="shrink-0 text-gray-500"
-        >
-          <ChevronDown size={18} />
-        </motion.span>
-      </button>
-      <motion.div
-        initial={false}
-        animate={{ height: open ? "auto" : 0, opacity: open ? 1 : 0 }}
-        transition={{ duration: 0.3, ease: EASE }}
-        className="overflow-hidden"
-      >
-        <p className="px-5 pb-4 text-sm leading-relaxed text-gray-600">{a}</p>
-      </motion.div>
-    </motion.div>
   );
 }
 
@@ -368,34 +331,14 @@ export default function FeatureDetailContent({ feature }: { feature: MarketingFe
         </section>
       ) : null}
 
-      {/* FAQ */}
-      {feature.faqs && feature.faqs.length > 0 ? (
-        <section className="bg-slate-50 py-20 lg:py-24">
-          <div className="marketing-container">
-            <div className="mx-auto max-w-3xl">
-              <motion.div
-                className="mb-10 text-center"
-                variants={headerContainer}
-                initial="hidden"
-                whileInView="show"
-                viewport={{ once: true, amount: 0.4 }}
-              >
-                <motion.h2 variants={headerItem} className="text-3xl font-bold text-gray-900 md:text-4xl">
-                  Frequently asked
-                </motion.h2>
-                <motion.p variants={headerItem} className="mt-3 text-base text-gray-600">
-                  Quick answers about {feature.eyebrow.toLowerCase()}.
-                </motion.p>
-              </motion.div>
-              <div className="space-y-3">
-                {feature.faqs.map((f, i) => (
-                  <FaqItem key={f.question} q={f.question} a={f.answer} i={i} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {/* FAQ — redirect to Help Centre */}
+      <FAQRedirectTab
+        eyebrow={`${feature.eyebrow} FAQs`}
+        title={`Questions about ${feature.eyebrow.toLowerCase()}?`}
+        description="The full FAQ lives in our Help Centre — onboarding, integrations, edge cases, and more."
+        ctaLabel="Visit the Help Centre"
+        ctaHref="/support#faq"
+      />
 
       {feature.slug === "finance" && <FinanceWorkflowPanel />}
     </>
