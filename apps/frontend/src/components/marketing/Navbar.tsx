@@ -41,21 +41,16 @@ const navItems: NavItem[] = [
     mega: {
       columns: [
         {
-          heading: "Operations",
+          heading: "All products",
           items: [
-            { href: "/features/shipment-management", label: "Shipment Ops",       description: "End-to-end lifecycle tracking",      icon: Package },
-            { href: "/customer-tracking",             label: "Customer Tracking",  description: "Branded links, no login needed",     icon: MapPin },
-            { href: "/fauward-go",                    label: "Fauward Go",         description: "Driver PWA — offline-first",          icon: Smartphone },
-          ],
-        },
-        {
-          heading: "Platform",
-          items: [
-            { href: "/features/finance",              label: "Finance & Invoicing",description: "Auto-invoice on delivery",           icon: FileText },
-            { href: "/agent",                         label: "Fauward Agent",      description: "Ops monitoring and automation",      icon: Bot },
-            { href: "/features/api-integrations",     label: "API & Integrations", description: "REST, webhooks, carrier connect",    icon: Code },
-            { href: "/features/white-label",          label: "White-Label",        description: "Your brand, your domain",            icon: Map },
-            { href: "/features",                      label: "All Features",       description: "Full platform overview",             icon: LayoutGrid },
+            { href: "/features/shipment-management", label: "Shipment Ops",        description: "End-to-end lifecycle tracking",      icon: Package },
+            { href: "/customer-tracking",            label: "Customer Tracking",   description: "Branded links, no login needed",     icon: MapPin },
+            { href: "/fauward-go",                   label: "Fauward Go",          description: "Field operator PWA, offline-first",  icon: Smartphone },
+            { href: "/features/finance",             label: "Finance & Invoicing", description: "Auto-invoice on delivery",           icon: FileText },
+            { href: "/agent",                        label: "Fauward Agent",       description: "Ops monitoring and automation",      icon: Bot },
+            { href: "/features/api-integrations",    label: "API & Integrations",  description: "REST, webhooks, carrier connect",    icon: Code },
+            { href: "/features/white-label",         label: "White-Label",         description: "Your brand, your domain",            icon: Map },
+            { href: "/features",                     label: "All Features",        description: "Full platform overview",             icon: LayoutGrid },
           ],
         },
       ],
@@ -137,10 +132,12 @@ function MegaMenuPanel({
         transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
       />
       <div className="grid gap-1 p-4" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
-        {columns.map((col, ci) => (
+        {columns.map((col, ci) => {
+          const singleColumn = columns.length === 1;
+          return (
           <div key={col.heading} className="px-2 py-2">
             <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-400">{col.heading}</p>
-            <ul className="space-y-0.5">
+            <ul className={`${singleColumn ? "grid grid-cols-2 gap-x-2 gap-y-0.5" : "space-y-0.5"}`}>
               {col.items.map((item, ii) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -177,7 +174,8 @@ function MegaMenuPanel({
               })}
             </ul>
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="flex items-center justify-between gap-4 border-t border-gray-100 bg-gradient-to-br from-amber-50 to-orange-50 px-6 py-3.5">
         <div className="flex items-center gap-2">
