@@ -5,7 +5,7 @@ import { Zap, Shield, Globe, Users, type LucideIcon } from "lucide-react";
 
 import CompetitorComparison from "@/components/marketing/CompetitorComparison";
 import ProblemSection from "@/components/marketing/ProblemSection";
-import { TEAM_MEMBERS, COMPANY_VALUES } from "@/lib/marketing-data";
+import { COMPANY_VALUES } from "@/lib/marketing-data";
 
 import AboutHero from "./AboutHero";
 
@@ -69,7 +69,6 @@ const REGION_CARDS = [
   { icon: "🌏", region: "Asia",       note: "COD · Checkout.com · HyperPay · Aramex · Localised notifications" },
 ];
 
-const INVESTOR_LOGOS = ["Northline Freight", "Atlas Dispatch", "Relay Fleet", "PortBridge Logistics", "Gulf Link Logistics"];
 
 export default function AboutPageContent() {
   return (
@@ -249,87 +248,8 @@ export default function AboutPageContent() {
         </div>
       </section>
 
-      {/* Team */}
-      <section className="bg-slate-50 py-20 lg:py-24">
-        <div className="marketing-container">
-          <motion.div
-            className="mx-auto max-w-2xl text-center"
-            variants={headerContainer}
-            initial="hidden"
-            whileInView="show"
-            viewport={{ once: true, amount: 0.4 }}
-          >
-            <motion.div variants={headerItem} className="mb-4 inline-block">
-              <span className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-amber-700">
-                The team
-              </span>
-            </motion.div>
-            <motion.h2 variants={headerItem} className="text-3xl font-bold leading-tight text-gray-900 md:text-4xl">
-              <GradientHeading before="Operators, engineers, and" gradient="builders" />
-            </motion.h2>
-            <motion.p variants={headerItem} className="mt-4 text-lg text-gray-600">
-              People who&apos;ve lived the problem we&apos;re solving.
-            </motion.p>
-          </motion.div>
-
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {TEAM_MEMBERS.map((member, i) => (
-              <motion.div
-                key={member.name}
-                initial={{ opacity: 0, y: 28, scale: 0.96, filter: "blur(8px)" }}
-                whileInView={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                viewport={{ once: true, amount: 0.2 }}
-                transition={{ delay: i * 0.1, duration: 0.6, ease: EASE }}
-                whileHover={{ y: -6 }}
-                className="group rounded-2xl border border-gray-200 bg-white p-6 text-center shadow-sm transition hover:border-amber-200 hover:shadow-md"
-              >
-                <motion.div
-                  className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0d1f3c] to-[#1a3a6e] text-lg font-bold text-white shadow-lg"
-                  whileHover={{ rotate: -4, scale: 1.05 }}
-                >
-                  {member.initials}
-                </motion.div>
-                <h3 className="font-bold text-gray-900">{member.name}</h3>
-                <p className="mt-0.5 text-xs font-semibold text-amber-600">{member.role}</p>
-                <p className="mt-3 text-xs leading-relaxed text-gray-600">{member.bio}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* Why not generic SaaS — already motion */}
       <CompetitorComparison />
-
-      {/* Investors / backed-by strip */}
-      <section className="bg-white py-16">
-        <div className="marketing-container text-center">
-          <motion.p
-            initial={{ opacity: 0, y: 8 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.4 }}
-            transition={{ duration: 0.5 }}
-            className="mb-6 text-xs font-bold uppercase tracking-widest text-gray-400"
-          >
-            Trusted by operators across three regions
-          </motion.p>
-          <div className="flex flex-wrap items-center justify-center gap-8">
-            {INVESTOR_LOGOS.map((name, i) => (
-              <motion.span
-                key={name}
-                initial={{ opacity: 0, y: 8, scale: 0.92 }}
-                whileInView={{ opacity: 0.6, y: 0, scale: 1 }}
-                viewport={{ once: true, amount: 0.3 }}
-                transition={{ delay: i * 0.08, duration: 0.5, ease: EASE }}
-                whileHover={{ opacity: 1, scale: 1.05 }}
-                className="text-sm font-semibold text-gray-500"
-              >
-                {name}
-              </motion.span>
-            ))}
-          </div>
-        </div>
-      </section>
     </>
   );
 }
