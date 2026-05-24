@@ -1,30 +1,30 @@
 # Fauward Widget App
 
-This standalone Next.js app serves the existing iframe shipment widget and the hosted shipment pages.
+`apps/widget` is the standalone Next.js app for Fauward shipment creation surfaces: the embeddable iframe widget, hosted pages at `fauward.com/ship/<slug>`, and tenant-owned white-label hosts such as `ship.acme.com`.
 
-## Hosted and White-Label Deployment
+Production URL: https://fauward-widget.vercel.app
 
-Manual prerequisites after merge:
+## Documentation
 
-1. DONE: Create and link the Vercel project `fauward-widget` for `apps/widget`.
-2. DONE: Create and link the Vercel Edge Config store to that widget project.
-3. DONE: Set widget project production environment variables:
-   - `VERCEL_TOKEN`
-   - `VERCEL_PROJECT_ID`
-   - `EDGE_CONFIG_ID`
-   - `EDGE_CONFIG`
-   - `WIDGET_TOKEN_SECRET`
-   - Supabase, Twilio, Stripe public key, and Firebase public values from `.env.local.example`
-   - Do not set `VERCEL_TEAM_ID` for the personal Hobby deployment.
-4. DONE: Implement Step 5 Option A in the marketing project. `fauward.com` rewrites these paths to `https://fauward-widget.vercel.app`:
-   - `/ship/:path*`
-   - `/api/embed/token`
-   - `/api/widget/:path*`
-5. PENDING: Add tenant-owned custom domains through the admin/domains route.
+- [Widget docs index](../../docs/widget.md) - table of contents for the full widget docs set.
+- [Architecture](../../docs/widget-architecture.md) - delivery tiers, shared form ownership, and runtime split.
+- [Routing and middleware](../../docs/widget-routing-and-middleware.md) - host handling, Edge Config rewrites, slug redirects, and apex rewrites.
+- [Tokens and auth](../../docs/widget-tokens-and-auth.md) - widget JWTs, embed token exchange, and admin domain auth.
+- [Branding](../../docs/widget-branding.md) - tenant branding shape and CSS variables.
+- [Custom domains](../../docs/widget-custom-domains.md) - DB ownership, Edge Config cache writes, and Vercel domain management.
+- [Environment](../../docs/widget-environment.md) - env vars used by the widget.
+- [Deployment](../../docs/widget-deployment.md) - live Vercel project facts and redeploy steps.
+- [Known gaps](../../docs/widget-known-gaps.md) - remaining widget issues and verification gaps.
 
-`TWILIO_FROM` is legacy local config and should be removed; code reads `TWILIO_FROM_NUMBER`.
-`STRIPE_SECRET_KEY` is intentionally absent from widget env until a server-side `/api/create-payment-intent` route exists.
+## Quick Start
 
-White-label widget domains are tenant-owned hosts such as `ship.acme.com`. They attach only to the widget Vercel project and are stored canonically in `tenant_widget_domains`; Edge Config mirrors the host-to-current-slug map for middleware reads.
+Run from the repository root:
 
-`app.fauward.com` and `*.fauward.com` are portal-owned and must not point at this app.
+```powershell
+npm install
+npm run dev --workspace=apps/widget
+npm run build --workspace=apps/widget
+npm run test --workspace=apps/widget
+```
+
+Use `apps/widget/.env.local.example` as the local env template. Do not commit `.env.local` or secret values.
