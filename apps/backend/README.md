@@ -115,9 +115,12 @@ npm run test
 npm run lint
 
 # Prisma
-npm run prisma:migrate --workspace=apps/backend
+npm run prisma:migrate:dev --workspace=apps/backend
+npm run prisma:migrate:deploy --workspace=apps/backend
 npm run prisma:generate --workspace=apps/backend
 ```
+
+Note: `prisma:migrate:dev` is for a LOCAL/THROWAWAY db only; against Supabase prod use `prisma:migrate:deploy`. Never run `migrate dev` against prod.
 
 ---
 
