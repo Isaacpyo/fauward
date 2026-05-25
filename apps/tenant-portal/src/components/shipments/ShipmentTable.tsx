@@ -120,25 +120,16 @@ export function ShipmentTable({
     <>
       <Table
         columns={[
-          "",
+          <input key="chk" type="checkbox" checked={allSelected} onChange={(event) => onToggleSelectAll(event.target.checked)} />,
           "Tracking #",
           "Status",
-          "Customer",
-          "Origin -> Destination",
+          "Origin → Destination",
           "Field Operator",
           "Service",
           "Created",
           "Actions"
         ]}
       >
-        <TableRow>
-          <TableCell>
-            <input type="checkbox" checked={allSelected} onChange={(event) => onToggleSelectAll(event.target.checked)} />
-          </TableCell>
-          <TableCell colSpan={8} className="text-xs text-gray-500">
-            Select all visible shipments
-          </TableCell>
-        </TableRow>
 
         {shipments.map((shipment) => {
           const selected = selectedIds.includes(shipment.id);
@@ -153,7 +144,7 @@ export function ShipmentTable({
                   onChange={(event) => onToggleSelect(shipment.id, event.target.checked)}
                 />
               </TableCell>
-              <TableCell className="font-mono">
+              <TableCell className="font-mono text-xs">
                 <button
                   type="button"
                   className="text-[var(--tenant-primary)] hover:underline"
@@ -168,7 +159,7 @@ export function ShipmentTable({
               <TableCell>
                 <button
                   type="button"
-                  className="rounded border border-gray-300 px-2 py-1 text-xs hover:bg-gray-50"
+                  className="hover:opacity-80"
                   onClick={(event) => {
                     event.stopPropagation();
                     setActiveShipment(shipment);
@@ -178,9 +169,8 @@ export function ShipmentTable({
                   <StatusBadge status={shipment.status} />
                 </button>
               </TableCell>
-              <TableCell>{shipment.customer_name}</TableCell>
-              <TableCell>
-                {shipment.origin} {"->"} {shipment.destination}
+              <TableCell className="text-xs">
+                {shipment.origin} {"→"} {shipment.destination}
               </TableCell>
               <TableCell>
                 {canAssignInline ? (
@@ -202,7 +192,8 @@ export function ShipmentTable({
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={!driverToAssign}
+                      disabled={!driverToAssign || assignMutation.isPending}
+                      loading={assignMutation.isPending}
                       onClick={() => assignMutation.mutate({ shipmentId: shipment.id, driverId: driverToAssign })}
                     >
                       Assign
@@ -212,8 +203,8 @@ export function ShipmentTable({
                   shipment.driver_name ?? "Unassigned"
                 )}
               </TableCell>
-              <TableCell>{shipment.service_tier}</TableCell>
-              <TableCell>{formatDateTime(shipment.created_at, tenant)}</TableCell>
+              <TableCell className="text-xs">{shipment.service_tier}</TableCell>
+              <TableCell className="text-xs">{formatDateTime(shipment.created_at, tenant)}</TableCell>
               <TableCell>
                 <Dropdown
                   trigger={

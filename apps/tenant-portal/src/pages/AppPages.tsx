@@ -20,7 +20,6 @@ import { UsageMeter } from "@/components/shared/UsageMeter";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { Textarea } from "@/components/ui/Textarea";
 import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
@@ -68,10 +67,6 @@ const teamRows: ListRow[] = Array.from({ length: 10 }).map((_, index) => ({
   values: [`Member ${index + 1}`, index % 3 === 0 ? "TENANT_MANAGER" : "TENANT_STAFF", "Active", "Last seen 2h ago"]
 }));
 
-const TEST_LOGIN = {
-  email: "tenant-demo@example.test",
-  password: "dev-only-password"
-};
 
 const SUCCESSFUL_LOGIN_DELAY_MS = 1200;
 
@@ -212,49 +207,6 @@ export function ShipmentsPage() {
   );
 }
 
-export function ShipmentDetailPage() {
-  const { id = "TRK-0000" } = useParams();
-  const tenant = useTenantStore((state) => state.tenant);
-
-  return (
-    <PageShell title={`Shipment ${id}`} description="Shipment detail and timeline">
-      <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <div className="flex items-center justify-between">
-            <TrackingNumber value={id} />
-            <StatusBadge status="IN_TRANSIT" />
-          </div>
-          <Table columns={["Step", "Timestamp", "Actor", "Notes"]} className="mt-4">
-            {[
-              ["PROCESSING", new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(), "Dispatcher", "Validated manifest"],
-              ["PICKED_UP", new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(), "Field Operator", "Collected from hub"],
-              ["IN_TRANSIT", new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), "Field Operator", "En route to destination"]
-            ].map((row) => (
-              <TableRow key={row[0]}>
-                <TableCell>{row[0]}</TableCell>
-                <TableCell>{formatDateTime(row[1], tenant)}</TableCell>
-                <TableCell>{row[2]}</TableCell>
-                <TableCell>{row[3]}</TableCell>
-              </TableRow>
-            ))}
-          </Table>
-        </div>
-        <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-900">Consignee</h3>
-            <p className="mt-2 text-sm text-gray-600">Acme Retail, London</p>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-gray-900">SLA progress</h3>
-            <div className="mt-2">
-              <UsageMeter used={72} total={100} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </PageShell>
-  );
-}
 
 export function CreateShipmentPage() {
   return (
@@ -487,6 +439,7 @@ export function SettingsPage() {
           setVisitedTabs((previous) => new Set([...previous, tab]));
         }}
         items={tabItems}
+        hideTabList
       >
         {visitedTabs.has("profile") ? (
           <TabsContent value="profile" className="rounded-lg border border-gray-200 bg-white p-4">
@@ -590,13 +543,13 @@ export function PublicBookingPage() {
 export function LoginPage() {
   const navigate = useNavigate ? useNavigate() : null;
   const location = useLocation ? useLocation() : null;
-  const isDevTestLogin = import.meta.env.DEV;
+
   const setUser = useAppStore((state) => state.setUser);
   const setNotifications = useAppStore((state) => state.setNotifications);
   const setTenant = useTenantStore((state) => state.setTenant);
   const setAppTenant = useAppStore((state) => state.setTenant);
-  const [email, setEmail] = useState(() => (isDevTestLogin ? TEST_LOGIN.email : ""));
-  const [password, setPassword] = useState(() => (isDevTestLogin ? TEST_LOGIN.password : ""));
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -604,7 +557,7 @@ export function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [resetEmail, setResetEmail] = useState(() => (isDevTestLogin ? TEST_LOGIN.email : ""));
+  const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
 
   useEffect(() => {
@@ -746,12 +699,12 @@ export function LoginPage() {
           <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-email">Email</label>
-              <Input id="login-email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input id="login-email" name="email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="login-password">Password</label>
               <div className="relative">
-                <Input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" className="pr-11" value={password} onChange={(e) => setPassword(e.target.value)} required />
+                <Input id="login-password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="••••••••" className="pr-11" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
@@ -787,7 +740,7 @@ export function LoginPage() {
             <button
               type="button"
               onClick={() => {
-                setResetEmail(email || TEST_LOGIN.email);
+                setResetEmail(email);
                 setResetOpen((value) => !value);
                 setError(null);
                 setNotice(null);

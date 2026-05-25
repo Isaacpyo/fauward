@@ -4,9 +4,12 @@
  * stores it so api.ts can inject X-Tenant-Slug on every request.
  */
 import { resolvePathTenantSlug, resolveSubdomainSlug } from "./tenantResolver";
-import { getTenantSlug, setTenantSlug } from "./auth";
+import { getAccessToken, getTenantSlug, setTenantSlug } from "./auth";
 
 export function initTenantSlug(): void {
+  // If the user has a real JWT session, their slug was set at login — don't override it.
+  if (getAccessToken()) return;
+
   const resolvedSlug = resolvePathTenantSlug() ?? resolveSubdomainSlug();
   const storedSlug = getTenantSlug();
 

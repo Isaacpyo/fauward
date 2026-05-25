@@ -7,15 +7,22 @@ import { ShipmentTimelineEvent } from "@/components/shipments/ShipmentTimelineEv
 type ShipmentTimelineProps = {
   events: ShipmentTimelineEventModel[];
   onUpdateStatus: () => void;
+  isUpdating?: boolean;
 };
 
-export function ShipmentTimeline({ events, onUpdateStatus }: ShipmentTimelineProps) {
+export function ShipmentTimeline({ events, onUpdateStatus, isUpdating }: ShipmentTimelineProps) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-gray-900">Timeline</h3>
-        <Button variant="secondary" size="sm" rightIcon={<ArrowRight size={14} />} onClick={onUpdateStatus}>
-          Update Status
+        <Button
+          variant="secondary"
+          size="sm"
+          rightIcon={<ArrowRight size={14} />}
+          onClick={onUpdateStatus}
+          loading={isUpdating}
+        >
+          {isUpdating ? "Updating…" : "Update Status"}
         </Button>
       </div>
 

@@ -18,15 +18,26 @@ export const JobsScreen = () => {
   const [queryInput, setQueryInput] = useState("");
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<WorkflowStage | "all">("all");
+  const [showCompleted, setShowCompleted] = useState(false);
   const deferredQuery = useDeferredValue(query);
   const searchOnly = searchParams.get("mode") === "search";
 
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => job.status !== "completed"),
+    [jobs],
+  );
+
+  const completedJobs = useMemo(
+    () => jobs.filter((job) => job.status === "completed"),
+    [jobs],
+  );
+
   const stageOptions = useMemo(
     () =>
-      Array.from(new Set(jobs.map((job) => job.workflowStage))).sort((left, right) =>
+      Array.from(new Set(activeJobs.map((job) => job.workflowStage))).sort((left, right) =>
         workflowStageLabel[left].localeCompare(workflowStageLabel[right]),
       ),
-    [jobs],
+    [activeJobs],
   );
 
   const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
@@ -34,7 +45,7 @@ export const JobsScreen = () => {
     setQuery(queryInput);
   };
 
-  const visibleJobs = jobs
+  const visibleJobs = activeJobs
     .filter((job) => {
       const haystack = `${job.shipmentId} ${job.contactName ?? ""}`.toLowerCase();
       const matchesQuery = haystack.includes(deferredQuery.trim().toLowerCase());
@@ -109,6 +120,24 @@ export const JobsScreen = () => {
               visibleJobs.map((job) => <JobCard key={job.id} job={job} />)
             )}
           </div>
+
+          {completedJobs.length > 0 && (
+            <div>
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 py-2"
+                onClick={() => setShowCompleted((prev) => !prev)}
+              >
+                <span className="tiny-label">Completed jobs ({completedJobs.length})</span>
+                <span className="text-xs text-stone-400">{showCompleted ? "Hide" : "Show"}</span>
+              </button>
+              {showCompleted && (
+                <div className="mt-3 space-y-3">
+                  {completedJobs.map((job) => <JobCard key={job.id} job={job} />)}
+                </div>
+              )}
+            </div>
+          )}
         </>
       ) : null}
     </section>

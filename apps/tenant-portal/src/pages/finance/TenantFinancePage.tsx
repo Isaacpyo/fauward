@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CircleDollarSign,
@@ -12,6 +12,7 @@ import {
   Trash2,
   TrendingDown,
   TrendingUp,
+  Truck,
   Wallet
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -49,6 +50,62 @@ type FinanceSummary = {
   collected: number;
   outstanding: number;
   overdue: number;
+  codOutstanding?: number;
+  codCollected?: number;
+  payoutsMatchedPct?: number | null;
+  payoutsUnmatchedCount?: number | null;
+};
+
+type CollectionsResponse = {
+  outstandingCount: number;
+  outstandingValue: number;
+  collectedCount: number;
+  collectedValue: number;
+  byDriver: Array<{ driverId: string; name: string; outstandingValue: number; collectedValue: number }>;
+  outstandingList: Array<{ shipmentId: string; trackingNumber: string | null; amount: number; currency: string; assignedDriverId: string | null }>;
+};
+
+type FinanceReturn = {
+  id: string;
+  status: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  shipmentId: string;
+  trackingNumber: string | null;
+  customer: string | null;
+  organisation: string | null;
+  itemsCount: number;
+  itemsValue: number;
+  currency: string | null;
+  returnFee: number;
+  feeCurrency: string;
+  paymentStatus: string;
+  refundedTotal: number;
+  creditedTotal: number;
+  invoiceNumber: string | null;
+};
+
+type GatewayPayout = {
+  id: string;
+  providerPayoutId: string;
+  provider: string;
+  arrivalDate: string;
+  amount: number;
+  currency: string;
+  status: string;
+  _count?: { lines: number };
+};
+
+type GatewayPayoutLine = {
+  id: string;
+  payoutId: string;
+  providerTxnId: string;
+  providerSourceId: string | null;
+  amount: number;
+  currency: string;
+  type: string;
+  matchedPaymentId: string | null;
+  payout?: { providerPayoutId: string; arrivalDate: string };
 };
 
 type FinanceInvoice = {
@@ -196,9 +253,8 @@ const financeTabs = [
   { value: "create-invoice", label: "Create invoice", minimumPlan: "starter" },
   { value: "payments", label: "Payments", minimumPlan: "starter" },
   { value: "collections", label: "COD & Collections", minimumPlan: "pro" },
-  { value: "refunds", label: "Refunds", minimumPlan: "pro" },
-  { value: "settlements", label: "Settlements", minimumPlan: "pro" },
-  { value: "reconciliation", label: "Reconciliation", minimumPlan: "enterprise" }
+  { value: "returns", label: "Returns", minimumPlan: "pro" },
+  { value: "settlements", label: "Settlements Reconciliation", minimumPlan: "enterprise" }
 ] as const satisfies Array<{ value: string; label: string; minimumPlan: Plan }>;
 
 type FinanceTab = (typeof financeTabs)[number];
@@ -804,12 +860,13 @@ function FinanceKpiCard({
   label: string;
   value: number;
   formatter: (value: number) => string;
-  changePct: number;
+  changePct?: number;
   positiveIsGood?: boolean;
   icon: ReactNode;
 }) {
-  const favorable = positiveIsGood ? delta >= 0 : delta <= 0;
-  const TrendIcon = delta >= 0 ? TrendingUp : TrendingDown;
+  const hasDelta = typeof delta === "number";
+  const favorable = hasDelta ? (positiveIsGood ? delta! >= 0 : delta! <= 0) : true;
+  const TrendIcon = hasDelta && delta! >= 0 ? TrendingUp : TrendingDown;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 xl:col-span-3">
@@ -824,17 +881,19 @@ function FinanceKpiCard({
           {icon}
         </div>
       </div>
-      <p
-        className={cn(
-          "mt-4 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
-          favorable
-            ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
-            : "bg-[var(--color-error-light)] text-[var(--color-error)]"
-        )}
-      >
-        <TrendIcon size={13} />
-        {formatDelta(delta)} vs previous period
-      </p>
+      {hasDelta ? (
+        <p
+          className={cn(
+            "mt-4 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold",
+            favorable
+              ? "bg-[var(--color-success-light)] text-[var(--color-success)]"
+              : "bg-[var(--color-error-light)] text-[var(--color-error)]"
+          )}
+        >
+          <TrendIcon size={13} />
+          {formatDelta(delta!)} vs previous period
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -863,13 +922,287 @@ function LockedFinancePanel({ minimumPlan, feature }: { minimumPlan: Plan; featu
   );
 }
 
+type TenantRef = ReturnType<typeof useTenantStore.getState>["tenant"];
+
+function CodCollections({
+  data,
+  fallbackCollectionRate,
+  outstandingReceivables,
+  overdueExposure,
+  paymentMethodBreakdown,
+  tenant
+}: {
+  data: CollectionsResponse | undefined;
+  fallbackCollectionRate: number;
+  outstandingReceivables: number;
+  overdueExposure: number;
+  paymentMethodBreakdown: Array<{ method: string; amount: number }>;
+  tenant: TenantRef;
+}) {
+  if (!data) {
+    return (
+      <EmptyState
+        icon={Wallet}
+        title="No COD activity yet"
+        description="COD outstanding and collected figures appear once cash-on-delivery shipments are created."
+      />
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricTile
+          label="Collection Rate"
+          value={`${fallbackCollectionRate.toFixed(1)}%`}
+          hint="Collected value divided by total invoiced."
+          icon={<Wallet size={18} />}
+        />
+        <MetricTile
+          label="COD Collected"
+          value={formatCurrency(data.collectedValue, tenant)}
+          hint={`${data.collectedCount.toLocaleString()} completed cash-on-delivery payments.`}
+          icon={<CircleDollarSign size={18} />}
+        />
+        <MetricTile
+          label="COD Outstanding"
+          value={formatCurrency(data.outstandingValue, tenant)}
+          hint={`${data.outstandingCount.toLocaleString()} COD shipments awaiting collection.`}
+          icon={<CreditCard size={18} />}
+        />
+        <MetricTile
+          label="Overdue Exposure"
+          value={formatCurrency(overdueExposure, tenant)}
+          hint="Invoice value already outside payment terms."
+          icon={<ReceiptText size={18} />}
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="text-base font-semibold text-gray-900">By driver</h3>
+          {data.byDriver.length === 0 ? (
+            <p className="mt-4 text-sm text-gray-500">No driver-attributed COD activity yet.</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {data.byDriver.map((row) => (
+                <div key={row.driverId} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-3">
+                  <span className="text-sm font-medium text-gray-700">{row.name}</span>
+                  <span className="text-sm text-gray-500">
+                    {formatCurrency(row.outstandingValue, tenant)} outstanding · {formatCurrency(row.collectedValue, tenant)} collected
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-xs text-gray-500">
+            Outstanding receivables (all methods): {formatCurrency(outstandingReceivables, tenant)}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="text-base font-semibold text-gray-900">Outstanding COD queue</h3>
+          {data.outstandingList.length === 0 ? (
+            <p className="mt-4 text-sm text-gray-500">No outstanding COD shipments.</p>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {data.outstandingList.slice(0, 12).map((row) => (
+                <div key={row.shipmentId} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{row.trackingNumber ?? row.shipmentId.slice(0, 10)}</p>
+                    <p className="text-xs text-gray-500">{row.assignedDriverId ? `Driver: ${row.assignedDriverId.slice(0, 10)}` : "Unassigned"}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900">{formatCurrency(row.amount, tenant)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {paymentMethodBreakdown.length > 0 ? (
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <h3 className="text-base font-semibold text-gray-900">Payment methods (all)</h3>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {paymentMethodBreakdown.map((entry) => (
+              <div key={entry.method} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-3">
+                <span className="text-sm font-medium text-gray-700">{entry.method.replaceAll("_", " ")}</span>
+                <span className="text-sm font-semibold text-gray-900">{formatCurrency(entry.amount, tenant)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ReturnsAndAdjustments({
+  returns,
+  creditNotes,
+  tenant
+}: {
+  returns: FinanceReturn[];
+  creditNotes: CreditNote[];
+  tenant: TenantRef;
+}) {
+  const [view, setView] = useState<"returns" | "adjustments">("returns");
+  const manualAdjustments = creditNotes.filter((cn) => !cn.invoice?.id);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant={view === "returns" ? "primary" : "secondary"} onClick={() => setView("returns")}>
+          Returns ({returns.length})
+        </Button>
+        <Button size="sm" variant={view === "adjustments" ? "primary" : "secondary"} onClick={() => setView("adjustments")}>
+          Manual adjustments ({manualAdjustments.length})
+        </Button>
+      </div>
+
+      {view === "returns" ? (
+        returns.length === 0 ? (
+          <EmptyState
+            icon={RefreshCcw}
+            title="No returns yet"
+            description="Returns appear here once customers raise return requests."
+          />
+        ) : (
+          <Table columns={["Return", "Shipment", "Customer", "Status", "Items", "Refunded", "Credited", "Created"]}>
+            {returns.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono">{r.id.slice(0, 10)}</TableCell>
+                <TableCell>
+                  {r.trackingNumber ? (
+                    <Link to={`/shipments/${r.shipmentId}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
+                      {r.trackingNumber}
+                    </Link>
+                  ) : (
+                    r.shipmentId.slice(0, 10)
+                  )}
+                </TableCell>
+                <TableCell>{r.organisation ?? r.customer ?? "—"}</TableCell>
+                <TableCell><Badge variant={statusBadgeVariant(r.status)}>{r.status}</Badge></TableCell>
+                <TableCell>
+                  {r.itemsCount.toLocaleString()} · {formatCurrency(r.itemsValue, tenant)}
+                </TableCell>
+                <TableCell>{formatCurrency(r.refundedTotal, tenant)}</TableCell>
+                <TableCell>{formatCurrency(r.creditedTotal, tenant)}</TableCell>
+                <TableCell>{formatDateTime(r.createdAt, tenant)}</TableCell>
+              </TableRow>
+            ))}
+          </Table>
+        )
+      ) : manualAdjustments.length === 0 ? (
+        <EmptyState
+          icon={RefreshCcw}
+          title="No manual adjustments"
+          description="Credit notes issued outside of returns will appear here."
+        />
+      ) : (
+        <Table columns={["Credit Note", "Customer", "Reason", "Created", "Amount"]}>
+          {manualAdjustments.map((cn) => (
+            <TableRow key={cn.id}>
+              <TableCell className="font-semibold text-gray-900">{cn.creditNumber}</TableCell>
+              <TableCell>{cn.organisation?.name ?? "Unknown customer"}</TableCell>
+              <TableCell>{cn.reason ?? "No reason provided"}</TableCell>
+              <TableCell>{formatDateTime(cn.createdAt, tenant)}</TableCell>
+              <TableCell>{formatCurrency(Number(cn.amount ?? 0), tenant)}</TableCell>
+            </TableRow>
+          ))}
+        </Table>
+      )}
+    </div>
+  );
+}
+
+function SettlementsReconciliation({
+  payouts,
+  unmatchedLines,
+  matchedPct,
+  unmatchedCount,
+  tenant
+}: {
+  payouts: GatewayPayout[];
+  unmatchedLines: GatewayPayoutLine[];
+  matchedPct: number | null;
+  unmatchedCount: number | null;
+  tenant: TenantRef;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 md:grid-cols-3">
+        <MetricTile
+          label="Payouts ingested"
+          value={payouts.length.toLocaleString()}
+          hint="Gateway payouts received from Stripe webhooks."
+          icon={<Truck size={18} />}
+        />
+        <MetricTile
+          label="Match rate"
+          value={matchedPct === null ? "—" : `${matchedPct.toFixed(1)}%`}
+          hint="Payout lines linked to a payment record."
+          icon={<ClipboardCheck size={18} />}
+        />
+        <MetricTile
+          label="Unmatched lines"
+          value={(unmatchedCount ?? unmatchedLines.length).toLocaleString()}
+          hint="Payout lines without a payment match."
+          icon={<CircleDollarSign size={18} />}
+        />
+      </div>
+
+      {payouts.length === 0 ? (
+        <EmptyState
+          icon={Truck}
+          title="No payouts yet"
+          description="Gateway payouts appear once Stripe payout.paid webhooks are received."
+        />
+      ) : (
+        <Table columns={["Payout ID", "Arrival", "Provider", "Status", "Amount", "Lines"]}>
+          {payouts.map((p) => (
+            <TableRow key={p.id}>
+              <TableCell className="font-mono">{p.providerPayoutId}</TableCell>
+              <TableCell>{formatDateTime(p.arrivalDate, tenant)}</TableCell>
+              <TableCell>{p.provider}</TableCell>
+              <TableCell><Badge variant={statusBadgeVariant(p.status.toUpperCase())}>{p.status}</Badge></TableCell>
+              <TableCell>{formatCurrency(Number(p.amount ?? 0), tenant)}</TableCell>
+              <TableCell>{p._count?.lines?.toLocaleString() ?? "—"}</TableCell>
+            </TableRow>
+          ))}
+        </Table>
+      )}
+
+      {unmatchedLines.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <h3 className="text-base font-semibold text-amber-900">Unmatched payout lines</h3>
+          <p className="mt-1 text-xs text-amber-800">
+            Lines from gateway payouts that did not resolve to a payment record. Manual matching is available via the API.
+          </p>
+          <div className="mt-3 space-y-2">
+            {unmatchedLines.slice(0, 10).map((line) => (
+              <div key={line.id} className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                <div>
+                  <p className="font-mono text-xs text-gray-600">{line.providerTxnId}</p>
+                  <p className="text-xs text-gray-500">{line.type} · source {line.providerSourceId ?? "—"}</p>
+                </div>
+                <span className="text-sm font-semibold text-gray-900">{formatCurrency(Number(line.amount ?? 0), tenant)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function TenantFinancePage() {
   const user = useAppStore((state) => state.user);
   const addToast = useAppStore((state) => state.addToast);
   const tenant = useTenantStore((state) => state.tenant);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentTab = searchParams.get("tab") ?? "overview";
+  const rawTab = searchParams.get("tab");
+  const currentTab = rawTab === "refunds" ? "returns" : rawTab === "reconciliation" ? "settlements" : (rawTab ?? "overview");
   const initialFinanceRange = financePresetRange("30d");
   const [financePreset, setFinancePreset] = useState<FinanceRangePreset>("30d");
   const [financeRange, setFinanceRange] = useState<DateRange>(initialFinanceRange);
@@ -954,6 +1287,72 @@ export function TenantFinancePage() {
     }
   });
 
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "refunds") setSearchParams({ tab: "returns" }, { replace: true });
+    else if (tab === "reconciliation") setSearchParams({ tab: "settlements" }, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const planForGating = (user?.plan ?? tenant?.plan ?? "starter") as string;
+  const canUseCod = hasPlanAccess(planForGating, "pro");
+  const canUseReturns = hasPlanAccess(planForGating, "pro");
+  const canUseSettlements = hasPlanAccess(planForGating, "enterprise");
+
+  const collectionsQuery = useQuery({
+    queryKey: ["finance-collections"],
+    queryFn: () => fetchJson<CollectionsResponse>("/v1/finance/collections"),
+    enabled: hasToken && canUseCod,
+    retry: false,
+    refetchInterval: 60_000
+  });
+
+  const returnsQuery = useQuery({
+    queryKey: ["finance-returns"],
+    queryFn: async () => (await fetchJson<{ data: FinanceReturn[] }>("/v1/finance/returns")).data,
+    enabled: hasToken && canUseReturns && currentTab === "returns",
+    retry: false,
+    refetchInterval: 60_000
+  });
+
+  const payoutsQuery = useQuery({
+    queryKey: ["finance-payouts"],
+    queryFn: async () => (await fetchJson<{ data: GatewayPayout[] }>("/v1/finance/payouts")).data,
+    enabled: hasToken && canUseSettlements && currentTab === "settlements",
+    retry: false,
+    refetchInterval: 60_000
+  });
+
+  const payoutsUnmatchedQuery = useQuery({
+    queryKey: ["finance-payouts-unmatched"],
+    queryFn: async () => (await fetchJson<{ data: GatewayPayoutLine[] }>("/v1/finance/payouts/unmatched")).data,
+    enabled: hasToken && canUseSettlements && currentTab === "settlements",
+    retry: false,
+    refetchInterval: 60_000
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async (invoice: FinanceInvoice) => {
+      const response = await api.post<{ payment: unknown; invoice: FinanceInvoice }>(
+        `/v1/finance/invoices/${invoice.id}/pay`,
+        { amount: Number(invoice.total ?? 0), currency: invoice.currency, method: "MANUAL" }
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["finance-invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["finance-payments"] });
+      addToast({ title: "Invoice marked paid", variant: "success" });
+    },
+    onError: (error) => {
+      addToast({
+        title: "Could not mark invoice paid",
+        description: getApiErrorMessage(error, "Try again."),
+        variant: "error"
+      });
+    }
+  });
+
   const financeUnavailable =
     getErrorStatus(summaryQuery.error) === 403 ||
     getErrorStatus(invoicesQuery.error) === 403 ||
@@ -1013,20 +1412,6 @@ export function TenantFinancePage() {
   const hasCollectionRate = collectionRateSeries.some((entry) => entry.collectionRate > 0);
   const hasPaymentMethods = periodPaymentMethodData.some((entry) => entry.amount > 0);
 
-  const paidAmountByInvoiceId = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const payment of payments) {
-      if (!payment.invoiceId || payment.status !== "COMPLETED") continue;
-      map.set(payment.invoiceId, (map.get(payment.invoiceId) ?? 0) + Number(payment.amount ?? 0));
-    }
-    return map;
-  }, [payments]);
-
-  const codPayments = useMemo(
-    () => payments.filter((payment) => ["COD", "CASH", "CASH_ON_DELIVERY"].includes((payment.method ?? "").toUpperCase())),
-    [payments]
-  );
-
   const collectionRate = useMemo(() => {
     if (summary.totalInvoiced <= 0) return 0;
     return (summary.collected / summary.totalInvoiced) * 100;
@@ -1042,57 +1427,6 @@ export function TenantFinancePage() {
       .map(([method, amount]) => ({ method, amount }))
       .sort((a, b) => b.amount - a.amount);
   }, [payments]);
-
-  const settlementRows = useMemo(() => {
-    const refundTotal = creditNotes.reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
-    const remitted = payments
-      .filter((payment) => payment.status === "COMPLETED")
-      .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
-    const pending = Math.max(summary.outstanding - refundTotal, 0);
-    return [
-      {
-        id: "settlement-remitted",
-        label: "Cleared receivables",
-        amount: remitted,
-        status: "SETTLED",
-        description: "Completed inflows already captured against invoices."
-      },
-      {
-        id: "settlement-pending",
-        label: "Pending remittance",
-        amount: pending,
-        status: "IN_REVIEW",
-        description: "Open invoice value still awaiting customer payment or remittance."
-      },
-      {
-        id: "settlement-refunds",
-        label: "Credits and refunds",
-        amount: refundTotal,
-        status: "ADJUSTED",
-        description: "Credit notes issued back against customer balances."
-      }
-    ];
-  }, [creditNotes, payments, summary.outstanding]);
-
-  const reconciliationRows = useMemo(() => {
-    return invoices.map((invoice) => {
-      const paidAmount = paidAmountByInvoiceId.get(invoice.id) ?? 0;
-      const total = Number(invoice.total ?? 0);
-      let status = "UNRECONCILED";
-      if (paidAmount >= total && total > 0) status = "MATCHED";
-      else if (paidAmount > 0) status = "PARTIAL";
-
-      return {
-        id: invoice.id,
-        invoiceNumber: invoice.invoiceNumber,
-        customer: invoice.organisation?.name ?? "Unknown customer",
-        invoiceTotal: total,
-        paidAmount,
-        delta: total - paidAmount,
-        status
-      };
-    });
-  }, [invoices, paidAmountByInvoiceId]);
 
   const isLoading =
     hasToken &&
@@ -1242,6 +1576,7 @@ export function TenantFinancePage() {
             value={currentTab}
             onValueChange={(tab) => setSearchParams({ tab })}
             items={tabItems}
+            hideTabList
           >
             <TabsContent value="overview">
               {isLoading ? (
@@ -1295,6 +1630,23 @@ export function TenantFinancePage() {
                       positiveIsGood={false}
                       icon={<CreditCard size={18} />}
                     />
+                    {summary.codOutstanding !== undefined ? (
+                      <FinanceKpiCard
+                        label="COD outstanding"
+                        value={summary.codOutstanding}
+                        formatter={(value) => formatCurrency(value, tenant)}
+                        positiveIsGood={false}
+                        icon={<Truck size={18} />}
+                      />
+                    ) : null}
+                    {summary.payoutsMatchedPct !== undefined && summary.payoutsMatchedPct !== null ? (
+                      <FinanceKpiCard
+                        label="Payout match rate"
+                        value={summary.payoutsMatchedPct}
+                        formatter={(value) => `${value.toFixed(1)}%`}
+                        icon={<ClipboardCheck size={18} />}
+                      />
+                    ) : null}
 
                     <FinanceChartCard
                       title="Revenue Flow"
@@ -1502,23 +1854,43 @@ export function TenantFinancePage() {
                       Create invoice
                     </Button>
                   </div>
-                  <Table columns={["Invoice", "Customer", "Status", "Created", "Due", "Amount"]}>
-                    {invoices.map((invoice) => (
-                      <TableRow key={invoice.id}>
-                        <TableCell>
-                          <Link to={`/finance/${invoice.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
-                            {invoice.invoiceNumber}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{invoice.organisation?.name ?? "Unknown customer"}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusBadgeVariant(invoice.status)}>{invoice.status}</Badge>
-                        </TableCell>
-                        <TableCell>{formatDateTime(invoice.createdAt, tenant)}</TableCell>
-                        <TableCell>{invoice.dueDate ? formatDateTime(invoice.dueDate, tenant) : "Not set"}</TableCell>
-                        <TableCell>{formatCurrency(Number(invoice.total ?? 0), tenant)}</TableCell>
-                      </TableRow>
-                    ))}
+                  <Table columns={["Invoice", "Customer", "Status", "Created", "Due", "Amount", ""]}>
+                    {invoices.map((invoice) => {
+                      const canMarkPaid = invoice.status !== "PAID" && invoice.status !== "VOID";
+                      return (
+                        <TableRow key={invoice.id}>
+                          <TableCell>
+                            <Link to={`/finance/${invoice.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
+                              {invoice.invoiceNumber}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{invoice.organisation?.name ?? "Unknown customer"}</TableCell>
+                          <TableCell>
+                            <Badge variant={statusBadgeVariant(invoice.status)}>{invoice.status}</Badge>
+                          </TableCell>
+                          <TableCell>{formatDateTime(invoice.createdAt, tenant)}</TableCell>
+                          <TableCell>{invoice.dueDate ? formatDateTime(invoice.dueDate, tenant) : "Not set"}</TableCell>
+                          <TableCell>{formatCurrency(Number(invoice.total ?? 0), tenant)}</TableCell>
+                          <TableCell>
+                            {canMarkPaid ? (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                loading={markPaidMutation.isPending && markPaidMutation.variables?.id === invoice.id}
+                                disabled={markPaidMutation.isPending}
+                                onClick={() => {
+                                  if (window.confirm(`Mark ${invoice.invoiceNumber} as paid?`)) {
+                                    markPaidMutation.mutate(invoice);
+                                  }
+                                }}
+                              >
+                                Mark paid
+                              </Button>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </Table>
                 </div>
               )}
@@ -1959,178 +2331,45 @@ export function TenantFinancePage() {
             </TabsContent>
 
             <TabsContent value="collections">
-              {renderPlanGatedTab(financeTabByValue.collections, isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.collections, collectionsQuery.isLoading ? (
                 <SectionLoader />
               ) : (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <MetricTile
-                      label="Collection Rate"
-                      value={`${collectionRate.toFixed(1)}%`}
-                      hint="Collected value divided by total invoiced."
-                      icon={<Wallet size={18} />}
-                    />
-                    <MetricTile
-                      label="COD Captured"
-                      value={formatCurrency(codPayments.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0), tenant)}
-                      hint="Completed cash-on-delivery or cash-collected payments."
-                      icon={<CircleDollarSign size={18} />}
-                    />
-                    <MetricTile
-                      label="Outstanding Receivables"
-                      value={formatCurrency(summary.outstanding, tenant)}
-                      hint="Open balances pending collection."
-                      icon={<CreditCard size={18} />}
-                    />
-                    <MetricTile
-                      label="Overdue Exposure"
-                      value={formatCurrency(summary.overdue, tenant)}
-                      hint="Value already outside payment terms."
-                      icon={<ReceiptText size={18} />}
-                    />
-                  </div>
-
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <div className="rounded-xl border border-gray-200 bg-white p-4">
-                      <h3 className="text-base font-semibold text-gray-900">Collection channels</h3>
-                      <div className="mt-4 space-y-2">
-                        {paymentMethodBreakdown.map((entry) => (
-                          <div key={entry.method} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-3">
-                            <span className="text-sm font-medium text-gray-700">{entry.method.replaceAll("_", " ")}</span>
-                            <span className="text-sm font-semibold text-gray-900">{formatCurrency(entry.amount, tenant)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 bg-white p-4">
-                      <h3 className="text-base font-semibold text-gray-900">COD queue</h3>
-                      {codPayments.length === 0 ? (
-                        <p className="mt-4 text-sm text-gray-500">No COD payments recorded yet.</p>
-                      ) : (
-                        <div className="mt-4 space-y-2">
-                          {codPayments.map((payment) => (
-                            <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-3">
-                              <div>
-                                <p className="text-sm font-semibold text-gray-900">{payment.invoice?.invoiceNumber ?? payment.id}</p>
-                                <p className="text-xs text-gray-500">{formatDateTime(payment.createdAt, tenant)}</p>
-                              </div>
-                              <span className="text-sm font-semibold text-gray-900">{formatCurrency(Number(payment.amount ?? 0), tenant)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <CodCollections
+                  data={collectionsQuery.data}
+                  fallbackCollectionRate={collectionRate}
+                  outstandingReceivables={summary.outstanding}
+                  overdueExposure={summary.overdue}
+                  paymentMethodBreakdown={paymentMethodBreakdown}
+                  tenant={tenant}
+                />
               ))}
             </TabsContent>
 
-            <TabsContent value="refunds">
-              {renderPlanGatedTab(financeTabByValue.refunds, isLoading ? (
+            <TabsContent value="returns">
+              {renderPlanGatedTab(financeTabByValue.returns, returnsQuery.isLoading ? (
                 <SectionLoader />
-              ) : creditNotes.length === 0 ? (
-                <EmptyState
-                  icon={RefreshCcw}
-                  title="No refunds or credit notes"
-                  description="Credit notes and refund adjustments will appear here once issued."
-                />
               ) : (
-                <Table columns={["Credit Note", "Invoice", "Customer", "Reason", "Created", "Amount"]}>
-                  {creditNotes.map((creditNote) => (
-                    <TableRow key={creditNote.id}>
-                      <TableCell className="font-semibold text-gray-900">{creditNote.creditNumber}</TableCell>
-                      <TableCell>
-                        {creditNote.invoice?.id ? (
-                          <Link to={`/finance/${creditNote.invoice.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
-                            {creditNote.invoice.invoiceNumber}
-                          </Link>
-                        ) : (
-                          "Unlinked"
-                        )}
-                      </TableCell>
-                      <TableCell>{creditNote.organisation?.name ?? "Unknown customer"}</TableCell>
-                      <TableCell>{creditNote.reason ?? "No reason provided"}</TableCell>
-                      <TableCell>{formatDateTime(creditNote.createdAt, tenant)}</TableCell>
-                      <TableCell>{formatCurrency(Number(creditNote.amount ?? 0), tenant)}</TableCell>
-                    </TableRow>
-                  ))}
-                </Table>
+                <div className="space-y-4">
+                  <ReturnsAndAdjustments
+                    returns={returnsQuery.data ?? []}
+                    creditNotes={creditNotes}
+                    tenant={tenant}
+                  />
+                </div>
               ))}
             </TabsContent>
 
             <TabsContent value="settlements">
-              {renderPlanGatedTab(financeTabByValue.settlements, isLoading ? (
+              {renderPlanGatedTab(financeTabByValue.settlements, payoutsQuery.isLoading ? (
                 <SectionLoader />
               ) : (
-                <div className="space-y-4">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {settlementRows.map((row) => (
-                      <div key={row.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-semibold text-gray-900">{row.label}</p>
-                          <Badge variant={statusBadgeVariant(row.status)}>{row.status}</Badge>
-                        </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-900">{formatCurrency(row.amount, tenant)}</p>
-                        <p className="mt-2 text-xs text-gray-500">{row.description}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-base font-semibold text-gray-900">Settlement candidates</h3>
-                      <Badge variant="primary">{payments.filter((payment) => payment.status === "COMPLETED").length} cleared payments</Badge>
-                    </div>
-                    <div className="mt-4 space-y-2">
-                      {payments
-                        .filter((payment) => payment.status === "COMPLETED")
-                        .slice(0, 6)
-                        .map((payment) => (
-                          <div key={payment.id} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-3">
-                            <div>
-                              <p className="text-sm font-semibold text-gray-900">{payment.invoice?.invoiceNumber ?? payment.id}</p>
-                              <p className="text-xs text-gray-500">{payment.method ?? "Unspecified"} settlement inflow</p>
-                            </div>
-                            <span className="text-sm font-semibold text-gray-900">{formatCurrency(Number(payment.amount ?? 0), tenant)}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </TabsContent>
-
-            <TabsContent value="reconciliation">
-              {renderPlanGatedTab(financeTabByValue.reconciliation, isLoading ? (
-                <SectionLoader />
-              ) : reconciliationRows.length === 0 ? (
-                <EmptyState
-                  icon={ClipboardCheck}
-                  title="Nothing to reconcile yet"
-                  description="Reconciliation status appears once invoice and payment records exist."
+                <SettlementsReconciliation
+                  payouts={payoutsQuery.data ?? []}
+                  unmatchedLines={payoutsUnmatchedQuery.data ?? []}
+                  matchedPct={summary.payoutsMatchedPct ?? null}
+                  unmatchedCount={summary.payoutsUnmatchedCount ?? null}
+                  tenant={tenant}
                 />
-              ) : (
-                <Table columns={["Invoice", "Customer", "Invoice Total", "Paid", "Delta", "Status"]}>
-                  {reconciliationRows.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>
-                        <Link to={`/finance/${row.id}`} className="font-semibold text-[var(--tenant-primary)] hover:underline">
-                          {row.invoiceNumber}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{row.customer}</TableCell>
-                      <TableCell>{formatCurrency(row.invoiceTotal, tenant)}</TableCell>
-                      <TableCell>{formatCurrency(row.paidAmount, tenant)}</TableCell>
-                      <TableCell className={row.delta > 0 ? "text-amber-700" : "text-emerald-700"}>
-                        {formatCurrency(row.delta, tenant)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusBadgeVariant(row.status)}>{row.status}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </Table>
               ))}
             </TabsContent>
           </Tabs>

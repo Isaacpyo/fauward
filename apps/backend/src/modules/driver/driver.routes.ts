@@ -1,8 +1,12 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { Prisma } from '@prisma/client';
+import { Prisma, PaymentStatus } from '@prisma/client';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
+import {
+  SHIPMENT_EVENT_COD_COLLECTED,
+  type CodCollectionPayload
+} from '../shipments/shipment-events.const.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -123,13 +127,17 @@ export async function registerDriverRoutes(app: FastifyInstance) {
       signatureBase64?: string;
       recipientName?: string;
       notes?: string;
+      codCollection?: CodCollectionPayload;
     };
 
     if (!payload.shipmentId) {
       return reply.status(400).send({ error: 'shipmentId is required' });
     }
 
-    const shipment = await app.prisma.shipment.findFirst({ where: { id: payload.shipmentId, tenantId } });
+    const shipment = await app.prisma.shipment.findFirst({
+      where: { id: payload.shipmentId, tenantId },
+      include: { payment: true, invoice: true }
+    });
     if (!shipment) return reply.status(404).send({ error: 'Shipment not found' });
 
     const assets: Array<{ type: string; fileUrl: string }> = [];
@@ -138,6 +146,19 @@ export async function registerDriverRoutes(app: FastifyInstance) {
     }
     if (payload.signatureBase64) {
       assets.push({ type: 'SIGNATURE', fileUrl: payload.signatureBase64.startsWith('data:') ? payload.signatureBase64 : `data:image/png;base64,${payload.signatureBase64}` });
+    }
+
+    const cod = payload.codCollection;
+    if (cod) {
+      if (!cod.method || !['CASH', 'CARD_TERMINAL', 'BANK_TRANSFER'].includes(cod.method)) {
+        return reply.status(400).send({ error: 'codCollection.method must be CASH, CARD_TERMINAL, or BANK_TRANSFER' });
+      }
+      if (!cod.amount || cod.amount <= 0) {
+        return reply.status(400).send({ error: 'codCollection.amount must be greater than zero' });
+      }
+      if (!cod.currency) {
+        return reply.status(400).send({ error: 'codCollection.currency is required' });
+      }
     }
 
     await app.prisma.$transaction(async (tx) => {
@@ -164,7 +185,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.shipmentEvent.create({
+      const deliveredEvent = await tx.shipmentEvent.create({
         data: {
           tenantId,
           shipmentId: shipment.id,
@@ -175,6 +196,84 @@ export async function registerDriverRoutes(app: FastifyInstance) {
           notes: payload.notes ?? 'POD submitted'
         }
       });
+
+      if (cod) {
+        const codEvent = await tx.shipmentEvent.create({
+          data: {
+            tenantId,
+            shipmentId: shipment.id,
+            status: SHIPMENT_EVENT_COD_COLLECTED,
+            actorId: userId,
+            actorType: 'TENANT_DRIVER',
+            source: 'DRIVER_APP',
+            notes: JSON.stringify({ amount: cod.amount, currency: cod.currency, method: cod.method, collectedBy: cod.collectedBy ?? userId })
+          }
+        });
+
+        let paymentId = shipment.payment?.id;
+        if (paymentId) {
+          await tx.payment.update({
+            where: { id: paymentId },
+            data: {
+              status: PaymentStatus.COMPLETED,
+              amount: cod.amount,
+              currency: cod.currency.toUpperCase(),
+              method: 'CASH',
+              gatewayRef: `cod:${codEvent.id}`
+            }
+          });
+        } else {
+          const newPayment = await tx.payment.create({
+            data: {
+              tenantId,
+              shipmentId: shipment.id,
+              customerId: shipment.customerId,
+              amount: cod.amount,
+              currency: cod.currency.toUpperCase(),
+              method: 'CASH',
+              status: PaymentStatus.COMPLETED,
+              gatewayRef: `cod:${codEvent.id}`,
+              invoiceId: shipment.invoice?.id ?? null
+            }
+          });
+          paymentId = newPayment.id;
+        }
+
+        if (shipment.invoice?.id) {
+          const paidAggregate = await tx.payment.aggregate({
+            where: { tenantId, invoiceId: shipment.invoice.id, status: PaymentStatus.COMPLETED },
+            _sum: { amount: true }
+          });
+          const paidAmount = Number(paidAggregate._sum.amount ?? 0);
+          const invoiceTotal = Number(shipment.invoice.total ?? 0);
+          const nextStatus = paidAmount >= invoiceTotal ? 'PAID' : 'PARTIALLY_PAID';
+          await tx.invoice.update({
+            where: { id: shipment.invoice.id },
+            data: {
+              status: nextStatus,
+              paidAt: nextStatus === 'PAID' ? new Date() : shipment.invoice.paidAt
+            }
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            tenantId,
+            actorId: userId,
+            action: 'COD_COLLECTED',
+            resourceType: 'PAYMENT',
+            resourceId: paymentId,
+            metadata: {
+              shipmentId: shipment.id,
+              amount: cod.amount,
+              currency: cod.currency.toUpperCase(),
+              method: cod.method,
+              shipmentEventId: codEvent.id,
+              deliveredEventId: deliveredEvent.id
+            } as Prisma.InputJsonValue
+          }
+        });
+      }
     });
 
     reply.send({ success: true });

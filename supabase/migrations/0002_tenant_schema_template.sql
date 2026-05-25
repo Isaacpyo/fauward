@@ -50,6 +50,7 @@ create table if not exists "tenant_TENANT_SLUG".shipments (
   declared_value    numeric not null,
   insurance         text not null default 'NONE',  -- NONE | BASIC | STANDARD | PREMIUM
   notes             text,
+  customs_declaration jsonb,
 
   -- Package dimensions
   length_cm         numeric,

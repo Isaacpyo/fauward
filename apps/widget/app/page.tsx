@@ -11,7 +11,7 @@ function WidgetPageContent() {
 
   function handleCreated(trackingRef: string) {
     // postMessage is already fired inside CreateShipmentForm
-    console.log("[WIDGET] Shipment created:", trackingRef);
+    void trackingRef;
   }
 
   return (

@@ -13,6 +13,8 @@ type AssignDriverModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   drivers: DriverListItem[];
+  loading?: boolean;
+  error?: string;
   currentDriverId?: string;
   currentDriverName?: string;
   onConfirm: (driverId: string) => Promise<void>;
@@ -22,6 +24,8 @@ export function AssignDriverModal({
   open,
   onOpenChange,
   drivers,
+  loading,
+  error,
   currentDriverId,
   currentDriverName,
   onConfirm
@@ -72,7 +76,19 @@ export function AssignDriverModal({
         <Search size={16} className="pointer-events-none -mt-[43px] ml-3 text-gray-400" />
 
         <div className="max-h-[260px] space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-2">
-          {filteredDrivers.map((driver) => (
+          {loading ? (
+            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+              Loading field operators…
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center py-8 text-sm text-red-500">
+              {error}
+            </div>
+          ) : filteredDrivers.length === 0 ? (
+            <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+              No field operators found
+            </div>
+          ) : filteredDrivers.map((driver) => (
             <button
               key={driver.id}
               type="button"

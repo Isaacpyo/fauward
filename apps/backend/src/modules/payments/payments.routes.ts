@@ -7,6 +7,66 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
 import { handleDunningEvent } from './billing.service.js';
 import { stripeService } from './stripe.service.js';
+import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
+import { createInAppNotifications } from '../notifications/notifications.routes.js';
+
+async function handleReturnPayment(app: FastifyInstance, tenantId: string, returnId: string) {
+  const returnReq = await app.prisma.returnRequest.findFirst({
+    where: { id: returnId, tenantId },
+    include: { shipment: { select: { id: true, originAddress: true, destinationAddress: true, weightKg: true, currency: true, trackingNumber: true, tenantId: true } } }
+  });
+  if (!returnReq || !returnReq.shipment) return;
+
+  await app.prisma.returnRequest.update({
+    where: { id: returnId },
+    data: { paymentStatus: 'PAID' as any, feePaidAt: new Date() }
+  });
+
+  const tenant = await app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+  const trackingNumber = await generateTrackingNumber(app.prisma, tenant?.name ?? 'FW');
+
+  const reverseShipment = await app.prisma.shipment.create({
+    data: {
+      tenantId,
+      trackingNumber,
+      originAddress: returnReq.shipment.destinationAddress as never,
+      destinationAddress: returnReq.shipment.originAddress as never,
+      status: 'PENDING',
+      weightKg: returnReq.shipment.weightKg ?? undefined,
+      currency: returnReq.shipment.currency,
+      notes: `Return pickup for ${returnId}`,
+    }
+  });
+
+  await app.prisma.returnRequest.update({
+    where: { id: returnId },
+    data: { returnPickupShipmentId: reverseShipment.id, status: 'LABEL_ISSUED' as any }
+  });
+
+  await app.prisma.shipmentEvent.create({
+    data: {
+      tenantId,
+      shipmentId: returnReq.shipment.id,
+      status: 'RETURN_STARTED',
+      notes: 'Return pickup shipment created — payment received',
+      actorType: 'SYSTEM',
+    }
+  });
+
+  const ops = await app.prisma.user.findMany({
+    where: { tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true },
+    select: { id: true }
+  });
+
+  await createInAppNotifications(app, {
+    tenantId,
+    userIds: ops.map((u) => u.id),
+    type: 'return_payment_received',
+    title: `Return payment received for ${returnReq.shipment.trackingNumber}`,
+    body: `Reverse pickup shipment ${trackingNumber} created and ready for dispatch.`,
+    link: '/returns',
+  });
+}
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -15,6 +75,116 @@ function getTenantId(request: FastifyRequest, reply: FastifyReply): string | nul
     return null;
   }
   return tenantId;
+}
+
+type StripeBalanceTxn = {
+  id: string;
+  amount: number;
+  currency: string;
+  type: string;
+  source?: string | { id?: string; metadata?: Record<string, string>; payment_intent?: string | { id?: string; metadata?: Record<string, string> } } | null;
+};
+
+function pickTenantIdFromSource(source: StripeBalanceTxn['source']): { tenantId: string | null; sourceId: string | null } {
+  if (!source) return { tenantId: null, sourceId: null };
+  if (typeof source === 'string') return { tenantId: null, sourceId: source };
+  const directMeta = source.metadata?.tenantId;
+  if (directMeta) return { tenantId: directMeta, sourceId: source.id ?? null };
+  const pi = source.payment_intent;
+  if (pi && typeof pi === 'object' && pi.metadata?.tenantId) {
+    return { tenantId: pi.metadata.tenantId, sourceId: typeof pi === 'object' ? pi.id ?? source.id ?? null : source.id ?? null };
+  }
+  return { tenantId: null, sourceId: source.id ?? null };
+}
+
+async function ingestStripePayout(app: FastifyInstance, payoutObj: Record<string, unknown>) {
+  const payoutId = typeof payoutObj.id === 'string' ? payoutObj.id : null;
+  if (!payoutId) return;
+
+  const arrivalDateRaw = payoutObj.arrival_date;
+  const arrivalDate = typeof arrivalDateRaw === 'number' ? new Date(arrivalDateRaw * 1000) : new Date();
+  const status = typeof payoutObj.status === 'string' ? payoutObj.status.toLowerCase() : 'unknown';
+  const currency = (typeof payoutObj.currency === 'string' ? payoutObj.currency : 'gbp').toUpperCase();
+  const payoutAmountMinor = typeof payoutObj.amount === 'number' ? payoutObj.amount : 0;
+
+  const txns = (await stripeService.listPayoutBalanceTransactions(payoutId)) as unknown as StripeBalanceTxn[];
+
+  const linesByTenant = new Map<string, Array<{ txn: StripeBalanceTxn; sourceId: string | null }>>();
+  for (const txn of txns) {
+    const { tenantId, sourceId } = pickTenantIdFromSource(txn.source);
+    if (!tenantId) continue;
+    const arr = linesByTenant.get(tenantId) ?? [];
+    arr.push({ txn, sourceId });
+    linesByTenant.set(tenantId, arr);
+  }
+
+  for (const [tenantId, lines] of linesByTenant) {
+    const tenantAmountMinor = lines.reduce((sum, l) => sum + (l.txn.amount ?? 0), 0);
+    const payout = await app.prisma.gatewayPayout.upsert({
+      where: { tenantId_providerPayoutId: { tenantId, providerPayoutId: payoutId } },
+      create: {
+        tenantId,
+        provider: 'stripe',
+        providerPayoutId: payoutId,
+        arrivalDate,
+        amount: tenantAmountMinor / 100,
+        currency,
+        status,
+        rawPayload: payoutObj as never
+      },
+      update: {
+        arrivalDate,
+        amount: tenantAmountMinor / 100,
+        status,
+        rawPayload: payoutObj as never
+      }
+    });
+
+    for (const { txn, sourceId } of lines) {
+      const matchedPayment = sourceId
+        ? await app.prisma.payment.findFirst({ where: { tenantId, gatewayRef: sourceId } })
+        : null;
+
+      await app.prisma.gatewayPayoutLine.upsert({
+        where: { tenantId_providerTxnId: { tenantId, providerTxnId: txn.id } },
+        create: {
+          tenantId,
+          payoutId: payout.id,
+          providerTxnId: txn.id,
+          providerSourceId: sourceId,
+          amount: (txn.amount ?? 0) / 100,
+          currency: (txn.currency ?? currency).toUpperCase(),
+          type: txn.type ?? 'other',
+          matchedPaymentId: matchedPayment?.id ?? null,
+          rawPayload: txn as never
+        },
+        update: {
+          providerSourceId: sourceId,
+          amount: (txn.amount ?? 0) / 100,
+          currency: (txn.currency ?? currency).toUpperCase(),
+          type: txn.type ?? 'other',
+          matchedPaymentId: matchedPayment?.id ?? null,
+          rawPayload: txn as never
+        }
+      });
+
+      if (matchedPayment) {
+        await app.prisma.auditLog.create({
+          data: {
+            tenantId,
+            action: 'PAYOUT_LINE_MATCHED',
+            resourceType: 'GATEWAY_PAYOUT_LINE',
+            resourceId: txn.id,
+            metadata: { paymentId: matchedPayment.id, payoutId: payout.id } as never
+          }
+        });
+      }
+    }
+  }
+
+  if (linesByTenant.size === 0) {
+    app.log.warn({ payoutId, payoutAmountMinor }, 'Stripe payout had no tenant-attributable balance transactions');
+  }
 }
 
 function stablePaymentIntentKey(tenantId: string, shipmentId: string, amountMinor: number, currency: string) {
@@ -247,6 +417,21 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
           attempt: attemptCount
         });
       }
+    }
+
+    if (eventType === 'checkout.session.completed') {
+      const sessionObj = eventAny.data?.object ?? {};
+      const returnId = String(sessionObj.metadata?.returnId ?? '');
+      const sessionTenantId = String(sessionObj.metadata?.tenantId ?? '');
+      if (returnId && sessionTenantId) {
+        await handleReturnPayment(app, sessionTenantId, returnId);
+      }
+    }
+
+    if (eventType === 'payout.paid' || eventType === 'payout.updated') {
+      await ingestStripePayout(app, eventAny.data?.object ?? {}).catch((err) => {
+        app.log.error({ err }, 'Failed to ingest Stripe payout');
+      });
     }
 
     if (eventType === 'radar.early_fraud_warning.created' || eventType === 'review.opened') {

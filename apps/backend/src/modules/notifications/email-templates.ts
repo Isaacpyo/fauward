@@ -1,10 +1,14 @@
 export const EMAIL_TEMPLATES = {
   booking_confirmed: 'booking_confirmed',
+  shipment_processing: 'shipment_processing',
   shipment_picked_up: 'shipment_picked_up',
+  shipment_in_transit: 'shipment_in_transit',
   out_for_delivery: 'out_for_delivery',
   delivered: 'delivered',
   failed_delivery: 'failed_delivery',
   shipment_exception: 'shipment_exception',
+  shipment_returned: 'shipment_returned',
+  shipment_cancelled: 'shipment_cancelled',
   invoice_sent: 'invoice_sent',
   invoice_overdue: 'invoice_overdue',
   payment_received: 'payment_received',
@@ -21,5 +25,6 @@ export const EMAIL_TEMPLATES = {
   usage_warning_80: 'usage_warning_80',
   usage_limit_reached: 'usage_limit_reached',
   ops_new_shipment: 'ops_new_shipment',
-  trial_expiry: 'trial_expiry'
+  trial_expiry: 'trial_expiry',
+  return_fee: 'return_fee'
 } as const;

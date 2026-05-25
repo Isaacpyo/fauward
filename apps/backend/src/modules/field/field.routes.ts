@@ -84,6 +84,16 @@ function cityFromAddress(value: unknown) {
   return typeof json?.city === 'string' && json.city.trim() ? json.city.trim() : null;
 }
 
+function workflowStageFromShipmentStatus(status: string): 'pickup' | 'delivery' {
+  switch (status) {
+    case 'PENDING':
+    case 'PROCESSING':
+      return 'pickup';
+    default:
+      return 'delivery';
+  }
+}
+
 function workflowStageFromStopType(type: string) {
   switch (type.toUpperCase()) {
     case 'PICKUP':
@@ -402,6 +412,7 @@ function buildFieldJob(row: EnrichedStopRow) {
   return {
     id: `job-${row.id}`,
     shipmentId: row.shipmentId,
+    trackingNumber: row.shipment.trackingNumber,
     type: stop.type,
     workflowStage: stop.workflowStage,
     status: stop.status,
@@ -681,6 +692,70 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
       timestamp: mutation.occurredAt
     });
 
+    const codRaw = payload.codCollection;
+    if (codRaw && typeof codRaw === 'object') {
+      const cod = codRaw as { amount?: unknown; currency?: unknown; method?: unknown };
+      const codAmount = typeof cod.amount === 'number' ? cod.amount : Number(cod.amount);
+      const codCurrency = typeof cod.currency === 'string' ? cod.currency.toUpperCase() : '';
+      const codMethod = typeof cod.method === 'string' ? cod.method : '';
+      if (codAmount > 0 && codCurrency && ['CASH', 'CARD_TERMINAL', 'BANK_TRANSFER'].includes(codMethod)) {
+        const codEvent = await app.prisma.shipmentEvent.create({
+          data: {
+            tenantId,
+            shipmentId: shipment.id,
+            status: 'COD_COLLECTED',
+            actorId: userId,
+            actorType,
+            source: 'FAUWARD_GO',
+            notes: JSON.stringify({ amount: codAmount, currency: codCurrency, method: codMethod, collectedBy: userId })
+          }
+        });
+
+        const existingPayment = await app.prisma.payment.findFirst({ where: { tenantId, shipmentId: shipment.id } });
+        const paymentRow = existingPayment
+          ? await app.prisma.payment.update({
+              where: { id: existingPayment.id },
+              data: {
+                status: 'COMPLETED',
+                amount: codAmount,
+                currency: codCurrency,
+                method: 'CASH',
+                gatewayRef: `cod:${codEvent.id}`
+              }
+            })
+          : await app.prisma.payment.create({
+              data: {
+                tenantId,
+                shipmentId: shipment.id,
+                customerId: shipment.customerId,
+                amount: codAmount,
+                currency: codCurrency,
+                method: 'CASH',
+                status: 'COMPLETED',
+                gatewayRef: `cod:${codEvent.id}`
+              }
+            });
+
+        await app.prisma.auditLog.create({
+          data: {
+            tenantId,
+            actorId: userId,
+            action: 'COD_COLLECTED',
+            resourceType: 'PAYMENT',
+            resourceId: paymentRow.id,
+            metadata: {
+              shipmentId: shipment.id,
+              amount: codAmount,
+              currency: codCurrency,
+              method: codMethod,
+              shipmentEventId: codEvent.id,
+              source: 'FAUWARD_GO'
+            } as never
+          }
+        });
+      }
+    }
+
     await publishFieldEvent(app, {
       aggregateId: stop?.id ?? shipment.id,
       eventType: mutation.eventType ?? 'field.proof.submitted',
@@ -713,7 +788,59 @@ export async function registerFieldRoutes(app: FastifyInstance) {
     if (!userId || !role) return reply.status(401).send({ error: 'Unauthorized' });
 
     const rows = await listVisibleStops(app, tenantId, userId, role);
-    reply.send({ jobs: rows.map(buildFieldJob) });
+    const routeStopJobs = rows.map(buildFieldJob);
+
+    // Also include directly assigned shipments (no RouteStop needed)
+    const driver = await app.prisma.driver.findFirst({ where: { tenantId, userId } });
+    const assignedWhere = role === 'TENANT_DRIVER' && driver
+      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] as const } }
+      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] as const } };
+
+    const assignedShipments = await app.prisma.shipment.findMany({
+      where: assignedWhere,
+      select: {
+        id: true,
+        trackingNumber: true,
+        status: true,
+        destinationAddress: true,
+        originAddress: true,
+        specialInstructions: true,
+        updatedAt: true,
+        createdAt: true,
+        items: { select: { id: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+
+    // Deduplicate: skip shipments already covered by a RouteStop job
+    const routeStopShipmentIds = new Set(rows.map((row) => row.shipmentId));
+    const directJobs = assignedShipments
+      .filter((s) => !routeStopShipmentIds.has(s.id))
+      .map((s) => {
+        const stage = workflowStageFromShipmentStatus(s.status);
+        const addr = stage === 'pickup' ? s.originAddress : s.destinationAddress;
+        return {
+          id: `job-direct-${s.id}`,
+          shipmentId: s.id,
+          trackingNumber: s.trackingNumber ?? undefined,
+          type: stage,
+          workflowStage: stage,
+          status: 'assigned',
+          priority: 'normal',
+          routeId: undefined,
+          stopId: undefined,
+          address: asAddressString(addr),
+          contactName: (asRecord(addr)?.name as string | undefined) ?? undefined,
+          contactPhone: (asRecord(addr)?.phone as string | undefined) ?? undefined,
+          instructions: s.specialInstructions ?? undefined,
+          timeWindowStart: undefined,
+          timeWindowEnd: undefined,
+          updatedAt: s.updatedAt.toISOString()
+        };
+      });
+
+    reply.send({ jobs: [...routeStopJobs, ...directJobs] });
   });
 
   app.get('/api/v1/field/routes', guard, async (request, reply) => {
@@ -748,6 +875,31 @@ export async function registerFieldRoutes(app: FastifyInstance) {
       };
     });
 
+    // Add a virtual route for directly assigned shipments if no real routes exist
+    if (routes.length === 0) {
+      const driver = await app.prisma.driver.findFirst({
+        where: { tenantId, userId },
+        include: { vehicle: true }
+      });
+      const assignedCount = await app.prisma.shipment.count({
+        where: {
+          tenantId,
+          assignedDriverId: driver?.id ?? 'none',
+          status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] }
+        }
+      });
+      if (assignedCount > 0) {
+        routes.push({
+          id: 'direct-assignments',
+          label: 'Direct assignments',
+          area: 'Assigned shipments',
+          vehicleLabel: driver?.vehicle?.registration ?? driver?.vehicle?.model ?? 'Assigned vehicle',
+          assignedAt: new Date().toISOString(),
+          shiftWindow: 'Active shift'
+        });
+      }
+    }
+
     reply.send({ routes });
   });
 
@@ -763,6 +915,43 @@ export async function registerFieldRoutes(app: FastifyInstance) {
     }
 
     reply.send({ stop: buildFieldStop(row) });
+  });
+
+  app.post('/api/v1/field/storage/sign', guard, async (request, reply) => {
+    const tenantId = getTenantId(request, reply);
+    if (!tenantId) return;
+
+    const { contentType = 'image/jpeg' } = (request.body ?? {}) as { contentType?: string };
+    const ext = contentType === 'image/png' ? 'png' : contentType === 'image/webp' ? 'webp' : 'jpg';
+    const objectPath = `${tenantId}/${randomUUID()}.${ext}`;
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+
+    if (!supabaseUrl || !serviceKey) {
+      return reply.status(503).send({ error: 'Storage not configured' });
+    }
+
+    const res = await fetch(`${supabaseUrl}/storage/v1/object/upload/sign/pod-assets/${objectPath}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      request.log.error({ status: res.status }, 'Supabase storage sign failed');
+      return reply.status(502).send({ error: 'Could not create upload URL' });
+    }
+
+    const data = (await res.json()) as { signedURL?: string; token?: string };
+    const signedURL = data.signedURL ?? '';
+
+    return reply.send({
+      uploadUrl: signedURL.startsWith('http') ? signedURL : `${supabaseUrl}${signedURL}`,
+      publicUrl: `${supabaseUrl}/storage/v1/object/public/pod-assets/${objectPath}`,
+    });
   });
 
   app.post('/api/v1/field/sync/batch', guard, async (request, reply) => {
@@ -811,7 +1000,9 @@ export async function registerFieldRoutes(app: FastifyInstance) {
 
       const { start, end } = dayRange();
 
-      const [routes, rawStops, drivers, recentEvents] = await Promise.all([
+      const TERMINAL_STATUSES = ['DELIVERED', 'CANCELLED', 'RETURNED'] as const;
+
+      const [routes, rawStops, drivers, recentEvents, assignedShipments] = await Promise.all([
         app.prisma.route.findMany({
           where: { tenantId, date: { gte: start, lt: end } },
           include: { stops: true },
@@ -849,25 +1040,58 @@ export async function registerFieldRoutes(app: FastifyInstance) {
           },
           orderBy: { timestamp: 'desc' },
           take: 10
+        }),
+        // Directly assigned shipments that haven't been routed yet
+        app.prisma.shipment.findMany({
+          where: {
+            tenantId,
+            assignedDriverId: { not: null },
+            routeId: null,
+            status: { notIn: [...TERMINAL_STATUSES] }
+          },
+          include: {
+            driver: { include: { user: true, vehicle: true } }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 50
         })
       ]);
 
       const shipmentsById = await loadShipmentsMap(app, tenantId, rawStops.map((stop) => stop.shipmentId));
-      const stops = rawStops
+      const routeStops = rawStops
         .map((stop) => {
           const shipment = shipmentsById.get(stop.shipmentId);
           return shipment ? ({ ...stop, shipment } as EnrichedStopRow) : null;
         })
         .filter((stop): stop is EnrichedStopRow => Boolean(stop));
 
-      const openStops = stops.filter((stop) => !stop.completedAt).length;
+      // Build pseudo-stop rows from directly assigned shipments
+      const assignedStopRows = assignedShipments.map((s, i) => ({
+        id: `assigned-${s.id}`,
+        routeId: 'direct-assignment',
+        shipmentId: s.id,
+        trackingNumber: s.trackingNumber,
+        stopOrder: i + 1,
+        type: 'DELIVERY',
+        workflowStage: 'DIRECT_ASSIGNMENT',
+        shipmentStatus: s.status as string,
+        address: asAddressString(s.destinationAddress),
+        driverName: s.driver
+          ? [s.driver.user.firstName, s.driver.user.lastName].filter(Boolean).join(' ') || s.driver.user.email
+          : null,
+        estimatedAt: null,
+        arrivedAt: null,
+        completedAt: null
+      }));
+
+      const openStops = routeStops.filter((stop) => !stop.completedAt).length + assignedStopRows.length;
       const deliveredToday = recentEvents.filter((event) => event.status === 'DELIVERED').length;
       const exceptionsToday = recentEvents.filter((event) => event.status === 'EXCEPTION' || event.status === 'FAILED_DELIVERY').length;
 
       reply.send({
         kpis: {
           activeRoutes: routes.filter((route) => route.status !== 'COMPLETED').length,
-          totalStops: stops.length,
+          totalStops: routeStops.length + assignedShipments.length,
           openStops,
           deliveredToday,
           exceptionsToday,
@@ -880,22 +1104,25 @@ export async function registerFieldRoutes(app: FastifyInstance) {
           stopCount: route.stops.length,
           completedStops: route.stops.filter((stop) => stop.completedAt).length
         })),
-        stops: stops.slice(0, 12).map((stop) => ({
-          id: stop.id,
-          routeId: stop.routeId,
-          shipmentId: stop.shipmentId,
-          trackingNumber: stop.shipment.trackingNumber,
-          stopOrder: stop.stopOrder,
-          type: stop.type,
-          workflowStage: workflowStageFromStopType(stop.type),
-          shipmentStatus: stop.shipment.status,
-          address: asAddressString(stop.type.toUpperCase() === 'PICKUP' ? stop.shipment.originAddress : stop.shipment.destinationAddress),
-          driverName:
-            stop.driver ? [stop.driver.user.firstName, stop.driver.user.lastName].filter(Boolean).join(' ') || stop.driver.user.email : null,
-          estimatedAt: stop.estimatedAt,
-          arrivedAt: stop.arrivedAt,
-          completedAt: stop.completedAt
-        })),
+        stops: [
+          ...routeStops.slice(0, 12).map((stop) => ({
+            id: stop.id,
+            routeId: stop.routeId,
+            shipmentId: stop.shipmentId,
+            trackingNumber: stop.shipment.trackingNumber,
+            stopOrder: stop.stopOrder,
+            type: stop.type,
+            workflowStage: workflowStageFromStopType(stop.type),
+            shipmentStatus: stop.shipment.status,
+            address: asAddressString(stop.type.toUpperCase() === 'PICKUP' ? stop.shipment.originAddress : stop.shipment.destinationAddress),
+            driverName:
+              stop.driver ? [stop.driver.user.firstName, stop.driver.user.lastName].filter(Boolean).join(' ') || stop.driver.user.email : null,
+            estimatedAt: stop.estimatedAt,
+            arrivedAt: stop.arrivedAt,
+            completedAt: stop.completedAt
+          })),
+          ...assignedStopRows
+        ],
         driverLocations: drivers
           .filter((driver) => driver.currentLat && driver.currentLng)
           .map((driver) => ({
@@ -915,6 +1142,57 @@ export async function registerFieldRoutes(app: FastifyInstance) {
           notes: event.notes,
           timestamp: event.timestamp
         }))
+      });
+    }
+  );
+
+  app.get(
+    '/api/v1/field/ops/assigned-tasks',
+    { preHandler: [authenticate, requireRole(['TENANT_ADMIN', 'TENANT_MANAGER', 'TENANT_STAFF'])] },
+    async (request, reply) => {
+      const tenantId = getTenantId(request, reply);
+      if (!tenantId) return;
+
+      const shipments = await app.prisma.shipment.findMany({
+        where: {
+          tenantId,
+          assignedDriverId: { not: null },
+          status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] }
+        },
+        select: {
+          id: true,
+          trackingNumber: true,
+          status: true,
+          assignedDriverId: true,
+          destinationAddress: true,
+          createdAt: true,
+          driver: {
+            select: {
+              id: true,
+              user: { select: { firstName: true, lastName: true, email: true } }
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50
+      });
+
+      reply.send({
+        tasks: shipments.map((s) => {
+          const dest = s.destinationAddress as Record<string, unknown>;
+          const addressParts = [dest.line1, dest.city, dest.postcode ?? dest.state].filter(Boolean);
+          const driverName = s.driver
+            ? [s.driver.user.firstName, s.driver.user.lastName].filter(Boolean).join(' ') || s.driver.user.email
+            : null;
+          return {
+            id: s.id,
+            trackingNumber: s.trackingNumber,
+            status: s.status,
+            driverName,
+            deliveryAddress: addressParts.join(', ') || 'Address not set',
+            assignedAt: s.createdAt.toISOString()
+          };
+        })
       });
     }
   );

@@ -1,5 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Check, FilterX } from "lucide-react";
+import { Check, FilterX, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -23,6 +23,8 @@ export type ShipmentFilters = {
 type ShipmentFilterBarProps = {
   filters: ShipmentFilters;
   onChange: (filters: ShipmentFilters) => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
   role?: TenantRole;
   routeOptions?: TenantRouteOption[];
 };
@@ -43,7 +45,7 @@ const statusOptions: ShipmentState[] = [
 const isStaffRole = (role?: TenantRole) =>
   role === "TENANT_ADMIN" || role === "TENANT_MANAGER" || role === "TENANT_STAFF";
 
-export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }: ShipmentFilterBarProps) {
+export function ShipmentFilterBar({ filters, onChange, onRefresh, isRefreshing, role, routeOptions = [] }: ShipmentFilterBarProps) {
   const showStaffFilters = isStaffRole(role);
   const [searchInput, setSearchInput] = useState(filters.search);
   const debouncedSearch = useDebouncedValue(searchInput, 300);
@@ -70,12 +72,14 @@ export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-3">
-      <div className="grid gap-3 xl:grid-cols-[2.2fr,1.4fr,1fr,1fr,1fr,1fr,auto]">
+    <div className="rounded-lg bg-white px-3 py-1.5">
+      <div className="flex items-center gap-1.5 overflow-x-auto">
+
         <Input
           value={searchInput}
           onChange={(event) => setSearchInput(event.target.value)}
-          placeholder="Search by tracking number, customer, reference..."
+          placeholder="Search tracking, customer, ref…"
+          className="h-7 w-[180px] shrink-0 text-xs"
         />
 
         <DropdownMenu.Root>
@@ -83,7 +87,7 @@ export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }
             <button
               type="button"
               className={cn(
-                "inline-flex h-11 w-full items-center justify-between rounded-md border border-gray-300 px-3 text-sm text-gray-700",
+                "inline-flex h-7 w-[120px] shrink-0 items-center justify-between rounded-md border border-gray-300 px-2.5 text-xs text-gray-700 whitespace-nowrap",
                 filters.statuses.length > 0 ? "border-[var(--tenant-primary)]" : ""
               )}
             >
@@ -99,9 +103,9 @@ export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }
                     key={status}
                     checked={checked}
                     onCheckedChange={() => toggleStatus(status)}
-                    className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 outline-none hover:bg-gray-100"
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs text-gray-700 outline-none hover:bg-gray-100"
                   >
-                    <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-gray-300">
+                    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded bg-gray-100">
                       {checked ? <Check size={12} /> : null}
                     </span>
                     {status}
@@ -117,64 +121,47 @@ export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }
           value={filters.dateFrom}
           onChange={(event) => onChange({ ...filters, dateFrom: event.target.value })}
           aria-label="From date"
+          className="h-7 w-[130px] shrink-0 text-xs"
         />
         <Input
           type="date"
           value={filters.dateTo}
           onChange={(event) => onChange({ ...filters, dateTo: event.target.value })}
           aria-label="To date"
+          className="h-7 w-[130px] shrink-0 text-xs"
         />
 
         {showStaffFilters ? (
           <Select
             value={filters.driver}
             onValueChange={(value) => onChange({ ...filters, driver: value })}
+            className="h-7 w-[130px] shrink-0 text-xs"
             options={[
-              { label: "All field operators", value: "all" },
+              { label: "All operators", value: "all" },
               { label: "Assigned", value: "assigned" },
               { label: "Unassigned", value: "unassigned" }
             ]}
           />
-        ) : (
-          <div />
-        )}
+        ) : null}
 
         {showStaffFilters ? (
           <Select
             value={filters.customer}
             onValueChange={(value) => onChange({ ...filters, customer: value })}
+            className="h-7 w-[130px] shrink-0 text-xs"
             options={[
               { label: "All customers", value: "all" },
               { label: "Acme Retail", value: "acme" },
               { label: "Northline", value: "northline" }
             ]}
           />
-        ) : (
-          <div />
-        )}
+        ) : null}
 
-        {showStaffFilters ? (
-          <Select
-            value={filters.route}
-            onValueChange={(value) => onChange({ ...filters, route: value })}
-            options={[
-              { label: "All routes", value: "all" },
-              ...routeOptions.map((route) => ({
-                label: route.label,
-                value: route.id
-              }))
-            ]}
-          />
-        ) : (
-          <div />
-        )}
-      </div>
-
-      <div className="mt-3">
         <Button
           variant="secondary"
           size="sm"
-          leftIcon={<FilterX size={14} />}
+          leftIcon={<FilterX size={13} />}
+          className="h-7 shrink-0 whitespace-nowrap text-xs"
           onClick={() =>
             onChange({
               search: "",
@@ -189,6 +176,19 @@ export function ShipmentFilterBar({ filters, onChange, role, routeOptions = [] }
         >
           Clear filters
         </Button>
+
+        {onRefresh ? (
+          <button
+            type="button"
+            title="Refresh shipments"
+            onClick={onRefresh}
+            className="inline-flex h-7 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-50"
+            disabled={isRefreshing}
+          >
+            <RotateCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+          </button>
+        ) : null}
+
       </div>
     </div>
   );

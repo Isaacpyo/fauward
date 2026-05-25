@@ -84,6 +84,33 @@ export const stripeService = {
     return { id: refund.id, status: refund.status ?? 'pending' };
   },
 
+  async createCheckoutSession(params: {
+    amountPence: number;
+    currency: string;
+    description: string;
+    metadata: Record<string, string>;
+    successUrl: string;
+    cancelUrl: string;
+  }): Promise<{ sessionId: string; url: string }> {
+    const stripe = getStripeClient();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency: params.currency.toLowerCase(),
+          product_data: { name: params.description },
+          unit_amount: params.amountPence,
+        },
+        quantity: 1,
+      }],
+      metadata: params.metadata,
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+    });
+    return { sessionId: session.id, url: session.url ?? '' };
+  },
+
   async handleWebhook(payload: Buffer, signature: string) {
     const stripe = getStripeClient();
     if (!config.stripe.webhookSecret) {
@@ -91,5 +118,14 @@ export const stripeService = {
     }
 
     return stripe.webhooks.constructEvent(payload, signature, config.stripe.webhookSecret);
+  },
+
+  async listPayoutBalanceTransactions(payoutId: string) {
+    const stripe = getStripeClient();
+    const results: Stripe.BalanceTransaction[] = [];
+    for await (const txn of stripe.balanceTransactions.list({ payout: payoutId, expand: ['data.source'], limit: 100 })) {
+      results.push(txn);
+    }
+    return results;
   }
 };

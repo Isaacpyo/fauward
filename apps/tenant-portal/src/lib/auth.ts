@@ -12,26 +12,7 @@ const DEV_TEST_SESSION_KEY = 'fw_dev_test_session';
 
 const DEV_TEST_PASSWORD = 'dev-only-password';
 
-const DEV_TEST_ACCOUNTS: Record<string, { fullName: string; tenantName: string; slug: string; plan: User['plan'] }> = {
-  'temitopeagbola@gmail.com': {
-    fullName: 'Temitope Agbola',
-    tenantName: 'Temitope Logistics',
-    slug: 'temitope',
-    plan: 'starter'
-  },
-  'trenylimited@gmail.com': {
-    fullName: 'Treny Limited',
-    tenantName: 'Treny Limited',
-    slug: 'treny-limited',
-    plan: 'pro'
-  },
-  'tenant-demo@example.test': {
-    fullName: 'Fauward Admin',
-    tenantName: 'Fauward Enterprise',
-    slug: 'fauward-enterprise',
-    plan: 'enterprise'
-  }
-};
+const DEV_TEST_ACCOUNTS: Record<string, { fullName: string; tenantName: string; slug: string; tenantId?: string; plan: User['plan'] }> = {};
 
 type DevTestSession = {
   user: User;
@@ -112,7 +93,8 @@ export function isDevTestEmail(email: string) {
 
 export function createDevTestSession(email: string): DevTestSession {
   const normalizedEmail = normalizeDevEmail(email);
-  const account = getDevTestAccount(normalizedEmail) ?? DEV_TEST_ACCOUNTS['tenant-demo@example.test'];
+  const account = getDevTestAccount(normalizedEmail);
+  if (!account) throw new Error(`No dev test account for ${normalizedEmail}`);
   const session: DevTestSession = {
     user: {
       id: `dev-admin-${account.slug}`,
@@ -122,7 +104,7 @@ export function createDevTestSession(email: string): DevTestSession {
       plan: account.plan
     },
     tenant: {
-      tenant_id: `tenant_${account.slug}`,
+      tenant_id: account.tenantId ?? `tenant_${account.slug}`,
       name: account.tenantName,
       slug: account.slug,
       logo_url: '',
@@ -145,6 +127,8 @@ export function createDevTestSession(email: string): DevTestSession {
 }
 
 export function getDevTestSession(): DevTestSession | null {
+  // Real JWT always takes priority — dev session is only a fallback
+  if (localStorage.getItem(ACCESS_TOKEN_KEY)) return null;
   const raw = localStorage.getItem(DEV_TEST_SESSION_KEY);
   if (!raw) {
     return null;

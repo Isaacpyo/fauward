@@ -12,12 +12,30 @@ export type ShipmentStatus =
 
 export type ShipmentSource = "dashboard" | "widget" | "api" | "csv";
 
+export type ShipmentCustomsDeclaration = {
+  type: "DDP" | "DDU" | string;
+  items: Array<{
+    description: string;
+    hsCode: string;
+    quantity: number;
+    declaredValue: number;
+    currency: string;
+    countryOfOrigin: string;
+    reasonForExport: string;
+  }>;
+  totalValue: number;
+  currency: string;
+  documents: unknown[] | null;
+  status: string;
+  holdReason: string | null;
+};
+
 export type Shipment = {
   id: string;
   tracking_ref: string;
   source: ShipmentSource;
   status: ShipmentStatus;
-  direction: "SHIP_TO_AFRICA" | "SHIP_TO_UK";
+  direction: string;
   route: string;
   sender_name: string;
   sender_email: string | null;
@@ -31,6 +49,7 @@ export type Shipment = {
   declared_value: number;
   insurance: string;
   notes: string | null;
+  customs_declaration: ShipmentCustomsDeclaration | null;
   length_cm: number | null;
   width_cm: number | null;
   height_cm: number | null;
@@ -51,10 +70,18 @@ export type CreateShipmentInput = Omit<
   "id" | "tracking_ref" | "status" | "created_at" | "updated_at"
 > & { source: ShipmentSource };
 
-function generateTrackingRef(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-  return `TC-${date}-${rand}`;
+function generateTrackingRef(tenantName = "XX"): string {
+  const DIGITS = "0123456789";
+  const ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const pick = (chars: string, n: number) =>
+    Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+
+  const prefix = (tenantName.replace(/[^A-Za-z]/g, "") || "XX").toUpperCase().slice(0, 2).padEnd(2, "X");
+  const now = new Date();
+  const yy = String(now.getUTCFullYear()).slice(-2);
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+
+  return `${prefix}${yy}${mm}-${pick(DIGITS, 2)}-${pick(ALPHANUM, 4)}-${pick(DIGITS, 5)}`;
 }
 
 export type ListShipmentsOptions = {
@@ -116,7 +143,7 @@ export async function createShipment(
   input: CreateShipmentInput,
 ): Promise<Shipment> {
   const db = getTenantDb(tenantSlug);
-  const tracking_ref = generateTrackingRef();
+  const tracking_ref = generateTrackingRef(tenantSlug);
 
   const { data, error } = await db
     .from("shipments")

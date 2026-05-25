@@ -19,7 +19,15 @@ export const PodCaptureScreen = () => {
   const [photoRefs, setPhotoRefs] = useState<string[]>(existingDraft?.photoRefs ?? []);
   const [signatureRef, setSignatureRef] = useState<string | undefined>(existingDraft?.signatureRef);
   const [notes, setNotes] = useState(existingDraft?.notes ?? "");
+  const [codEnabled, setCodEnabled] = useState<boolean>(Boolean(existingDraft?.codCollection));
+  const [codAmount, setCodAmount] = useState<string>(existingDraft?.codCollection?.amount?.toString() ?? "");
+  const [codCurrency, setCodCurrency] = useState<string>(existingDraft?.codCollection?.currency ?? "GBP");
+  const [codMethod, setCodMethod] = useState<"CASH" | "CARD_TERMINAL" | "BANK_TRANSFER">(existingDraft?.codCollection?.method ?? "CASH");
   const [error, setError] = useState<string | null>(null);
+
+  const codCollection = codEnabled && Number(codAmount) > 0
+    ? { amount: Number(codAmount), currency: codCurrency.toUpperCase(), method: codMethod }
+    : undefined;
 
   const validationMessage = useMemo(() => {
     if (!stop?.podRequirements) {
@@ -65,6 +73,7 @@ export const PodCaptureScreen = () => {
       signatureRef,
       photoRefs,
       notes,
+      codCollection,
       lat: latestLocation?.lat,
       lng: latestLocation?.lng,
       state: "draft",
@@ -78,12 +87,18 @@ export const PodCaptureScreen = () => {
       return;
     }
 
+    if (codEnabled && (!codAmount || Number(codAmount) <= 0)) {
+      setError("Enter the cash amount collected, or turn off COD collection.");
+      return;
+    }
+
     const ok = submitPodForStop(stop.id, {
       recipientName,
       otpCode,
       signatureRef,
       photoRefs,
       notes,
+      codCollection,
       lat: latestLocation?.lat,
       lng: latestLocation?.lng,
       state: "ready",
@@ -181,6 +196,55 @@ export const PodCaptureScreen = () => {
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Recipient remarks, condition notes, or stage handoff details"
             />
+          </div>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+            <label className="flex items-center justify-between gap-3 text-sm font-semibold text-stone-800">
+              <span>Cash on delivery collected</span>
+              <input
+                type="checkbox"
+                checked={codEnabled}
+                onChange={(event) => setCodEnabled(event.target.checked)}
+              />
+            </label>
+            {codEnabled ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label htmlFor="cod-amount" className="mb-1 block tiny-label">Amount</label>
+                  <input
+                    id="cod-amount"
+                    className="field-input"
+                    inputMode="decimal"
+                    value={codAmount}
+                    onChange={(event) => setCodAmount(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cod-currency" className="mb-1 block tiny-label">Currency</label>
+                  <input
+                    id="cod-currency"
+                    className="field-input"
+                    value={codCurrency}
+                    onChange={(event) => setCodCurrency(event.target.value.toUpperCase().slice(0, 3))}
+                    maxLength={3}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="cod-method" className="mb-1 block tiny-label">Method</label>
+                  <select
+                    id="cod-method"
+                    className="field-input"
+                    value={codMethod}
+                    onChange={(event) => setCodMethod(event.target.value as typeof codMethod)}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="CARD_TERMINAL">Card terminal</option>
+                    <option value="BANK_TRANSFER">Bank transfer</option>
+                  </select>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </article>

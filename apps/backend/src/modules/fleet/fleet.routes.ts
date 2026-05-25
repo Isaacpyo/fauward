@@ -132,38 +132,33 @@ export async function registerFleetRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(request, reply);
     if (!tenantId) return;
 
+    // Authoritative source: all users with TENANT_DRIVER role for this tenant.
+    // Auto-create a Driver record for any user that doesn't have one yet.
+    const driverUsers = await app.prisma.user.findMany({
+      where: { tenantId, role: 'TENANT_DRIVER' },
+      select: { id: true, driver: { select: { id: true } } }
+    });
+
+    const usersWithoutDriver = driverUsers.filter((u) => !u.driver);
+    if (usersWithoutDriver.length > 0) {
+      await app.prisma.driver.createMany({
+        data: usersWithoutDriver.map((u) => ({ userId: u.id, tenantId })),
+        skipDuplicates: true
+      });
+    }
+
     const drivers = await app.prisma.driver.findMany({
       where: { tenantId },
       include: {
         vehicle: true,
-        user: { select: { id: true, email: true, firstName: true, lastName: true } },
-        routeStops: { where: { completedAt: null } }
+        user: { select: { id: true, email: true, firstName: true, lastName: true } }
       },
       orderBy: { createdAt: 'desc' }
     });
 
-    const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
-    const todayEnd = new Date(todayStart);
-    todayEnd.setUTCDate(todayEnd.getUTCDate() + 1);
-
-    const result = await Promise.all(
-      drivers.map(async (driver) => {
-        const completedToday = await app.prisma.routeStop.count({
-          where: {
-            driverId: driver.id,
-            completedAt: { gte: todayStart, lt: todayEnd }
-          }
-        });
-        return {
-          ...driver,
-          todaysRouteStops: driver.routeStops.length,
-          deliveriesCompletedToday: completedToday
-        };
-      })
-    );
-
-    reply.send({ drivers: result });
+    reply.send({
+      drivers: drivers.map((d) => ({ ...d, todaysRouteStops: 0, deliveriesCompletedToday: 0 }))
+    });
   });
 
   app.post('/api/v1/fleet/drivers', { preHandler: [authenticate, requireRole([...FLEET_ROLES])] }, async (request, reply) => {

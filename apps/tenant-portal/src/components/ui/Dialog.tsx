@@ -19,20 +19,22 @@ export function Dialog({ open, onOpenChange, title, description, children }: Dia
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <RadixDialog.Content
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-[min(92vw,680px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-200 bg-white p-6 shadow-sm",
+            "fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,680px)] max-h-[90vh] flex-col -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-200 bg-white shadow-sm",
             "focus-visible:outline-none"
           )}
         >
-          <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 px-6 py-4">
             <div>
-              <RadixDialog.Title className="text-lg font-semibold text-gray-900">{title}</RadixDialog.Title>
-              {description ? <RadixDialog.Description className="mt-1 text-sm text-gray-600">{description}</RadixDialog.Description> : null}
+              <RadixDialog.Title className="text-base font-semibold text-gray-900">{title}</RadixDialog.Title>
+              {description ? <RadixDialog.Description className="mt-0.5 text-xs text-gray-500">{description}</RadixDialog.Description> : null}
             </div>
-            <RadixDialog.Close className="rounded-md p-2 text-gray-500 hover:bg-gray-100" aria-label="Close">
-              <X size={16} />
+            <RadixDialog.Close className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
+              <X size={15} />
             </RadixDialog.Close>
           </div>
-          {children}
+          <div className="overflow-y-auto px-6 py-4">
+            {children}
+          </div>
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

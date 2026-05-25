@@ -6,6 +6,7 @@ import { DocumentsPanel } from "@/components/shipments/DocumentsPanel";
 import { NotesPanel } from "@/components/shipments/NotesPanel";
 import { PODViewer } from "@/components/shipments/PODViewer";
 import { ShipmentTimeline } from "@/components/shipments/ShipmentTimeline";
+import { UpdateStatusModal } from "@/components/shipments/UpdateStatusModal";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -15,93 +16,7 @@ import { api } from "@/lib/api";
 import { normalizePodResponse, normalizeShipmentDetail } from "@/lib/shipment-normalizers";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
-import type { ShipmentDetail } from "@/types/shipment";
 import type { ShipmentState } from "@/types/domain";
-
-const fallbackShipment = (id: string): ShipmentDetail =>
-  id === "seed-delivered-shipment"
-    ? {
-        id,
-        tracking_number: "FWD-2026-DEL-0001",
-        status: "DELIVERED",
-        service_tier: "Express",
-        customer_id: "cus-1",
-        customer_name: "Acme Retail",
-        reference_number: "JOB-DELIVERED-0001",
-        created_at: new Date("2026-04-17T10:30:00.000Z").toISOString(),
-        pickup_address: "12 Warehouse Road, Lagos",
-        delivery_address: "48 Bishopsgate, London",
-        origin_city: "Lagos",
-        destination_city: "London",
-        package_weight_kg: 4.2,
-        package_quantity: 1,
-        package_description: "Fashion retail cartons",
-        pricing_amount: 22.5,
-        assigned_driver_id: "drv-1",
-        assigned_driver_name: "Amina Yusuf",
-        timeline: [
-          {
-            id: "seed-event-1",
-            status: "PENDING",
-            description: "Shipment created",
-            timestamp: "2026-04-17T10:30:00.000Z",
-            actor: "Operations"
-          },
-          {
-            id: "seed-event-2",
-            status: "IN_TRANSIT",
-            description: "Shipment moved to transit",
-            location: "Lagos Hub",
-            timestamp: "2026-04-17T14:00:00.000Z",
-            actor: "Dispatch"
-          },
-          {
-            id: "seed-event-3",
-            status: "OUT_FOR_DELIVERY",
-            description: "Shipment assigned to field operator",
-            location: "London",
-            timestamp: "2026-04-18T08:15:00.000Z",
-            actor: "Amina Yusuf"
-          },
-          {
-            id: "seed-event-4",
-            status: "DELIVERED",
-            description: "Shipment delivered successfully",
-            location: "48 Bishopsgate, London",
-            timestamp: "2026-04-18T11:42:00.000Z",
-            actor: "Amina Yusuf"
-          }
-        ],
-        documents: [],
-        notes: [
-          {
-            id: "seed-note-1",
-            author_name: "Operations",
-            text: "Delivered shipment sample added for workflow review.",
-            created_at: "2026-04-18T11:50:00.000Z"
-          }
-        ],
-        estimated_delivery_date: "2026-04-18T12:00:00.000Z"
-      }
-    : {
-        id,
-        tracking_number: id,
-        status: "OUT_FOR_DELIVERY",
-        service_tier: "Express",
-        customer_id: "cus-1",
-        customer_name: "Acme Retail",
-        created_at: new Date().toISOString(),
-        pickup_address: "Origin",
-        delivery_address: "Destination",
-        origin_city: "Origin",
-        destination_city: "Destination",
-        package_weight_kg: 4.2,
-        package_quantity: 1,
-        pricing_amount: 22.5,
-        timeline: [],
-        documents: [],
-        notes: []
-      };
 
 type PodResponse = {
   podAssets: Array<{ id: string; type: string; fileUrl: string; capturedAt?: string }>;
@@ -110,42 +25,62 @@ type PodResponse = {
   capturedBy: string;
 };
 
-async function fetchShipment(id: string): Promise<ShipmentDetail> {
+async function fetchShipment(id: string) {
   const response = await api.get(`/v1/shipments/${id}`);
   return normalizeShipmentDetail(response.data, id);
 }
 
 export function ShipmentDetailPage() {
-  const { id = "FWD-2026-00001" } = useParams();
+  const { id = "" } = useParams();
   const tenant = useTenantStore((state) => state.tenant);
+  const tenantId = tenant?.tenant_id;
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("timeline");
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set(["timeline"]));
+  const [showStatusModal, setShowStatusModal] = useState(false);
 
   const shipmentQuery = useQuery({
-    queryKey: ["shipment-detail", id],
+    queryKey: ["shipment-detail", tenantId, id],
     queryFn: () => fetchShipment(id),
-    retry: 1
+    retry: 1,
+    enabled: Boolean(tenantId && id)
   });
-  const shipment = shipmentQuery.data ?? fallbackShipment(id);
+  const shipment = shipmentQuery.data;
 
   const podQuery = useQuery({
     queryKey: ["shipment-pod", id],
     queryFn: async () => normalizePodResponse((await api.get<PodResponse>(`/v1/shipments/${id}/pod`)).data),
-    enabled: shipment.status === "DELIVERED"
+    enabled: shipment?.status === "DELIVERED"
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (nextStatus: ShipmentState) => {
-      await api.patch(`/v1/shipments/${id}/status`, { status: nextStatus });
+    mutationFn: async (payload: {
+      status: ShipmentState;
+      notes?: string;
+      timestamp?: string;
+      failedReason?: string;
+      assignedDriverId?: string;
+      courierRefOrigin?: string;
+      courierRefDestination?: string;
+      originCourierConfirmed?: boolean;
+      destinationCourierConfirmed?: boolean;
+      customsClearanceConfirmed?: boolean;
+    }) => {
+      await api.patch(`/v1/shipments/${id}/status`, payload);
     },
-    onSuccess: async () => {
+    onSuccess: async (_, payload) => {
+      setShowStatusModal(false);
       await queryClient.invalidateQueries({ queryKey: ["shipment-detail", id] });
       await queryClient.invalidateQueries({ queryKey: ["shipments-list"] });
+      if (payload.status === "RETURNED") {
+        await queryClient.invalidateQueries({ queryKey: ["tenant-returns"] });
+        await queryClient.invalidateQueries({ queryKey: ["returned-shipments"] });
+      }
     }
   });
 
   const quickNextStatuses = useMemo(() => {
+    if (!shipment) return [];
     const map: Record<string, ShipmentState[]> = {
       PENDING: ["PROCESSING", "CANCELLED"],
       PROCESSING: ["PICKED_UP"],
@@ -159,44 +94,83 @@ export function ShipmentDetailPage() {
       CANCELLED: []
     };
     return map[shipment.status] ?? [];
-  }, [shipment.status]);
+  }, [shipment]);
+
+  const pageTitle = shipment ? `Shipment ${shipment.tracking_number}` : "Shipment";
 
   return (
-    <PageShell title={`Shipment ${shipment.tracking_number}`} description="Operational detail, timeline, documents, and POD.">
+    <PageShell title={pageTitle} description="Operational detail, timeline, documents, and POD.">
       {shipmentQuery.isLoading ? (
         <div className="space-y-3">
           <Skeleton className="h-20 w-full" />
           <Skeleton className="h-72 w-full" />
+        </div>
+      ) : shipmentQuery.isError || !shipment ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+          <p className="font-semibold">Failed to load shipment</p>
+          <p className="mt-1 text-red-600">
+            {shipmentQuery.error instanceof Error ? shipmentQuery.error.message : "The shipment could not be found or you don't have access."}
+          </p>
+          <Button variant="secondary" size="sm" className="mt-4" onClick={() => void shipmentQuery.refetch()}>
+            Try again
+          </Button>
         </div>
       ) : (
         <div className="space-y-4">
           <section className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 lg:grid-cols-[2fr,1fr]">
             <div>
               <p className="text-xs text-gray-500">Tracking</p>
-              <p className="font-mono text-xl font-semibold text-gray-900">{shipment.tracking_number}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <p className="font-mono text-xl font-semibold text-gray-900">{shipment.tracking_number}</p>
+                <button
+                  type="button"
+                  title="Copy tracking number"
+                  className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                  onClick={() => void navigator.clipboard.writeText(shipment.tracking_number)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+              </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <StatusBadge status={shipment.status} />
                 <span className="text-sm text-gray-600">{shipment.service_tier}</span>
               </div>
-              <p className="mt-3 text-sm text-gray-700">
-                {shipment.pickup_address} {"->"} {shipment.delivery_address}
-              </p>
-              <p className="mt-1 text-sm text-gray-600">
-                Weight {shipment.package_weight_kg}kg · Qty {shipment.package_quantity}
-              </p>
-              <p className="mt-1 text-sm text-gray-600">{formatCurrency(shipment.pricing_amount, tenant)}</p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-gray-500">Quick update</p>
-              <div className="flex flex-wrap gap-2">
-                {quickNextStatuses.map((status) => (
-                  <Button key={status} size="sm" variant="secondary" onClick={() => updateStatusMutation.mutate(status)}>
-                    {status}
-                  </Button>
-                ))}
+
+              <div className="mt-3 grid grid-cols-[1fr,auto,1fr] items-start gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">From</p>
+                  <p className="mt-0.5 truncate text-sm text-gray-700">{shipment.pickup_address}</p>
+                </div>
+                <svg className="mt-4 shrink-0 text-gray-300" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14M13 6l6 6-6 6" />
+                </svg>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">To</p>
+                  <p className="mt-0.5 truncate text-sm font-medium text-gray-900">{shipment.delivery_address}</p>
+                </div>
               </div>
-              <Button variant="secondary" className="mt-3" asChild>
-                <Link to={`/returns`}>Request return / manage returns</Link>
+
+              <p className="mt-2 text-sm text-gray-500">
+                {shipment.package_weight_kg}kg · Qty {shipment.package_quantity} · {formatCurrency(shipment.pricing_amount, tenant)}
+              </p>
+            </div>
+            <div className="space-y-3">
+              {quickNextStatuses.length > 0 && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  loading={updateStatusMutation.isPending}
+                  onClick={() => setShowStatusModal(true)}
+                >
+                  Update Status
+                </Button>
+              )}
+              <Button variant="secondary" size="sm" className="w-full" asChild>
+                <Link to="/returns">Manage returns</Link>
               </Button>
             </div>
           </section>
@@ -216,7 +190,11 @@ export function ShipmentDetailPage() {
           >
             {visitedTabs.has("timeline") ? (
               <TabsContent value="timeline">
-                <ShipmentTimeline events={shipment.timeline} onUpdateStatus={() => undefined} />
+                <ShipmentTimeline
+                  events={shipment.timeline}
+                  onUpdateStatus={() => undefined}
+                  isUpdating={updateStatusMutation.isPending}
+                />
               </TabsContent>
             ) : null}
 
@@ -263,6 +241,18 @@ export function ShipmentDetailPage() {
           </Tabs>
         </div>
       )}
+
+      {shipment ? (
+        <UpdateStatusModal
+          open={showStatusModal}
+          onOpenChange={setShowStatusModal}
+          currentStatus={shipment.status}
+          hasAssignedDriver={!!shipment.assigned_driver_id}
+          onConfirm={async ({ nextStatus, notes, timestamp, failedReason, assignedDriverId, courierRefOrigin, courierRefDestination, originCourierConfirmed, destinationCourierConfirmed, customsClearanceConfirmed }) => {
+            await updateStatusMutation.mutateAsync({ status: nextStatus, notes, timestamp, failedReason, assignedDriverId, courierRefOrigin, courierRefDestination, originCourierConfirmed, destinationCourierConfirmed, customsClearanceConfirmed });
+          }}
+        />
+      ) : null}
     </PageShell>
   );
 }

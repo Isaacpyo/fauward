@@ -13,6 +13,7 @@ import {
   RefreshCcw,
   LifeBuoy,
   FileSpreadsheet,
+  Terminal,
   Truck,
   DollarSign,
   Route,
@@ -26,6 +27,15 @@ import type { LucideIcon } from "lucide-react";
 import type { TenantRole } from "@/types/domain";
 import type { FeatureKey } from "@/lib/plan-features";
 
+export type NavChild = {
+  to: string;
+  label: string;
+  // Used for highlight matching when the URL uses ?tab=<value>; pricing children
+  // use real routes and leave this undefined.
+  tabValue?: string;
+  minimumPlan?: "starter" | "pro" | "enterprise";
+};
+
 export type NavItem = {
   to: string;
   label: string;
@@ -33,7 +43,59 @@ export type NavItem = {
   roles: TenantRole[];
   feature: FeatureKey;
   showWhenLocked?: boolean;
+  children?: NavChild[];
 };
+
+const settingsChildren: NavChild[] = [
+  { to: "/settings?tab=profile", label: "Profile", tabValue: "profile", minimumPlan: "starter" },
+  { to: "/settings?tab=general", label: "General", tabValue: "general", minimumPlan: "starter" },
+  { to: "/settings?tab=domain", label: "Domain", tabValue: "domain", minimumPlan: "pro" },
+  { to: "/settings?tab=integrations", label: "Integrations", tabValue: "integrations", minimumPlan: "starter" },
+  { to: "/settings?tab=billing", label: "Billing", tabValue: "billing", minimumPlan: "starter" },
+  { to: "/settings?tab=api-keys", label: "API keys", tabValue: "api-keys", minimumPlan: "pro" },
+  { to: "/settings?tab=webhooks", label: "Webhooks", tabValue: "webhooks", minimumPlan: "pro" },
+  { to: "/settings?tab=email", label: "Email", tabValue: "email", minimumPlan: "enterprise" },
+  { to: "/settings?tab=branding", label: "Branding", tabValue: "branding", minimumPlan: "starter" },
+  { to: "/settings?tab=privacy", label: "Privacy", tabValue: "privacy", minimumPlan: "starter" }
+];
+
+const financeChildren: NavChild[] = [
+  { to: "/finance?tab=overview", label: "Overview", tabValue: "overview", minimumPlan: "starter" },
+  { to: "/finance?tab=invoices", label: "Invoices", tabValue: "invoices", minimumPlan: "starter" },
+  { to: "/finance?tab=create-invoice", label: "Create invoice", tabValue: "create-invoice", minimumPlan: "starter" },
+  { to: "/finance?tab=payments", label: "Payments", tabValue: "payments", minimumPlan: "starter" },
+  { to: "/finance?tab=collections", label: "COD & Collections", tabValue: "collections", minimumPlan: "pro" },
+  { to: "/finance?tab=refunds", label: "Refunds", tabValue: "refunds", minimumPlan: "pro" },
+  { to: "/finance?tab=settlements", label: "Settlements", tabValue: "settlements", minimumPlan: "pro" },
+  { to: "/finance?tab=reconciliation", label: "Reconciliation", tabValue: "reconciliation", minimumPlan: "enterprise" }
+];
+
+const fleetChildren: NavChild[] = [
+  { to: "/fleet?tab=drivers", label: "Field Operators", tabValue: "drivers" },
+  { to: "/fleet?tab=vehicles", label: "Vehicles", tabValue: "vehicles" }
+];
+
+const developerChildren: NavChild[] = [
+  { to: "/developer?tab=keys", label: "API keys", tabValue: "keys" },
+  { to: "/developer?tab=webhooks", label: "Webhooks", tabValue: "webhooks" },
+  { to: "/developer?tab=usage", label: "Usage", tabValue: "usage" }
+];
+
+const pricingChildren: NavChild[] = [
+  { to: "/pricing", label: "Overview" },
+  { to: "/pricing/zones", label: "Zones" },
+  { to: "/pricing/rate-cards", label: "Rate Cards" },
+  { to: "/pricing/service-tiers", label: "Service Tiers" },
+  { to: "/pricing/surcharges", label: "Surcharges" },
+  { to: "/pricing/insurance", label: "Insurance" },
+  { to: "/pricing/weight-tiers", label: "Weight Tiers" },
+  { to: "/pricing/rules", label: "Rules" },
+  { to: "/pricing/promo-codes", label: "Promo Codes" },
+  { to: "/pricing/tax", label: "Tax" },
+  { to: "/pricing/currencies", label: "Currencies" },
+  { to: "/pricing/settings", label: "Settings" },
+  { to: "/pricing/calculator", label: "Calculator" }
+];
 
 export const navItems: NavItem[] = [
   {
@@ -90,7 +152,8 @@ export const navItems: NavItem[] = [
     label: "Finance",
     icon: Wallet,
     feature: "finance",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"],
+    children: financeChildren
   },
   {
     to: "/analytics",
@@ -158,7 +221,8 @@ export const navItems: NavItem[] = [
     icon: Truck,
     feature: "fleet",
     showWhenLocked: true,
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: fleetChildren
   },
   {
     to: "/agent",
@@ -173,7 +237,16 @@ export const navItems: NavItem[] = [
     label: "Pricing",
     icon: DollarSign,
     feature: "pricing",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: pricingChildren
+  },
+  {
+    to: "/developer",
+    label: "Developer",
+    icon: Terminal,
+    feature: "settings",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: developerChildren
   },
   {
     to: "/team",
@@ -187,7 +260,8 @@ export const navItems: NavItem[] = [
     label: "Settings",
     icon: Settings,
     feature: "settings",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"],
+    children: settingsChildren
   },
   {
     to: "/book",

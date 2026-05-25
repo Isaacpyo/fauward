@@ -18,7 +18,7 @@ const prisma = new PrismaClient({
 const TENANT_SCOPED_MODELS = [
   'User', 'Shipment', 'ShipmentItem', 'ShipmentEvent', 'Organisation',
   'Lead', 'Quote', 'Invoice', 'Payment', 'Refund', 'CreditNote',
-  'Driver', 'Vehicle', 'Route', 'RouteStop', 'PodAsset',
+  'Driver', 'Vehicle', 'Route', 'PodAsset',
   'RateCard', 'ServiceZone', 'ShipmentDocument', 'CarrierBooking',
   'CustomsDeclaration', 'ApiKey', 'WebhookEndpoint', 'WebhookDelivery',
   'NotificationLog', 'UsageRecord', 'IdempotencyKey', 'AuditLog',

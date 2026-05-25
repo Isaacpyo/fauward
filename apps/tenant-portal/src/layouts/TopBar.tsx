@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Fragment, FormEvent, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { clearTokens, getDevTestSession, getRefreshToken, hasDevTestSession } from "@/lib/auth";
 import { api } from "@/lib/api";
 
@@ -69,7 +70,9 @@ export function TopBar() {
   const user = useAppStore((state) => state.user);
   const setMobileSidebarOpen = useAppStore((state) => state.setMobileSidebarOpen);
   const setUser = useAppStore((state) => state.setUser);
+  const setTenant = useTenantStore((state) => state.setTenant);
   const tenant = useTenantStore((state) => state.tenant);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [regionModalOpen, setRegionModalOpen] = useState(false);
   const [requestedRegion, setRequestedRegion] = useState(tenant?.region ?? "global");
@@ -243,7 +246,9 @@ export function TopBar() {
                     // Best-effort — always clear locally regardless of API outcome
                   } finally {
                     clearTokens();
+                    queryClient.clear();
                     setUser(null);
+                    setTenant(null);
                     navigate("/login");
                   }
                 }}

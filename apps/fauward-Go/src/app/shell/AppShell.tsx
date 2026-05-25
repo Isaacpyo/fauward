@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { BrandLogo } from "@/components/common/BrandLogo";
 import { SyncBanner } from "@/components/sync/SyncBanner";
 import { useAuthStore } from "@/store/useAuthStore";
+import { useFieldDataStore } from "@/store/useFieldDataStore";
+import { useSyncStore } from "@/store/useSyncStore";
 import { formatRoleLabel } from "@/lib/utils/labels";
 
 const navItems = [
@@ -12,6 +15,18 @@ const navItems = [
 
 export const AppShell = () => {
   const user = useAuthStore((state) => state.user);
+  const syncPendingMutations = useFieldDataStore((state) => state.syncPendingMutations);
+  const hasPendingMutations = useFieldDataStore((state) =>
+    state.pendingMutations.some((m) => m.state === "pending"),
+  );
+  const isOnline = useSyncStore((state) => state.isOnline);
+  const isSyncing = useSyncStore((state) => state.isSyncing);
+
+  useEffect(() => {
+    if (!hasPendingMutations || !isOnline || isSyncing) return;
+    void syncPendingMutations();
+  }, [hasPendingMutations, isOnline, isSyncing, syncPendingMutations]);
+
   const subtitleParts = [user?.tenantLabel, formatRoleLabel(user?.role)].filter(
     (part) => Boolean(part) && part !== "Assigned tenant"
   );

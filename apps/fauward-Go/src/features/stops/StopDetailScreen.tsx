@@ -22,7 +22,6 @@ const workflowConfig: Record<
     verificationEnabled: boolean;
     locationEnabled: boolean;
     proofLabel?: string;
-    capabilities: string[];
   }
 > = {
   shipment_creation: {
@@ -31,7 +30,6 @@ const workflowConfig: Record<
     completeLabel: "Complete shipment creation",
     verificationEnabled: true,
     locationEnabled: false,
-    capabilities: ["Status updates", "Shipment verification"],
   },
   warehouse_intake: {
     summary: "Confirm inbound receipt into the warehouse and validate the shipment or package reference.",
@@ -39,7 +37,6 @@ const workflowConfig: Record<
     completeLabel: "Complete warehouse intake",
     verificationEnabled: true,
     locationEnabled: false,
-    capabilities: ["Status updates", "Shipment verification"],
   },
   dispatch_handoff: {
     summary: "Validate the handoff into dispatch so the shipment is ready for movement.",
@@ -47,7 +44,6 @@ const workflowConfig: Record<
     completeLabel: "Complete dispatch handoff",
     verificationEnabled: true,
     locationEnabled: false,
-    capabilities: ["Status updates", "Shipment verification"],
   },
   pickup: {
     summary: "Confirm the pickup, validate identifiers, and keep the shipment moving into the network.",
@@ -55,7 +51,6 @@ const workflowConfig: Record<
     completeLabel: "Complete pickup",
     verificationEnabled: true,
     locationEnabled: true,
-    capabilities: ["Status updates", "Shipment verification", "Location updates"],
   },
   linehaul: {
     summary: "Track the movement between facilities and keep telemetry current while the load is in transit.",
@@ -63,7 +58,6 @@ const workflowConfig: Record<
     completeLabel: "Complete linehaul stage",
     verificationEnabled: false,
     locationEnabled: true,
-    capabilities: ["Status updates", "Location updates"],
   },
   delivery: {
     summary: "Verify the shipment at handoff and capture final delivery confirmation before completing the task.",
@@ -72,7 +66,6 @@ const workflowConfig: Record<
     verificationEnabled: true,
     locationEnabled: true,
     proofLabel: "Capture delivery confirmation",
-    capabilities: ["Status updates", "Shipment verification", "Confirmation capture", "Location updates"],
   },
   return_initiation: {
     summary: "Validate the return, capture customer confirmation, and move the parcel into reverse logistics.",
@@ -81,7 +74,6 @@ const workflowConfig: Record<
     verificationEnabled: true,
     locationEnabled: true,
     proofLabel: "Capture return confirmation",
-    capabilities: ["Status updates", "Shipment verification", "Confirmation capture", "Location updates"],
   },
   return_receipt: {
     summary: "Confirm the returned parcel is received back into the hub and ready for the next internal step.",
@@ -89,7 +81,6 @@ const workflowConfig: Record<
     completeLabel: "Complete return receipt",
     verificationEnabled: true,
     locationEnabled: false,
-    capabilities: ["Status updates", "Shipment verification"],
   },
 };
 
@@ -122,7 +113,6 @@ export const StopDetailScreen = () => {
       <BackLink to="/jobs" label="Back to assigned jobs" />
       <ScreenHeader
         title={stop.title}
-        subtitle="The available actions on this screen are driven by the assigned workflow stage for this job."
         kicker={`Stop ${stop.sequence}`}
         action={<StatusPill label={stopStatusLabel[stop.status]} tone={stopStatusTone[stop.status]} />}
       />
@@ -131,13 +121,6 @@ export const StopDetailScreen = () => {
         <p className="tiny-label">Workflow stage</p>
         <h2 className="mt-2 text-xl font-semibold text-ink">{workflowStageLabel[stop.workflowStage]}</h2>
         <p className="mt-2 text-sm leading-6 text-stone-600">{workflow.summary}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {workflow.capabilities.map((capability) => (
-            <span key={capability} className="chip-btn">
-              {capability}
-            </span>
-          ))}
-        </div>
       </article>
 
       <article className="panel p-5">
@@ -167,9 +150,11 @@ export const StopDetailScreen = () => {
 
       {relatedJob ? (
         <article className="panel p-5">
-          <p className="tiny-label">Assigned job</p>
-          <h2 className="mt-2 text-xl font-semibold text-ink">{relatedJob.shipmentId}</h2>
-          <p className="mt-2 text-sm text-stone-600">{relatedJob.instructions ?? "No shipment-specific notes."}</p>
+          <p className="tiny-label">Tracking reference</p>
+          <h2 className="mt-2 text-xl font-semibold text-ink">{relatedJob.trackingNumber ?? relatedJob.shipmentId}</h2>
+          {relatedJob.instructions ? (
+            <p className="mt-2 text-sm text-stone-600">{relatedJob.instructions}</p>
+          ) : null}
         </article>
       ) : null}
 
@@ -235,18 +220,8 @@ export const StopDetailScreen = () => {
         <p className="tiny-label">Operational actions</p>
         <div className="mt-4 grid gap-3">
           {stop.status === "assigned" ? (
-            <button type="button" className="primary-btn w-full" onClick={() => advanceStopStatus(stop.id, "in_progress")}>
+            <Link to={`/stops/${stop.id}/deliver`} className="primary-btn w-full">
               {workflow.startLabel}
-            </button>
-          ) : null}
-          {stop.status === "in_progress" && !hasPodRequirements ? (
-            <button type="button" className="primary-btn w-full" onClick={() => advanceStopStatus(stop.id, "completed")}>
-              {workflow.completeLabel}
-            </button>
-          ) : null}
-          {isActive && workflow.locationEnabled ? (
-            <Link to="/location" className="secondary-btn w-full">
-              Capture location update
             </Link>
           ) : null}
           {isActive ? (

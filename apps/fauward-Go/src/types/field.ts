@@ -56,6 +56,7 @@ export type PodRequirements = {
 export type FieldJob = {
   id: string;
   shipmentId: string;
+  trackingNumber?: string;
   type: JobType;
   workflowStage: WorkflowStage;
   status: JobStatus;
@@ -111,6 +112,12 @@ export type PendingMutation = {
   state: PendingMutationState;
 };
 
+export type PodCodCollection = {
+  amount: number;
+  currency: string;
+  method: "CASH" | "CARD_TERMINAL" | "BANK_TRANSFER";
+};
+
 export type PodDraft = {
   id: string;
   shipmentId: string;
@@ -123,6 +130,7 @@ export type PodDraft = {
   lat?: number;
   lng?: number;
   notes?: string;
+  codCollection?: PodCodCollection;
   state: "draft" | "ready" | "uploaded" | "failed";
 };
 

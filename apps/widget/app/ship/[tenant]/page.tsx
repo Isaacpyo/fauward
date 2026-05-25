@@ -4,6 +4,7 @@ import { getTenantBySlugOrHistory } from "@fauward/tenant-db";
 import { notFound, permanentRedirect } from "next/navigation";
 
 import CreateShipmentForm from "@/components/shipments/CreateShipmentForm";
+import { buildTenantConfig } from "@/lib/shipmentTenantConfig";
 import { signWidgetToken } from "@/lib/widgetToken";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,7 @@ export default async function HostedShipmentPage({ params }: PageProps) {
   });
 
   const branding = tenant.branding;
+  const tenantConfig = buildTenantConfig(tenant);
   const style: BrandStyle = {
     "--brand-primary": branding.primary ?? FALLBACK_PRIMARY,
     "--brand-accent": branding.accent ?? FALLBACK_ACCENT,
@@ -79,7 +81,7 @@ export default async function HostedShipmentPage({ params }: PageProps) {
           </div>
         </header>
 
-        <CreateShipmentForm embedded={false} tenantSlug={tenant.slug} widgetToken={token} />
+        <CreateShipmentForm embedded={false} tenantSlug={tenant.slug} widgetToken={token} tenantConfig={tenantConfig} />
       </main>
     </div>
   );

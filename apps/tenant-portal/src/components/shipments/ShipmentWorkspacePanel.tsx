@@ -167,6 +167,8 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
   const driversQuery = useQuery({
     queryKey: ["shipment-workspace-drivers"],
     queryFn: fetchDrivers,
+    enabled: assignDriverOpen,
+    staleTime: 0,
     retry: 1
   });
 
@@ -278,7 +280,7 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
 
   return (
     <>
-      <aside className="sticky top-[calc(var(--topbar-height)+16px)] hidden h-fit max-h-[calc(100vh-var(--topbar-height)-32px)] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:flex lg:flex-col">
+      <div className="flex flex-col overflow-hidden rounded-xl bg-white">
         <div className="border-b border-gray-200 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -536,7 +538,7 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
             />
           )}
         </div>
-      </aside>
+      </div>
 
       {shipment ? (
         <>
@@ -557,6 +559,8 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
             open={assignDriverOpen}
             onOpenChange={setAssignDriverOpen}
             drivers={driversQuery.data ?? []}
+            loading={driversQuery.isLoading}
+            error={driversQuery.isError ? "Failed to load field operators. Try closing and reopening." : undefined}
             currentDriverName={shipment.assigned_driver_name}
             currentDriverId={shipment.assigned_driver_id}
             onConfirm={async (driverId) => {

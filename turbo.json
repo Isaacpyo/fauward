@@ -1,7 +1,11 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "tasks": {
+    "prisma:generate": {
+      "outputs": ["node_modules/.prisma/client/**"]
+    },
     "dev": {
+      "dependsOn": ["prisma:generate"],
       "cache": false,
       "persistent": true
     },

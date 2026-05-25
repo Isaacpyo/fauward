@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { StatCard } from "@/components/common/StatCard";
 import { pluralize } from "@/lib/utils/formatters";
@@ -9,6 +10,12 @@ export const HomeScreen = () => {
   const pendingMutations = useFieldDataStore((state) => state.pendingMutations);
   const podDrafts = useFieldDataStore((state) => state.podDrafts);
   const scanVerifications = useFieldDataStore((state) => state.scanVerifications);
+  const hydrateAssignedWork = useFieldDataStore((state) => state.hydrateAssignedWork);
+  const isHydrating = useFieldDataStore((state) => state.isHydrating);
+
+  useEffect(() => {
+    void hydrateAssignedWork();
+  }, [hydrateAssignedWork]);
 
   const activeRoute = routes[0];
   const activeStops = stops.filter((stop) => stop.status === "assigned" || stop.status === "in_progress");
@@ -21,10 +28,20 @@ export const HomeScreen = () => {
   return (
     <section className="space-y-6">
       <article className="panel-accent p-5">
-        <p className="tiny-label text-brand">Assigned flow</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="tiny-label text-brand">Assigned flow</p>
+          <button
+            type="button"
+            onClick={() => void hydrateAssignedWork()}
+            disabled={isHydrating}
+            className="text-[0.65rem] font-semibold uppercase tracking-widest text-brand disabled:opacity-40"
+          >
+            {isHydrating ? "Syncing…" : "Refresh"}
+          </button>
+        </div>
         <h2 className="mt-2 font-display text-[1.8rem] text-ink">{activeRoute?.label ?? "No route assigned"}</h2>
         <p className="mt-2 text-sm text-stone-600">
-          {activeRoute?.area} - Van {activeRoute?.vehicleLabel} - {activeRoute?.shiftWindow}
+          {activeRoute?.area ?? ""}{activeRoute?.vehicleLabel ? ` - ${activeRoute.vehicleLabel}` : ""}{activeRoute?.shiftWindow ? ` - ${activeRoute.shiftWindow}` : ""}
         </p>
         <div className="mt-5">
           <Link to={nextStop ? `/stops/${nextStop.id}` : "/jobs"} className="secondary-btn w-full">

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
 
 import { Badge } from "@/components/ui/Badge";
@@ -20,7 +21,9 @@ const scopes = ["shipments:read", "shipments:write", "labels:read", "webhooks:wr
 
 export function DeveloperPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState("keys");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") ?? "keys";
+  const setTab = (next: string) => setSearchParams({ tab: next });
   const [newKey, setNewKey] = useState({ name: "", scopes: [] as string[], isSandbox: false });
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [newEndpoint, setNewEndpoint] = useState({ url: "", events: "shipment.created,shipment.delivered" });
@@ -64,7 +67,7 @@ export function DeveloperPage() {
         { value: "keys", label: "API keys" },
         { value: "webhooks", label: "Webhooks" },
         { value: "usage", label: "Usage" }
-      ]}>
+      ]} hideTabList>
         <TabsContent value="keys">
           <div className="space-y-4">
             {createdKey ? (

@@ -1,480 +1,152 @@
-// Widget-adapted version of the shipment wizard.
-// Differences from apps/web version:
-//   - No router/window navigation; uses callbacks instead
-//   - Submits to /api/widget/shipments (writes to tenant Supabase schema)
-//   - Auth handled by widget session token, not Firebase session cookies
-//   - postMessage events fired on WIDGET_CLOSE and SHIPMENT_CREATED
-
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  doc,
-  addDoc,
-  collection,
-  serverTimestamp,
-  getDoc,
-  setDoc,
-} from "firebase/firestore";
-import { db } from "@/lib/firebaseConfig";
-import { firebaseAuth } from "@/lib/firebaseClient";
-import {
-  GoogleAuthProvider,
-  signInWithPopup,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-} from "firebase/auth";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { loadStripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  useStripe,
-  useElements,
-  PaymentElement,
-} from "@stripe/react-stripe-js";
+import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+
 import BulkPaymentForm from "@/components/payments/BulkPaymentForm";
-
-// Initialize Stripe
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
-
-// ---------------- Types ----------------
-
-type Direction = "SHIP_TO_AFRICA" | "SHIP_TO_UK";
-
-type Party = {
-  fullName: string;
-  email?: string;
-  phone: string;
-  phoneDialCode?: string;
-  address1: string;
-  address2?: string;
-  city: string;
-  state?: string;
-  postcode?: string;
-  country: string;
-  [key: string]: any;
-};
-
-type InsuranceTier = "NONE" | "BASIC" | "STANDARD" | "PREMIUM";
-
-type GoodsInfo = {
-  category: string;
-  declaredValueGBP: number;
-  notes?: string;
-  insurance: InsuranceTier;
-};
-
-type PackageInput = {
-  lengthCm: number;
-  widthCm: number;
-  heightCm: number;
-  weightKg: number;
-};
-
-type WizardData = {
-  direction: Direction | null;
-  sender: Party;
-  recipient: Party;
-  goods: GoodsInfo;
-  pkg: PackageInput;
-  phoneVerified: boolean;
-  priceEstimate: number;
-};
-
-type BulkRow = {
-  _row: number;
-  direction: Direction;
-  sender: Party;
-  recipient: Party;
-  goods: GoodsInfo;
-  pkg: PackageInput;
-  phoneVerified: boolean;
-};
+import { db } from "@/lib/firebaseConfig";
+import { getAddressSchema } from "@/lib/shipmentAddress";
+import { createTranslator } from "@/lib/shipmentMessages";
+import { calculateShipmentPricing, toMinorUnits } from "@/lib/shipmentPricing";
+import {
+  DEFAULT_TENANT_CONFIG,
+  displayCountryName,
+  getDialCodeForCountry,
+  type CountryOption,
+  type CorridorConfig,
+  type SupportedLanguage,
+  type TenantConfig,
+} from "@/lib/shipmentTenantConfig";
+import {
+  buildWidgetShipmentPayload,
+  findCorridor,
+  formatPhoneE164,
+  isPhoneValidForCountry,
+  validateShipmentDraft,
+  type CustomsDeclarationInput,
+  type CustomsItemInput,
+  type GoodsInput,
+  type PartyInput,
+  type ShipmentDraftInput,
+  type WidgetShipmentPayload,
+} from "@/lib/shipmentValidation";
 
 type BulkResult =
   | { ok: true; row: number; trackingRef: string }
   | { ok: false; row: number; error: string };
 
-// ---------------- Helpers ----------------
+type BulkDraft = ShipmentDraftInput & { _row: number };
 
-function InfoTooltip({ content }: { content: string }) {
-  const [isOpen, setIsOpen] = useState(false);
+type StepKey = "addresses" | "package" | "goods" | "customs" | "phone" | "review" | "payment";
 
-  return (
-    <div className="relative inline-block">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setIsOpen(!isOpen);
-        }}
-        className="inline-flex items-center justify-center w-4 h-4 text-xs bg-gray-200 text-gray-600 rounded-full hover:bg-gray-300 transition-colors"
-      >
-        ?
-      </button>
-      {isOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-[999]"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsOpen(false);
-            }}
-          />
-          <div className="absolute left-0 top-6 z-[1000] w-96 max-w-[calc(100vw-2rem)] bg-white border-2 border-gray-300 rounded-xl shadow-2xl p-4 text-xs text-gray-700 whitespace-pre-line max-h-[80vh] overflow-y-auto">
-            {content}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsOpen(false);
-              }}
-              className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
-            >
-              ✕
-            </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
+type StripePaymentSession = {
+  provider: "stripe";
+  clientSecret: string;
+  publishableKey: string;
+  currency: string;
+  amountMinor: number;
+};
+
+type PaystackPaymentSession = {
+  provider: "paystack";
+  accessCode: string;
+  reference: string;
+  publicKey: string;
+  authorizationUrl: string;
+  currency: string;
+  amountMinor: number;
+};
+
+type PaymentSession = StripePaymentSession | PaystackPaymentSession;
+
+type PaymentConfirmation = {
+  success?: boolean;
+  status?: "success" | "pending" | "failed";
+  trackingRef?: string | null;
+  shipmentId?: string | null;
+  shipments?: Array<{ trackingRef: string; shipmentId: string }>;
+  error?: string;
+};
+
+const BRAND_STYLE = {
+  "--stripe-color-primary": "var(--brand-primary)",
+} as CSSProperties;
+
+function emptyParty(country = ""): PartyInput {
+  return {
+    fullName: "",
+    email: "",
+    phone: "",
+    address1: "",
+    address2: "",
+    city: "",
+    state: "",
+    postcode: "",
+    country,
+  };
 }
 
-function PhoneVerificationOTP({
-  phoneDialCode,
-  phoneNumber,
-  onVerified,
-}: {
-  phoneDialCode: string;
-  phoneNumber: string;
-  onVerified: () => void;
-}) {
-  const [code, setCode] = useState("");
-  const [sending, setSending] = useState(false);
-  const [verifying, setVerifying] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
-  const [needsAuth, setNeedsAuth] = useState(false);
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  const [authForm, setAuthForm] = useState({ email: "", password: "" });
-  const [authLoading, setAuthLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const phoneE164 = `+${phoneDialCode}${phoneNumber.replace(/\D/g, "")}`;
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
-      setNeedsAuth(!user);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  async function handleGoogleSignIn() {
-    setAuthLoading(true);
-    setError(null);
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(firebaseAuth, provider);
-      setNeedsAuth(false);
-      setInfo("Signed in successfully. You can now verify your phone.");
-    } catch (e: any) {
-      setError(e?.message || "Google sign-in failed.");
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function handleEmailAuth(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthLoading(true);
-    setError(null);
-
-    try {
-      const email = authForm.email.trim();
-      const password = authForm.password;
-
-      if (authMode === "signup") {
-        await createUserWithEmailAndPassword(firebaseAuth, email, password);
-        setInfo("Account created! You can now verify your phone.");
-      } else {
-        await signInWithEmailAndPassword(firebaseAuth, email, password);
-        setInfo("Signed in successfully. You can now verify your phone.");
-      }
-      setNeedsAuth(false);
-    } catch (e: any) {
-      setError(e?.message || "Authentication failed.");
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function sendOtp() {
-    setError(null);
-    setInfo(null);
-
-    if (!phoneNumber || phoneNumber.replace(/\D/g, "").length < 8) {
-      return setError("Please enter a valid phone number.");
-    }
-
-    const u = firebaseAuth.currentUser;
-    if (!u) {
-      setNeedsAuth(true);
-      return setError("Please sign in to verify your phone number.");
-    }
-
-    setSending(true);
-    try {
-      const token = await u.getIdToken();
-      const res = await fetch("/api/business/phone/send", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ to: phoneE164.trim() }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "Failed to send OTP.");
-
-      setSent(true);
-      setInfo("OTP sent. Check your SMS.");
-    } catch (e: any) {
-      setError(e?.message || "Failed to send OTP.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  async function verifyOtp() {
-    setError(null);
-    setInfo(null);
-
-    if (!code.trim()) return setError("Enter the code you received.");
-
-    const u = firebaseAuth.currentUser;
-    if (!u) {
-      setNeedsAuth(true);
-      return setError("Please sign in to verify your phone number.");
-    }
-
-    setVerifying(true);
-    try {
-      const token = await u.getIdToken();
-      const res = await fetch("/api/business/phone/verify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ to: phoneE164.trim(), code: code.trim() }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error || "OTP verification failed.");
-
-      if (json.status !== "approved") {
-        setError("Incorrect code. Try again.");
-        return;
-      }
-
-      setInfo("Phone verified!");
-      onVerified();
-    } catch (e: any) {
-      setError(e?.message || "OTP verification failed.");
-    } finally {
-      setVerifying(false);
-    }
-  }
-
-  if (needsAuth) {
-    return (
-      <div className="space-y-4">
-        {info && (
-          <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-            {info}
-          </div>
-        )}
-
-        {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            Sign in required
-          </h3>
-          <p className="text-sm text-gray-600 mb-4">
-            Please sign in or create an account to verify your phone number.
-          </p>
-
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={authLoading}
-            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm text-sm flex items-center justify-center gap-2 hover:border-[#d80000] hover:ring-2 hover:ring-[#d80000]/20 transition disabled:opacity-50 mb-3"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="#EA4335"
-                d="M12 10.2v3.9h5.4c-.2 1.2-1.6 3.6-5.4 3.6-3.2 0-5.8-2.7-5.8-6S8.8 5.8 12 5.8c1.8 0 3 .8 3.7 1.4l2.5-2.4C16.8 3.3 14.6 2.5 12 2.5 6.9 2.5 2.8 6.6 2.8 11.7S6.9 20.9 12 20.9c6.3 0 8.7-4.4 8.7-6.7 0-.5-.1-.9-.1-1H12z"
-              />
-            </svg>
-            <span className="font-medium">Continue with Google</span>
-          </button>
-
-          <div className="my-4 flex items-center gap-3">
-            <div className="h-px flex-1 bg-gray-300" />
-            <div className="text-xs uppercase tracking-wide text-gray-500">
-              or continue with email
-            </div>
-            <div className="h-px flex-1 bg-gray-300" />
-          </div>
-
-          <form onSubmit={handleEmailAuth} className="space-y-3">
-            <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                value={authForm.email}
-                onChange={(e) =>
-                  setAuthForm((f) => ({ ...f, email: e.target.value }))
-                }
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d80000]/30"
-                required
-              />
-            </div>
-
-            <div className="relative">
-              <label className="block text-sm font-semibold text-gray-900 mb-1">
-                Password
-              </label>
-              <input
-                type={showPassword ? "text" : "password"}
-                value={authForm.password}
-                onChange={(e) =>
-                  setAuthForm((f) => ({ ...f, password: e.target.value }))
-                }
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d80000]/30"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-9 text-xs text-gray-500 underline"
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full rounded-xl bg-[#d80000] px-5 py-3 text-sm font-semibold text-white hover:bg-[#b80000] disabled:opacity-60"
-            >
-              {authLoading
-                ? "Please wait..."
-                : authMode === "signup"
-                ? "Create account"
-                : "Sign in"}
-            </button>
-          </form>
-
-          <p className="text-sm text-gray-600 mt-4 text-center">
-            {authMode === "signin" ? (
-              <>
-                New here?{" "}
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("signup")}
-                  className="text-[#d80000] font-semibold underline"
-                >
-                  Create an account
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => setAuthMode("signin")}
-                  className="text-[#d80000] font-semibold underline"
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {info && (
-        <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-          {info}
-        </div>
-      )}
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row gap-3">
-        <button
-          type="button"
-          onClick={sendOtp}
-          disabled={sending || !phoneNumber}
-          className="inline-flex items-center justify-center rounded-xl bg-[#d80000] px-5 py-3 text-sm font-semibold text-white hover:bg-[#b80000] disabled:opacity-60"
-        >
-          {sending ? "Sending..." : sent ? "Resend code" : "Send code"}
-        </button>
-
-        <div className="flex-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-          If you don&apos;t receive it, try again in a minute.
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-gray-900 mb-2">
-          OTP code
-        </label>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="123456"
-          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d80000]/30"
-        />
-      </div>
-
-      <button
-        type="button"
-        onClick={verifyOtp}
-        disabled={verifying || !code.trim()}
-        className="w-full rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-900 hover:bg-gray-50 disabled:opacity-60"
-      >
-        {verifying ? "Verifying..." : "Verify phone"}
-      </button>
-    </div>
-  );
+function emptyCustoms(country = ""): CustomsDeclarationInput {
+  return {
+    type: "DDU",
+    reasonForExport: "",
+    items: [emptyCustomsItem(country)],
+  };
 }
 
-async function postShipmentToSupabase(
-  payload: Record<string, unknown>,
+function emptyCustomsItem(country = ""): CustomsItemInput {
+  return {
+    description: "",
+    hsCode: "",
+    quantity: 1,
+    declaredValue: 0,
+    countryOfOrigin: country,
+  };
+}
+
+function createDraftForCorridor(corridor: CorridorConfig | null): ShipmentDraftInput {
+  const origin = corridor?.originCountry ?? "";
+  const destination = corridor?.destinationCountry ?? "";
+  return {
+    corridorId: corridor?.id ?? "",
+    sender: emptyParty(origin),
+    recipient: { ...emptyParty(destination), contentDescription: "" },
+    goods: {
+      category: "",
+      declaredValue: 0,
+      insurance: "NONE",
+      notes: "",
+    },
+    pkg: {
+      lengthCm: 0,
+      widthCm: 0,
+      heightCm: 0,
+      weightKg: 0,
+    },
+    phoneVerified: false,
+    customs: emptyCustoms(origin),
+  };
+}
+
+function sanitizeNumber(value: string): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function validEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function postMessageToHost(event: object) {
+  if (typeof window !== "undefined") {
+    window.parent.postMessage(event, "*");
+  }
+}
+
+async function postShipment(
+  payload: WidgetShipmentPayload,
   widgetToken: string,
 ): Promise<{ trackingRef: string; shipmentId: string }> {
   const res = await fetch("/api/widget/shipments", {
@@ -485,11 +157,61 @@ async function postShipmentToSupabase(
     },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as Record<string, string>).error ?? `Shipment API error: ${res.status}`);
+  const json = (await res.json().catch(() => ({}))) as { trackingRef?: string; shipmentId?: string; error?: string };
+  if (!res.ok || !json.trackingRef || !json.shipmentId) {
+    throw new Error(json.error ?? `Shipment API error: ${res.status}`);
   }
-  return res.json();
+  return { trackingRef: json.trackingRef, shipmentId: json.shipmentId };
+}
+
+async function fetchTenantConfig(widgetToken: string): Promise<TenantConfig> {
+  const res = await fetch("/api/widget/config", {
+    headers: { Authorization: `Bearer ${widgetToken}` },
+  });
+  const json = (await res.json().catch(() => ({}))) as { tenantConfig?: TenantConfig; error?: string };
+  if (!res.ok || !json.tenantConfig) {
+    throw new Error(json.error ?? "Tenant config unavailable");
+  }
+  return json.tenantConfig;
+}
+
+async function confirmPaystackPayment(
+  session: PaystackPaymentSession,
+  widgetToken: string | undefined,
+): Promise<PaymentConfirmation> {
+  const res = await fetch("/api/payment/confirm", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(widgetToken ? { Authorization: `Bearer ${widgetToken}` } : {}),
+    },
+    body: JSON.stringify({
+      provider: "paystack",
+      reference: session.reference,
+      amountMinor: session.amountMinor,
+      currency: session.currency,
+    }),
+  });
+  const json = (await res.json().catch(() => ({}))) as PaymentConfirmation;
+  if (!res.ok || !json.success) {
+    throw new Error(json.error ?? "Payment could not be confirmed");
+  }
+  return json;
+}
+
+function useMoneyFormatter(locale: string, currency: string) {
+  return useMemo(
+    () =>
+      new Intl.NumberFormat(locale, {
+        style: "currency",
+        currency,
+      }),
+    [locale, currency],
+  );
+}
+
+function useNumberFormatter(locale: string) {
+  return useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }), [locale]);
 }
 
 export default function CreateShipmentForm({
@@ -499,6 +221,8 @@ export default function CreateShipmentForm({
   onTrack,
   tenantSlug,
   widgetToken,
+  tenantConfig,
+  suppressSuccessView = false,
 }: {
   embedded?: boolean;
   onCreated?: (trackingRef: string) => void;
@@ -506,59 +230,1483 @@ export default function CreateShipmentForm({
   onTrack?: (trackingRef: string) => void;
   tenantSlug?: string;
   widgetToken?: string;
+  tenantConfig?: TenantConfig;
+  suppressSuccessView?: boolean;
 }) {
-  const router = useRouter();
-  const bulkTopRef = useRef<HTMLDivElement | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
+  const [config, setConfig] = useState<TenantConfig>(tenantConfig ?? DEFAULT_TENANT_CONFIG);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [locale, setLocale] = useState(tenantConfig?.locale ?? DEFAULT_TENANT_CONFIG.locale);
+  const language = config.supportedLanguages.find((item) => item.locale === locale) ?? config.supportedLanguages[0];
+  const dir = language?.textDirection ?? config.textDirection;
+  const t = useMemo(() => createTranslator(locale), [locale]);
+  const money = useMoneyFormatter(locale, config.currency);
+  const number = useNumberFormatter(locale);
+  const [mode, setMode] = useState<"single" | "bulk">("single");
+  const [step, setStep] = useState(0);
+  const [draft, setDraft] = useState<ShipmentDraftInput>(() => createDraftForCorridor(config.corridors[0] ?? null));
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ trackingRef: string; shipmentId: string } | null>(null);
+  const [paymentSession, setPaymentSession] = useState<PaymentSession | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [bulkRows, setBulkRows] = useState<BulkDraft[]>([]);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+  const [bulkStep, setBulkStep] = useState<"upload" | "review" | "phone" | "payment" | "creating" | "complete">("upload");
+  const [bulkPhoneVerified, setBulkPhoneVerified] = useState(false);
+  const [bulkPaymentSession, setBulkPaymentSession] = useState<PaymentSession | null>(null);
+  const [bulkBatchRef, setBulkBatchRef] = useState<string | null>(null);
+  const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
-  const DIM_DIVISOR = 5000;
-  const PER_KG_FEE = 7.0;
+  useEffect(() => {
+    if (tenantConfig) {
+      setConfig(tenantConfig);
+      setLocale(tenantConfig.locale);
+      return;
+    }
+    if (!widgetToken) return;
 
-  const INSURANCE_RATES: Record<InsuranceTier, { percentage: number; min: number }> = {
-    NONE: { percentage: 0, min: 0 },
-    BASIC: { percentage: 0.0075, min: 5 },
-    STANDARD: { percentage: 0.01, min: 5 },
-    PREMIUM: { percentage: 0.02, min: 10 },
-  };
+    let active = true;
+    fetchTenantConfig(widgetToken)
+      .then((nextConfig) => {
+        if (!active) return;
+        setConfig(nextConfig);
+        setLocale(nextConfig.locale);
+        setConfigError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setConfigError(error instanceof Error ? error.message : "Tenant config unavailable");
+      });
 
-  const CATEGORIES = [
-    "Clothing",
-    "Food (non-perishable)",
-    "Electronics",
-    "Documents",
-    "Cosmetics",
-    "Household",
-    "Other",
-  ];
+    return () => {
+      active = false;
+    };
+  }, [tenantConfig, widgetToken]);
 
-  const UK_COUNTRIES = ["United Kingdom"];
+  useEffect(() => {
+    const current = findCorridor(config, draft.corridorId);
+    if (current) return;
+    const next = config.corridors[0] ?? null;
+    setDraft(createDraftForCorridor(next));
+    setStep(0);
+    setPaymentSession(null);
+  }, [config, draft.corridorId]);
 
-  const AFRICAN_COUNTRIES = [
-    "Nigeria",
-    "Ghana",
-    "Kenya",
-    "South Africa",
-    "Egypt",
-    "Tanzania",
-    "Uganda",
-    "Ethiopia",
-    "Morocco",
-    "Senegal",
-    "Rwanda",
-    "Zambia",
-    "Zimbabwe",
-  ];
+  const corridor = useMemo(() => findCorridor(config, draft.corridorId), [config, draft.corridorId]);
+  const customsRequired = Boolean(corridor?.customsRequired);
+  const steps: StepKey[] = customsRequired
+    ? ["addresses", "package", "goods", "customs", "phone", "review", "payment"]
+    : ["addresses", "package", "goods", "phone", "review", "payment"];
+  const activeStep = steps[step] ?? steps[0];
+  const pricing = useMemo(
+    () => calculateShipmentPricing(draft.pkg, draft.goods.declaredValue, draft.goods.insurance, config),
+    [config, draft.goods.declaredValue, draft.goods.insurance, draft.pkg],
+  );
+  const stripePromise = useMemo(
+    () => (config.paymentGateway.publishableKey ? loadStripe(config.paymentGateway.publishableKey) : null),
+    [config.paymentGateway.publishableKey],
+  );
 
-  const STEPS = [
-    "Direction",
-    "Item Details",
-    "Get Quote",
-    "Phone",
-    "Review",
-    "Payment",
-  ] as const;
+  useEffect(() => {
+    setPaymentSession(null);
+    setPaymentError(null);
+  }, [draft, config.currency]);
 
-  const CSV_HEADERS = [
-    "direction",
+  function scrollTop() {
+    window.setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function selectCorridor(corridorId: string) {
+    const nextCorridor = findCorridor(config, corridorId);
+    setDraft(createDraftForCorridor(nextCorridor));
+    setStep(0);
+    setSuccess(null);
+    setPaymentSession(null);
+  }
+
+  function updateSender(next: PartyInput) {
+    setDraft((current) => ({ ...current, sender: next, phoneVerified: false }));
+  }
+
+  function updateRecipient(next: PartyInput) {
+    setDraft((current) => ({ ...current, recipient: next }));
+  }
+
+  function stepValid(stepKey: StepKey): boolean {
+    if (!corridor) return false;
+    if (stepKey === "addresses") {
+      return (
+        partyValid(draft.sender) &&
+        partyValid(draft.recipient) &&
+        (config.paymentGateway.provider !== "PAYSTACK" || validEmail(draft.sender.email)) &&
+        draft.sender.country === corridor.originCountry &&
+        draft.recipient.country === corridor.destinationCountry
+      );
+    }
+    if (stepKey === "package") {
+      return draft.pkg.lengthCm > 0 && draft.pkg.widthCm > 0 && draft.pkg.heightCm > 0 && draft.pkg.weightKg >= 5;
+    }
+    if (stepKey === "goods") {
+      const category = config.allowedCategories.find((item) => item.key === draft.goods.category);
+      return Boolean(category && category.status !== "blocked" && draft.goods.declaredValue > 0 && draft.goods.insurance);
+    }
+    if (stepKey === "customs") {
+      if (!customsRequired) return true;
+      return (
+        draft.customs.reasonForExport.trim().length > 0 &&
+        draft.customs.items.length > 0 &&
+        draft.customs.items.every(
+          (item) =>
+            item.description.trim() &&
+            item.hsCode.trim() &&
+            item.quantity > 0 &&
+            item.declaredValue > 0 &&
+            item.countryOfOrigin.trim(),
+        )
+      );
+    }
+    if (stepKey === "phone") return draft.phoneVerified;
+    if (stepKey === "review") return true;
+    return Boolean(paymentSession);
+  }
+
+  function partyValid(party: PartyInput): boolean {
+    if (!party.fullName.trim() || !party.country || !isPhoneValidForCountry(party.phone, party.country)) return false;
+    return getAddressSchema(party.country).fields
+      .filter((field) => field.required)
+      .every((field) => party[field.key].trim().length > 0);
+  }
+
+  function next() {
+    if (!stepValid(activeStep)) return;
+    setStep((current) => Math.min(current + 1, steps.length - 1));
+    scrollTop();
+  }
+
+  function back() {
+    setStep((current) => Math.max(current - 1, 0));
+    scrollTop();
+  }
+
+  async function createPaymentSession(rows: ShipmentDraftInput[], options: { mode: "single" | "bulk"; batchRef?: string | null }) {
+    if (!widgetToken) {
+      throw new Error(t("phone.noToken"));
+    }
+    const amount = toMinorUnits(
+      rows.reduce((total, item) => {
+        const rowPricing = calculateShipmentPricing(item.pkg, item.goods.declaredValue, item.goods.insurance, config);
+        return total + rowPricing.total;
+      }, 0),
+      config.currency,
+    );
+
+    const res = await fetch("/api/payment/session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${widgetToken}`,
+      },
+      body: JSON.stringify({
+        amount,
+        currency: config.currency,
+        shipments: rows,
+        mode: options.mode,
+        batchRef: options.batchRef ?? null,
+        metadata: { tenantSlug: tenantSlug ?? config.tenantSlug },
+      }),
+    });
+    const json = (await res.json().catch(() => ({}))) as PaymentSession & { error?: string };
+    if (!res.ok || !json.provider) throw new Error(json.error ?? t("payment.failedInit"));
+    return json;
+  }
+
+  async function ensureSinglePaymentSession() {
+    if (paymentSession || paymentLoading) return;
+    if (config.paymentGateway.status !== "ready") {
+      setPaymentError(t("payment.failedInit"));
+      return;
+    }
+
+    setPaymentLoading(true);
+    setPaymentError(null);
+    try {
+      const session = await createPaymentSession([draft], { mode: "single" });
+      setPaymentSession(session);
+    } catch (error: unknown) {
+      setPaymentError(error instanceof Error ? error.message : t("payment.failedInit"));
+    } finally {
+      setPaymentLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeStep === "payment") {
+      void ensureSinglePaymentSession();
+    }
+    // Payment initialization intentionally reacts to step entry; draft changes clear paymentSession above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep, paymentSession]);
+
+  async function createShipmentFromDraft(input: ShipmentDraftInput, options: { batchRef?: string | null } = {}) {
+    const validation = validateShipmentDraft(input, config, { requirePhoneVerified: true });
+    if (!validation.ok) throw new Error(`${t("validation.required")}: ${validation.issues.join(", ")}`);
+
+    const idempotencyKey = `${options.batchRef ?? "single"}:${validation.data.corridorId}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2)}`;
+    const payload = buildWidgetShipmentPayload(validation.data, config, {
+      widgetSessionId: options.batchRef ?? tenantSlug ?? config.tenantSlug,
+      idempotencyKey,
+    });
+
+    if (widgetToken) {
+      const created = await postShipment(payload, widgetToken);
+      await fetch("/api/shipments/generate-qr", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${widgetToken}`,
+        },
+        body: JSON.stringify(created),
+      }).catch(() => null);
+      return created;
+    }
+
+    const localTrackingRef = `LOCAL-${Date.now()}`;
+    const docRef = await addDoc(collection(db, "shipments"), {
+      ...payload,
+      trackingRef: localTrackingRef,
+      createdAt: serverTimestamp(),
+    });
+    return { trackingRef: localTrackingRef, shipmentId: docRef.id };
+  }
+
+  async function handleSingleCreated() {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const created = await createShipmentFromDraft(draft);
+      postMessageToHost({ type: "SHIPMENT_CREATED", trackingRef: created.trackingRef, shipmentId: created.shipmentId });
+      onCreated?.(created.trackingRef);
+      onTrack?.(created.trackingRef);
+      if (!suppressSuccessView) setSuccess(created);
+    } catch (error: unknown) {
+      setSubmitError(error instanceof Error ? error.message : t("api.genericError"));
+      throw error;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handlePaystackSingleCreated(session: PaystackPaymentSession) {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const confirmed = await confirmPaystackPayment(session, widgetToken);
+      const created =
+        confirmed.shipments?.[0] ??
+        (confirmed.trackingRef && confirmed.shipmentId
+          ? { trackingRef: confirmed.trackingRef, shipmentId: confirmed.shipmentId }
+          : null);
+      if (!created) throw new Error(t("api.genericError"));
+      postMessageToHost({ type: "SHIPMENT_CREATED", trackingRef: created.trackingRef, shipmentId: created.shipmentId });
+      onCreated?.(created.trackingRef);
+      onTrack?.(created.trackingRef);
+      if (!suppressSuccessView) setSuccess(created);
+    } catch (error: unknown) {
+      setSubmitError(error instanceof Error ? error.message : t("api.genericError"));
+      throw error;
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function resetSingle() {
+    setDraft(createDraftForCorridor(config.corridors[0] ?? null));
+    setStep(0);
+    setSuccess(null);
+    setSubmitError(null);
+    setPaymentSession(null);
+  }
+
+  if (success && !suppressSuccessView) {
+    return (
+      <div ref={formRef} dir={dir} className={embedded ? "max-w-none p-0" : "mx-auto max-w-3xl p-4 sm:p-6"}>
+        <Card title={t("success.title")}>
+          <div className="space-y-4">
+            <SummaryRow label={t("success.track")} value={success.trackingRef} />
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => void navigator.clipboard?.writeText(success.trackingRef)}
+              >
+                {t("actions.copy")}
+              </button>
+              <button type="button" className="btn-brand" onClick={resetSingle}>
+                {t("success.createAnother")}
+              </button>
+            </div>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={formRef} dir={dir} className={embedded ? "max-w-none p-0" : "mx-auto max-w-3xl p-4 sm:p-6"} style={BRAND_STYLE}>
+      {embedded ? (
+        <div className="mb-2 flex justify-end">
+          <button type="button" onClick={() => postMessageToHost({ type: "WIDGET_CLOSE" })} className="text-sm text-gray-500 hover:text-gray-700">
+            {t("app.close")}
+          </button>
+        </div>
+      ) : null}
+
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className={embedded ? "text-xl font-semibold text-gray-950" : "text-2xl font-semibold text-gray-950"}>{t("app.title")}</h1>
+          <p className="mt-1 text-sm text-gray-600">{t("app.subtitle")}</p>
+          {configError ? <p className="mt-2 text-sm text-red-700">{configError}</p> : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <LanguageSwitcher
+            label={t("language.label")}
+            languages={config.supportedLanguages}
+            locale={locale}
+            onChange={setLocale}
+          />
+          <SegmentedButton
+            items={[
+              { key: "single", label: t("mode.single") },
+              { key: "bulk", label: t("mode.bulk") },
+            ]}
+            value={mode}
+            onChange={(value) => setMode(value as "single" | "bulk")}
+          />
+        </div>
+      </div>
+
+      {mode === "bulk" ? (
+        <BulkFlow
+          config={config}
+          locale={locale}
+          t={t}
+          money={money}
+          number={number}
+          widgetToken={widgetToken}
+          tenantSlug={tenantSlug ?? config.tenantSlug}
+          bulkRows={bulkRows}
+          setBulkRows={setBulkRows}
+          bulkErrors={bulkErrors}
+          setBulkErrors={setBulkErrors}
+          bulkStep={bulkStep}
+          setBulkStep={setBulkStep}
+          bulkPhoneVerified={bulkPhoneVerified}
+          setBulkPhoneVerified={setBulkPhoneVerified}
+          bulkPaymentSession={bulkPaymentSession}
+          setBulkPaymentSession={setBulkPaymentSession}
+          bulkBatchRef={bulkBatchRef}
+          setBulkBatchRef={setBulkBatchRef}
+          bulkSubmitting={bulkSubmitting}
+          setBulkSubmitting={setBulkSubmitting}
+          bulkResults={bulkResults}
+          setBulkResults={setBulkResults}
+          createPaymentSession={createPaymentSession}
+          createShipmentFromDraft={createShipmentFromDraft}
+          onBulkCompleted={onBulkCompleted}
+        />
+      ) : (
+        <>
+          <CorridorPicker
+            config={config}
+            t={t}
+            locale={locale}
+            corridor={corridor}
+            onChange={selectCorridor}
+          />
+
+          <div className="mb-4">
+            <Stepper steps={steps} active={step} t={t} onStepClick={(index) => index <= step && setStep(index)} />
+          </div>
+
+          {activeStep === "addresses" ? (
+            <Card title={t("steps.addresses")}>
+              <div className="grid gap-6">
+                <PartyForm
+                  title={t("party.sender")}
+                  party={draft.sender}
+                  config={config}
+                  locale={locale}
+                  t={t}
+                  lockedCountry={corridor?.originCountry}
+                  onChange={updateSender}
+                />
+                <div className="h-px bg-gray-200" />
+                <PartyForm
+                  title={t("party.recipient")}
+                  party={draft.recipient}
+                  config={config}
+                  locale={locale}
+                  t={t}
+                  lockedCountry={corridor?.destinationCountry}
+                  onChange={updateRecipient}
+                  showContentDescription
+                />
+              </div>
+            </Card>
+          ) : null}
+
+          {activeStep === "package" ? (
+            <Card title={t("package.title")}>
+              <p className="mb-4 text-sm text-gray-600">{t("package.help")}</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <NumberInput label={t("package.length")} value={draft.pkg.lengthCm} onChange={(lengthCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, lengthCm } }))} />
+                <NumberInput label={t("package.width")} value={draft.pkg.widthCm} onChange={(widthCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, widthCm } }))} />
+                <NumberInput label={t("package.height")} value={draft.pkg.heightCm} onChange={(heightCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, heightCm } }))} />
+                <NumberInput label={t("package.weight")} value={draft.pkg.weightKg} min={5} placeholder={t("package.minWeight")} onChange={(weightKg) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, weightKg } }))} />
+              </div>
+              <div className="mt-4 grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2">
+                <SummaryRow label={t("package.chargeable")} value={`${number.format(pricing.chargeableWeight)} kg`} compact />
+                <SummaryRow label={t("review.total")} value={money.format(pricing.total)} compact />
+              </div>
+            </Card>
+          ) : null}
+
+          {activeStep === "goods" ? (
+            <Card title={t("goods.title")}>
+              <GoodsForm
+                goods={draft.goods}
+                config={config}
+                money={money}
+                t={t}
+                onChange={(goods) => setDraft((current) => ({ ...current, goods }))}
+              />
+            </Card>
+          ) : null}
+
+          {activeStep === "customs" ? (
+            <Card title={t("customs.title")}>
+              <CustomsForm
+                customs={draft.customs}
+                config={config}
+                locale={locale}
+                t={t}
+                required={customsRequired}
+                onChange={(customs) => setDraft((current) => ({ ...current, customs }))}
+              />
+            </Card>
+          ) : null}
+
+          {activeStep === "phone" ? (
+            <Card title={t("phone.title")}>
+              {draft.phoneVerified ? (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800">{t("phone.verified")}</div>
+              ) : (
+                <PhoneVerification
+                  country={draft.sender.country}
+                  phone={draft.sender.phone}
+                  channel={config.otpChannel}
+                  widgetToken={widgetToken}
+                  t={t}
+                  onPhoneChange={(phone) => setDraft((current) => ({ ...current, sender: { ...current.sender, phone }, phoneVerified: false }))}
+                  onVerified={() => setDraft((current) => ({ ...current, phoneVerified: true }))}
+                />
+              )}
+            </Card>
+          ) : null}
+
+          {activeStep === "review" ? (
+            <Card title={t("review.title")}>
+              <Review
+                draft={draft}
+                corridor={corridor}
+                config={config}
+                money={money}
+                number={number}
+                pricing={pricing}
+                t={t}
+              />
+            </Card>
+          ) : null}
+
+          {activeStep === "payment" ? (
+            <Card title={t("payment.title")}>
+              {paymentLoading ? (
+                <div className="flex items-center justify-center py-12 text-sm text-gray-600">{t("payment.loading")}</div>
+              ) : paymentError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{paymentError}</div>
+              ) : paymentSession?.provider === "stripe" && stripePromise ? (
+                <Elements stripe={stripePromise} options={{ clientSecret: paymentSession.clientSecret }}>
+                  <StripeCheckoutForm
+                    amount={pricing.total}
+                    money={money}
+                    t={t}
+                    submitting={submitting}
+                    onPaid={handleSingleCreated}
+                  />
+                </Elements>
+              ) : paymentSession?.provider === "paystack" ? (
+                <PaystackCheckoutForm
+                  session={paymentSession}
+                  amountLabel={money.format(pricing.total)}
+                  t={t}
+                  submitting={submitting}
+                  onPaid={() => handlePaystackSingleCreated(paymentSession)}
+                />
+              ) : (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{t("payment.failedInit")}</div>
+              )}
+            </Card>
+          ) : null}
+
+          {submitError ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{submitError}</div> : null}
+
+          <div className="mt-6 flex items-center justify-between gap-3">
+            <button type="button" onClick={back} disabled={step === 0 || submitting} className="btn-outline disabled:opacity-40">
+              {t("actions.back")}
+            </button>
+            {activeStep === "payment" ? null : (
+              <button type="button" onClick={next} disabled={!stepValid(activeStep)} className="btn-brand disabled:opacity-40">
+                {activeStep === "review" ? t("actions.payment") : t("actions.continue")}
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LanguageSwitcher({
+  label,
+  languages,
+  locale,
+  onChange,
+}: {
+  label: string;
+  languages: SupportedLanguage[];
+  locale: string;
+  onChange: (locale: string) => void;
+}) {
+  if (languages.length <= 1) return null;
+  return (
+    <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+      <span>{label}</span>
+      <select value={locale} onChange={(event) => onChange(event.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900">
+        {languages.map((language) => (
+          <option key={language.locale} value={language.locale}>
+            {language.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function SegmentedButton({
+  items,
+  value,
+  onChange,
+}: {
+  items: Array<{ key: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          onClick={() => onChange(item.key)}
+          className={[
+            "rounded-md px-3 py-1.5 text-xs font-semibold transition",
+            value === item.key ? "bg-[var(--brand-primary)] text-white" : "text-gray-700 hover:bg-white",
+          ].join(" ")}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CorridorPicker({
+  config,
+  t,
+  locale,
+  corridor,
+  onChange,
+}: {
+  config: TenantConfig;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  locale: string;
+  corridor: CorridorConfig | null;
+  onChange: (corridorId: string) => void;
+}) {
+  const originCountries = config.enabledCountries;
+  const destinationCountries = corridor
+    ? config.corridors
+        .filter((item) => item.originCountry === corridor.originCountry)
+        .map((item) => item.destinationCountry)
+    : [];
+
+  if (config.corridors.length === 1 && corridor) {
+    return (
+      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <span className="font-semibold">{t("corridor.single")}</span> {displayCountryName(corridor.originCountry, locale)} to{" "}
+        {displayCountryName(corridor.destinationCountry, locale)}
+      </div>
+    );
+  }
+
+  return (
+    <Card title={t("corridor.title")}>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <CountrySelect
+          label={t("corridor.origin")}
+          countries={originCountries}
+          locale={locale}
+          value={corridor?.originCountry ?? ""}
+          onChange={(origin) => {
+            const next = config.corridors.find((item) => item.originCountry === origin) ?? null;
+            if (next) onChange(next.id);
+          }}
+        />
+        <CountrySelect
+          label={t("corridor.destination")}
+          countries={destinationCountries.map((name) => config.enabledCountries.find((country) => country.name === name)).filter((country): country is CountryOption => Boolean(country))}
+          locale={locale}
+          value={corridor?.destinationCountry ?? ""}
+          onChange={(destination) => {
+            const next = config.corridors.find((item) => item.originCountry === corridor?.originCountry && item.destinationCountry === destination) ?? null;
+            if (next) onChange(next.id);
+          }}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function Stepper({
+  steps,
+  active,
+  t,
+  onStepClick,
+}: {
+  steps: StepKey[];
+  active: number;
+  t: (key: string) => string;
+  onStepClick: (index: number) => void;
+}) {
+  return (
+    <ol className="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-white p-2 sm:grid-cols-3 lg:grid-cols-7">
+      {steps.map((step, index) => {
+        const isActive = index === active;
+        const done = index < active;
+        return (
+          <li key={step}>
+            <button
+              type="button"
+              disabled={index > active}
+              onClick={() => onStepClick(index)}
+              className={[
+                "h-full w-full rounded-md border px-2 py-2 text-start text-xs font-semibold transition",
+                isActive
+                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                  : done
+                    ? "border-[var(--brand-primary)] bg-white text-[var(--brand-primary)]"
+                    : "border-gray-200 bg-gray-50 text-gray-600",
+              ].join(" ")}
+            >
+              {t(`steps.${step}`)}
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function PartyForm({
+  title,
+  party,
+  config,
+  locale,
+  t,
+  lockedCountry,
+  onChange,
+  showContentDescription,
+}: {
+  title: string;
+  party: PartyInput;
+  config: TenantConfig;
+  locale: string;
+  t: (key: string) => string;
+  lockedCountry?: string;
+  onChange: (party: PartyInput) => void;
+  showContentDescription?: boolean;
+}) {
+  const schema = getAddressSchema(party.country);
+  return (
+    <section>
+      <h3 className="mb-3 text-base font-semibold text-gray-950">{title}</h3>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <TextInput label={t("party.fullName")} value={party.fullName} onChange={(fullName) => onChange({ ...party, fullName })} required />
+        <TextInput label={t("party.email")} type="email" value={party.email} onChange={(email) => onChange({ ...party, email })} />
+        <TextInput label={t("party.phone")} type="tel" value={party.phone} onChange={(phone) => onChange({ ...party, phone })} required />
+        {lockedCountry ? (
+          <TextInput label={t("party.country")} value={displayCountryName(lockedCountry, locale)} onChange={() => null} disabled />
+        ) : (
+          <CountrySelect
+            label={t("party.country")}
+            countries={config.enabledCountries}
+            locale={locale}
+            value={party.country}
+            onChange={(country) => onChange({ ...party, country })}
+          />
+        )}
+        {schema.fields.map((field) => (
+          <TextInput
+            key={field.key}
+            label={t(field.labelKey)}
+            value={party[field.key]}
+            onChange={(value) => onChange({ ...party, [field.key]: value })}
+            required={field.required}
+          />
+        ))}
+        {showContentDescription ? (
+          <TextArea
+            label={t("customs.description")}
+            value={party.contentDescription ?? ""}
+            onChange={(contentDescription) => onChange({ ...party, contentDescription })}
+          />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function GoodsForm({
+  goods,
+  config,
+  money,
+  t,
+  onChange,
+}: {
+  goods: GoodsInput;
+  config: TenantConfig;
+  money: Intl.NumberFormat;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  onChange: (goods: GoodsInput) => void;
+}) {
+  const category = config.allowedCategories.find((item) => item.key === goods.category);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-sm text-gray-700">{t("goods.category")}</span>
+          <select value={goods.category} onChange={(event) => onChange({ ...goods, category: event.target.value })} className="field">
+            <option value="">{t("goods.category")}</option>
+            {config.allowedCategories.map((item) => (
+              <option key={item.key} value={item.key} disabled={item.status === "blocked"}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <NumberInput label={`${t("goods.value")} (${config.currency})`} value={goods.declaredValue} onChange={(declaredValue) => onChange({ ...goods, declaredValue })} />
+      </div>
+      {category?.status === "restricted" && category.message ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{t("goods.restricted", { message: category.message })}</div>
+      ) : null}
+      {category?.status === "blocked" && category.message ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{t("goods.blocked", { message: category.message })}</div>
+      ) : null}
+      <div>
+        <span className="mb-2 block text-sm text-gray-700">{t("goods.insurance")}</span>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {config.pricing.insuranceTiers.filter((tier) => tier.enabled).map((tier) => (
+            <button
+              key={tier.key}
+              type="button"
+              onClick={() => onChange({ ...goods, insurance: tier.key })}
+              className={[
+                "rounded-lg border p-3 text-start text-sm transition",
+                goods.insurance === tier.key ? "border-[var(--brand-primary)] bg-white" : "border-gray-200 bg-white",
+              ].join(" ")}
+            >
+              <span className="block font-semibold text-gray-950">{tier.label}</span>
+              <span className="mt-1 block text-xs text-gray-600">
+                {tier.type === "NONE" ? money.format(0) : tier.type === "FLAT_FEE" ? money.format(tier.rate) : `${tier.rate}%`}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <TextArea label={t("goods.notes")} value={goods.notes} placeholder={t("goods.notesPlaceholder")} onChange={(notes) => onChange({ ...goods, notes })} />
+    </div>
+  );
+}
+
+function CustomsForm({
+  customs,
+  config,
+  locale,
+  t,
+  required,
+  onChange,
+}: {
+  customs: CustomsDeclarationInput;
+  config: TenantConfig;
+  locale: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  required: boolean;
+  onChange: (customs: CustomsDeclarationInput) => void;
+}) {
+  if (!required) {
+    return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{t("customs.domestic")}</div>;
+  }
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        {t("customs.help", { system: config.customsSystemLabel ?? "Customs" })}
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-sm text-gray-700">{t("customs.type")}</span>
+          <select value={customs.type} onChange={(event) => onChange({ ...customs, type: event.target.value as "DDP" | "DDU" })} className="field">
+            <option value="DDU">DDU</option>
+            <option value="DDP">DDP</option>
+          </select>
+        </label>
+        <TextInput label={t("customs.reason")} value={customs.reasonForExport} onChange={(reasonForExport) => onChange({ ...customs, reasonForExport })} required />
+      </div>
+      <div className="space-y-3">
+        {customs.items.map((item, index) => (
+          <div key={index} className="rounded-lg border border-gray-200 bg-white p-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <TextInput label={t("customs.description")} value={item.description} onChange={(description) => updateCustomsItem(customs, index, { ...item, description }, onChange)} required />
+              <TextInput label={t("customs.hsCode")} value={item.hsCode} onChange={(hsCode) => updateCustomsItem(customs, index, { ...item, hsCode }, onChange)} required />
+              <NumberInput label={t("customs.quantity")} value={item.quantity} onChange={(quantity) => updateCustomsItem(customs, index, { ...item, quantity }, onChange)} min={1} />
+              <NumberInput label={`${t("customs.value")} (${config.currency})`} value={item.declaredValue} onChange={(declaredValue) => updateCustomsItem(customs, index, { ...item, declaredValue }, onChange)} />
+              <CountrySelect
+                label={t("customs.origin")}
+                countries={config.enabledCountries}
+                locale={locale}
+                value={item.countryOfOrigin}
+                onChange={(countryOfOrigin) => updateCustomsItem(customs, index, { ...item, countryOfOrigin }, onChange)}
+              />
+            </div>
+            {customs.items.length > 1 ? (
+              <button type="button" className="mt-3 text-sm font-semibold text-red-700" onClick={() => onChange({ ...customs, items: customs.items.filter((_, itemIndex) => itemIndex !== index) })}>
+                {t("customs.removeItem")}
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <button type="button" className="btn-outline" onClick={() => onChange({ ...customs, items: [...customs.items, emptyCustomsItem()] })}>
+        {t("customs.addItem")}
+      </button>
+    </div>
+  );
+}
+
+function updateCustomsItem(
+  customs: CustomsDeclarationInput,
+  index: number,
+  item: CustomsItemInput,
+  onChange: (customs: CustomsDeclarationInput) => void,
+) {
+  onChange({
+    ...customs,
+    items: customs.items.map((current, itemIndex) => (itemIndex === index ? item : current)),
+  });
+}
+
+function PhoneVerification({
+  country,
+  phone,
+  channel,
+  widgetToken,
+  t,
+  onPhoneChange,
+  onVerified,
+}: {
+  country: string;
+  phone: string;
+  channel: string;
+  widgetToken?: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  onPhoneChange: (phone: string) => void;
+  onVerified: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const phoneE164 = formatPhoneE164(phone, country);
+
+  async function sendOtp() {
+    setError(null);
+    setMessage(null);
+    if (!widgetToken) return setError(t("phone.noToken"));
+    if (!phoneE164) return setError(t("phone.invalid", { country }));
+    setSending(true);
+    try {
+      const res = await fetch("/api/widget/phone/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${widgetToken}`,
+        },
+        body: JSON.stringify({ phone: phoneE164 }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string; devCode?: string };
+      if (!res.ok) throw new Error(json.error ?? "OTP send failed");
+      setSent(true);
+      setMessage(json.devCode ? `${t("phone.sent")} Dev code: ${json.devCode}` : t("phone.sent"));
+    } catch (sendError: unknown) {
+      setError(sendError instanceof Error ? sendError.message : "OTP send failed");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function verifyOtp() {
+    setError(null);
+    setMessage(null);
+    if (!widgetToken) return setError(t("phone.noToken"));
+    if (!phoneE164) return setError(t("phone.invalid", { country }));
+    setVerifying(true);
+    try {
+      const res = await fetch("/api/widget/phone/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${widgetToken}`,
+        },
+        body: JSON.stringify({ phone: phoneE164, code }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { verified?: boolean; error?: string };
+      if (!res.ok || json.verified !== true) throw new Error(json.error ?? "OTP verification failed");
+      setMessage(t("phone.verified"));
+      onVerified();
+    } catch (verifyError: unknown) {
+      setError(verifyError instanceof Error ? verifyError.message : "OTP verification failed");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">{t("phone.channel", { channel })}</div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
+        <TextInput label="Code" value={`+${getDialCodeForCountry(country)}`} onChange={() => null} disabled />
+        <TextInput label={t("party.phone")} type="tel" value={phone} onChange={onPhoneChange} required />
+      </div>
+      {message ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div> : null}
+      {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <button type="button" className="btn-brand" disabled={sending || !phoneE164} onClick={sendOtp}>
+          {sending ? t("phone.sending") : sent ? t("phone.resend") : t("phone.send")}
+        </button>
+        <TextInput label={t("phone.code")} value={code} onChange={setCode} />
+        <button type="button" className="btn-outline" disabled={verifying || !code.trim()} onClick={verifyOtp}>
+          {verifying ? t("phone.verifying") : t("phone.verify")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Review({
+  draft,
+  corridor,
+  config,
+  money,
+  number,
+  pricing,
+  t,
+}: {
+  draft: ShipmentDraftInput;
+  corridor: CorridorConfig | null;
+  config: TenantConfig;
+  money: Intl.NumberFormat;
+  number: Intl.NumberFormat;
+  pricing: ReturnType<typeof calculateShipmentPricing>;
+  t: (key: string, values?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="space-y-3 text-sm">
+      <SummaryRow label={t("review.route")} value={corridor?.route ?? "-"} />
+      <SummaryRow label={t("review.sender")} value={`${draft.sender.fullName || "-"}, ${draft.sender.country}`} />
+      <SummaryRow label={t("review.recipient")} value={`${draft.recipient.fullName || "-"}, ${draft.recipient.country}`} />
+      <SummaryRow label={t("review.goods")} value={`${draft.goods.category || "-"} (${money.format(draft.goods.declaredValue)})`} />
+      <SummaryRow label={t("review.weight")} value={`${number.format(pricing.chargeableWeight)} kg`} />
+      <div className="rounded-lg border border-gray-200 bg-white p-3">
+        <div className="mb-2 flex items-center justify-between font-semibold text-gray-900">
+          <span>{t("review.breakdown")}</span>
+          <span>{money.format(pricing.total)}</span>
+        </div>
+        <div className="space-y-1.5 text-xs text-gray-600">
+          <PriceRow label={t("review.weightCharge")} value={money.format(pricing.weightCharge)} />
+          <PriceRow label={t("review.insurance")} value={money.format(pricing.insuranceFee)} />
+          {config.taxRule?.enabled ? (
+            <PriceRow label={t("review.tax", { label: config.taxRule.label, rate: config.taxRule.rate })} value={money.format(pricing.taxAmount)} />
+          ) : null}
+          <div className="h-px bg-gray-200" />
+          <PriceRow label={t("review.total")} value={money.format(pricing.total)} strong />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StripeCheckoutForm({
+  amount,
+  money,
+  t,
+  submitting,
+  onPaid,
+}: {
+  amount: number;
+  money: Intl.NumberFormat;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  submitting: boolean;
+  onPaid: () => Promise<void>;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!stripe || !elements) return;
+    setProcessing(true);
+    setError(null);
+    try {
+      const submit = await elements.submit();
+      if (submit.error) throw new Error(submit.error.message ?? t("payment.failed"));
+
+      const result = await stripe.confirmPayment({
+        elements,
+        confirmParams: { return_url: `${window.location.origin}/payment/success` },
+        redirect: "if_required",
+      });
+      if (result.error) throw new Error(result.error.message ?? t("payment.failed"));
+      await onPaid();
+    } catch (paymentError: unknown) {
+      setError(paymentError instanceof Error ? paymentError.message : t("payment.failed"));
+    } finally {
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <span className="font-semibold">{t("payment.failed")}</span>
+          <p className="mt-1">{error}</p>
+        </div>
+      ) : null}
+      <PaymentElement />
+      <button type="submit" disabled={!stripe || processing || submitting} className="btn-brand w-full">
+        {processing || submitting ? t("payment.processing") : t("payment.pay", { amount: money.format(amount) })}
+      </button>
+    </form>
+  );
+}
+
+function PaystackCheckoutForm({
+  session,
+  amountLabel,
+  t,
+  submitting,
+  onPaid,
+}: {
+  session: PaystackPaymentSession;
+  amountLabel: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  submitting: boolean;
+  onPaid: () => Promise<void>;
+}) {
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handlePaystack() {
+    setProcessing(true);
+    setError(null);
+    try {
+      const paystackModule = (await import("@paystack/inline-js")) as {
+        default: new () => {
+          resumeTransaction: (
+            accessCode: string,
+            callbacks: {
+              onSuccess?: (response: { reference: string }) => void;
+              onCancel?: () => void;
+              onError?: (error: { message?: string }) => void;
+            },
+          ) => unknown;
+        };
+      };
+      const popup = new paystackModule.default();
+      popup.resumeTransaction(session.accessCode, {
+        onSuccess: () => {
+          void onPaid().catch((paymentError: unknown) => {
+            setError(paymentError instanceof Error ? paymentError.message : t("payment.failed"));
+          }).finally(() => {
+            setProcessing(false);
+          });
+        },
+        onCancel: () => {
+          setProcessing(false);
+        },
+        onError: (paystackError) => {
+          setError(paystackError.message ?? t("payment.failed"));
+          setProcessing(false);
+        },
+      });
+    } catch (paymentError: unknown) {
+      setError(paymentError instanceof Error ? paymentError.message : t("payment.failed"));
+      setProcessing(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {error ? (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <span className="font-semibold">{t("payment.failed")}</span>
+          <p className="mt-1">{error}</p>
+        </div>
+      ) : null}
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+        <SummaryRow label="Paystack" value={session.reference} compact />
+      </div>
+      <button type="button" disabled={processing || submitting} className="btn-brand w-full" onClick={() => void handlePaystack()}>
+        {processing || submitting ? t("payment.processing") : t("payment.pay", { amount: amountLabel })}
+      </button>
+      <a href={session.authorizationUrl} className="btn-outline inline-flex w-full justify-center">
+        {t("payment.redirect")}
+      </a>
+    </div>
+  );
+}
+
+function BulkFlow({
+  config,
+  locale,
+  t,
+  money,
+  number,
+  widgetToken,
+  tenantSlug,
+  bulkRows,
+  setBulkRows,
+  bulkErrors,
+  setBulkErrors,
+  bulkStep,
+  setBulkStep,
+  bulkPhoneVerified,
+  setBulkPhoneVerified,
+  bulkPaymentSession,
+  setBulkPaymentSession,
+  bulkBatchRef,
+  setBulkBatchRef,
+  bulkSubmitting,
+  setBulkSubmitting,
+  bulkResults,
+  setBulkResults,
+  createPaymentSession,
+  createShipmentFromDraft,
+  onBulkCompleted,
+}: {
+  config: TenantConfig;
+  locale: string;
+  t: (key: string, values?: Record<string, string | number>) => string;
+  money: Intl.NumberFormat;
+  number: Intl.NumberFormat;
+  widgetToken?: string;
+  tenantSlug?: string | null;
+  bulkRows: BulkDraft[];
+  setBulkRows: (rows: BulkDraft[]) => void;
+  bulkErrors: string[];
+  setBulkErrors: (errors: string[]) => void;
+  bulkStep: "upload" | "review" | "phone" | "payment" | "creating" | "complete";
+  setBulkStep: (step: "upload" | "review" | "phone" | "payment" | "creating" | "complete") => void;
+  bulkPhoneVerified: boolean;
+  setBulkPhoneVerified: (verified: boolean) => void;
+  bulkPaymentSession: PaymentSession | null;
+  setBulkPaymentSession: (session: PaymentSession | null) => void;
+  bulkBatchRef: string | null;
+  setBulkBatchRef: (ref: string | null) => void;
+  bulkSubmitting: boolean;
+  setBulkSubmitting: (submitting: boolean) => void;
+  bulkResults: BulkResult[];
+  setBulkResults: (results: BulkResult[]) => void;
+  createPaymentSession: (rows: ShipmentDraftInput[], options: { mode: "single" | "bulk"; batchRef?: string | null }) => Promise<PaymentSession>;
+  createShipmentFromDraft: (draft: ShipmentDraftInput, options?: { batchRef?: string | null }) => Promise<{ trackingRef: string; shipmentId: string }>;
+  onBulkCompleted?: (results: BulkResult[]) => void;
+}) {
+  const total = bulkRows.reduce((sum, row) => sum + calculateShipmentPricing(row.pkg, row.goods.declaredValue, row.goods.insurance, config).total, 0);
+  const stripePublishableKey = bulkPaymentSession?.provider === "stripe" ? bulkPaymentSession.publishableKey : config.paymentGateway.publishableKey;
+  const stripePromise = useMemo(() => (stripePublishableKey ? loadStripe(stripePublishableKey) : null), [stripePublishableKey]);
+
+  function templateCsv() {
+    const corridor = config.corridors[0];
+    const category = config.allowedCategories.find((item) => item.status === "allowed")?.key ?? "documents";
+    const header = bulkCsvHeaders().join(",");
+    const row = [
+      corridor?.originCountry ?? "",
+      corridor?.destinationCountry ?? "",
+      "Sender Name",
+      "sender@example.com",
+      `+${getDialCodeForCountry(corridor?.originCountry ?? "United Kingdom")}712345678`,
+      "Address line 1",
+      "",
+      "City",
+      "State",
+      "Postcode",
+      "Recipient Name",
+      "recipient@example.com",
+      `+${getDialCodeForCountry(corridor?.destinationCountry ?? "United Kingdom")}8012345678`,
+      "Address line 1",
+      "",
+      "City",
+      "State",
+      "Postcode",
+      category,
+      "100",
+      "NONE",
+      "30",
+      "20",
+      "10",
+      "5",
+      "Sale",
+      "Cotton shirts",
+      "610910",
+      "1",
+      "100",
+      corridor?.originCountry ?? "",
+      "",
+    ].join(",");
+    downloadTextFile("fauward-bulk-template.csv", `${header}\n${row}\n`, "text/csv");
+  }
+
+  async function prepareBulkPayment() {
+    try {
+      const batchRef = bulkBatchRef ?? `BULK-${Date.now()}`;
+      setBulkBatchRef(batchRef);
+      const rows = bulkRows.map(markBulkVerified);
+      const session = await createPaymentSession(rows, { mode: "bulk", batchRef });
+      setBulkPaymentSession(session);
+      setBulkStep("payment");
+    } catch (error: unknown) {
+      setBulkErrors([error instanceof Error ? error.message : "Payment initialization failed"]);
+    }
+  }
+
+  async function submitBulk() {
+    const batchRef = bulkBatchRef ?? `BULK-${Date.now()}`;
+    setBulkBatchRef(batchRef);
+    setBulkSubmitting(true);
+    setBulkStep("creating");
+    const results: BulkResult[] = [];
+    for (const row of bulkRows.map(markBulkVerified)) {
+      try {
+        const created = await createShipmentFromDraft(row, { batchRef });
+        results.push({ ok: true, row: row._row, trackingRef: created.trackingRef });
+      } catch (error: unknown) {
+        results.push({ ok: false, row: row._row, error: error instanceof Error ? error.message : "Failed to create shipment" });
+      }
+    }
+    setBulkResults(results);
+    setBulkSubmitting(false);
+    setBulkStep("complete");
+    postMessageToHost({ type: "BULK_CREATED", batchRef, count: results.filter((result) => result.ok).length });
+    onBulkCompleted?.(results);
+  }
+
+  async function submitPaystackBulk(session: PaystackPaymentSession) {
+    const batchRef = bulkBatchRef ?? session.reference;
+    setBulkBatchRef(batchRef);
+    setBulkSubmitting(true);
+    setBulkStep("creating");
+    try {
+      const confirmed = await confirmPaystackPayment(session, widgetToken);
+      const shipments = confirmed.shipments ?? [];
+      const results: BulkResult[] = bulkRows.map((row, index) => {
+        const shipment = shipments[index];
+        return shipment
+          ? { ok: true, row: row._row, trackingRef: shipment.trackingRef }
+          : { ok: false, row: row._row, error: "Payment confirmed but shipment was not created" };
+      });
+      setBulkResults(results);
+      postMessageToHost({ type: "BULK_CREATED", batchRef, count: results.filter((result) => result.ok).length });
+      onBulkCompleted?.(results);
+      setBulkStep("complete");
+    } catch (error: unknown) {
+      setBulkErrors([error instanceof Error ? error.message : "Payment confirmation failed"]);
+      setBulkStep("payment");
+    } finally {
+      setBulkSubmitting(false);
+    }
+  }
+
+  return (
+    <Card title={t("bulk.title")}>
+      <div className="space-y-4 text-sm text-gray-700">
+        {bulkStep === "upload" ? (
+          <>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">{t("bulk.guide")}</div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn-outline" onClick={templateCsv}>
+                {t("bulk.download")}
+              </button>
+              <label className="btn-brand cursor-pointer">
+                {t("bulk.upload")}
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    const parsed = parseBulkCsv(await file.text(), config);
+                    setBulkRows(parsed.rows);
+                    setBulkErrors(parsed.errors);
+                    setBulkStep(parsed.rows.length > 0 && parsed.errors.length === 0 ? "review" : "upload");
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => {
+                  setBulkRows([]);
+                  setBulkErrors([]);
+                  setBulkResults([]);
+                  setBulkPaymentSession(null);
+                  setBulkPhoneVerified(false);
+                }}
+              >
+                {t("bulk.clear")}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {bulkErrors.length > 0 ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+            <div className="mb-2 font-semibold text-red-800">{t("bulk.errors")}</div>
+            <ul className="list-disc space-y-1 pl-5 text-red-700">
+              {bulkErrors.slice(0, 12).map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {bulkStep === "review" && bulkRows.length > 0 ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("bulk.valid", { count: bulkRows.length })}</div>
+            <div className="grid grid-cols-2 gap-3">
+              <SummaryRow label={t("bulk.totalShipments")} value={number.format(bulkRows.length)} compact />
+              <SummaryRow label={t("bulk.totalAmount")} value={money.format(total)} compact />
+            </div>
+            <button type="button" className="btn-brand" onClick={() => setBulkStep("phone")}>
+              {t("bulk.continuePhone")}
+            </button>
+          </div>
+        ) : null}
+
+        {bulkStep === "phone" ? (
+          <div className="space-y-4">
+            {bulkPhoneVerified ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("phone.verified")}</div>
+            ) : (
+              <PhoneVerification
+                country={bulkRows[0]?.sender.country ?? config.enabledCountries[0]?.name ?? "United Kingdom"}
+                phone={bulkRows[0]?.sender.phone ?? ""}
+                channel={config.otpChannel}
+                widgetToken={widgetToken}
+                t={t}
+                onPhoneChange={(phone) => {
+                  if (!bulkRows[0]) return;
+                  setBulkRows([{ ...bulkRows[0], sender: { ...bulkRows[0].sender, phone } }, ...bulkRows.slice(1)]);
+                }}
+                onVerified={() => {
+                  setBulkPhoneVerified(true);
+                  setBulkRows(bulkRows.map(markBulkVerified));
+                }}
+              />
+            )}
+            <button type="button" className="btn-brand disabled:opacity-40" disabled={!bulkPhoneVerified} onClick={() => void prepareBulkPayment()}>
+              {t("bulk.continuePayment")}
+            </button>
+          </div>
+        ) : null}
+
+        {bulkStep === "payment" && bulkPaymentSession?.provider === "stripe" && stripePromise ? (
+          <Elements stripe={stripePromise} options={{ clientSecret: bulkPaymentSession.clientSecret }}>
+            <BulkPaymentForm
+              amount={toMinorUnits(total, config.currency)}
+              currency={config.currency}
+              locale={locale}
+              batchRef={bulkBatchRef}
+              onSuccess={() => void submitBulk()}
+            />
+          </Elements>
+        ) : null}
+
+        {bulkStep === "payment" && bulkPaymentSession?.provider === "paystack" ? (
+          <PaystackCheckoutForm
+            session={bulkPaymentSession}
+            amountLabel={money.format(total)}
+            t={t}
+            submitting={bulkSubmitting}
+            onPaid={() => submitPaystackBulk(bulkPaymentSession)}
+          />
+        ) : null}
+
+        {bulkStep === "creating" ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">{bulkSubmitting ? t("bulk.creating") : t("bulk.created")}</div>
+        ) : null}
+
+        {bulkStep === "complete" ? (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("bulk.created")}</div>
+            {bulkResults.map((result) => (
+              <SummaryRow key={`${result.row}-${result.ok ? "ok" : "error"}`} label={`Row ${result.row}`} value={result.ok ? result.trackingRef : result.error} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function markBulkVerified(row: BulkDraft): BulkDraft {
+  return { ...row, phoneVerified: true };
+}
+
+function bulkCsvHeaders() {
+  return [
+    "originCountry",
+    "destinationCountry",
     "senderFullName",
     "senderEmail",
     "senderPhone",
@@ -567,7 +1715,6 @@ export default function CreateShipmentForm({
     "senderCity",
     "senderState",
     "senderPostcode",
-    "senderCountry",
     "recipientFullName",
     "recipientEmail",
     "recipientPhone",
@@ -576,1763 +1723,287 @@ export default function CreateShipmentForm({
     "recipientCity",
     "recipientState",
     "recipientPostcode",
-    "recipientCountry",
     "category",
-    "declaredValueGBP",
+    "declaredValue",
     "insurance",
     "lengthCm",
     "widthCm",
     "heightCm",
     "weightKg",
+    "customsReason",
+    "customsDescription",
+    "hsCode",
+    "quantity",
+    "customsValue",
+    "countryOfOrigin",
     "notes",
-  ] as const;
+  ];
+}
 
-  function resetForDirection(nextDir: Direction) {
-    setStep(0);
+function parseBulkCsv(text: string, config: TenantConfig): { rows: BulkDraft[]; errors: string[] } {
+  const parsed = parseCsv(text);
+  const headers = parsed.headers;
+  const missing = bulkCsvHeaders().filter((header) => !headers.includes(header));
+  if (missing.length > 0) {
+    return { rows: [], errors: [`Missing columns: ${missing.join(", ")}`] };
+  }
+  const index = Object.fromEntries(headers.map((header, i) => [header, i]));
+  const rows: BulkDraft[] = [];
+  const errors: string[] = [];
 
-    setData((d) => ({
-      ...d,
-      direction: nextDir,
-      phoneVerified: false,
+  parsed.rows.forEach((rawRow, rowIndex) => {
+    const rowNumber = rowIndex + 1;
+    const value = (key: string) => String(rawRow[index[key]] ?? "").trim();
+    const corridor = config.corridors.find(
+      (item) => item.originCountry === value("originCountry") && item.destinationCountry === value("destinationCountry"),
+    );
+    if (!corridor) {
+      errors.push(`Row ${rowNumber}: corridor is not enabled.`);
+      return;
+    }
+    const draft: BulkDraft = {
+      _row: rowNumber,
+      corridorId: corridor.id,
       sender: {
-        ...d.sender,
-        country:
-          nextDir === "SHIP_TO_AFRICA"
-            ? "United Kingdom"
-            : d.sender.country || "Nigeria",
+        ...emptyParty(corridor.originCountry),
+        fullName: value("senderFullName"),
+        email: value("senderEmail"),
+        phone: value("senderPhone"),
+        address1: value("senderAddress1"),
+        address2: value("senderAddress2"),
+        city: value("senderCity"),
+        state: value("senderState"),
+        postcode: value("senderPostcode"),
       },
       recipient: {
-        ...d.recipient,
-        country:
-          nextDir === "SHIP_TO_AFRICA"
-            ? d.recipient.country || "Nigeria"
-            : "United Kingdom",
+        ...emptyParty(corridor.destinationCountry),
+        fullName: value("recipientFullName"),
+        email: value("recipientEmail"),
+        phone: value("recipientPhone"),
+        address1: value("recipientAddress1"),
+        address2: value("recipientAddress2"),
+        city: value("recipientCity"),
+        state: value("recipientState"),
+        postcode: value("recipientPostcode"),
       },
-    }));
-  }
-
-  function safeNum(v: any, fallback = 0) {
-    const n = typeof v === "number" ? v : parseFloat(String(v ?? "").trim());
-    return Number.isFinite(n) ? n : fallback;
-  }
-
-  function normStr(v: any) {
-    return String(v ?? "").trim();
-  }
-
-  function routeLabel(fromCountry: string, toCountry: string) {
-    const f = (fromCountry || "").trim();
-    const t = (toCountry || "").trim();
-    if (!f || !t) return "—";
-    return `${f} → ${t}`;
-  }
-
-  function removeUndefined(obj: any): any {
-    if (obj === null || typeof obj !== "object") return obj;
-    if (Array.isArray(obj)) return obj.map(removeUndefined);
-
-    const clean: any = {};
-    for (const key in obj) {
-      if (obj[key] !== undefined) {
-        clean[key] = typeof obj[key] === "object" ? removeUndefined(obj[key]) : obj[key];
-      }
+      goods: {
+        category: value("category"),
+        declaredValue: sanitizeNumber(value("declaredValue")),
+        insurance: value("insurance") || "NONE",
+        notes: value("notes"),
+      },
+      pkg: {
+        lengthCm: sanitizeNumber(value("lengthCm")),
+        widthCm: sanitizeNumber(value("widthCm")),
+        heightCm: sanitizeNumber(value("heightCm")),
+        weightKg: sanitizeNumber(value("weightKg")),
+      },
+      phoneVerified: false,
+      customs: {
+        type: "DDU",
+        reasonForExport: value("customsReason"),
+        items: [
+          {
+            description: value("customsDescription"),
+            hsCode: value("hsCode"),
+            quantity: sanitizeNumber(value("quantity")),
+            declaredValue: sanitizeNumber(value("customsValue")),
+            countryOfOrigin: value("countryOfOrigin") || corridor.originCountry,
+          },
+        ],
+      },
+    };
+    const validation = validateShipmentDraft(draft, config, { requirePhoneVerified: false });
+    if (!validation.ok) {
+      errors.push(`Row ${rowNumber}: ${validation.issues.join(", ")}`);
+      return;
     }
-    return clean;
-  }
-
-  function makeTrackingRef() {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    const rand = Math.random().toString(36).slice(2, 7).toUpperCase();
-    return `TC-${y}${m}${day}-${rand}`;
-  }
-
-  function calcChargeableWeight(pkg: PackageInput) {
-    const volKg = (pkg.lengthCm * pkg.widthCm * pkg.heightCm) / DIM_DIVISOR;
-    return Math.max(pkg.weightKg, volKg);
-  }
-
-  function calcInsuranceFee(declaredValue: number, tier: InsuranceTier): number {
-    const rate = INSURANCE_RATES[tier];
-    if (!rate || rate.percentage === 0) return 0;
-    const calculated = declaredValue * rate.percentage;
-    return Math.max(calculated, rate.min);
-  }
-
-  function calcEstimate(cw: number, declaredValue: number, insurance: InsuranceTier) {
-    const weightFee = cw * PER_KG_FEE;
-    const insuranceFee = calcInsuranceFee(declaredValue, insurance);
-    return weightFee + insuranceFee;
-  }
-
-  function parseCsv(text: string): { headers: string[]; rows: string[][] } {
-    const rows: string[][] = [];
-    let cur: string[] = [];
-    let field = "";
-    let inQuotes = false;
-
-    const s = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-    for (let i = 0; i < s.length; i++) {
-      const ch = s[i];
-
-      if (inQuotes) {
-        if (ch === `"` && s[i + 1] === `"`) {
-          field += `"`;
-          i++;
-        } else if (ch === `"`) {
-          inQuotes = false;
-        } else {
-          field += ch;
-        }
-        continue;
-      }
-
-      if (ch === `"`) {
-        inQuotes = true;
-        continue;
-      }
-
-      if (ch === ",") {
-        cur.push(field);
-        field = "";
-        continue;
-      }
-
-      if (ch === "\n") {
-        cur.push(field);
-        field = "";
-        if (cur.some((x) => String(x).trim() !== "")) rows.push(cur);
-        cur = [];
-        continue;
-      }
-
-      field += ch;
-    }
-
-    cur.push(field);
-    if (cur.some((x) => String(x).trim() !== "")) rows.push(cur);
-
-    const headers = (rows[0] || []).map((h) => String(h ?? "").trim());
-    const dataRows = rows.slice(1);
-
-    return { headers, rows: dataRows };
-  }
-
-  function downloadTextFile(filename: string, text: string, mime = "text/plain") {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function validateInsurance(v: string): InsuranceTier | null {
-    const x = v.trim().toUpperCase();
-    if (x === "NONE" || x === "BASIC" || x === "STANDARD" || x === "PREMIUM")
-      return x as InsuranceTier;
-    return null;
-  }
-
-  function validateDirection(v: string): Direction | null {
-    const x = v.trim().toUpperCase();
-    if (x === "SHIP_TO_AFRICA" || x === "SHIP_TO_UK") return x as Direction;
-    return null;
-  }
-
-  // Widget: notify parent page of events via postMessage
-  function notifyParent(event: object) {
-    if (typeof window !== "undefined") {
-      window.parent.postMessage(event, "*");
-    }
-  }
-
-  const [mode, setMode] = useState<"single" | "bulk">("single");
-  const [step, setStep] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
-
-  const [data, setData] = useState<WizardData>({
-    direction: null,
-    sender: {
-      fullName: "",
-      email: "",
-      phone: "",
-      address1: "",
-      address2: "",
-      city: "",
-      state: "",
-      postcode: "",
-      country: "",
-    },
-    recipient: {
-      fullName: "",
-      email: "",
-      phone: "",
-      address1: "",
-      address2: "",
-      city: "",
-      state: "",
-      postcode: "",
-      country: "",
-      contentDescription: "",
-    },
-    goods: {
-      category: "",
-      declaredValueGBP: 0,
-      notes: "",
-      insurance: "NONE",
-    },
-    pkg: {
-      lengthCm: 0,
-      widthCm: 0,
-      heightCm: 0,
-      weightKg: 0,
-    },
-    phoneVerified: false,
-    priceEstimate: 0,
+    rows.push(draft);
   });
 
-  const [authReady, setAuthReady] = useState(false);
-  const [authUser, setAuthUser] = useState<any>(null);
-
-  const formContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(firebaseAuth, (u) => {
-      setAuthUser(u || null);
-      setAuthReady(true);
-    });
-    return () => unsub();
-  }, []);
-
-  const [authGateOpen, setAuthGateOpen] = useState(false);
-  const [authBusy, setAuthBusy] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-
-  const pendingAfterAuthRef = useRef<
-    null | { kind: "single" } | { kind: "bulk" }
-  >(null);
-
-  async function ensureUser(uid: string, email: string | null) {
-    const ref = doc(db, "users", uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(
-        ref,
-        {
-          email,
-          role: "customer",
-          status: "active",
-          permissions: [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-  }
-
-  const chargeableWeight = useMemo(() => {
-    return calcChargeableWeight(data.pkg);
-  }, [data.pkg]);
-
-  const estimate = useMemo(() => {
-    return calcEstimate(chargeableWeight, data.goods.declaredValueGBP, data.goods.insurance);
-  }, [chargeableWeight, data.goods.declaredValueGBP, data.goods.insurance]);
-
-  useEffect(() => {
-    setData((d) => ({
-      ...d,
-      priceEstimate: Number.isFinite(estimate)
-        ? Number(estimate.toFixed(2))
-        : 0,
-    }));
-  }, [estimate]);
-
-  useEffect(() => {
-    if (step === 5 && !clientSecret && data.priceEstimate > 0) {
-      setPaymentLoading(true);
-      const amount = Math.round(data.priceEstimate * 100);
-
-      fetch("/api/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          currency: "gbp",
-          metadata: {
-            direction: data.direction,
-            route: routeLabel(data.sender.country, data.recipient.country),
-            tenantSlug,
-          },
-        }),
-      })
-        .then((res) => res.json())
-        .then((result) => {
-          if (result.clientSecret) {
-            setClientSecret(result.clientSecret);
-          } else {
-            console.error("[PAYMENT_INTENT_ERROR]", result.error);
-          }
-        })
-        .catch((err) => {
-          console.error("[PAYMENT_INTENT_ERROR]", err);
-        })
-        .finally(() => {
-          setPaymentLoading(false);
-        });
-    }
-  }, [step, clientSecret, data.priceEstimate, data.direction, data.sender.country, data.recipient.country, tenantSlug]);
-
-  function currentStepValid(s: number) {
-    switch (s) {
-      case 0: {
-        if (!data.direction) return false;
-
-        const sender = data.sender;
-        const recipient = data.recipient;
-
-        const senderValid = !!(
-          sender.fullName &&
-          sender.phone &&
-          sender.address1 &&
-          sender.city &&
-          sender.country
-        );
-
-        const recipientValid = !!(
-          recipient.fullName &&
-          recipient.phone &&
-          recipient.address1 &&
-          recipient.city &&
-          recipient.country
-        );
-
-        return senderValid && recipientValid;
-      }
-      case 1:
-        return (
-          data.pkg.lengthCm > 0 &&
-          data.pkg.widthCm > 0 &&
-          data.pkg.heightCm > 0 &&
-          data.pkg.weightKg >= 5
-        );
-      case 2:
-        return (
-          !!data.goods.category &&
-          data.goods.declaredValueGBP > 0 &&
-          !!data.goods.insurance
-        );
-      case 3:
-        return data.phoneVerified;
-      case 4:
-        return true;
-      case 5:
-        return !!clientSecret;
-      default:
-        return false;
-    }
-  }
-
-  function next() {
-    if (!currentStepValid(step)) return;
-    setStep((s) => Math.min(s + 1, STEPS.length - 1));
-    setTimeout(() => {
-      formContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
-  }
-
-  function back() {
-    setStep((s) => Math.max(s - 1, 0));
-    setTimeout(() => {
-      formContainerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 0);
-  }
-
-  // Widget: submit to Supabase via /api/widget/shipments instead of Firestore directly
-  async function submitSingle() {
-    if (!currentStepValid(5)) return;
-    if (!authReady) return;
-
-    if (!authUser) {
-      setAuthEmail(data.sender.email || "");
-      setAuthPassword("");
-      setAuthMode(data.sender.email ? "signup" : "signin");
-      pendingAfterAuthRef.current = { kind: "single" };
-      setAuthGateOpen(true);
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await ensureUser(authUser.uid, authUser.email);
-
-      const trackingRef = makeTrackingRef();
-      const route = routeLabel(data.sender.country, data.recipient.country);
-      const cw = calcChargeableWeight(data.pkg);
-
-      const shipmentPayload = {
-        direction: data.direction,
-        route,
-        sender_name: data.sender.fullName,
-        sender_email: data.sender.email ?? null,
-        sender_phone: `${data.sender.phoneDialCode ?? ""}${data.sender.phone}`,
-        sender_address: { address1: data.sender.address1, address2: data.sender.address2, city: data.sender.city, postcode: data.sender.postcode, country: data.sender.country },
-        recipient_name: data.recipient.fullName,
-        recipient_email: data.recipient.email ?? null,
-        recipient_phone: `${data.recipient.phoneDialCode ?? ""}${data.recipient.phone}`,
-        recipient_address: { address1: data.recipient.address1, address2: data.recipient.address2, city: data.recipient.city, postcode: data.recipient.postcode, country: data.recipient.country },
-        category: data.goods.category,
-        declared_value: data.goods.declaredValueGBP,
-        insurance: data.goods.insurance,
-        notes: data.goods.notes ?? null,
-        length_cm: data.pkg.lengthCm,
-        width_cm: data.pkg.widthCm,
-        height_cm: data.pkg.heightCm,
-        weight_kg: data.pkg.weightKg,
-        chargeable_weight: Number(cw.toFixed(2)),
-        price_estimate: data.priceEstimate,
-        phone_verified: data.phoneVerified,
-        source: "widget",
-        widget_session_id: tenantSlug ?? null,
-      };
-
-      let shipmentId: string;
-      if (widgetToken) {
-        const result = await postShipmentToSupabase(shipmentPayload, widgetToken);
-        shipmentId = result.shipmentId;
-      } else {
-        // Fallback: Firebase (development only, no widget token)
-        const shipmentDoc = await addDoc(collection(db, "shipments"), { ...shipmentPayload, trackingRef, createdAt: serverTimestamp() });
-        shipmentId = shipmentDoc.id;
-      }
-
-      fetch("/api/shipments/generate-qr", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ trackingRef, shipmentId }),
-      }).catch(() => {});
-
-      // Fire postMessage event to parent page
-      notifyParent({ type: "SHIPMENT_CREATED", trackingRef, shipmentId });
-
-      onCreated?.(trackingRef);
-      onTrack?.(trackingRef);
-    } catch (e: any) {
-      alert(e?.message || "Failed to create consignment");
-      setSubmitting(false);
-    }
-  }
-
-  const [bulkText, setBulkText] = useState<string>("");
-  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
-  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
-  const [bulkParsing, setBulkParsing] = useState(false);
-
-  const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [bulkResults, setBulkResults] = useState<BulkResult[] | null>(null);
-
-  const [bulkStep, setBulkStep] = useState<"upload" | "review" | "phone" | "payment" | "creating">("upload");
-  const [bulkTotalAmount, setBulkTotalAmount] = useState(0);
-  const [bulkPhoneVerified, setBulkPhoneVerified] = useState(false);
-  const [bulkClientSecret, setBulkClientSecret] = useState<string | null>(null);
-  const [bulkBatchRef, setBulkBatchRef] = useState<string | null>(null);
-  const [bulkPhoneDialCode, setBulkPhoneDialCode] = useState("+44");
-  const [bulkPhoneNumber, setBulkPhoneNumber] = useState("");
-
-  function calculateBulkTotal(rows: BulkRow[]): number {
-    return rows.reduce((total, row) => {
-      const cw = calcChargeableWeight(row.pkg);
-      const est = calcEstimate(cw, row.goods.declaredValueGBP, row.goods.insurance);
-      return total + est;
-    }, 0);
-  }
-
-  function parseBulkCsvText(text: string) {
-    setBulkParsing(true);
-    setBulkErrors([]);
-    setBulkRows([]);
-    setBulkResults(null);
-    setBulkStep("upload");
-
-    try {
-      const { headers, rows } = parseCsv(text);
-
-      const missing = CSV_HEADERS.filter((h) => !headers.includes(h));
-      if (missing.length) {
-        setBulkErrors([
-          `CSV header mismatch. Missing columns: ${missing.join(", ")}`,
-          `Expected header: ${CSV_HEADERS.join(", ")}`,
-        ]);
-        return;
-      }
-
-      const index: Record<string, number> = {};
-      headers.forEach((h, i) => (index[h] = i));
-
-      const out: BulkRow[] = [];
-      const errs: string[] = [];
-
-      for (let i = 0; i < rows.length; i++) {
-        const rowNum = i + 1;
-        const r = rows[i];
-
-        const dir = validateDirection(normStr(r[index["direction"]]));
-        if (!dir) {
-          errs.push(`Row ${rowNum}: invalid direction (use SHIP_TO_AFRICA or SHIP_TO_UK).`);
-          continue;
-        }
-
-        const insuranceRaw = normStr(r[index["insurance"]]);
-        const ins = validateInsurance(insuranceRaw);
-        if (!ins) {
-          errs.push(`Row ${rowNum}: invalid insurance (${insuranceRaw}). Use NONE/BASIC/STANDARD/PREMIUM.`);
-          continue;
-        }
-
-        const pkg: PackageInput = {
-          lengthCm: safeNum(r[index["lengthCm"]], 0),
-          widthCm: safeNum(r[index["widthCm"]], 0),
-          heightCm: safeNum(r[index["heightCm"]], 0),
-          weightKg: safeNum(r[index["weightKg"]], 0),
-        };
-
-        if (!(pkg.lengthCm > 0 && pkg.widthCm > 0 && pkg.heightCm > 0 && pkg.weightKg >= 5)) {
-          errs.push(`Row ${rowNum}: package dimensions must be > 0, weight must be >= 5kg.`);
-          continue;
-        }
-
-        const sender: Party = {
-          fullName: normStr(r[index["senderFullName"]]),
-          email: normStr(r[index["senderEmail"]]) || undefined,
-          phone: normStr(r[index["senderPhone"]]),
-          address1: normStr(r[index["senderAddress1"]]),
-          address2: normStr(r[index["senderAddress2"]]) || undefined,
-          city: normStr(r[index["senderCity"]]),
-          state: normStr(r[index["senderState"]]) || undefined,
-          postcode: normStr(r[index["senderPostcode"]]) || undefined,
-          country: normStr(r[index["senderCountry"]]),
-        };
-
-        const recipient: Party = {
-          fullName: normStr(r[index["recipientFullName"]]),
-          email: normStr(r[index["recipientEmail"]]) || undefined,
-          phone: normStr(r[index["recipientPhone"]]),
-          address1: normStr(r[index["recipientAddress1"]]),
-          address2: normStr(r[index["recipientAddress2"]]) || undefined,
-          city: normStr(r[index["recipientCity"]]),
-          state: normStr(r[index["recipientState"]]) || undefined,
-          postcode: normStr(r[index["recipientPostcode"]]) || undefined,
-          country: normStr(r[index["recipientCountry"]]),
-          contentDescription: "",
-        };
-
-        if (!sender.fullName || !sender.phone || !sender.address1 || !sender.city || !sender.country) {
-          errs.push(`Row ${rowNum}: sender required fields missing (fullName, phone, address1, city, country).`);
-          continue;
-        }
-        if (!recipient.fullName || !recipient.phone || !recipient.address1 || !recipient.city || !recipient.country) {
-          errs.push(`Row ${rowNum}: recipient required fields missing (fullName, phone, address1, city, country).`);
-          continue;
-        }
-
-        const goods: GoodsInfo = {
-          category: normStr(r[index["category"]]),
-          declaredValueGBP: safeNum(r[index["declaredValueGBP"]], 0),
-          insurance: ins,
-          notes: normStr(r[index["notes"]]) || undefined,
-        };
-
-        if (!goods.category) {
-          errs.push(`Row ${rowNum}: goods category is required.`);
-          continue;
-        }
-
-        out.push({ _row: rowNum, direction: dir, sender, recipient, goods, pkg, phoneVerified: true });
-      }
-
-      if (errs.length) setBulkErrors(errs);
-      setBulkRows(out);
-    } finally {
-      setBulkParsing(false);
-    }
-  }
-
-  async function submitBulk() {
-    if (!authReady) return;
-
-    if (!bulkRows.length) {
-      setBulkErrors(["No valid rows to submit. Upload a CSV first."]);
-      return;
-    }
-
-    if (!authUser) {
-      setAuthEmail("");
-      setAuthPassword("");
-      setAuthMode("signin");
-      pendingAfterAuthRef.current = { kind: "bulk" };
-      setAuthGateOpen(true);
-      return;
-    }
-
-    setBulkSubmitting(true);
-    setBulkResults(null);
-    setBulkErrors([]);
-
-    try {
-      await ensureUser(authUser.uid, authUser.email);
-
-      const results: BulkResult[] = [];
-      const batchRef = bulkBatchRef ?? `BULK-${Date.now()}`;
-      const trackingRefs: string[] = [];
-
-      for (const row of bulkRows) {
-        try {
-          const trackingRef = makeTrackingRef();
-          const route = routeLabel(row.sender.country, row.recipient.country);
-          const cw = calcChargeableWeight(row.pkg);
-          const est = calcEstimate(cw, row.goods.declaredValueGBP, row.goods.insurance);
-
-          const bulkPayload = {
-            direction: row.direction,
-            route,
-            sender_name: row.sender.fullName,
-            sender_email: row.sender.email ?? null,
-            sender_phone: `${row.sender.phoneDialCode ?? ""}${row.sender.phone}`,
-            sender_address: { address1: row.sender.address1, city: row.sender.city, postcode: row.sender.postcode, country: row.sender.country },
-            recipient_name: row.recipient.fullName,
-            recipient_email: row.recipient.email ?? null,
-            recipient_phone: `${row.recipient.phoneDialCode ?? ""}${row.recipient.phone}`,
-            recipient_address: { address1: row.recipient.address1, city: row.recipient.city, postcode: row.recipient.postcode, country: row.recipient.country },
-            category: row.goods.category,
-            declared_value: row.goods.declaredValueGBP,
-            insurance: row.goods.insurance,
-            notes: row.goods.notes ?? null,
-            length_cm: row.pkg.lengthCm,
-            width_cm: row.pkg.widthCm,
-            height_cm: row.pkg.heightCm,
-            weight_kg: row.pkg.weightKg,
-            chargeable_weight: Number(cw.toFixed(2)),
-            price_estimate: Number(est.toFixed(2)),
-            phone_verified: row.phoneVerified,
-            source: "widget",
-            widget_session_id: batchRef,
-          };
-
-          if (widgetToken) {
-            await postShipmentToSupabase(bulkPayload, widgetToken);
-          } else {
-            await addDoc(collection(db, "shipments"), { ...bulkPayload, trackingRef, createdAt: serverTimestamp() });
-          }
-          trackingRefs.push(trackingRef);
-
-          results.push({ ok: true, row: row._row, trackingRef });
-        } catch (e: any) {
-          results.push({ ok: false, row: row._row, error: e?.message || "Failed to create shipment" });
-        }
-      }
-
-      if (trackingRefs.length > 0) {
-        await setDoc(doc(db, "bulkRefMap", batchRef), {
-          batchRef,
-          trackingRefs,
-          createdByUid: authUser.uid,
-          createdByEmail: authUser.email,
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      setBulkResults(results);
-      onBulkCompleted?.(results);
-
-      notifyParent({ type: "BULK_CREATED", batchRef, count: trackingRefs.length });
-
-      router.push(`/payment/bulk-success?batch_ref=${encodeURIComponent(batchRef)}`);
-    } finally {
-      setBulkSubmitting(false);
-    }
-  }
-
-  async function handleGoogleAuth() {
-    setAuthBusy(true);
-    setAuthError(null);
-    try {
-      const res = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
-      await ensureUser(res.user.uid, res.user.email);
-      setAuthGateOpen(false);
-
-      const pending = pendingAfterAuthRef.current;
-      pendingAfterAuthRef.current = null;
-
-      if (pending?.kind === "bulk") {
-        await submitBulk();
-      } else {
-        await submitSingle();
-      }
-    } catch (e: any) {
-      setAuthError(e?.message || "Google sign-in failed");
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  async function handleEmailAuth() {
-    if (!authEmail || !authPassword) {
-      setAuthError("Email and password required");
-      return;
-    }
-
-    setAuthBusy(true);
-    setAuthError(null);
-    try {
-      const res =
-        authMode === "signin"
-          ? await signInWithEmailAndPassword(firebaseAuth, authEmail, authPassword)
-          : await createUserWithEmailAndPassword(firebaseAuth, authEmail, authPassword);
-
-      await ensureUser(res.user.uid, res.user.email);
-      setAuthGateOpen(false);
-
-      const pending = pendingAfterAuthRef.current;
-      pendingAfterAuthRef.current = null;
-
-      if (pending?.kind === "bulk") {
-        await submitBulk();
-      } else {
-        await submitSingle();
-      }
-    } catch (e: any) {
-      setAuthError(e?.message || "Authentication failed");
-    } finally {
-      setAuthBusy(false);
-    }
-  }
-
-  const hasDirection = !!data.direction;
-
-  const senderLabel =
-    data.direction === "SHIP_TO_AFRICA" ? "Sender (UK)" : "Sender (Africa)";
-  const recipientLabel =
-    data.direction === "SHIP_TO_AFRICA"
-      ? "Recipient (Africa)"
-      : "Recipient (UK)";
-
-  return (
-    <div
-      ref={formContainerRef}
-      className={embedded ? "max-w-none p-0" : "mx-auto max-w-3xl p-4 sm:p-6"}
-    >
-      {/* Widget close button */}
-      {embedded && (
-        <div className="flex justify-end mb-2">
-          <button
-            type="button"
-            onClick={() => notifyParent({ type: "WIDGET_CLOSE" })}
-            className="text-gray-400 hover:text-gray-600 text-sm"
-          >
-            ✕ Close
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-start justify-between gap-2 sm:gap-3 mb-4">
-        <div className="flex-shrink min-w-0">
-          <h1 className={embedded ? "text-base sm:text-xl font-semibold" : "text-lg sm:text-2xl lg:text-3xl font-semibold"}>
-            Create Consignment
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-600 mt-1 hidden sm:block">
-            Single shipment wizard or bulk booking via CSV.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-          {hasDirection ? (
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <span className="text-xs font-semibold text-gray-600 hidden sm:inline">
-                Direction:
-              </span>
-
-              <button
-                type="button"
-                onClick={() => resetForDirection("SHIP_TO_AFRICA")}
-                className={[
-                  "rounded-lg border px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition",
-                  data.direction === "SHIP_TO_AFRICA"
-                    ? "bg-[#d80000] text-white border-[#d80000]"
-                    : "bg-white hover:bg-gray-50 border-gray-300 text-gray-900",
-                ].join(" ")}
-              >
-                UK → Africa
-              </button>
-
-              <button
-                type="button"
-                onClick={() => resetForDirection("SHIP_TO_UK")}
-                className={[
-                  "rounded-lg border px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold transition",
-                  data.direction === "SHIP_TO_UK"
-                    ? "bg-[#d80000] text-white border-[#d80000]"
-                    : "bg-white hover:bg-gray-50 border-gray-300 text-gray-900",
-                ].join(" ")}
-              >
-                Africa → UK
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setStep(0);
-                  setMode("single");
-                  setData((d) => ({ ...d, direction: null, phoneVerified: false }));
-                }}
-                className="rounded-lg border border-gray-300 bg-white px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Clear
-              </button>
-            </div>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => setMode("single")}
-                className={[
-                  "rounded-lg border px-2 sm:px-3 py-1.5 sm:py-2 text-xs whitespace-nowrap leading-tight",
-                  mode === "single" ? "bg-[#d80000] text-white border-[#d80000]" : "bg-white hover:bg-gray-50",
-                ].join(" ")}
-              >
-                Single
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMode("bulk")}
-                className={[
-                  "rounded-lg border px-2 sm:px-3 py-1.5 sm:py-2 text-xs whitespace-nowrap leading-tight",
-                  mode === "bulk" ? "bg-[#d80000] text-white border-[#d80000]" : "bg-white hover:bg-gray-50",
-                ].join(" ")}
-              >
-                Bulk (CSV)
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {mode === "bulk" ? (
-        <div ref={bulkTopRef}>
-          <Card title={bulkStep === "payment" || bulkStep === "creating" ? "" : "Bulk Booking (CSV upload)"}>
-            <div className="text-sm text-gray-700 space-y-4">
-              {(bulkStep === "upload" || bulkStep === "review" || bulkStep === "phone") && (
-                <>
-                  <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-white p-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                      <div>
-                        <div className="text-xs uppercase tracking-wide text-[#b80000] font-semibold">
-                          Bulk booking guide
-                        </div>
-                        <div className="text-sm font-semibold text-gray-900 mt-1">
-                          Four quick steps
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                      {["Download template", "Fill details", "Upload CSV", "Review and create"].map((step, index) => (
-                        <div key={step} className="rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm">
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-full bg-[#d80000] text-white flex items-center justify-center text-xs font-semibold">
-                              {index + 1}
-                            </div>
-                            <div className="text-xs font-medium text-gray-800">{step}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      onClick={() => {
-                        const csv = CSV_HEADERS.join(",") + "\n" +
-                          'SHIP_TO_AFRICA,John Doe,john@example.com,+447123456789,123 High Street,,London,,SW1A 1AA,United Kingdom,Jane Smith,jane@example.com,+2348012345678,456 Main Avenue,,Lagos,,100001,Nigeria,Documents,100,BASIC,30,20,10,5';
-                        downloadTextFile("bulk-template.csv", csv, "text/csv");
-                      }}
-                    >
-                      Download Template
-                    </button>
-
-                    <label className="btn-brand cursor-pointer">
-                      Upload CSV
-                      <input
-                        type="file"
-                        accept=".csv,text/csv"
-                        className="hidden"
-                        onChange={async (e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          const text = await f.text();
-                          setBulkText(text);
-                          parseBulkCsvText(text);
-                          e.target.value = "";
-                        }}
-                      />
-                    </label>
-
-                    {(bulkRows.length > 0 || bulkErrors.length > 0) && (
-                      <button
-                        type="button"
-                        className="btn-outline text-gray-600"
-                        onClick={() => {
-                          setBulkRows([]);
-                          setBulkErrors([]);
-                          setBulkResults(null);
-                          setBulkText("");
-                        }}
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-
-                  {bulkErrors.length > 0 && (
-                    <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-4">
-                      <div className="text-sm font-semibold text-red-700 mb-2">Fix these issues</div>
-                      <ul className="list-disc pl-5 text-sm text-red-700 space-y-1">
-                        {bulkErrors.slice(0, 12).map((x, i) => (
-                          <li key={i}>{x}</li>
-                        ))}
-                      </ul>
-                      {bulkErrors.length > 12 && (
-                        <div className="text-xs text-red-700 mt-2">…and {bulkErrors.length - 12} more.</div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-
-              {bulkRows.length > 0 && bulkStep === "upload" && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-                    <div className="text-sm font-semibold text-green-800">CSV validated successfully</div>
-                    <div className="text-xs text-green-700 mt-1">
-                      {bulkRows.length} valid {bulkRows.length === 1 ? 'shipment' : 'shipments'} ready
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const total = calculateBulkTotal(bulkRows);
-                        setBulkTotalAmount(total);
-                        if (bulkRows[0]) {
-                          setBulkPhoneDialCode(bulkRows[0].sender.phoneDialCode || "44");
-                          setBulkPhoneNumber("");
-                        }
-                        setBulkStep("review");
-                      }}
-                      className="btn-brand"
-                    >
-                      Continue to Review →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {bulkStep === "review" && bulkRows.length > 0 && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-gray-200 bg-white p-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Review Bulk Shipments</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                      <div className="rounded-lg border bg-gray-50 p-3">
-                        <div className="text-xs text-gray-600 mb-1">Total Shipments</div>
-                        <div className="text-2xl font-bold text-gray-900">{bulkRows.length}</div>
-                      </div>
-                      <div className="rounded-lg border bg-gray-50 p-3">
-                        <div className="text-xs text-gray-600 mb-1">Total Amount</div>
-                        <div className="text-2xl font-bold text-[#d80000]">£{bulkTotalAmount.toFixed(2)}</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <button type="button" onClick={() => setBulkStep("upload")} className="btn-outline">
-                      ← Back
-                    </button>
-                    <button type="button" onClick={() => setBulkStep("phone")} className="btn-brand">
-                      Continue to Phone Verification →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {bulkStep === "phone" && bulkRows.length > 0 && (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-xl border border-gray-200 bg-white p-6">
-                    <h3 className="text-lg font-bold text-gray-900 mb-4">Phone Verification</h3>
-
-                    {!bulkPhoneVerified ? (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Dial Code</label>
-                            <select
-                              value={bulkPhoneDialCode}
-                              onChange={(e) => setBulkPhoneDialCode(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
-                            >
-                              <option value="234">+234 (Nigeria)</option>
-                              <option value="233">+233 (Ghana)</option>
-                              <option value="44">+44 (United Kingdom)</option>
-                              <option value="1">+1 (US/Canada)</option>
-                            </select>
-                          </div>
-                          <div className="col-span-2">
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number</label>
-                            <input
-                              type="tel"
-                              value={bulkPhoneNumber}
-                              onChange={(e) => setBulkPhoneNumber(e.target.value)}
-                              className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm"
-                              placeholder="7312345678"
-                            />
-                          </div>
-                        </div>
-
-                        <PhoneVerificationOTP
-                          phoneDialCode={bulkPhoneDialCode}
-                          phoneNumber={bulkPhoneNumber}
-                          onVerified={() => setBulkPhoneVerified(true)}
-                        />
-                      </div>
-                    ) : (
-                      <div className="rounded-xl border border-green-200 bg-green-50 p-4">
-                        <div className="text-sm font-semibold text-green-800">Phone Verified</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <button type="button" onClick={() => setBulkStep("review")} className="btn-outline">
-                      ← Back
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const res = await fetch("/api/create-payment-intent", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ amount: Math.round(bulkTotalAmount * 100) }),
-                        });
-                        const data = await res.json();
-                        if (data.clientSecret) {
-                          setBulkBatchRef(`BULK-${Date.now()}`);
-                          setBulkClientSecret(data.clientSecret);
-                          setBulkStep("payment");
-                        }
-                      }}
-                      disabled={!bulkPhoneVerified}
-                      className="btn-brand disabled:opacity-40"
-                    >
-                      Continue to Payment →
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {bulkStep === "payment" && bulkClientSecret && (
-                <div className="mt-4">
-                  <Elements stripe={stripePromise} options={{ clientSecret: bulkClientSecret }}>
-                    <BulkPaymentForm
-                      clientSecret={bulkClientSecret}
-                      amount={Math.round(bulkTotalAmount * 100)}
-                      batchRef={bulkBatchRef}
-                      onSuccess={() => {
-                        setBulkStep("creating");
-                        submitBulk();
-                      }}
-                    />
-                  </Elements>
-                </div>
-              )}
-
-              {bulkStep === "creating" && bulkSubmitting && (
-                <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-6">
-                  <div className="text-lg font-bold text-blue-900">Creating Shipments...</div>
-                  <div className="text-sm text-blue-700 mt-1">Please wait. Do not close this window.</div>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      ) : (
-        <>
-          {!hasDirection && (
-            <Card title="Where are you shipping?">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <BigTab
-                  active={data.direction === "SHIP_TO_AFRICA"}
-                  onClick={() => resetForDirection("SHIP_TO_AFRICA")}
-                  title="Ship to Africa"
-                  subtitle="Send from the UK to an African destination"
-                />
-                <BigTab
-                  active={data.direction === "SHIP_TO_UK"}
-                  onClick={() => resetForDirection("SHIP_TO_UK")}
-                  title="Ship to the UK"
-                  subtitle="Send from Africa to the UK"
-                />
-              </div>
-            </Card>
-          )}
-
-          {hasDirection && (
-            <div className="mb-4">
-              <UnifiedStepper steps={[...STEPS]} activeIndex={step} onStepClick={(i) => setStep(i)} />
-            </div>
-          )}
-
-          <div className="grid gap-4">
-            {hasDirection && step === 0 && (
-              <Card title="Sender & Recipient">
-                {data.direction === "SHIP_TO_AFRICA" ? (
-                  <>
-                    <div className="pb-4">
-                      <h3 className="text-base font-semibold mb-2">{senderLabel}</h3>
-                      <PartyForm
-                        value={data.sender}
-                        direction={data.direction!}
-                        side="sender"
-                        onChange={(v) => setData((d) => ({ ...d, sender: v }))}
-                      />
-                    </div>
-                    <div className="h-px bg-gray-200 my-4" />
-                    <div className="pt-4">
-                      <h3 className="text-base font-semibold mb-2">{recipientLabel}</h3>
-                      <PartyForm
-                        value={data.recipient}
-                        direction={data.direction}
-                        side="recipient"
-                        onChange={(v) => setData((d) => ({ ...d, recipient: v }))}
-                        showContentDescription
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="pb-4">
-                      <h3 className="text-base font-semibold mb-2">{recipientLabel}</h3>
-                      <PartyForm
-                        value={data.recipient}
-                        direction={data.direction!}
-                        side="recipient"
-                        onChange={(v) => setData((d) => ({ ...d, recipient: v }))}
-                        showContentDescription
-                      />
-                    </div>
-                    <div className="h-px bg-gray-200 my-4" />
-                    <div className="pt-4">
-                      <h3 className="text-base font-semibold mb-2">{senderLabel}</h3>
-                      <PartyForm
-                        value={data.sender}
-                        direction={data.direction!}
-                        side="sender"
-                        onChange={(v) => setData((d) => ({ ...d, sender: v }))}
-                      />
-                    </div>
-                  </>
-                )}
-              </Card>
-            )}
-
-            {hasDirection && step === 1 && (
-              <Card title="Package Dimensions & Weight">
-                <p className="text-gray-700 mb-4">
-                  Enter package dimensions (cm) and weight (kg). We compare actual vs volumetric (L×W×H ÷ {DIM_DIVISOR}).
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <NumberInput label="Length (cm)" value={data.pkg.lengthCm} onChange={(n) => setData((d) => ({ ...d, pkg: { ...d.pkg, lengthCm: n } }))} />
-                  <NumberInput label="Width (cm)" value={data.pkg.widthCm} onChange={(n) => setData((d) => ({ ...d, pkg: { ...d.pkg, widthCm: n } }))} />
-                  <NumberInput label="Height (cm)" value={data.pkg.heightCm} onChange={(n) => setData((d) => ({ ...d, pkg: { ...d.pkg, heightCm: n } }))} />
-                  <NumberInput label="Weight (kg)" value={data.pkg.weightKg} placeholder="Min: 5kg" min={5} onChange={(n) => setData((d) => ({ ...d, pkg: { ...d.pkg, weightKg: n } }))} />
-                </div>
-
-                <div className="mt-4 rounded-2xl border bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm text-gray-600">Chargeable Weight</div>
-                      <div className="text-xl font-semibold">{chargeableWeight.toFixed(2)} kg</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-gray-600">Estimated Total</div>
-                      <div className="text-2xl font-bold">£{estimate > 0 ? estimate.toFixed(2) : "0.00"}</div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {hasDirection && step === 2 && (
-              <Card title="Category of Goods & Insurance">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Select
-                    label="Category of Goods"
-                    value={data.goods.category}
-                    onChange={(v) => setData((d) => ({ ...d, goods: { ...d.goods, category: v } }))}
-                    options={["", ...CATEGORIES]}
-                  />
-                  <div>
-                    <label className="block">
-                      <div className="text-sm mb-1 text-gray-700 flex items-center gap-1">
-                        Declared Value (GBP)
-                        <InfoTooltip content="The total value of goods you're shipping. Accurate value must be declared." />
-                      </div>
-                      <input
-                        inputMode="decimal"
-                        type="number"
-                        value={data.goods.declaredValueGBP > 0 ? data.goods.declaredValueGBP : ""}
-                        placeholder="0"
-                        onChange={(e) => setData((d) => ({ ...d, goods: { ...d.goods, declaredValueGBP: parseFloat(e.target.value || "0") } }))}
-                        className="field"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="text-sm mb-2 text-gray-700">Insurance Options</div>
-                  <InsuranceTabs
-                    value={data.goods.insurance}
-                    onChange={(v) => setData((d) => ({ ...d, goods: { ...d.goods, insurance: v } }))}
-                  />
-                </div>
-
-                <Textarea
-                  label="Notes (optional)"
-                  placeholder="Any special handling notes?"
-                  value={data.goods.notes || ""}
-                  onChange={(v) => setData((d) => ({ ...d, goods: { ...d.goods, notes: v } }))}
-                />
-              </Card>
-            )}
-
-            {hasDirection && step === 3 && (
-              <Card title="Phone Number Verification">
-                {!data.phoneVerified ? (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-semibold text-gray-900 mb-2">
-                        Sender Phone (reconfirm)
-                      </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <select
-                          value={data.sender.phoneDialCode || "44"}
-                          onChange={(e) => setData((d) => ({ ...d, sender: { ...d.sender, phoneDialCode: e.target.value } }))}
-                          className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d80000]/30"
-                        >
-                          <option value="234">+234 (Nigeria)</option>
-                          <option value="233">+233 (Ghana)</option>
-                          <option value="44">+44 (United Kingdom)</option>
-                          <option value="1">+1 (US/Canada)</option>
-                        </select>
-                        <input
-                          value={data.sender.phone}
-                          onChange={(e) => setData((d) => ({ ...d, sender: { ...d.sender, phone: e.target.value.replace(/\D/g, "") } }))}
-                          placeholder="7123456789"
-                          className="sm:col-span-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-[#d80000]/30"
-                        />
-                      </div>
-                    </div>
-                    <PhoneVerificationOTP
-                      phoneDialCode={data.sender.phoneDialCode || "44"}
-                      phoneNumber={data.sender.phone}
-                      onVerified={() => setData((d) => ({ ...d, phoneVerified: true }))}
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-xl border bg-green-50 border-green-200 p-3 text-green-800 text-sm">
-                    Phone verified.
-                  </div>
-                )}
-              </Card>
-            )}
-
-            {hasDirection && step === 4 && (
-              <Card title="Review & Submit">
-                <div className="space-y-3 text-sm">
-                  <SummaryRow label="Direction" value={data.direction === "SHIP_TO_AFRICA" ? "UK → Africa" : "Africa → UK"} />
-                  <SummaryRow label="Sender" value={`${data.sender.fullName || "-"}, ${data.sender.country}`} />
-                  <SummaryRow label="Recipient" value={`${data.recipient.fullName || "-"}, ${data.recipient.country}`} />
-                  <SummaryRow label="Goods" value={`${data.goods.category || "-"} (£${data.goods.declaredValueGBP})`} />
-                  <SummaryRow label="Insurance" value={data.goods.insurance} />
-                  <SummaryRow label="Chargeable Weight" value={`${chargeableWeight.toFixed(2)} kg`} />
-
-                  <div className="rounded-xl border p-3 bg-white">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-gray-600 font-medium">Amount Breakdown</div>
-                      <div className="font-semibold">£{estimate.toFixed(2)}</div>
-                    </div>
-                    <div className="space-y-1.5 text-xs text-gray-600">
-                      <div className="flex justify-between">
-                        <span>Per kg ({chargeableWeight.toFixed(2)} kg × £{PER_KG_FEE})</span>
-                        <span>£{(chargeableWeight * PER_KG_FEE).toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Insurance ({data.goods.insurance})</span>
-                        <span>£{calcInsuranceFee(data.goods.declaredValueGBP, data.goods.insurance).toFixed(2)}</span>
-                      </div>
-                      <div className="h-px bg-gray-200 my-1" />
-                      <div className="flex justify-between font-semibold text-gray-900">
-                        <span>Total</span>
-                        <span>£{estimate.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {hasDirection && step === 5 && (
-              <Card title="Secure Payment">
-                {paymentLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#d80000]"></div>
-                  </div>
-                ) : clientSecret ? (
-                  <StripePaymentForm
-                    clientSecret={clientSecret}
-                    onSuccess={(trackingRef) => {
-                      notifyParent({ type: "SHIPMENT_CREATED", trackingRef });
-                      onCreated?.(trackingRef);
-                      onTrack?.(trackingRef);
-                    }}
-                    amount={Math.round(data.priceEstimate * 100)}
-                    onCreateShipment={async () => {
-                      if (!authUser) throw new Error("Not authenticated");
-
-                      await ensureUser(authUser.uid, authUser.email);
-
-                      const trackingRef = makeTrackingRef();
-                      const route = routeLabel(data.sender.country, data.recipient.country);
-                      const cw = calcChargeableWeight(data.pkg);
-
-                      const paymentShipmentPayload = {
-                        direction: data.direction,
-                        route,
-                        sender_name: data.sender.fullName,
-                        sender_email: data.sender.email ?? null,
-                        sender_phone: `${data.sender.phoneDialCode ?? ""}${data.sender.phone}`,
-                        sender_address: { address1: data.sender.address1, city: data.sender.city, postcode: data.sender.postcode, country: data.sender.country },
-                        recipient_name: data.recipient.fullName,
-                        recipient_email: data.recipient.email ?? null,
-                        recipient_phone: `${data.recipient.phoneDialCode ?? ""}${data.recipient.phone}`,
-                        recipient_address: { address1: data.recipient.address1, city: data.recipient.city, postcode: data.recipient.postcode, country: data.recipient.country },
-                        category: data.goods.category,
-                        declared_value: data.goods.declaredValueGBP,
-                        insurance: data.goods.insurance,
-                        notes: data.goods.notes ?? null,
-                        length_cm: data.pkg.lengthCm,
-                        width_cm: data.pkg.widthCm,
-                        height_cm: data.pkg.heightCm,
-                        weight_kg: data.pkg.weightKg,
-                        chargeable_weight: Number(cw.toFixed(2)),
-                        price_estimate: data.priceEstimate,
-                        phone_verified: data.phoneVerified,
-                        source: "widget",
-                        widget_session_id: tenantSlug ?? null,
-                      };
-
-                      let shipmentId: string;
-                      if (widgetToken) {
-                        const result = await postShipmentToSupabase(paymentShipmentPayload, widgetToken);
-                        shipmentId = result.shipmentId;
-                      } else {
-                        const shipmentDoc = await addDoc(collection(db, "shipments"), { ...paymentShipmentPayload, trackingRef, createdAt: serverTimestamp() });
-                        shipmentId = shipmentDoc.id;
-                      }
-
-                      fetch("/api/shipments/generate-qr", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ trackingRef, shipmentId }),
-                      }).catch(() => {});
-
-                      return trackingRef;
-                    }}
-                  />
-                ) : (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-red-700">
-                    Failed to initialize payment. Please try again.
-                  </div>
-                )}
-              </Card>
-            )}
-          </div>
-
-          {hasDirection && (
-            <div className="mt-6 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={back}
-                disabled={step === 0}
-                className="btn-outline disabled:opacity-40"
-              >
-                Back
-              </button>
-              <div className="flex items-center gap-3">
-                {step < STEPS.length - 1 ? (
-                  <button
-                    type="button"
-                    onClick={next}
-                    disabled={!currentStepValid(step)}
-                    className="btn-brand disabled:opacity-40"
-                  >
-                    {step === 4 ? "Proceed to Payment" : "Continue"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={submitSingle}
-                    disabled={submitting}
-                    className="btn-brand"
-                  >
-                    {submitting ? "Processing..." : "Pay"}
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {authGateOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-            <h3 className="text-lg font-semibold mb-2">Sign in to continue</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              You must be signed in to submit shipments.
-            </p>
-
-            <div className="flex items-center gap-2 mb-3">
-              <button
-                type="button"
-                className={["rounded-lg border px-3 py-2 text-sm", authMode === "signin" ? "bg-gray-100" : "bg-white"].join(" ")}
-                onClick={() => setAuthMode("signin")}
-              >
-                Sign in
-              </button>
-              <button
-                type="button"
-                className={["rounded-lg border px-3 py-2 text-sm", authMode === "signup" ? "bg-gray-100" : "bg-white"].join(" ")}
-                onClick={() => setAuthMode("signup")}
-              >
-                Create account
-              </button>
-            </div>
-
-            <button onClick={handleGoogleAuth} disabled={authBusy} className="w-full rounded-lg border px-4 py-2 mb-3">
-              Continue with Google
-            </button>
-
-            <input className="field mb-2" placeholder="Email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
-            <input className="field mb-2" type="password" placeholder="Password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} />
-
-            {authError && <div className="text-sm text-red-600 mb-2">{authError}</div>}
-
-            <button onClick={handleEmailAuth} disabled={authBusy} className="w-full rounded-lg bg-[#d80000] text-white py-2">
-              {authMode === "signup" ? "Create account & continue" : "Sign in & continue"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { pendingAfterAuthRef.current = null; setAuthGateOpen(false); }}
-              className="mt-3 w-full text-sm text-gray-600 underline"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  return { rows, errors };
 }
 
-// ---------------- Reusable UI ----------------
+function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const rows: string[][] = [];
+  let current: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-function StripePaymentForm({
-  clientSecret,
-  onSuccess,
-  amount,
-  onCreateShipment,
+  for (let i = 0; i < normalized.length; i += 1) {
+    const char = normalized[i];
+    if (inQuotes) {
+      if (char === `"` && normalized[i + 1] === `"`) {
+        field += `"`;
+        i += 1;
+      } else if (char === `"`) {
+        inQuotes = false;
+      } else {
+        field += char;
+      }
+      continue;
+    }
+    if (char === `"`) {
+      inQuotes = true;
+      continue;
+    }
+    if (char === ",") {
+      current.push(field);
+      field = "";
+      continue;
+    }
+    if (char === "\n") {
+      current.push(field);
+      if (current.some((item) => item.trim())) rows.push(current);
+      current = [];
+      field = "";
+      continue;
+    }
+    field += char;
+  }
+  current.push(field);
+  if (current.some((item) => item.trim())) rows.push(current);
+  return { headers: (rows[0] ?? []).map((item) => item.trim()), rows: rows.slice(1) };
+}
+
+function downloadTextFile(filename: string, text: string, mime: string) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function CountrySelect({
+  label,
+  countries,
+  locale,
+  value,
+  onChange,
 }: {
-  clientSecret: string;
-  onSuccess: (trackingRef: string) => void;
-  amount: number;
-  onCreateShipment: () => Promise<string>;
+  label: string;
+  countries: CountryOption[];
+  locale: string;
+  value: string;
+  onChange: (value: string) => void;
 }) {
-  const options = {
-    clientSecret,
-    appearance: { theme: 'stripe' as const, variables: { colorPrimary: '#d80000' } },
-  };
-
-  return (
-    <Elements stripe={stripePromise} options={options}>
-      <StripeCheckoutFormInner onSuccess={onSuccess} amount={amount} onCreateShipment={onCreateShipment} />
-    </Elements>
-  );
-}
-
-function StripeCheckoutFormInner({
-  onSuccess,
-  amount,
-  onCreateShipment,
-}: {
-  onSuccess: (trackingRef: string) => void;
-  amount: number;
-  onCreateShipment: () => Promise<string>;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [error, setError] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
-
-  const sanitizeErrorMessage = (message: string | undefined): string => {
-    if (!message) return "Payment failed";
-    let cleaned = message.replace(/\.\s*Your request was in live mode.*$/i, '.');
-    cleaned = cleaned.replace(/\s*Your request was in live mode.*$/i, '');
-    return cleaned;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-
-    setProcessing(true);
-    setError(null);
-
-    try {
-      const { error: submitError } = await elements.submit();
-      if (submitError) {
-        setError(sanitizeErrorMessage(submitError.message) || "Validation failed");
-        setProcessing(false);
-        return;
-      }
-
-      const { error: paymentError } = await stripe.confirmPayment({
-        elements,
-        confirmParams: { return_url: `${window.location.origin}/payment/success` },
-        redirect: "if_required",
-      });
-
-      if (paymentError) {
-        setError(sanitizeErrorMessage(paymentError.message) || "Payment failed");
-        setProcessing(false);
-        return;
-      }
-
-      const trackingRef = await onCreateShipment();
-      onSuccess(trackingRef);
-    } catch (err: any) {
-      console.error("[PAYMENT_ERROR]", err);
-      setError(err?.message || "An unexpected error occurred");
-      setProcessing(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="rounded-xl border-2 border-red-200 bg-red-50 p-3">
-          <h3 className="text-sm font-semibold text-red-800">Payment Failed</h3>
-          <p className="text-sm text-red-700 mt-1">{error}</p>
-        </div>
-      )}
-
-      <PaymentElement />
-
-      <button
-        type="submit"
-        disabled={!stripe || processing}
-        className="w-full bg-[#d80000] text-white py-3 rounded-xl font-semibold hover:bg-[#b80000] transition disabled:opacity-60"
-      >
-        {processing ? "Processing..." : `Pay £${(amount / 100).toFixed(2)}`}
-      </button>
-    </form>
-  );
-}
-
-function UnifiedStepper({ steps, activeIndex, onStepClick }: { steps: string[]; activeIndex: number; onStepClick?: (i: number) => void }) {
-  return (
-    <div className="rounded-2xl border bg-white p-2 shadow-sm">
-      <ol className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {steps.map((label, i) => {
-          const done = i < activeIndex;
-          const active = i === activeIndex;
-          return (
-            <li key={i}>
-              <button
-                type="button"
-                disabled={i > activeIndex}
-                onClick={() => onStepClick?.(i)}
-                className={[
-                  "w-full rounded-xl border px-2 py-2 text-left transition-colors font-medium text-xs sm:text-sm",
-                  active ? "bg-[#d80000] text-white border-[#d80000]" : done ? "bg-[#d80000]/10 border-[#d80000]/30 text-[#d80000]" : "bg-gray-50 hover:bg-gray-100 border-gray-200",
-                ].join(" ")}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span className={["h-2 w-2 rounded-full flex-shrink-0", active || done ? "bg-white" : "bg-gray-300"].join(" ")} />
-                  <span className="whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
-                </div>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border bg-white p-4 sm:p-6 shadow-sm">
-      {title ? <h2 className="text-lg font-semibold mb-3">{title}</h2> : null}
-      {children}
-    </div>
-  );
-}
-
-function BigTab({ active, title, subtitle, onClick }: { active: boolean; title: string; subtitle: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={["rounded-2xl border p-4 text-left transition", active ? "border-[#d80000] bg-[#d80000]/5" : "hover:bg-gray-50"].join(" ")}
-    >
-      <div className="font-semibold">{title}</div>
-      <div className="text-sm text-gray-600 mt-1">{subtitle}</div>
-    </button>
-  );
-}
-
-function PartyForm({ value, onChange, direction, side, showContentDescription }: { value: Party; onChange: (v: Party) => void; direction: Direction; side: "sender" | "recipient"; showContentDescription?: boolean }) {
-  const getCountryOptions = (): string[] => {
-    const UK = ["United Kingdom"];
-    const AFRICA = ["Nigeria", "Ghana", "Kenya", "South Africa", "Egypt", "Tanzania", "Uganda", "Ethiopia", "Morocco", "Senegal", "Rwanda", "Zambia", "Zimbabwe"];
-    if (direction === "SHIP_TO_AFRICA") return side === "sender" ? UK : AFRICA;
-    return side === "sender" ? AFRICA : UK;
-  };
-
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <Input label="Full name" value={value.fullName} onChange={(v) => onChange({ ...value, fullName: v })} />
-      <Input label="Email" value={value.email || ""} onChange={(v) => onChange({ ...value, email: v })} />
-      <Input label="Phone" value={value.phone} onChange={(v) => onChange({ ...value, phone: v })} />
-      <Input label="Address 1" value={value.address1} onChange={(v) => onChange({ ...value, address1: v })} />
-      <Input label="Address 2" value={value.address2 || ""} onChange={(v) => onChange({ ...value, address2: v })} />
-      <Input label="City" value={value.city} onChange={(v) => onChange({ ...value, city: v })} />
-      <Input label="State/Region" value={value.state || ""} onChange={(v) => onChange({ ...value, state: v })} />
-      <Input label="Postcode" value={value.postcode || ""} onChange={(v) => onChange({ ...value, postcode: v })} />
-      <Select label="Country" value={value.country} onChange={(v) => onChange({ ...value, country: v })} options={["", ...getCountryOptions()]} />
-      {showContentDescription && side === "recipient" && (
-        <Textarea label="Content description (optional)" placeholder="e.g. clothes, shoes, documents..." value={String(value.contentDescription || "")} onChange={(v) => onChange({ ...value, contentDescription: v })} />
-      )}
-    </div>
-  );
-}
-
-function InsuranceTabs({ value, onChange }: { value: InsuranceTier; onChange: (v: InsuranceTier) => void }) {
-  const options = [
-    { tier: "NONE" as InsuranceTier, title: "No Coverage", rate: "£0", coverage: "None" },
-    { tier: "BASIC" as InsuranceTier, title: "Basic", rate: "0.75%", coverage: "Up to 50% of declared value" },
-    { tier: "STANDARD" as InsuranceTier, title: "Standard", rate: "1%", coverage: "Up to 100% of declared value", recommended: true },
-    { tier: "PREMIUM" as InsuranceTier, title: "Premium", rate: "2%", coverage: "Up to 150% of declared value" },
-  ];
-
-  return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {options.map((option) => (
-        <button
-          type="button"
-          key={option.tier}
-          onClick={() => onChange(option.tier)}
-          className={["rounded-xl border-2 p-3 text-center transition-all relative", value === option.tier ? "border-[#d80000] ring-2 ring-[#d80000]/20 bg-[#d80000]/5" : "border-gray-200 bg-white"].join(" ")}
-        >
-          {option.recommended && (
-            <div className="absolute -top-2 left-1/2 -translate-x-1/2 bg-green-600 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap">
-              ⭐ Recommended
-            </div>
-          )}
-          <div className="font-bold text-gray-900 text-sm mb-1">{option.title}</div>
-          <div className="text-lg font-bold text-[#4a1d96] mb-1">{option.rate}</div>
-          <div className="text-xs text-gray-600">{option.coverage}</div>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function Input({ label, value, onChange, type = "text", placeholder }: { label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string }) {
   return (
     <label className="block">
-      <div className="text-sm mb-1 text-gray-700">{label}</div>
-      <input type={type} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="field" />
+      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="field">
+        <option value="">{label}</option>
+        {countries.map((country) => (
+          <option key={country.iso2} value={country.name}>
+            {displayCountryName(country.name, locale)}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
 
-function NumberInput({ label, value, onChange, placeholder = "0", min }: { label: string; value: number; onChange: (n: number) => void; placeholder?: string; min?: number }) {
+function TextInput({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required = false,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  disabled?: boolean;
+}) {
   return (
     <label className="block">
-      <div className="text-sm mb-1 text-gray-700">{label}</div>
-      <input inputMode="decimal" type="number" value={value > 0 ? value : ""} placeholder={placeholder} min={min} onChange={(e) => onChange(parseFloat(e.target.value || "0"))} className="field" />
+      <span className="mb-1 block text-sm text-gray-700">
+        {label}
+        {required ? " *" : ""}
+      </span>
+      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="field disabled:bg-gray-50 disabled:text-gray-500" />
     </label>
   );
 }
 
-function Textarea({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function NumberInput({
+  label,
+  value,
+  onChange,
+  placeholder = "0",
+  min,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  placeholder?: string;
+  min?: number;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <input
+        type="number"
+        inputMode="decimal"
+        value={value > 0 ? value : ""}
+        min={min}
+        placeholder={placeholder}
+        onChange={(event) => onChange(sanitizeNumber(event.target.value))}
+        className="field"
+      />
+    </label>
+  );
+}
+
+function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
   return (
     <label className="block sm:col-span-2">
-      <div className="text-sm mb-1 text-gray-700">{label}</div>
-      <textarea value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} className="field min-h-[90px]" />
+      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="field min-h-[88px]" />
     </label>
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[] }) {
+function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <label className="block">
-      <div className="text-sm mb-1 text-gray-700">{label}</div>
-      <div className="relative">
-        <select value={value} onChange={(e) => onChange(e.target.value)} className="field appearance-none pr-10">
-          {options.map((o, idx) => (
-            <option key={idx} value={o} disabled={idx === 0 && o === ""}>{idx === 0 && o === "" ? "Select..." : o}</option>
-          ))}
-        </select>
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400">▾</span>
-      </div>
-    </label>
+    <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+      <h2 className="mb-3 text-lg font-semibold text-gray-950">{title}</h2>
+      {children}
+    </section>
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border p-3 bg-white">
-      <div className="text-gray-600">{label}</div>
-      <div className="font-medium">{value}</div>
+    <div className={["flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white", compact ? "p-3" : "p-3"].join(" ")}>
+      <span className="text-gray-600">{label}</span>
+      <span className="text-end font-semibold text-gray-950">{value}</span>
+    </div>
+  );
+}
+
+function PriceRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className={["flex items-center justify-between gap-3", strong ? "font-semibold text-gray-950" : ""].join(" ")}>
+      <span>{label}</span>
+      <span>{value}</span>
     </div>
   );
 }

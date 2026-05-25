@@ -29,7 +29,10 @@ export type FeatureKey =
   | "customDomain"
   | "auditLogs"
   | "sso"
-  | "customEmailDomain";
+  | "customEmailDomain"
+  | "financeReturns"
+  | "financeCod"
+  | "financeSettlementsReconciliation";
 
 export const planOrder: Record<Plan, number> = {
   starter: 0,
@@ -64,7 +67,10 @@ export const featureMinimumPlan: Record<FeatureKey, Plan> = {
   customDomain: "pro",
   auditLogs: "enterprise",
   sso: "enterprise",
-  customEmailDomain: "enterprise"
+  customEmailDomain: "enterprise",
+  financeReturns: "pro",
+  financeCod: "pro",
+  financeSettlementsReconciliation: "enterprise"
 };
 
 export function normalizePlan(plan: string | undefined | null): Plan {

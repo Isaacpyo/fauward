@@ -4,6 +4,9 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
 import { returnsService } from './returns.service.js';
+import { stripeService } from '../payments/stripe.service.js';
+import { notificationQueue } from '../../queues/queues.js';
+import { config } from '../../config/index.js';
 
 const ALLOWED_RETURN_TRANSITIONS: Record<ReturnStatus, ReturnStatus[]> = {
   REQUESTED: ['APPROVED', 'REJECTED'],
@@ -398,6 +401,97 @@ export async function registerReturnsRoutes(app: FastifyInstance) {
       });
 
       reply.send(updated);
+    }
+  );
+
+  app.post(
+    '/api/v1/tenant/returns/:id/send-fee',
+    { preHandler: [authenticate, requireRole([...RETURN_STAFF_ROLES])] },
+    async (request, reply) => {
+      const tenantId = getTenantId(request, reply);
+      const actorId = request.user?.sub;
+      if (!tenantId) return;
+      if (!actorId) return reply.status(401).send({ error: 'Unauthorized' });
+
+      const { id } = request.params as { id: string };
+      const { fee, currency = 'GBP' } = request.body as { fee?: unknown; currency?: string };
+
+      const feeAmount = Number(fee);
+      if (!feeAmount || feeAmount <= 0) {
+        return reply.status(400).send({ error: 'fee must be a positive number' });
+      }
+
+      const existing = await app.prisma.returnRequest.findFirst({
+        where: { id, tenantId },
+        include: {
+          shipment: { select: { id: true, trackingNumber: true } },
+          customer: { select: { id: true, email: true, firstName: true, lastName: true } }
+        }
+      });
+      if (!existing) return reply.status(404).send({ error: 'Return request not found' });
+      if (existing.status === 'REJECTED' || existing.status === 'RESOLVED' || existing.status === 'REFUNDED') {
+        return reply.status(400).send({ error: `Cannot send fee invoice for a ${existing.status} return` });
+      }
+
+      // Auto-approve if still REQUESTED
+      if (existing.status === 'REQUESTED') {
+        await returnsService.approve(app, tenantId, id, actorId);
+      }
+
+      const tenant = await app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      const baseUrl = config.tenantPortalUrl;
+      const trackingNumber = existing.shipment.trackingNumber;
+
+      const session = await stripeService.createCheckoutSession({
+        amountPence: Math.round(feeAmount * 100),
+        currency: currency.toLowerCase(),
+        description: `Return fee — shipment ${trackingNumber}`,
+        metadata: { returnId: id, tenantId },
+        successUrl: `${baseUrl}/returns?paid=1`,
+        cancelUrl: `${baseUrl}/returns?cancelled=1`,
+      });
+
+      const now = new Date();
+      await app.prisma.returnRequest.update({
+        where: { id: existing.id },
+        data: {
+          returnFee: feeAmount,
+          feeCurrency: currency.toUpperCase(),
+          stripeSessionId: session.sessionId,
+          paymentStatus: 'INVOICE_SENT' as never,
+          feeEmailSentAt: now,
+          status: 'APPROVED'
+        }
+      });
+
+      const customerEmail = existing.customer?.email;
+      if (customerEmail) {
+        await notificationQueue.add('email', {
+          tenantId,
+          to: customerEmail,
+          template: 'return_fee',
+          data: {
+            trackingNumber,
+            fee: feeAmount.toFixed(2),
+            currency: currency.toUpperCase(),
+            paymentUrl: session.url,
+            tenantName: tenant?.name ?? 'Fauward',
+            customerName: [existing.customer?.firstName, existing.customer?.lastName].filter(Boolean).join(' ') || 'Customer',
+          }
+        });
+      }
+
+      const opsUserIds = await getOpsUserIds(app, tenantId);
+      await createInAppNotifications(app, {
+        tenantId,
+        userIds: opsUserIds,
+        type: 'return_fee_sent',
+        title: `Return fee invoice sent for ${trackingNumber}`,
+        body: `£${feeAmount.toFixed(2)} invoice sent to ${customerEmail ?? 'customer'}.`,
+        link: '/returns',
+      });
+
+      reply.send({ ok: true, sessionUrl: session.url });
     }
   );
 }

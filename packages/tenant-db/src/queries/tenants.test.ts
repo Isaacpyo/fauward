@@ -12,6 +12,7 @@ type Tables = {
   tenants: Row[];
   tenant_slug_history: Row[];
   tenant_members: Row[];
+  tenant_settings?: Row[];
 };
 type Filter = { op: "eq" | "gt"; column: string; value: unknown };
 type QueryCall = { table: string; filters: Filter[] };
@@ -33,6 +34,7 @@ function tableRows(tables: Tables, table: string): Row[] {
   if (table === "tenants") return tables.tenants;
   if (table === "tenant_slug_history") return tables.tenant_slug_history;
   if (table === "tenant_members") return tables.tenant_members;
+  if (table === "tenant_settings") return tables.tenant_settings ?? [];
   throw new Error(`Unexpected table ${table}`);
 }
 

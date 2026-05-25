@@ -294,4 +294,47 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       reply.send({ data });
     }
   );
+
+  app.get(
+    '/api/v1/agents/tasks',
+    { preHandler: [authenticate, requireTenantMatch, requireRole([...AGENT_ALLOWED_ROLES])] },
+    async (request, reply) => {
+      const tenantId = getTenantId(request, reply);
+      if (!tenantId) return;
+
+      const userId = request.user?.sub;
+      if (!userId) return reply.status(401).send({ error: 'Unauthorized' });
+
+      const driver = await app.prisma.driver.findFirst({ where: { tenantId, userId } });
+
+      const TERMINAL = ['DELIVERED', 'CANCELLED', 'RETURNED', 'EXCEPTION'] as const;
+
+      const shipments = await app.prisma.shipment.findMany({
+        where: {
+          tenantId,
+          assignedDriverId: driver?.id ?? 'no-match',
+          status: { notIn: [...TERMINAL] }
+        },
+        include: {
+          organisation: { select: { name: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const tasks = shipments.map((s) => {
+        const dest = s.destinationAddress as Record<string, unknown>;
+        const addressParts = [dest.line1, dest.city, dest.postcode].filter(Boolean);
+        return {
+          id: s.id,
+          trackingNumber: s.trackingNumber,
+          status: s.status,
+          customerName: s.organisation?.name ?? 'Customer',
+          deliveryAddress: addressParts.join(', ') || 'Address not set',
+          assignedAt: s.createdAt.toISOString()
+        };
+      });
+
+      reply.send({ tasks });
+    }
+  );
 }

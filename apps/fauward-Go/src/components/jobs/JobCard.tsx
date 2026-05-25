@@ -7,14 +7,14 @@ type JobCardProps = {
 };
 
 export const JobCard = ({ job }: JobCardProps) => {
-  const detailHref = job.stopId ? `/stops/${job.stopId}` : "/jobs";
+  const detailHref = `/stops/${job.stopId ?? job.trackingNumber ?? job.shipmentId}`;
 
   return (
     <article className="action-card">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="tiny-label">
-            {workflowStageLabel[job.workflowStage]} - {job.shipmentId}
+            {workflowStageLabel[job.workflowStage]} · {job.trackingNumber ?? job.shipmentId}
           </p>
           <h2 className="mt-2 text-lg font-semibold text-ink">{job.address}</h2>
           <p className="mt-1 text-sm text-stone-600">{job.contactName ?? "No contact assigned"}</p>

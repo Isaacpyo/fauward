@@ -19,9 +19,18 @@ import type {
 
 type PodDraftUpdate = Pick<
   PodDraft,
-  "otpCode" | "recipientName" | "signatureRef" | "photoRefs" | "notes" | "lat" | "lng"
+  "otpCode" | "recipientName" | "signatureRef" | "photoRefs" | "notes" | "lat" | "lng" | "codCollection"
 > & {
   state?: PodDraft["state"];
+};
+
+type DeliveryProof = {
+  photoRefs: string[];
+  signatureRef?: string;
+  lat?: number;
+  lng?: number;
+  locationLabel?: string;
+  recipientName?: string;
 };
 
 type ScanVerificationInput = {
@@ -48,10 +57,13 @@ type FieldDataStore = {
   advanceStopStatus: (stopId: string, nextStatus: StopStatus) => void;
   savePodDraft: (stopId: string, draft: PodDraftUpdate) => void;
   submitPodForStop: (stopId: string, draft: PodDraftUpdate) => boolean;
+  completeDeliveryWithProof: (stopId: string, proof: DeliveryProof) => boolean;
   recordScanVerification: (input: ScanVerificationInput) => ScanVerificationRecord | undefined;
   addLocationPing: (input: LocationPingInput) => void;
   syncPendingMutations: () => Promise<void>;
   clearSyncedMutations: () => void;
+  clearFailedMutations: () => void;
+  clearAllPendingMutations: () => void;
 };
 
 const mapStopStatusToJobStatus = (status: StopStatus): FieldJob["status"] => status;
@@ -96,6 +108,7 @@ const applyPendingMutations = (
     }
 
     const stopId = typeof mutation.payload.stopId === "string" ? mutation.payload.stopId : undefined;
+    const shipmentId = typeof mutation.payload.shipmentId === "string" ? mutation.payload.shipmentId : undefined;
     const nextStatus =
       mutation.type === "pod_upload"
         ? "completed"
@@ -103,7 +116,7 @@ const applyPendingMutations = (
           ? (mutation.payload.status as StopStatus)
           : undefined;
 
-    if (!stopId || !nextStatus) {
+    if (!nextStatus || (!stopId && !shipmentId)) {
       continue;
     }
 
@@ -118,7 +131,7 @@ const applyPendingMutations = (
     );
 
     nextJobs = nextJobs.map((job) =>
-      job.stopId === stopId
+      (stopId && job.stopId === stopId) || (!job.stopId && shipmentId && job.shipmentId === shipmentId)
         ? {
             ...job,
             status: mapStopStatusToJobStatus(nextStatus),
@@ -154,17 +167,23 @@ export const useFieldDataStore = create<FieldDataStore>()(
           const workload = await fieldApi.fetchAssignedWork(accessToken);
           const reconciled = applyPendingMutations(workload.jobs, workload.stops, get().pendingMutations);
 
-          set((state) => ({
-            jobs: reconciled.jobs,
-            routes: workload.routes,
-            stops: reconciled.stops,
-            podDrafts: state.podDrafts,
-            pendingMutations: state.pendingMutations,
-            scanVerifications: state.scanVerifications,
-            locationPings: state.locationPings,
-            isHydrating: false,
-            hydrateError: undefined,
-          }));
+          set((state) => {
+            const freshIds = new Set(reconciled.jobs.map((j) => j.id));
+            const preservedCompleted = state.jobs.filter(
+              (j) => j.status === "completed" && !freshIds.has(j.id),
+            );
+            return {
+              jobs: [...reconciled.jobs, ...preservedCompleted],
+              routes: workload.routes,
+              stops: reconciled.stops,
+              podDrafts: state.podDrafts,
+              pendingMutations: state.pendingMutations,
+              scanVerifications: state.scanVerifications,
+              locationPings: state.locationPings,
+              isHydrating: false,
+              hydrateError: undefined,
+            };
+          });
         } catch (error) {
           set({
             isHydrating: false,
@@ -189,7 +208,7 @@ export const useFieldDataStore = create<FieldDataStore>()(
             stop.id === stopId ? { ...stop, status: nextStatus, updatedAt: timestamp } : stop,
           ),
           jobs: state.jobs.map((job) =>
-            job.stopId === stopId
+            (job.stopId === stopId) || (!job.stopId && job.shipmentId === existingStop.shipmentId)
               ? {
                   ...job,
                   status: mapStopStatusToJobStatus(nextStatus),
@@ -345,6 +364,120 @@ export const useFieldDataStore = create<FieldDataStore>()(
 
         return true;
       },
+      completeDeliveryWithProof: (stopId, proof) => {
+        const stop = get().stops.find((item) => item.id === stopId);
+        if (!stop) return false;
+
+        // Support both RouteStop-based jobs (matched by stopId) and direct-assignment jobs (matched by shipmentId)
+        const relatedJob =
+          get().jobs.find((job) => job.stopId === stopId) ??
+          get().jobs.find((job) => !job.stopId && job.shipmentId === stop.shipmentId);
+
+        const timestamp = new Date().toISOString();
+        const existingDraft = get().podDrafts.find((item) => item.stopId === stopId);
+        const draftId = existingDraft?.id ?? crypto.randomUUID();
+        const shipmentId = relatedJob?.shipmentId ?? stop.shipmentId;
+
+        const newMutations: PendingMutation[] = [];
+
+        if (proof.lat !== undefined && proof.lng !== undefined) {
+          const pingId = crypto.randomUUID();
+          set((state) => ({
+            locationPings: [
+              {
+                id: pingId,
+                lat: proof.lat!,
+                lng: proof.lng!,
+                source: "gps",
+                stopId,
+                createdAt: timestamp,
+                synced: false,
+              },
+              ...state.locationPings,
+            ],
+          }));
+          newMutations.push({
+            id: crypto.randomUUID(),
+            type: "location_update",
+            entityId: pingId,
+            payload: { stopId, lat: proof.lat, lng: proof.lng, locationLabel: proof.locationLabel },
+            createdAt: timestamp,
+            retryCount: 0,
+            idempotencyKey: crypto.randomUUID(),
+            state: "pending",
+          });
+        }
+
+        newMutations.push(
+          {
+            id: crypto.randomUUID(),
+            type: "pod_upload",
+            entityId: draftId,
+            payload: {
+              stopId,
+              shipmentId,
+              photoCount: proof.photoRefs.length,
+              hasSignature: Boolean(proof.signatureRef),
+              recipientName: proof.recipientName ?? "",
+            },
+            createdAt: timestamp,
+            retryCount: 0,
+            idempotencyKey: crypto.randomUUID(),
+            state: "pending",
+          },
+          {
+            id: crypto.randomUUID(),
+            type: "status_update",
+            entityId: stopId,
+            payload: { stopId, shipmentId, status: "completed" },
+            createdAt: timestamp,
+            retryCount: 0,
+            idempotencyKey: crypto.randomUUID(),
+            state: "pending",
+          },
+        );
+
+        set((state) => ({
+          stops: state.stops.map((item) =>
+            item.id === stopId ? { ...item, status: "completed", updatedAt: timestamp } : item,
+          ),
+          jobs: state.jobs.map((job) =>
+            (job.stopId === stopId) || (!job.stopId && job.shipmentId === stop.shipmentId)
+              ? { ...job, status: "completed", updatedAt: timestamp }
+              : job,
+          ),
+          podDrafts: state.podDrafts.some((item) => item.id === draftId)
+            ? state.podDrafts.map((item) =>
+                item.id === draftId
+                  ? {
+                      ...item,
+                      ...proof,
+                      photoRefs: proof.photoRefs,
+                      deliveredAt: timestamp,
+                      state: "ready" as const,
+                    }
+                  : item,
+              )
+            : [
+                {
+                  id: draftId,
+                  shipmentId,
+                  stopId,
+                  deliveredAt: timestamp,
+                  photoRefs: proof.photoRefs,
+                  signatureRef: proof.signatureRef,
+                  recipientName: proof.recipientName,
+                  lat: proof.lat,
+                  lng: proof.lng,
+                  state: "ready" as const,
+                },
+                ...state.podDrafts,
+              ],
+          pendingMutations: [...newMutations, ...state.pendingMutations],
+        }));
+
+        return true;
+      },
       recordScanVerification: (input) => {
         const stop = input.stopId ? get().stops.find((item) => item.id === input.stopId) : undefined;
         const expectedCode = stop?.verificationCodes.find((item) => item.target === input.target);
@@ -447,16 +580,23 @@ export const useFieldDataStore = create<FieldDataStore>()(
           ),
         }));
 
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Sync request timed out")), 15_000),
+        );
+
         try {
-          const result = await fieldApi.syncBatch(authState.accessToken, selected, {
-            user: authState.user,
-            jobs: get().jobs,
-            routes: get().routes,
-            stops: get().stops,
-            podDrafts: get().podDrafts,
-            scanVerifications: get().scanVerifications,
-            locationPings: get().locationPings,
-          });
+          const result = await Promise.race([
+            fieldApi.syncBatch(authState.accessToken, selected, {
+              user: authState.user,
+              jobs: get().jobs,
+              routes: get().routes,
+              stops: get().stops,
+              podDrafts: get().podDrafts,
+              scanVerifications: get().scanVerifications,
+              locationPings: get().locationPings,
+            }),
+            timeout,
+          ]);
 
           const syncedIds = result.results
             .filter((item) => item.state === "synced")
@@ -520,10 +660,24 @@ export const useFieldDataStore = create<FieldDataStore>()(
         set((state) => ({
           pendingMutations: state.pendingMutations.filter((mutation) => mutation.state !== "synced"),
         })),
+      clearFailedMutations: () =>
+        set((state) => ({
+          pendingMutations: state.pendingMutations.filter((mutation) => mutation.state !== "failed"),
+        })),
+      clearAllPendingMutations: () =>
+        set({ pendingMutations: [] }),
     }),
     {
       name: "fauward-go-field-data-v4",
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        jobs: state.jobs,
+        routes: state.routes,
+        stops: state.stops,
+        pendingMutations: state.pendingMutations,
+        podDrafts: state.podDrafts,
+        // locationPings and scanVerifications are high-frequency — synced to backend, not persisted locally
+      }),
     },
   ),
 );

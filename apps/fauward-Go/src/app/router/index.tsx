@@ -14,6 +14,7 @@ import { SupportScreen } from "@/features/support/SupportScreen";
 import { SyncStatusScreen } from "@/features/sync/SyncStatusScreen";
 import { ScanVerifyScreen } from "@/features/verify/ScanVerifyScreen";
 import { LocationScreen } from "@/features/location/LocationScreen";
+import { DeliveryWizardScreen } from "@/features/delivery/DeliveryWizardScreen";
 
 const basename = import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -57,6 +58,10 @@ export const router = createBrowserRouter([
       {
         path: "stops/:stopId/pod",
         element: <PodCaptureScreen />,
+      },
+      {
+        path: "stops/:stopId/deliver",
+        element: <DeliveryWizardScreen />,
       },
       {
         path: "verify",

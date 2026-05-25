@@ -236,6 +236,13 @@ enum ReturnStatus {
   REJECTED
 }
 
+enum ReturnPaymentStatus {
+  NONE
+  INVOICE_SENT
+  PAID
+  WAIVED
+}
+
 enum TicketStatus {
   OPEN
   IN_PROGRESS
@@ -357,6 +364,7 @@ model Tenant {
   payments                      Payment[]
   refunds                       Refund[]
   creditNotes                   CreditNote[]
+  gatewayPayouts                GatewayPayout[]
   drivers                       Driver[]
   vehicles                      Vehicle[]
   routes                        Route[]
@@ -798,6 +806,7 @@ model Shipment {
   documents        ShipmentDocument[]
   podAssets        PodAsset[]
   returnRequests   ReturnRequest[]
+  returnPickupOf   ReturnRequest?   @relation("ReturnPickupShipment")
   supportTickets   SupportTicket[]
   promoCode        PromoCode?         @relation(fields: [promoCodeId], references: [id])
   invoice          Invoice?
@@ -813,6 +822,10 @@ model Shipment {
   customsDeclaration CustomsDeclaration?
   exceptionCases     ExceptionCase[]
   trackingBreadcrumbs TrackingBreadcrumb[]
+
+  courierRefOrigin              String?
+  courierRefDestination         String?
+  customsClearanceConfirmed     Boolean  @default(false)
 
   lastSeenAt          DateTime? @map("last_seen_at") @db.Timestamptz()
   escalationFlag      Boolean  @default(false) @map("escalation_flag")
@@ -1200,15 +1213,23 @@ model ReturnRequest {
   approvedAt     DateTime?
   receivedAt     DateTime?
   resolvedAt     DateTime?
-  refundedAt     DateTime?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  refundedAt             DateTime?
+  returnFee              Decimal?            @db.Decimal(12, 2)
+  feeCurrency            String              @default("GBP")
+  stripeSessionId        String?
+  paymentStatus          ReturnPaymentStatus @default(NONE)
+  feeEmailSentAt         DateTime?
+  feePaidAt              DateTime?
+  returnPickupShipmentId String?             @unique
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
-  tenant       Tenant        @relation(fields: [tenantId], references: [id])
-  shipment     Shipment      @relation(fields: [shipmentId], references: [id])
-  customer     User          @relation("ReturnCustomer", fields: [customerId], references: [id])
-  organisation Organisation? @relation(fields: [organisationId], references: [id])
-  handler      User?         @relation("ReturnHandledBy", fields: [handledBy], references: [id])
+  tenant               Tenant        @relation(fields: [tenantId], references: [id])
+  shipment             Shipment      @relation(fields: [shipmentId], references: [id])
+  customer             User          @relation("ReturnCustomer", fields: [customerId], references: [id])
+  organisation         Organisation? @relation(fields: [organisationId], references: [id])
+  handler              User?         @relation("ReturnHandledBy", fields: [handledBy], references: [id])
+  returnPickupShipment Shipment?     @relation("ReturnPickupShipment", fields: [returnPickupShipmentId], references: [id])
 
   @@index([tenantId])
   @@index([shipmentId])
@@ -1410,9 +1431,11 @@ model Payment {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  refunds Refund[]
+  refunds            Refund[]
+  gatewayPayoutLines GatewayPayoutLine[]
 
   @@index([tenantId])
+  @@index([tenantId, gatewayRef])
   @@map("payments")
 }
 
@@ -1482,6 +1505,47 @@ model CurrencyRate {
 
   @@unique([fromCurrency, toCurrency])
   @@map("currency_rates")
+}
+
+model GatewayPayout {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  provider         String
+  providerPayoutId String
+  arrivalDate      DateTime
+  amount           Decimal  @db.Decimal(12, 2)
+  currency         String
+  status           String
+  rawPayload       Json
+  createdAt        DateTime @default(now())
+
+  lines GatewayPayoutLine[]
+
+  @@unique([tenantId, providerPayoutId])
+  @@index([tenantId, arrivalDate])
+  @@map("gateway_payouts")
+}
+
+model GatewayPayoutLine {
+  id               String        @id @default(uuid())
+  tenantId         String
+  payoutId         String
+  payout           GatewayPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+  providerTxnId    String
+  providerSourceId String?
+  amount           Decimal       @db.Decimal(12, 2)
+  currency         String
+  type             String
+  matchedPaymentId String?
+  matchedPayment   Payment?      @relation(fields: [matchedPaymentId], references: [id])
+  rawPayload       Json
+  createdAt        DateTime      @default(now())
+
+  @@unique([tenantId, providerTxnId])
+  @@index([payoutId])
+  @@index([tenantId, providerSourceId])
+  @@map("gateway_payout_lines")
 }
 
 model AccountingConnection {

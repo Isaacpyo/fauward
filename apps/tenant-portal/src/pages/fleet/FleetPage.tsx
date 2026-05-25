@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -43,7 +44,9 @@ async function fetchDrivers() {
 
 export function FleetPage() {
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState("drivers");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") ?? "drivers";
+  const setTab = (next: string) => setSearchParams({ tab: next });
   const [vehicleForm, setVehicleForm] = useState({
     registration: "",
     type: "VAN",
@@ -119,6 +122,7 @@ export function FleetPage() {
           { value: "drivers", label: "Field Operators" },
           { value: "vehicles", label: "Vehicles" }
         ]}
+        hideTabList
       >
         <TabsContent value="drivers">
           <div className="space-y-4">

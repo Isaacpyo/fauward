@@ -223,6 +223,7 @@ const normalizeJob = (payload: unknown): FieldJob | undefined => {
   return {
     id,
     shipmentId,
+    trackingNumber: readString(payload, ["trackingNumber", "tracking_number"]) ?? undefined,
     type,
     workflowStage,
     status: readEnum(payload, ["status", "jobStatus", "job_status"], jobStatuses, "assigned"),
@@ -321,7 +322,7 @@ const normalizeStop = (
 };
 
 const buildFallbackStop = (job: FieldJob): FieldStop => ({
-  id: job.stopId ?? `stop-${job.id}`,
+  id: job.stopId ?? job.trackingNumber ?? job.shipmentId,
   routeId: job.routeId ?? "unassigned-route",
   shipmentId: job.shipmentId,
   sequence: 0,

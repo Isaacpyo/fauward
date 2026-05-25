@@ -11,6 +11,19 @@ export type TenantBranding = {
   logoUrl: string | null;
 };
 
+export type TenantSettingsSummary = {
+  paymentGateway: string;
+  paymentGatewayKey: string | null;
+  timezone: string | null;
+  currency: string | null;
+  serviceTierConfig: unknown;
+  insuranceConfig: unknown;
+  taxConfig: unknown;
+  dimensionalDivisor: number | null;
+  quoteValidityMinutes: number | null;
+  showPriceBreakdownToCustomer: boolean | null;
+};
+
 export type Tenant = {
   id: string;
   slug: string;
@@ -23,7 +36,14 @@ export type Tenant = {
   primaryColor: string;
   accentColor: string;
   logoUrl: string | null;
+  region: string;
+  defaultCurrency: string;
+  defaultLanguage: string;
+  timezone: string;
+  isRtl: boolean;
+  smsEnabled: boolean;
   branding: TenantBranding;
+  settings: TenantSettingsSummary | null;
 };
 
 export type TenantBySlugOrHistoryResult =
@@ -53,6 +73,25 @@ type TenantRow = {
   primaryColor?: string | null;
   accentColor?: string | null;
   logoUrl?: string | null;
+  region?: string | null;
+  defaultCurrency?: string | null;
+  defaultLanguage?: string | null;
+  timezone?: string | null;
+  isRtl?: boolean | null;
+  smsEnabled?: boolean | null;
+};
+
+type TenantSettingsRow = {
+  paymentGateway?: string | null;
+  paymentGatewayKey?: string | null;
+  timezone?: string | null;
+  currency?: string | null;
+  serviceTierConfig?: unknown;
+  insuranceConfig?: unknown;
+  taxConfig?: unknown;
+  dimensionalDivisor?: number | null;
+  quoteValidityMinutes?: number | null;
+  showPriceBreakdownToCustomer?: boolean | null;
 };
 
 type TenantSlugHistoryRow = {
@@ -76,13 +115,32 @@ function normalizePlan(plan?: string) {
   return "STARTER";
 }
 
-export function normalizeTenantRow(row: TenantRow): Tenant | null {
+function normalizeTenantSettings(row: TenantSettingsRow | null): TenantSettingsSummary | null {
+  if (!row) return null;
+  return {
+    paymentGateway: row.paymentGateway ?? "STRIPE",
+    paymentGatewayKey: row.paymentGatewayKey ?? null,
+    timezone: row.timezone ?? null,
+    currency: row.currency ?? null,
+    serviceTierConfig: row.serviceTierConfig ?? null,
+    insuranceConfig: row.insuranceConfig ?? null,
+    taxConfig: row.taxConfig ?? null,
+    dimensionalDivisor: row.dimensionalDivisor ?? null,
+    quoteValidityMinutes: row.quoteValidityMinutes ?? null,
+    showPriceBreakdownToCustomer: row.showPriceBreakdownToCustomer ?? null,
+  };
+}
+
+export function normalizeTenantRow(row: TenantRow, settings: TenantSettingsRow | null = null): Tenant | null {
   if (!isVisibleTenantStatus(row.status)) return null;
 
   const primary = row.primaryColor ?? DEFAULT_PRIMARY;
   const accent = row.accentColor ?? DEFAULT_ACCENT;
   const logoUrl = row.logoUrl ?? null;
   const createdAt = row.createdAt ?? row.created_at ?? null;
+  const defaultCurrency = row.defaultCurrency ?? "GBP";
+  const defaultLanguage = row.defaultLanguage ?? "en-GB";
+  const timezone = row.timezone ?? "Europe/London";
 
   return {
     id: row.id,
@@ -96,12 +154,19 @@ export function normalizeTenantRow(row: TenantRow): Tenant | null {
     primaryColor: primary,
     accentColor: accent,
     logoUrl,
+    region: row.region ?? "uk_europe",
+    defaultCurrency,
+    defaultLanguage,
+    timezone,
+    isRtl: row.isRtl ?? false,
+    smsEnabled: row.smsEnabled ?? false,
     branding: {
       primary,
       accent,
       radius: DEFAULT_RADIUS,
       logoUrl,
     },
+    settings: normalizeTenantSettings(settings),
   };
 }
 
@@ -109,12 +174,20 @@ async function getTenantByColumn(column: "id" | "slug", value: string): Promise<
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("tenants")
-    .select("id, slug, name, plan, status, createdAt, primaryColor, accentColor, logoUrl")
+    .select("id, slug, name, plan, status, createdAt, primaryColor, accentColor, logoUrl, region, defaultCurrency, defaultLanguage, timezone, isRtl, smsEnabled")
     .eq(column, value)
     .maybeSingle();
 
   if (error || !data) return null;
-  return normalizeTenantRow(data as TenantRow);
+
+  const tenantRow = data as TenantRow;
+  const { data: settings } = await admin
+    .from("tenant_settings")
+    .select("paymentGateway, paymentGatewayKey, timezone, currency, serviceTierConfig, insuranceConfig, taxConfig, dimensionalDivisor, quoteValidityMinutes, showPriceBreakdownToCustomer")
+    .eq("tenantId", tenantRow.id)
+    .maybeSingle();
+
+  return normalizeTenantRow(tenantRow, settings as TenantSettingsRow | null);
 }
 
 /** Fetch a current tenant by slug, including normalized canonical branding. */

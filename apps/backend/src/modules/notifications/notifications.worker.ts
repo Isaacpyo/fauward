@@ -116,16 +116,24 @@ async function sendEmail(
     jobData.data && typeof jobData.data === 'object' ? (jobData.data as Record<string, unknown>) : {};
   const subject = resolveSubject(templateKey, dynamicData);
 
+  // SendGrid quirk: for dynamic templates, the top-level `subject` field
+  // is ignored. The subject defined IN the template version wins unless
+  // overridden via `personalizations[].subject`. We construct the
+  // personalization explicitly so our resolved subject actually lands.
   const [response] = await sgMail.send({
-    to: String(jobData.to),
     from: {
       email: tenantSettings?.notificationEmail ?? config.sendgrid.fromEmail,
       name: tenantSettings?.emailFromName ?? config.sendgrid.fromName
     },
     replyTo: tenantSettings?.emailReplyTo ?? undefined,
     templateId: sendgridTemplateId,
-    ...(subject ? { subject } : {}),
-    dynamicTemplateData: dynamicData
+    personalizations: [
+      {
+        to: [{ email: String(jobData.to) }],
+        ...(subject ? { subject } : {}),
+        dynamicTemplateData: dynamicData
+      }
+    ]
   });
 
   const providerRef = response?.headers?.['x-message-id'];

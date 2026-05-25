@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { Prisma, ShipmentStatus } from '@prisma/client';
+import { Prisma, PaymentStatus, ShipmentStatus } from '@prisma/client';
 
 import { requireTenantMatch } from '../../shared/middleware/tenantMatch.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
@@ -30,11 +30,15 @@ export const ALLOWED_TRANSITIONS: Record<ShipmentStatus, ShipmentStatus[]> = {
 };
 
 const STATUS_TEMPLATE_MAP: Partial<Record<ShipmentStatus, string>> = {
+  PROCESSING: 'shipment_processing',
   PICKED_UP: 'shipment_picked_up',
+  IN_TRANSIT: 'shipment_in_transit',
   OUT_FOR_DELIVERY: 'out_for_delivery',
   DELIVERED: 'delivered',
   FAILED_DELIVERY: 'failed_delivery',
-  EXCEPTION: 'shipment_exception'
+  EXCEPTION: 'shipment_exception',
+  RETURNED: 'shipment_returned',
+  CANCELLED: 'shipment_cancelled',
 };
 
 function monthKey(date = new Date()) {
@@ -100,7 +104,7 @@ async function enqueueShipmentNotifications(
   const [shipment, admins] = await Promise.all([
     app.prisma.shipment.findFirst({
       where: { id: args.shipmentId, tenantId: args.tenantId },
-      select: { customerId: true }
+      select: { customerId: true, assignedStaffId: true, originAddress: true }
     }),
     app.prisma.user.findMany({
       where: { tenantId: args.tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true },
@@ -109,12 +113,22 @@ async function enqueueShipmentNotifications(
   ]);
 
   if (!shipment) return;
-  const customer = shipment.customerId
-    ? await app.prisma.user.findFirst({
-        where: { id: shipment.customerId, tenantId: args.tenantId },
-        select: { id: true, email: true, phone: true }
-      })
-    : null;
+  const [customer, sender] = await Promise.all([
+    shipment.customerId
+      ? app.prisma.user.findFirst({
+          where: { id: shipment.customerId, tenantId: args.tenantId },
+          select: { id: true, email: true, phone: true }
+        })
+      : Promise.resolve(null),
+    shipment.assignedStaffId
+      ? app.prisma.user.findFirst({
+          where: { id: shipment.assignedStaffId, tenantId: args.tenantId },
+          select: { id: true, email: true }
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const emailData = { trackingNumber: args.trackingNumber, status: args.status };
 
   if (customer?.email) {
     await notificationQueue.add('email', {
@@ -124,10 +138,20 @@ async function enqueueShipmentNotifications(
       event: template,
       to: customer.email,
       template,
-      data: {
-        trackingNumber: args.trackingNumber,
-        status: args.status
-      }
+      data: emailData,
+    });
+  }
+
+  // Also notify the sender (staff member who created/booked the shipment)
+  if (sender?.email && sender.email !== customer?.email) {
+    await notificationQueue.add('email', {
+      tenantId: args.tenantId,
+      userId: sender.id,
+      channel: 'EMAIL',
+      event: template,
+      to: sender.email,
+      template,
+      data: emailData,
     });
   }
 
@@ -139,10 +163,7 @@ async function enqueueShipmentNotifications(
       event: template,
       to: admin.email,
       template,
-      data: {
-        trackingNumber: args.trackingNumber,
-        status: args.status
-      }
+      data: emailData,
     });
   }
 
@@ -271,6 +292,9 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         specialInstructions?: string;
         insuranceTier?: string;
         promoCode?: string;
+        paymentMethod?: string;
+        gatewayRef?: string;
+        paymentIntentId?: string;
         items?: Array<{
           description?: string;
           quantity?: number;
@@ -477,6 +501,92 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           });
         }
 
+        const paymentGatewayRef = payload.gatewayRef ?? payload.paymentIntentId;
+        const isCod = (payload.paymentMethod ?? '').toUpperCase() === 'COD';
+        const amount = Number(pricing.total ?? 0);
+        const isZeroPrice = amount <= 0;
+        let paymentAction: 'PAYMENT_LINKED' | 'PAYMENT_CREATED' | null = null;
+        let paymentRowId: string | null = null;
+
+        if (paymentGatewayRef) {
+          const existing = await tx.payment.findFirst({
+            where: { tenantId, gatewayRef: paymentGatewayRef, shipmentId: null }
+          });
+          if (existing) {
+            const linked = await tx.payment.update({
+              where: { id: existing.id },
+              data: { shipmentId: created.id }
+            });
+            paymentAction = 'PAYMENT_LINKED';
+            paymentRowId = linked.id;
+          }
+        }
+
+        if (!paymentRowId && idempotency.type === 'new') {
+          const idempotencyKeyForPayment = `shipment-create:${tenantId}:${idempotency.key}`;
+          const existingByKey = await tx.payment.findFirst({
+            where: { tenantId, idempotencyKey: idempotencyKeyForPayment, shipmentId: null }
+          });
+          if (existingByKey) {
+            const linked = await tx.payment.update({
+              where: { id: existingByKey.id },
+              data: { shipmentId: created.id }
+            });
+            paymentAction = 'PAYMENT_LINKED';
+            paymentRowId = linked.id;
+          }
+        }
+
+        if (!paymentRowId) {
+          const method = isCod ? 'CASH' : isZeroPrice ? 'NONE' : 'MANUAL';
+          const status: PaymentStatus = isZeroPrice ? PaymentStatus.COMPLETED : PaymentStatus.PENDING;
+          try {
+            const createdPayment = await tx.payment.create({
+              data: {
+                tenantId,
+                shipmentId: created.id,
+                customerId: payload.customerId,
+                amount: pricing.total,
+                currency: pricing.currency,
+                method,
+                status,
+                gatewayRef: paymentGatewayRef
+              }
+            });
+            paymentAction = 'PAYMENT_CREATED';
+            paymentRowId = createdPayment.id;
+          } catch (err) {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+              const reFound = await tx.payment.findFirst({
+                where: { tenantId, shipmentId: created.id }
+              });
+              if (reFound) {
+                paymentAction = 'PAYMENT_LINKED';
+                paymentRowId = reFound.id;
+              }
+            } else {
+              throw err;
+            }
+          }
+        }
+
+        if (paymentAction && paymentRowId) {
+          await tx.auditLog.create({
+            data: {
+              tenantId,
+              actorId: request.user?.sub,
+              action: paymentAction,
+              resourceType: 'PAYMENT',
+              resourceId: paymentRowId,
+              metadata: {
+                shipmentId: created.id,
+                gatewayRef: paymentGatewayRef ?? null,
+                method: isCod ? 'CASH' : isZeroPrice ? 'NONE' : 'MANUAL'
+              } as Prisma.InputJsonValue
+            }
+          });
+        }
+
         return created;
       });
 
@@ -560,11 +670,17 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       const tenantId = getTenantId(request, reply);
       if (!tenantId) return;
       const { id } = request.params as { id: string };
-      const { status, notes, location, failedReason } = request.body as {
+      const { status, notes, location, failedReason, assignedDriverId, courierRefOrigin, courierRefDestination, originCourierConfirmed, destinationCourierConfirmed, customsClearanceConfirmed } = request.body as {
         status?: ShipmentStatus;
         notes?: string;
         location?: Record<string, unknown>;
         failedReason?: string;
+        assignedDriverId?: string;
+        courierRefOrigin?: string;
+        courierRefDestination?: string;
+        originCourierConfirmed?: boolean;
+        destinationCourierConfirmed?: boolean;
+        customsClearanceConfirmed?: boolean;
       };
 
       if (!status) return reply.status(400).send({ error: 'status is required' });
@@ -588,6 +704,14 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: 'failedReason is required for FAILED_DELIVERY' });
       }
 
+      if (status === 'IN_TRANSIT') {
+        if (!originCourierConfirmed) return reply.status(400).send({ error: 'Origin courier confirmation is required for IN_TRANSIT' });
+        if (!destinationCourierConfirmed) return reply.status(400).send({ error: 'Destination courier confirmation is required for IN_TRANSIT' });
+        if (!courierRefOrigin?.trim()) return reply.status(400).send({ error: 'Origin courier reference is required for IN_TRANSIT' });
+        if (!courierRefDestination?.trim()) return reply.status(400).send({ error: 'Destination courier reference is required for IN_TRANSIT' });
+        if (!customsClearanceConfirmed) return reply.status(400).send({ error: 'Customs clearance confirmation is required for IN_TRANSIT' });
+      }
+
       const eventNotes = [notes, failedReason ? `Failed reason: ${failedReason}` : null]
         .filter(Boolean)
         .join('\n');
@@ -598,7 +722,13 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           data: {
             status,
             notes: eventNotes || shipment.notes,
-            actualDelivery: status === 'DELIVERED' ? new Date() : shipment.actualDelivery
+            actualDelivery: status === 'DELIVERED' ? new Date() : shipment.actualDelivery,
+            ...(status === 'PROCESSING' && assignedDriverId ? { assignedDriverId } : {}),
+            ...(status === 'IN_TRANSIT' ? {
+              courierRefOrigin: courierRefOrigin ?? null,
+              courierRefDestination: courierRefDestination ?? null,
+              customsClearanceConfirmed: customsClearanceConfirmed ?? false
+            } : {})
           }
         });
 

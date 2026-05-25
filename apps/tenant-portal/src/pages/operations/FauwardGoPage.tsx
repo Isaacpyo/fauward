@@ -167,6 +167,15 @@ const formatDateTime = (value: string | null) => {
 type KpiKey = "activeRoutes" | "openStops" | "deliveredToday" | "exceptionsToday" | "activeDrivers";
 type FauwardGoView = "main" | "workflow" | "records";
 
+type AssignedTask = {
+  id: string;
+  trackingNumber: string;
+  status: string;
+  driverName: string | null;
+  deliveryAddress: string;
+  assignedAt: string;
+};
+
 export function FauwardGoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const overviewQuery = useQuery({
@@ -182,6 +191,17 @@ export function FauwardGoPage() {
     retry: false
   });
 
+  const assignedTasksQuery = useQuery({
+    queryKey: ["field-ops-assigned-tasks"],
+    queryFn: async () => {
+      const res = await api.get<{ tasks: AssignedTask[] }>("/v1/field/ops/assigned-tasks");
+      return (res.data.tasks ?? []) as AssignedTask[];
+    },
+    refetchInterval: 30_000,
+    retry: 1
+  });
+
+  const assignedTasks = assignedTasksQuery.data ?? [];
   const data = overviewQuery.data ?? emptyOverview;
   const [selectedKpi, setSelectedKpi] = useState<KpiKey | null>(null);
   const detailPanelRef = useRef<HTMLDivElement | null>(null);
@@ -206,10 +226,13 @@ export function FauwardGoPage() {
       summary: "Uses the Fauward Go app to execute stops, scans, proofs, and status updates."
     }
   ];
+  const activeWorkflowCount = data.kpis.openStops > 0 ? data.kpis.openStops : assignedTasks.length;
+  const totalPlanned = data.kpis.totalStops > 0 ? data.kpis.totalStops : assignedTasks.length;
+
   const kpiCards = data
     ? [
         { key: "activeRoutes" as const, label: "Active routes", value: data.kpis.activeRoutes, helper: "Routes running today", icon: Truck },
-        { key: "openStops" as const, label: "Active workflow", value: data.kpis.openStops, helper: `${data.kpis.totalStops} total planned`, icon: Smartphone },
+        { key: "openStops" as const, label: "Active workflow", value: activeWorkflowCount, helper: `${totalPlanned} total planned`, icon: Smartphone },
         { key: "deliveredToday" as const, label: "Delivered today", value: data.kpis.deliveredToday, helper: "Reconciled from field events", icon: MapPinned },
         { key: "exceptionsToday" as const, label: "Exceptions", value: data.kpis.exceptionsToday, helper: "Failed or exception updates", icon: AlertTriangle },
         { key: "activeDrivers" as const, label: "Field Operators online", value: data.kpis.activeDrivers, helper: "Location seen in last 15 min", icon: Truck }
@@ -871,6 +894,45 @@ export function FauwardGoPage() {
                 <Button variant="secondary" onClick={() => openSubview("records")}>
                   Review job records
                 </Button>
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Assigned tasks</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">Shipments assigned to field operators</h2>
+              </div>
+              <Button asChild variant="secondary" size="sm">
+                <Link to="/shipments">View all shipments</Link>
+              </Button>
+            </div>
+            <div className="mt-4 space-y-3">
+              {assignedTasksQuery.isLoading ? (
+                <p className="text-sm text-gray-500">Loading assigned tasks…</p>
+              ) : assignedTasksQuery.isError ? (
+                <p className="text-sm text-red-500">
+                  Error loading tasks: {assignedTasksQuery.error instanceof Error ? assignedTasksQuery.error.message : "Unknown error"}
+                </p>
+              ) : assignedTasks.length === 0 ? (
+                <p className="text-sm text-gray-500">No shipments are currently assigned to field operators.</p>
+              ) : (
+                assignedTasks.map((task) => (
+                  <article key={task.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">DIRECT ASSIGNMENT</p>
+                        <h3 className="mt-1 text-base font-semibold text-gray-900">{task.trackingNumber}</h3>
+                        <p className="mt-1 text-sm text-gray-600">{task.deliveryAddress}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">{task.status.replace(/_/g, " ")}</p>
+                        <p className="mt-1 text-sm text-gray-600">{task.driverName ?? "Unassigned"}</p>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              )}
             </div>
           </section>
 

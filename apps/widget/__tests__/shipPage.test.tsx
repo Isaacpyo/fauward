@@ -48,11 +48,29 @@ const activeTenant = {
   primaryColor: "#111111",
   accentColor: "#222222",
   logoUrl: "https://cdn.example/logo.png",
+  region: "uk_europe",
+  defaultCurrency: "GBP",
+  defaultLanguage: "en-GB",
+  timezone: "Europe/London",
+  isRtl: false,
+  smsEnabled: true,
   branding: {
     primary: "#111111",
     accent: "#222222",
     radius: "10px",
     logoUrl: "https://cdn.example/logo.png",
+  },
+  settings: {
+    paymentGateway: "STRIPE",
+    paymentGatewayKey: null,
+    timezone: "Europe/London",
+    currency: "GBP",
+    serviceTierConfig: null,
+    insuranceConfig: null,
+    taxConfig: null,
+    dimensionalDivisor: 5000,
+    quoteValidityMinutes: 30,
+    showPriceBreakdownToCustomer: true,
   },
 };
 
@@ -103,6 +121,11 @@ describe("hosted shipment page", () => {
       embedded: false,
       tenantSlug: "acme",
       widgetToken: "signed-token",
+      tenantConfig: expect.objectContaining({
+        regionKey: "uk_europe",
+        currency: "GBP",
+        locale: "en-GB",
+      }),
     });
   });
 

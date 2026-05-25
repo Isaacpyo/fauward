@@ -82,7 +82,7 @@ function isAllowedCorsOrigin(origin: string) {
 }
 
 export async function buildApp() {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, bodyLimit: 52428800 }); // 50 MB — field sync batches include base64 photos
 
   app.addHook('preParsing', (request, _reply, payload, done) => {
     if (!request.url.includes('/webhooks/')) {

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download, Printer, UserPlus } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
+import * as RadixDialog from "@radix-ui/react-dialog";
 import { AssignDriverModal } from "@/components/shipments/AssignDriverModal";
 import { ShipmentCard } from "@/components/shipments/ShipmentCard";
 import { ShipmentWorkspacePanel } from "@/components/shipments/ShipmentWorkspacePanel";
@@ -17,10 +18,11 @@ import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
-import { defaultRouteOptions, loadRouteOptions, type TenantRouteOption } from "@/lib/route-options";
+import { loadRouteOptions, type TenantRouteOption } from "@/lib/route-options";
 import { normalizeShipmentListResponse } from "@/lib/shipment-normalizers";
 import { getValidNextShipmentStates } from "@/lib/shipment-state";
 import { useAppStore } from "@/stores/useAppStore";
+import { useTenantStore } from "@/stores/useTenantStore";
 import type { ShipmentState } from "@/types/domain";
 import type { DriverListItem, ShipmentListItem } from "@/types/shipment";
 
@@ -61,49 +63,6 @@ function buildFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFi
   };
 }
 
-const fallbackShipments: ShipmentListItem[] = Array.from({ length: 42 }).map((_, index) => ({
-  id: `SHP-${index + 1}`,
-  tracking_number: `FWD-2026-${String(index + 1).padStart(5, "0")}`,
-  status: ([
-    "PENDING",
-    "PROCESSING",
-    "PICKED_UP",
-    "IN_TRANSIT",
-    "OUT_FOR_DELIVERY",
-    "FAILED_DELIVERY",
-    "DELIVERED"
-  ] as ShipmentState[])[index % 7],
-  customer_name: index % 2 === 0 ? "Acme Retail" : "Northline Freight",
-  origin: index % 2 === 0 ? "Lagos" : "Abuja",
-  destination: index % 2 === 0 ? "London" : "Manchester",
-  route_id: defaultRouteOptions[index % defaultRouteOptions.length]?.id,
-  route_name: defaultRouteOptions[index % defaultRouteOptions.length]?.label,
-  driver_name: index % 3 === 0 ? "Amina Yusuf" : index % 4 === 0 ? undefined : "Daniel Cole",
-  service_tier: index % 3 === 0 ? "Same Day" : index % 2 === 0 ? "Express" : "Standard",
-  created_at: new Date(Date.now() - index * 1000 * 60 * 60 * 4).toISOString(),
-  reference: `REF-${2000 + index}`
-}));
-
-const fallbackDrivers: DriverListItem[] = [
-  { id: "drv-1", name: "Amina Yusuf", current_load: 8, status: "busy" },
-  { id: "drv-2", name: "Daniel Cole", current_load: 3, status: "available" },
-  { id: "drv-3", name: "Lara Okafor", current_load: 0, status: "offline" }
-];
-
-const seededDeliveredShipment: ShipmentListItem = {
-  id: "seed-delivered-shipment",
-  tracking_number: "FWD-2026-DEL-0001",
-  status: "DELIVERED",
-  customer_name: "Acme Retail",
-  origin: "Lagos",
-  destination: "London",
-  route_id: "route-london-c",
-  route_name: "London Route C",
-  driver_name: "Amina Yusuf",
-  service_tier: "Express",
-  created_at: new Date("2026-04-17T10:30:00.000Z").toISOString(),
-  reference: "JOB-DELIVERED-0001"
-};
 
 async function fetchShipments(): Promise<ShipmentListItem[]> {
   const response = await api.get("/v1/shipments");
@@ -115,6 +74,7 @@ export function ShipmentsListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAppStore((state) => state.user);
   const addToast = useAppStore((state) => state.addToast);
+  const tenantId = useTenantStore((state) => state.tenant?.tenant_id);
 
   const filterSearchParamsKey = buildFilterSearchParamsKey(searchParams);
   const selectedShipmentId = searchParams.get("selected");
@@ -138,18 +98,29 @@ export function ShipmentsListPage() {
   }, []);
 
   const shipmentsQuery = useQuery({
-    queryKey: ["shipments-list"],
+    queryKey: ["shipments-list", tenantId],
     queryFn: fetchShipments,
     staleTime: 30_000,
-    retry: 1
+    retry: 1,
+    enabled: Boolean(tenantId)
   });
 
-  const allShipments =
-    shipmentsQuery.data === undefined
-      ? fallbackShipments
-      : shipmentsQuery.data.length > 0
-        ? shipmentsQuery.data
-        : [seededDeliveredShipment];
+  const driversQuery = useQuery({
+    queryKey: ["fleet-drivers", tenantId],
+    queryFn: async () => {
+      type RawDriver = { id: string; user: { firstName: string; lastName: string }; todaysRouteStops?: number };
+      const res = await api.get<{ drivers: RawDriver[] }>("/v1/fleet/drivers");
+      return res.data.drivers.map((d): DriverListItem => ({
+        id: d.id,
+        name: `${d.user.firstName} ${d.user.lastName}`.trim(),
+        current_load: d.todaysRouteStops ?? 0,
+        status: "available"
+      }));
+    },
+    enabled: Boolean(tenantId) && assignDriverOpen
+  });
+
+  const allShipments = shipmentsQuery.data ?? [];
 
   const filteredShipments = useMemo(() => {
     return allShipments.filter((shipment) => {
@@ -240,6 +211,7 @@ export function ShipmentsListPage() {
     >
       <div className={`grid gap-6 ${selectedShipmentId ? "lg:grid-cols-[minmax(0,1fr)_28rem]" : ""}`}>
         <div className="space-y-4">
+        <div className="sticky top-16 z-20">
         <ShipmentFilterBar
           filters={filters}
           onChange={(nextFilters) => {
@@ -247,9 +219,12 @@ export function ShipmentsListPage() {
             setPage(1);
             setSelectedIds([]);
           }}
+          onRefresh={() => void shipmentsQuery.refetch()}
+          isRefreshing={shipmentsQuery.isFetching}
           role={user?.role}
           routeOptions={routeOptions}
         />
+        </div>
 
         {hasSelection ? (
           <div className="sticky top-[calc(var(--topbar-height)+8px)] z-20 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 shadow-sm">
@@ -294,11 +269,25 @@ export function ShipmentsListPage() {
           </div>
         ) : null}
 
-        {shipmentsQuery.isLoading ? (
+        {(!tenantId || shipmentsQuery.isLoading) ? (
           <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
             {Array.from({ length: 8 }).map((_, index) => (
               <Skeleton key={index} className="h-12 w-full" />
             ))}
+          </div>
+        ) : shipmentsQuery.isError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+            <p className="font-semibold">Failed to load shipments</p>
+            <p className="mt-1 text-red-600">
+              {shipmentsQuery.error instanceof Error ? shipmentsQuery.error.message : "Could not fetch shipments. Please try again."}
+            </p>
+            <button
+              type="button"
+              className="mt-4 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+              onClick={() => void shipmentsQuery.refetch()}
+            >
+              Try again
+            </button>
           </div>
         ) : total === 0 ? (
           <EmptyState
@@ -370,22 +359,32 @@ export function ShipmentsListPage() {
         )}
         </div>
 
-        {selectedShipmentId ? (
-          <ShipmentWorkspacePanel
-            shipmentId={selectedShipmentId}
-            fallbackShipment={selectedShipment}
-            onClose={closeShipmentWorkspace}
-          />
-        ) : null}
+        <RadixDialog.Root open={!!selectedShipmentId} onOpenChange={(open) => { if (!open) closeShipmentWorkspace(); }}>
+          <RadixDialog.Portal>
+            <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+            <RadixDialog.Content
+              className="fixed left-1/2 top-1/2 z-50 w-[min(96vw,780px)] max-h-[90vh] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl bg-white shadow-xl focus-visible:outline-none"
+              aria-label="Shipment workspace"
+            >
+              {selectedShipmentId ? (
+                <ShipmentWorkspacePanel
+                  shipmentId={selectedShipmentId}
+                  fallbackShipment={selectedShipment}
+                  onClose={closeShipmentWorkspace}
+                />
+              ) : null}
+            </RadixDialog.Content>
+          </RadixDialog.Portal>
+        </RadixDialog.Root>
       </div>
 
       <AssignDriverModal
         open={assignDriverOpen}
         onOpenChange={setAssignDriverOpen}
-        drivers={fallbackDrivers}
+        drivers={driversQuery.data ?? []}
         onConfirm={async (driverId) => {
           await new Promise((resolve) => window.setTimeout(resolve, 450));
-          const driver = fallbackDrivers.find((item) => item.id === driverId);
+          const driver = (driversQuery.data ?? []).find((item) => item.id === driverId);
           addToast({
             title: `Assigned ${selectedIds.length} shipment(s) to ${driver?.name ?? "field operator"}`,
             variant: "success"

@@ -5,11 +5,23 @@ import { useAgentAuth } from "@/context/AgentAuthContext";
 import { loadAdvanceQueue, loadScanQueue } from "@/lib/agentOfflineQueue";
 import { RECENT_SCANS_KEY } from "@/lib/agentLocalKeys";
 import { agentPath } from "@/lib/agentPaths";
+import { apiRequest } from "@/lib/api";
+
+type Task = {
+  id: string;
+  trackingNumber: string;
+  status: string;
+  customerName: string;
+  deliveryAddress: string;
+  assignedAt: string;
+};
 
 export function DashboardPage() {
   const { session } = useAgentAuth();
   const [recentScans, setRecentScans] = useState<string[]>([]);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
 
   useEffect(() => {
     try {
@@ -23,6 +35,22 @@ export function DashboardPage() {
     }
 
     setPendingSyncCount(loadAdvanceQueue().length + loadScanQueue().length);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setTasksLoading(true);
+    apiRequest<{ tasks: Task[] }>("/agents/tasks")
+      .then((res) => {
+        if (!cancelled) setTasks(res.tasks ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setTasks([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTasksLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const roleLabel = useMemo(() => session?.user.role?.replaceAll("_", " ") ?? "Unknown", [session?.user.role]);
@@ -63,6 +91,39 @@ export function DashboardPage() {
           >
             Shipment history
           </Link>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-[var(--border-color)] bg-white p-6 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900">My tasks</h2>
+        <p className="mt-1 text-sm text-gray-600">Shipments assigned to you.</p>
+        <div className="mt-4">
+          {tasksLoading ? (
+            <p className="text-sm text-gray-500">Loading tasks…</p>
+          ) : tasks.length === 0 ? (
+            <p className="text-sm text-gray-500">No active tasks assigned to you.</p>
+          ) : (
+            <ul className="space-y-3">
+              {tasks.map((task) => (
+                <li key={task.id} className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-mono font-semibold text-gray-900">{task.trackingNumber}</span>
+                    <span className="rounded-full bg-[var(--tenant-primary)] px-2 py-0.5 text-xs font-medium text-white">
+                      {task.status.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-gray-700">{task.customerName}</p>
+                  <p className="mt-1 text-gray-500">{task.deliveryAddress}</p>
+                  <Link
+                    to={agentPath(`shipment/${encodeURIComponent(task.trackingNumber)}`)}
+                    className="mt-3 inline-flex text-[var(--tenant-primary)] hover:underline"
+                  >
+                    Open shipment
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
 
