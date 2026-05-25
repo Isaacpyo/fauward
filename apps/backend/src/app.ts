@@ -54,6 +54,7 @@ import { registerInternalConsolePhaseRoutes } from './modules/internal/console-p
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
+import { registerShipmentPermissionRoutes } from './modules/shipment-permission-requests/routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
 import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
@@ -251,6 +252,7 @@ export async function buildApp() {
   await registerAuditRoutes(app);
   await registerDriverRoutes(app);
   await registerFieldRoutes(app);
+  await registerShipmentPermissionRoutes(app);
   await registerFieldAgentRoutes(app);
   await registerFauwardAgentRoutes(app);
   await registerUsersRoutes(app);

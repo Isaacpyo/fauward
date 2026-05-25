@@ -130,13 +130,14 @@ Commands run:
 - `apps/widget/app/api/create-payment-intent/route.ts` - keeps the legacy route as a thin alias to `/api/payment/session`.
 - `apps/widget/app/api/payment/confirm/route.ts` - verifies Paystack references, rejects amount/currency mismatches, and creates pending shipments after confirmed payment.
 - `apps/widget/app/api/payment/paystack/webhook/route.ts` - verifies `x-paystack-signature` against the raw body and processes `charge.success`.
-- `apps/widget/lib/payments/pendingPayments.ts` - keeps idempotent pending Paystack shipment payloads keyed by payment reference.
+- `apps/widget/lib/payments/pendingPayments.ts` - stores pending Paystack shipment payloads durably in `public.widget_payment_sessions` and atomically claims references for webhook/redirect idempotency.
 - `apps/widget/components/shipments/CreateShipmentForm.tsx` - uses normalized payment sessions, branches Stripe Elements vs Paystack Inline, and confirms Paystack before showing DB tracking refs.
 - `apps/widget/components/payments/PaymentReturnConfirmation.tsx` - confirms Paystack redirect fallbacks from the success pages.
 - `apps/widget/components/payments/BulkPaymentForm.tsx` - removes the unused Stripe-only `clientSecret` prop.
 - `apps/widget/types/paystack-inline-js.d.ts` - provides local types for `@paystack/inline-js`.
 - `apps/widget/package.json` / `package-lock.json` - adds `@paystack/inline-js`.
-- `apps/widget/__tests__/paymentProviders.test.ts` - covers Paystack initialize/verify fields, amount mismatch rejection, and webhook signature tamper rejection.
+- `apps/widget/__tests__/paymentProviders.test.ts` - covers Paystack initialize/verify fields, amount mismatch rejection, webhook signature tamper rejection, and valid webhook replay idempotency.
+- `supabase/migrations/20260525090000_add_widget_payment_sessions.sql` - adds durable public widget payment-session table for webhook/redirect state.
 
 ### Part 2 - Structured Customs Persistence
 
@@ -154,7 +155,7 @@ Commands run:
 | Provider selection | Form hard-blocked non-Stripe gateways. | Server selects from `tenantConfig.paymentGateway.provider`; Stripe path is unchanged, Paystack is real. |
 | Paystack init | Unsupported stub. | `POST https://api.paystack.co/transaction/initialize` with bearer secret key, amount in minor units, currency, metadata, and callback URL. |
 | Paystack verify | Missing. | `GET https://api.paystack.co/transaction/verify/:reference`; normalized status plus amount/currency are checked against the server quote before shipment creation. |
-| Webhook | Missing. | `/api/payment/paystack/webhook` verifies HMAC-SHA512 raw-body signature and processes `charge.success` idempotently by reference. |
+| Webhook | Missing. | `/api/payment/paystack/webhook` verifies HMAC-SHA512 raw-body signature and processes `charge.success` idempotently by reference using `public.widget_payment_sessions`. |
 | UI | Stripe Elements only. | Stripe uses Elements; Paystack uses `@paystack/inline-js` `resumeTransaction(accessCode)` with hosted authorization URL fallback. |
 
 Paystack API details were checked against the official Paystack transaction and InlineJS docs before coding: initialize returns `authorization_url`, `access_code`, `reference`; verify returns `status`, `amount`, `currency`; webhook signature uses `x-paystack-signature` over the raw body.
@@ -175,7 +176,7 @@ Chosen storage: `customs_declaration jsonb` on tenant `shipments`. This is the s
 Commands run:
 
 - `npm run typecheck --workspace=apps/widget`
-- `npm run test --workspace=apps/widget` - 7 files, 26 tests
+- `npm run test --workspace=apps/widget` - 7 files, 27 tests
 - `npm run build --workspace=apps/widget`
 - `npm run typecheck --workspace=packages/tenant-db`
 - `npm run test --workspace=packages/tenant-db`
@@ -184,7 +185,7 @@ Commands run:
 |---|---|
 | Stripe tenant, UK domestic | Stripe provider still returns a Stripe session with `clientSecret`; Elements path and create-after-confirm flow remain unchanged. |
 | Paystack tenant, Nigeria cross-border | Session route initializes Paystack with tenant currency/minor amount; UI can open inline checkout or `authorizationUrl`; confirm route verifies reference before creating shipments and returning DB tracking refs. |
-| Paystack webhook full path | `charge.success` webhook signature is verified with raw body, transaction is verified with Paystack, and pending payloads create shipments idempotently by reference. |
+| Paystack webhook full path | `charge.success` webhook signature is verified with raw body, transaction is verified with Paystack, and durable pending payloads create shipments idempotently by reference. Replay test verifies one shipment create call. |
 | Customs persistence | Cross-border payloads persist `customs_declaration` structurally; domestic payloads omit it and the route rejects domestic customs data. |
 | Embed tier | Payment and shipment routes still require `Authorization: Bearer <widgetToken>` from the existing `?tenant=&token=` contract. |
 | Hosted tier | `/ship/[tenant]` continues to pass tenant-derived config; provider selection follows `tenantConfig.paymentGateway`. |
@@ -200,7 +201,7 @@ Manual human check still needed: load one Nigeria/Paystack tenant and one UK/Str
 
 ## 6. Assumed / Stubbed
 
-- Paystack pending shipment payloads are held in an in-memory map until confirmation/webhook processing (`apps/widget/lib/payments/pendingPayments.ts:22`). This keeps C4 canonical writes out of scope; production should move this to a durable payment-session table.
+- Paystack pending shipment payloads are durable in `public.widget_payment_sessions` (`apps/widget/lib/payments/pendingPayments.ts:68`, `supabase/migrations/20260525090000_add_widget_payment_sessions.sql:5`); this is still widget-level orchestration, not canonical Prisma payment writes.
 - Paystack supported-currency guard currently includes the launch currencies plus common Paystack-supported currencies at `apps/widget/lib/payments/providers.ts:139`; tenant config still chooses the tenant currency.
-- Redirect fallback confirmation relies on the pending reference still being available in the same widget runtime (`apps/widget/components/payments/PaymentReturnConfirmation.tsx:31`). A durable session store should replace this before multi-instance production scaling.
+- Redirect fallback confirmation relies on the Paystack reference and `amountMinor`/`currency` query params (`apps/widget/components/payments/PaymentReturnConfirmation.tsx:31`) and resolves durable state from `public.widget_payment_sessions`.
 - Other gateways remain report-only. The factory throws for non-Stripe/non-Paystack providers at `apps/widget/lib/payments/providers.ts:211`.

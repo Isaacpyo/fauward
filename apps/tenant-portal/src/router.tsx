@@ -51,8 +51,10 @@ import { PricingSettingsPage } from "@/pages/pricing/PricingSettingsPage";
 import { PricingCalculatorPage } from "@/pages/pricing/PricingCalculatorPage";
 import { DispatchPage } from "@/pages/dispatch/DispatchPage";
 import { FauwardGoPage } from "@/pages/operations/FauwardGoPage";
+import { PermissionRequestsPage } from "@/pages/operations/PermissionRequestsPage";
 import { MessagingPage } from "@/pages/messaging/MessagingPage";
 import { AgentPage } from "@/pages/agent/AgentPage";
+import { AgentActionsPage } from "@/pages/agent/AgentActionsPage";
 import { RatesPage } from "@/pages/rates/RatesPage";
 import { ShippingRulesPage } from "@/pages/shipping-rules/ShippingRulesPage";
 import { LabelsPage } from "@/pages/labels/LabelsPage";
@@ -166,8 +168,10 @@ function WorkspaceRoutes() {
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
       <Route path="messaging" element={<PlanFeatureRoute feature="messaging"><MessagingPage /></PlanFeatureRoute>} />
       <Route path="agent" element={<PlanFeatureRoute feature="agent"><AgentPage /></PlanFeatureRoute>} />
+      <Route path="agent/actions" element={<PlanFeatureRoute feature="agent"><AgentActionsPage /></PlanFeatureRoute>} />
       <Route path="reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
       <Route path="operations/live-map" element={<LiveMapPage />} />
+      <Route path="operations/permission-requests" element={<PermissionRequestsPage />} />
       <Route path="fleet" element={<PlanFeatureRoute feature="fleet"><FleetPage /></PlanFeatureRoute>} />
       <Route path="pricing" element={<PricingOverviewPage />} />
       <Route path="pricing/zones" element={<ZonesPage />} />

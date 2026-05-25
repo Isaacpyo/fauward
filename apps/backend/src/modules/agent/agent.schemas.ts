@@ -25,6 +25,12 @@ export const ActionRecordSchema = z.object({
   error: z.string().optional()
 });
 
+export const AgentActionListQuerySchema = z.object({
+  status: z.enum(['PENDING_APPROVAL', 'AUTO_APPLIED', 'APPLIED', 'REJECTED', 'FAILED']).optional(),
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(100).default(20)
+});
+
 export const AgentRunResultSchema = z.object({
   status: z.enum(['completed', 'requires_approval', 'blocked', 'already_processed', 'failed']),
   eventId: z.string().optional(),

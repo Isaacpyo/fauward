@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "provider, reference, amountMinor, and currency are required" }, { status: 400 });
   }
 
-  const pending = getPendingPayment(reference);
+  const pending = await getPendingPayment(reference);
   if (!pending) {
     return NextResponse.json({ error: "No pending payment session exists for this reference" }, { status: 404 });
   }

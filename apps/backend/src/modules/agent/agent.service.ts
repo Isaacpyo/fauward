@@ -167,6 +167,116 @@ export async function runAgent(
   }
 }
 
+export async function approveAgentAction(
+  actionId: string,
+  tenantId: string,
+  userId: string,
+  toolHandlers: Record<ToolName, ToolHandler>,
+  prismaClient: any
+): Promise<{ success: boolean; result?: unknown; error?: string }> {
+  const action = await prismaClient.agentAction.findFirst({
+    where: { id: actionId, tenantId }
+  });
+
+  if (!action) {
+    return { success: false, error: 'Action not found' };
+  }
+
+  if (action.status !== 'PENDING_APPROVAL') {
+    return { success: false, error: `Action is already ${action.status}` };
+  }
+
+  const toolName = action.type as ToolName;
+  const payload = action.payload as Record<string, unknown>;
+
+  // Re-check policy as a safety guard
+  const policyCtx: PolicyContext = {
+    tenantId,
+    requestingTenantId: tenantId
+  };
+
+  const shipmentId = payload.shipmentId as string | undefined;
+  if (
+    shipmentId &&
+    (
+      toolName === 'assign_shipment' ||
+      toolName === 'reroute_shipment' ||
+      toolName === 'flag_sla_risk' ||
+      toolName === 'send_customer_notification' ||
+      toolName === 'get_shipment_details'
+    )
+  ) {
+    const shipment = await prismaClient.shipment.findFirst({
+      where: { id: shipmentId, tenantId },
+      select: { assignedDriverId: true, status: true }
+    });
+    if (shipment) {
+      policyCtx.shipmentCurrentDriverId = shipment.assignedDriverId;
+      policyCtx.shipmentStatus = shipment.status;
+    }
+  }
+
+  const decision = evaluatePolicy(toolName, policyCtx);
+  if (decision === 'blocked') {
+    await prismaClient.agentAction.update({
+      where: { id: actionId },
+      data: {
+        status: 'REJECTED',
+        approvedBy: userId
+      }
+    });
+    return { success: false, error: 'Action is blocked by policy and cannot be approved' };
+  }
+
+  const handler = toolHandlers[toolName];
+  if (!handler) {
+    await prismaClient.agentAction.update({
+      where: { id: actionId },
+      data: {
+        status: 'FAILED',
+        approvedBy: userId,
+        error: `Handler not found for tool: ${toolName}`
+      }
+    });
+    return { success: false, error: `Handler not found for tool: ${toolName}` };
+  }
+
+  try {
+    const handlerCtx: HandlerContext = {
+      runId: (action.runId as string) ?? randomUUID(),
+      tenantId,
+      logger: { info: logger.info.bind(logger), error: logger.error.bind(logger) }
+    };
+
+    const handlerResult = await handler(payload, handlerCtx);
+
+    await prismaClient.agentAction.update({
+      where: { id: actionId },
+      data: {
+        status: 'APPLIED',
+        approvedBy: userId,
+        appliedAt: new Date(),
+        result: handlerResult as any
+      }
+    });
+
+    return { success: true, result: handlerResult };
+  } catch (handlerErr) {
+    const errorMessage = handlerErr instanceof Error ? handlerErr.message : String(handlerErr);
+
+    await prismaClient.agentAction.update({
+      where: { id: actionId },
+      data: {
+        status: 'FAILED',
+        approvedBy: userId,
+        error: errorMessage
+      }
+    });
+
+    return { success: false, error: errorMessage };
+  }
+}
+
 async function buildPolicyContext(
   toolName: ToolName,
   payload: Record<string, unknown>,

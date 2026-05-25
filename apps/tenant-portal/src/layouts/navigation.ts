@@ -216,6 +216,13 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
   },
   {
+    to: "/operations/permission-requests",
+    label: "Permission Requests",
+    icon: ShieldCheck,
+    feature: "fauwardGo",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+  },
+  {
     to: "/fleet",
     label: "Fleet",
     icon: Truck,
@@ -230,7 +237,11 @@ export const navItems: NavItem[] = [
     icon: Bot,
     feature: "agent",
     showWhenLocked: true,
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: [
+      { to: "/agent", label: "Overview" },
+      { to: "/agent/actions", label: "Pending Actions" }
+    ]
   },
   {
     to: "/pricing",

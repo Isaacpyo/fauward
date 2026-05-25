@@ -45,6 +45,22 @@ create table if not exists public.widget_tokens (
   created_at    timestamptz not null default now()
 );
 
+-- Widget payment sessions (durable redirect/webhook state)
+create table if not exists public.widget_payment_sessions (
+  reference         text primary key,
+  provider          text not null,
+  tenant_slug       text not null,
+  amount_minor      bigint not null,
+  currency          text not null,
+  payloads          jsonb not null,
+  created_shipments jsonb,
+  status            text not null default 'PENDING'
+    check (status in ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')),
+  error             text,
+  created_at        timestamptz not null default now(),
+  updated_at        timestamptz not null default now()
+);
+
 -- Tenant owner accounts (Supabase Auth users linked to tenants)
 create table if not exists public.tenant_members (
   id            uuid primary key default gen_random_uuid(),
@@ -61,6 +77,8 @@ create index if not exists tenants_slug_idx on public.tenants (slug);
 create index if not exists api_keys_tenant_idx on public.tenant_api_keys (tenant_id);
 create index if not exists widget_tokens_tenant_idx on public.widget_tokens (tenant_id);
 create index if not exists widget_tokens_expires_idx on public.widget_tokens (expires_at);
+create index if not exists widget_payment_sessions_tenant_idx on public.widget_payment_sessions (tenant_slug);
+create index if not exists widget_payment_sessions_status_idx on public.widget_payment_sessions (status);
 create index if not exists tenant_members_auth_idx on public.tenant_members (auth_user_id);
 
 -- ─── RLS ─────────────────────────────────────────────────────────────────────
@@ -69,6 +87,7 @@ alter table public.tenants enable row level security;
 alter table public.tenant_branding enable row level security;
 alter table public.tenant_api_keys enable row level security;
 alter table public.widget_tokens enable row level security;
+alter table public.widget_payment_sessions enable row level security;
 alter table public.tenant_members enable row level security;
 
 -- Service role bypasses RLS; these policies cover anon / authenticated reads

@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { BackLink } from "@/components/common/BackLink";
 import { ScreenHeader } from "@/components/common/ScreenHeader";
 import { StatusPill } from "@/components/common/StatusPill";
 import { formatTimestamp } from "@/lib/utils/formatters";
+import { useBarcodeScanner } from "@/lib/scanning/useBarcodeScanner";
 import { useFieldDataStore } from "@/store/useFieldDataStore";
 import { scanResultTone, verificationTargetLabel, workflowStageLabel, type VerificationTarget } from "@/types/field";
-
-const detectorFormats: BarcodeFormat[] = ["qr_code", "code_128", "ean_13", "ean_8", "upc_a", "upc_e"];
 
 export const ScanVerifyScreen = () => {
   const [searchParams] = useSearchParams();
@@ -34,13 +33,6 @@ export const ScanVerifyScreen = () => {
   const [selectedTarget, setSelectedTarget] = useState<VerificationTarget>("shipment");
   const [manualCodeType, setManualCodeType] = useState<"qr" | "barcode">(initialCodeType);
   const [manualCode, setManualCode] = useState("");
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [isCameraOpen, setIsCameraOpen] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number>();
-  const processingRef = useRef(false);
-  const detectorRef = useRef<BarcodeDetector>();
   const activeStopId = stop?.id;
 
   const latestResults = useMemo(
@@ -69,104 +61,26 @@ export const ScanVerifyScreen = () => {
     }
   }, [selectedTarget, stop]);
 
-  useEffect(
-    () => () => {
-      if (rafRef.current) {
-        window.cancelAnimationFrame(rafRef.current);
-      }
-
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-    },
-    [],
-  );
-
-  const stopCamera = () => {
-    if (rafRef.current) {
-      window.cancelAnimationFrame(rafRef.current);
-    }
-
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    processingRef.current = false;
-    setIsCameraOpen(false);
-  };
-
-  const persistCode = (value: string, codeType: "qr" | "barcode") => {
-    if (!stop) {
-      return;
-    }
-
-    recordScanVerification({
-      stopId: stop.id,
-      target: selectedTarget,
-      scannedValue: value,
-      codeType,
-    });
-    setManualCode(value);
-  };
-
-  const scanFrame = async () => {
-    if (!videoRef.current || !detectorRef.current || processingRef.current) {
-      return;
-    }
-
-    processingRef.current = true;
-
-    try {
-      const results = await detectorRef.current.detect(videoRef.current);
-      const first = results.find((result) => result.rawValue);
-
-      if (first?.rawValue) {
-        persistCode(first.rawValue, first.format === "qr_code" ? "qr" : "barcode");
-        stopCamera();
+  const persistCode = useCallback(
+    (value: string, codeType: "qr" | "barcode") => {
+      if (!stop) {
         return;
       }
-    } catch {
-      setCameraError("Camera is active, but this browser could not decode the current frame.");
-    } finally {
-      processingRef.current = false;
-    }
 
-    rafRef.current = window.requestAnimationFrame(() => {
-      void scanFrame();
-    });
-  };
-
-  const startCamera = async () => {
-    if (typeof BarcodeDetector === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setCameraError("Live scan is unavailable here. Use manual entry instead.");
-      return;
-    }
-
-    try {
-      detectorRef.current = new BarcodeDetector({ formats: detectorFormats });
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
+      recordScanVerification({
+        stopId: stop.id,
+        target: selectedTarget,
+        scannedValue: value,
+        codeType,
       });
+      setManualCode(value);
+    },
+    [recordScanVerification, selectedTarget, stop],
+  );
 
-      streamRef.current = stream;
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      setCameraError(null);
-      setIsCameraOpen(true);
-      rafRef.current = window.requestAnimationFrame(() => {
-        void scanFrame();
-      });
-    } catch (error) {
-      setCameraError(error instanceof Error ? error.message : "Unable to start the camera.");
-      stopCamera();
-    }
-  };
+  const { videoRef, isCameraOpen, cameraError, startCamera, stopCamera } = useBarcodeScanner({
+    onDetect: (value, codeType) => persistCode(value, codeType),
+  });
 
   if (stops.length === 0) {
     return (

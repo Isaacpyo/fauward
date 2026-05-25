@@ -80,7 +80,7 @@ export const JobsScreen = () => {
           Search
         </button>
         <div className="mt-3">
-          <Link to="/verify?codeType=qr" className="secondary-btn w-full">
+          <Link to="/scan" className="secondary-btn w-full">
             Scan QR code
           </Link>
         </div>

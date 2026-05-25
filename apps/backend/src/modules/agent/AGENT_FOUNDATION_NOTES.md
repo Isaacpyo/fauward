@@ -28,11 +28,7 @@
 | **`requires_approval`** | `send_customer_notification`, `assign_shipment` (if already assigned), `reroute_shipment` |
 | **`blocked`** | Any unlisted tool name, plus cross-tenant calls |
 
-## What is intentionally still manual
-
-- **Approving `PENDING_APPROVAL` actions.** There is no UI button yet. Actions can be approved by updating the `AgentAction` row (`status: 'APPLIED'`) and running the handler manually (or via a future API endpoint). This is by design — this build makes the agent safe; the approval UX is the next chunk.
-
-## Tests that prove safety
+## Tests that prove safety (foundation)
 
 All tests in `agent.service.test.ts` pass (8 tests):
 
@@ -45,10 +41,74 @@ All tests in `agent.service.test.ts` pass (8 tests):
 7. Redis idempotency — duplicate event is a no-op
 8. End-to-end: safe applied + risky pending + tenant isolated + replay idempotent
 
-## Follow-ups
+---
 
-1. **Approval API + UI** — Build the endpoint and tenant-portal screen to list, approve, or reject `PENDING_APPROVAL` actions.
-2. **Agent action retry** — For `FAILED` actions, expose a retry mechanism (idempotency-aware).
-3. **Metrics / alerting** — Add counters for `AUTO_APPLIED`, `PENDING_APPROVAL`, `REJECTED`, and `FAILED` action rates.
-4. **Expand auto-approved list** — Revisit `send_customer_notification` and `assign_shipment` policy once operational confidence is high.
-5. **Multi-tool execution order** — Currently tools are evaluated sequentially; consider parallelizing read-only auto-approved tools.
+# Agent Approval UI Build — Completion Notes
+
+> Date: 2026-05-25
+
+## What is now wired
+
+### Backend endpoints
+
+| Method | Path | Auth | Plan gate | Behavior |
+|---|---|---|---|---|
+| `GET` | `/v1/agent/actions?status=` | JWT + tenant match | `agent` | Lists tenant-scoped actions, paginated |
+| `POST` | `/v1/agent/actions/:id/approve` | JWT + tenant match | `agent` | Re-checks policy, runs handler, updates to `APPLIED` |
+| `POST` | `/v1/agent/actions/:id/reject` | JWT + tenant match | `agent` | Sets `REJECTED`, never runs handler |
+
+### Frontend
+
+- **Nav item:** "Pending Actions" child under "Fauward Agent" in sidebar (`/agent/actions`)
+- **Page:** `AgentActionsPage` — lists pending actions with human-readable summaries, Approve/Reject buttons per row
+- **Confirm dialog:** Approve requires explicit confirmation
+- **States:** loading skeleton, empty state, error banner
+- **Plan gate:** Client-side via `PlanFeatureRoute`; server-side via `requireFeature('agent')`
+- **API hooks:** `useAgentActions`, `useApproveAgentAction`, `useRejectAgentAction` in `src/api/agent-actions.ts`
+
+### Safety proofs (backend route tests — 10 tests)
+
+1. List returns only the caller tenant's pending actions
+2. Plan without `agent` feature returns 403
+3. Approving a pending action runs the handler once and flips to `APPLIED`
+4. Double-approve is a guarded no-op (409, handler runs once)
+5. Cross-tenant approve returns 404, no leak, handler not called
+6. Handler error on approve flips to `FAILED` with error message
+7. Reject never runs the handler; status becomes `REJECTED`
+8. Cross-tenant reject returns 404
+9. Rejecting already-rejected action is a no-op error
+10. Frontend API tests verify correct endpoints are called
+
+## Architecture decisions upheld
+
+1. **Approval reuses the existing handler + policy path.** `approveAgentAction()` calls `evaluatePolicy()` again, then invokes the handler from `buildToolHandlers(app)` with the approver's auth-context `tenantId`.
+2. **Tenant-scoped everywhere.** Every query filters by `tenantId`. Cross-tenant access returns 404.
+3. **Plan-gated server-side.** `requireFeature('agent')` on all three endpoints.
+4. **Status transitions are one-way and guarded.** Only `PENDING_APPROVAL` → `APPLIED`/`REJECTED`. Already-processed actions return 409.
+5. **Every decision is attributed.** `approvedBy` = acting user's id; `appliedAt` is set.
+
+## Files changed
+
+### Backend
+- `apps/backend/src/modules/tenants/plan.service.ts` — added `agent: true` to PRO and ENTERPRISE
+- `apps/backend/src/modules/agent/agent.schemas.ts` — added `AgentActionListQuerySchema`
+- `apps/backend/src/modules/agent/agent.service.ts` — added exported `approveAgentAction()`
+- `apps/backend/src/modules/agent/agent.routes.ts` — added list, approve, reject endpoints
+- `apps/backend/src/modules/agent/agent.routes.test.ts` — route tests (10 tests)
+- `apps/backend/src/modules/agent/agent.service.test.ts` — existing service tests still pass
+- `apps/backend/prisma/migrations/0030_agent_action/migration.sql` — migration (from foundation)
+
+### Frontend
+- `apps/tenant-portal/src/layouts/navigation.ts` — added "Pending Actions" child nav
+- `apps/tenant-portal/src/router.tsx` — added `/agent/actions` route with plan gate
+- `apps/tenant-portal/src/api/agent-actions.ts` — TanStack Query hooks + standalone API functions
+- `apps/tenant-portal/src/api/agent-actions.test.ts` — API function tests (3 tests)
+- `apps/tenant-portal/src/pages/agent/AgentActionsPage.tsx` — approval screen
+
+## Remaining follow-ups
+
+1. **Super-admin oversight view** — A console page to see pending actions across all tenants.
+2. **Bulk approve / reject** — Select multiple actions and approve/reject in batch.
+3. **Notifications when actions are waiting** — Email or in-app notification when new pending actions arrive.
+4. **Agent action retry** — For `FAILED` actions, expose a retry mechanism.
+5. **Metrics / alerting** — Add counters for action rates.

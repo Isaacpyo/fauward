@@ -424,6 +424,26 @@ const buildMutationPayload = (mutation: PendingMutation, context: SyncBatchConte
   return { ...mutation.payload };
 };
 
+export type ScannedShipment = {
+  id: string;
+  trackingNumber: string;
+  status: string;
+  recipientName: string | null;
+  currentStop: { id: string; sequence: number; type: string } | null;
+  assignedDriver: { id: string; name: string } | null;
+  isAssignedToMe: boolean;
+};
+
+export type ScanLookupResult = {
+  shipment: ScannedShipment;
+  existingRequest: { id: string; createdAt: string } | null;
+};
+
+export type PermissionRequestStub = {
+  id: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXPIRED";
+};
+
 export const fieldApi = {
   async login(email: string, password: string) {
     const payload = await apiRequest<unknown>("/api/v1/auth/login", {
@@ -559,6 +579,31 @@ export const fieldApi = {
       routes,
       stops: Array.from(stopMap.values()),
     };
+  },
+
+  async lookupScannedShipment(token: string, trackingNumber: string): Promise<ScanLookupResult> {
+    const payload = await apiRequest<unknown>("/api/v1/field/scan/lookup", {
+      method: "POST",
+      token,
+      body: { trackingNumber },
+    });
+    return payload as ScanLookupResult;
+  },
+
+  async requestShipmentPermission(token: string, body: { shipmentId: string; note?: string }): Promise<PermissionRequestStub> {
+    const payload = await apiRequest<{ request: PermissionRequestStub }>("/api/v1/field/permission-requests", {
+      method: "POST",
+      token,
+      body,
+    });
+    return payload.request;
+  },
+
+  async cancelPermissionRequest(token: string, requestId: string): Promise<void> {
+    await apiRequest(`/api/v1/permission-requests/${requestId}/cancel`, {
+      method: "POST",
+      token,
+    });
   },
 
   async syncBatch(token: string, selected: PendingMutation[], context: SyncBatchContext): Promise<SyncBatchResult> {

@@ -410,6 +410,7 @@ model Tenant {
   tenantAiLimit                 TenantAiLimit?
   aiAgentRuns                   AiAgentRun[]
   agentActions                  AgentAction[]
+  shipmentPermissionRequests    ShipmentPermissionRequest[]
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
   slugHistory                   TenantSlugHistory[]
@@ -822,6 +823,7 @@ model Shipment {
   generatedLabels  GeneratedLabel[]
   customsDeclaration CustomsDeclaration?
   exceptionCases     ExceptionCase[]
+  permissionRequests ShipmentPermissionRequest[]
   trackingBreadcrumbs TrackingBreadcrumb[]
 
   courierRefOrigin              String?
@@ -1807,6 +1809,28 @@ model AgentAction {
 
   @@index([tenantId, status])
   @@map("agent_actions")
+}
+
+model ShipmentPermissionRequest {
+  id                String   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  shipmentId        String
+  shipment          Shipment @relation(fields: [shipmentId], references: [id])
+  requestedByUserId String
+  requestedAction   String   // v1: always 'reassign_driver'
+  status            String   // PENDING | APPROVED | REJECTED | CANCELLED | EXPIRED
+  note              String?
+  respondedByUserId String?
+  respondedAt       DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, shipmentId, status])
+  @@index([requestedByUserId])
+  @@map("shipment_permission_requests")
 }
 
 model ExceptionCase {

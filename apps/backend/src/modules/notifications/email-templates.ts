@@ -26,5 +26,6 @@ export const EMAIL_TEMPLATES = {
   usage_limit_reached: 'usage_limit_reached',
   ops_new_shipment: 'ops_new_shipment',
   trial_expiry: 'trial_expiry',
-  return_fee: 'return_fee'
+  return_fee: 'return_fee',
+  permission_request_approval: 'permission_request_approval'
 } as const;

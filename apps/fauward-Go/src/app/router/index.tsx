@@ -13,6 +13,7 @@ import { StopDetailScreen } from "@/features/stops/StopDetailScreen";
 import { SupportScreen } from "@/features/support/SupportScreen";
 import { SyncStatusScreen } from "@/features/sync/SyncStatusScreen";
 import { ScanVerifyScreen } from "@/features/verify/ScanVerifyScreen";
+import { QrScanScreen } from "@/features/scan/QrScanScreen";
 import { LocationScreen } from "@/features/location/LocationScreen";
 import { DeliveryWizardScreen } from "@/features/delivery/DeliveryWizardScreen";
 
@@ -66,6 +67,10 @@ export const router = createBrowserRouter([
       {
         path: "verify",
         element: <ScanVerifyScreen />,
+      },
+      {
+        path: "scan",
+        element: <QrScanScreen />,
       },
       {
         path: "location",

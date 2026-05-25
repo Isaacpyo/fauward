@@ -123,7 +123,7 @@ export async function POST(req: NextRequest) {
           idempotencyKey: `paystack:${provisionalSession.reference}:${index}`,
         }),
       );
-      storePendingPayment({
+      await storePendingPayment({
         provider: "paystack",
         tenantSlug: tenant.slug,
         reference: provisionalSession.reference,

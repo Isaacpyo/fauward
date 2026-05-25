@@ -1,12 +1,15 @@
 import * as RadixDropdown from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRelayNotifications } from "@fauward/relay-ui";
-import { AlertCircle, Bell, MessageSquare, RefreshCw, Wallet } from "lucide-react";
+import { AlertCircle, Bell, BellOff, MessageSquare, RefreshCw, Wallet } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { api } from "@/lib/api";
 import { getAccessToken, hasDevTestSession } from "@/lib/auth";
+import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
+import { isNotificationSoundMuted, playNotificationChime, setNotificationSoundMuted } from "@/lib/notification-sound";
 
 type InAppNotification = {
   id: string;
@@ -49,9 +52,14 @@ export function NotificationCenter() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenant = useTenantStore((state) => state.tenant);
+  const addToast = useAppStore((state) => state.addToast);
   const isDevSession = hasDevTestSession();
   const canFetchNotifications = Boolean(getAccessToken()) && !isDevSession;
   const relayTenantId = isDevSession ? "tenant_dev" : tenant?.tenant_id;
+  const [muted, setMuted] = useState<boolean>(() => isNotificationSoundMuted());
+  // Tracks IDs we've already alerted on so we only fire toast + sound for
+  // genuinely new arrivals, not for every poll or remount.
+  const seenIdsRef = useRef<Set<string> | null>(null);
 
   const notificationsQuery = useQuery({
     queryKey: ["notifications"],
@@ -92,6 +100,30 @@ export function NotificationCenter() {
   });
 
   const notifications = notificationsQuery.data ?? [];
+
+  // Detect newly-arrived notifications and surface them as toast + chime.
+  // First fetch only seeds the baseline so existing items don't all toast at once.
+  useEffect(() => {
+    if (!notificationsQuery.isSuccess) return;
+    if (seenIdsRef.current === null) {
+      seenIdsRef.current = new Set(notifications.map((n) => n.id));
+      return;
+    }
+    const fresh = notifications.filter((n) => !seenIdsRef.current!.has(n.id) && !n.isRead);
+    if (fresh.length === 0) return;
+    fresh.forEach((n) => seenIdsRef.current!.add(n.id));
+    // Surface at most 3 toasts per refresh — the store caps anyway, but this
+    // keeps a sensible upper bound on chimes too.
+    fresh.slice(0, 3).forEach((n) => {
+      addToast({
+        title: n.title,
+        description: n.body ?? undefined,
+        variant: n.type.includes("exception") || n.type.includes("rejected") ? "warning" : "default"
+      });
+    });
+    playNotificationChime();
+  }, [notifications, notificationsQuery.isSuccess, addToast]);
+
   const relayNotifications = useRelayNotifications({
     mode: "tenant",
     tenantId: relayTenantId,
@@ -103,10 +135,20 @@ export function NotificationCenter() {
   return (
     <RadixDropdown.Root>
       <RadixDropdown.Trigger asChild>
-        <button className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-gray-200 bg-white hover:bg-gray-50">
-          <Bell size={16} />
+        <button
+          className={`relative inline-flex h-10 w-10 items-center justify-center rounded-md border bg-white hover:bg-gray-50 ${
+            unreadCount > 0 ? "border-red-300" : "border-gray-200"
+          }`}
+          aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
+        >
+          <Bell size={16} className={unreadCount > 0 ? "text-red-600" : "text-gray-700"} />
           {unreadCount > 0 ? (
-            <span className="absolute -right-1 -top-1 inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+            <>
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+              <span className="pointer-events-none absolute -right-1 -top-1 inline-flex h-4 w-4 animate-ping rounded-full bg-red-400 opacity-75" />
+            </>
           ) : null}
         </button>
       </RadixDropdown.Trigger>
@@ -117,21 +159,38 @@ export function NotificationCenter() {
           sideOffset={8}
           className="z-50 w-[360px] rounded-lg border border-gray-200 bg-white p-2 shadow-sm"
         >
-          <div className="mb-1 flex items-center justify-between px-2 py-1.5">
+          <div className="mb-1 flex items-center justify-between gap-2 px-2 py-1.5">
             <p className="text-sm font-semibold text-gray-900">Notifications</p>
-            <button
-              type="button"
-              className="text-xs font-medium text-[var(--tenant-primary)] hover:underline disabled:opacity-50"
-              disabled={markAllRead.isPending || unreadCount === 0}
-              onClick={() => {
-                relayNotifications.markRead();
-                if (canFetchNotifications) {
-                  markAllRead.mutate();
-                }
-              }}
-            >
-              Mark all read
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="text-gray-500 hover:text-gray-700"
+                title={muted ? "Unmute notification sound" : "Mute notification sound"}
+                aria-label={muted ? "Unmute notification sound" : "Mute notification sound"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  const next = !muted;
+                  setMuted(next);
+                  setNotificationSoundMuted(next);
+                  if (!next) playNotificationChime(); // preview when unmuting
+                }}
+              >
+                {muted ? <BellOff size={14} /> : <Bell size={14} />}
+              </button>
+              <button
+                type="button"
+                className="text-xs font-medium text-[var(--tenant-primary)] hover:underline disabled:opacity-50"
+                disabled={markAllRead.isPending || unreadCount === 0}
+                onClick={() => {
+                  relayNotifications.markRead();
+                  if (canFetchNotifications) {
+                    markAllRead.mutate();
+                  }
+                }}
+              >
+                Mark all read
+              </button>
+            </div>
           </div>
 
           <div className="max-h-[400px] overflow-y-auto">
