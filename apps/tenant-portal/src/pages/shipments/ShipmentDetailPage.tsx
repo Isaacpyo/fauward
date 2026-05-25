@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 
 import { DocumentsPanel } from "@/components/shipments/DocumentsPanel";
+import { ExceptionBanner } from "@/components/shipments/ExceptionBanner";
 import { NotesPanel } from "@/components/shipments/NotesPanel";
 import { PODViewer } from "@/components/shipments/PODViewer";
 import { ShipmentTimeline } from "@/components/shipments/ShipmentTimeline";
@@ -78,6 +79,17 @@ export function ShipmentDetailPage() {
       }
     }
   });
+
+  const handleExceptionAction = (action: "reattempt" | "return" | "contact" | "escalate") => {
+    if (action === "reattempt") {
+      updateStatusMutation.mutate({ status: "OUT_FOR_DELIVERY" });
+    } else if (action === "return") {
+      updateStatusMutation.mutate({ status: "RETURNED" });
+    } else if (action === "escalate") {
+      updateStatusMutation.mutate({ status: "EXCEPTION" });
+    }
+    // "contact" has no status change — future: open contact drawer
+  };
 
   const quickNextStatuses = useMemo(() => {
     if (!shipment) return [];
@@ -174,6 +186,12 @@ export function ShipmentDetailPage() {
               </Button>
             </div>
           </section>
+
+          <ExceptionBanner
+            status={shipment.status}
+            reason={shipment.exception_reason}
+            onAction={handleExceptionAction}
+          />
 
           <Tabs
             value={activeTab}

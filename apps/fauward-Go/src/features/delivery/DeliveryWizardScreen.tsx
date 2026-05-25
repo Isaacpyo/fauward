@@ -76,7 +76,13 @@ export const DeliveryWizardScreen = () => {
 
   // --- all hooks unconditionally at the top ---
   const stop = useFieldDataStore((state) => state.stops.find((s) => s.id === stopId));
-  const relatedJob = useFieldDataStore((state) => state.jobs.find((j) => j.stopId === stopId));
+  const relatedJob = useFieldDataStore((state) => {
+    // Route-stop jobs match by stopId; direct jobs have no stopId so match by shipmentId
+    const byStop = state.jobs.find((j) => j.stopId === stopId);
+    if (byStop) return byStop;
+    const st = state.stops.find((s) => s.id === stopId);
+    return st ? state.jobs.find((j) => j.shipmentId === st.shipmentId) : undefined;
+  });
   const completeDeliveryWithProof = useFieldDataStore((state) => state.completeDeliveryWithProof);
 
   const [stepIndex, setStepIndex] = useState(0);

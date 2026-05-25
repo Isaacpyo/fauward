@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { BackLink } from "@/components/common/BackLink";
 import { ScreenHeader } from "@/components/common/ScreenHeader";
@@ -84,15 +85,33 @@ const workflowConfig: Record<
   },
 };
 
+const FAIL_REASONS = [
+  "No one home",
+  "Wrong address",
+  "Refused delivery",
+  "Access denied",
+  "Damaged package",
+  "Other",
+];
+
 export const StopDetailScreen = () => {
   const { stopId } = useParams();
   const stop = useFieldDataStore((state) => state.stops.find((item) => item.id === stopId));
-  const relatedJob = useFieldDataStore((state) => state.jobs.find((job) => job.stopId === stopId));
+  const relatedJob = useFieldDataStore((state) => {
+    const byStop = state.jobs.find((j) => j.stopId === stopId);
+    if (byStop) return byStop;
+    const st = state.stops.find((s) => s.id === stopId);
+    return st ? state.jobs.find((j) => j.shipmentId === st.shipmentId) : undefined;
+  });
   const advanceStopStatus = useFieldDataStore((state) => state.advanceStopStatus);
   const podDraft = useFieldDataStore((state) => state.podDrafts.find((draft) => draft.stopId === stopId));
   const latestVerification = useFieldDataStore((state) =>
     state.scanVerifications.find((record) => record.stopId === stopId),
   );
+
+  const [showFailedFlow, setShowFailedFlow] = useState(false);
+  const [failReason, setFailReason] = useState("");
+  const [failNotes, setFailNotes] = useState("");
 
   if (!stop) {
     return (
@@ -114,6 +133,7 @@ export const StopDetailScreen = () => {
       <ScreenHeader
         title={stop.title}
         kicker={`Stop ${stop.sequence}`}
+        subtitle={relatedJob?.trackingNumber ?? stop.shipmentId ?? ""}
         action={<StatusPill label={stopStatusLabel[stop.status]} tone={stopStatusTone[stop.status]} />}
       />
 
@@ -137,8 +157,14 @@ export const StopDetailScreen = () => {
             </div>
             <div>
               <p className="tiny-label">Window</p>
-              <p className="mt-2 text-stone-700">{stop.etaLabel}</p>
-              <p className="text-stone-500">{formatTimestamp(stop.updatedAt)}</p>
+              {relatedJob?.timeWindowStart || relatedJob?.timeWindowEnd ? (
+                <p className="mt-2 text-stone-700">
+                  {relatedJob.timeWindowStart ?? "--"} – {relatedJob.timeWindowEnd ?? "--"}
+                </p>
+              ) : (
+                <p className="mt-2 text-stone-700">{stop.etaLabel}</p>
+              )}
+              <p className="text-stone-500">Updated {formatTimestamp(stop.updatedAt)}</p>
             </div>
           </div>
           <div>
@@ -148,13 +174,10 @@ export const StopDetailScreen = () => {
         </div>
       </article>
 
-      {relatedJob ? (
+      {relatedJob?.instructions ? (
         <article className="panel p-5">
-          <p className="tiny-label">Tracking reference</p>
-          <h2 className="mt-2 text-xl font-semibold text-ink">{relatedJob.trackingNumber ?? relatedJob.shipmentId}</h2>
-          {relatedJob.instructions ? (
-            <p className="mt-2 text-sm text-stone-600">{relatedJob.instructions}</p>
-          ) : null}
+          <p className="tiny-label">Driver instructions</p>
+          <p className="mt-2 text-sm text-stone-600">{relatedJob.instructions}</p>
         </article>
       ) : null}
 
@@ -224,10 +247,23 @@ export const StopDetailScreen = () => {
               {workflow.startLabel}
             </Link>
           ) : null}
-          {isActive ? (
-            <button type="button" className="danger-btn w-full" onClick={() => advanceStopStatus(stop.id, "exception")}>
-              Flag exception
-            </button>
+          {isActive && !showFailedFlow ? (
+            <>
+              <button
+                type="button"
+                className="danger-btn w-full"
+                onClick={() => setShowFailedFlow(true)}
+              >
+                Failed delivery
+              </button>
+              <button
+                type="button"
+                className="secondary-btn w-full"
+                onClick={() => advanceStopStatus(stop.id, "exception")}
+              >
+                Flag exception
+              </button>
+            </>
           ) : null}
           {isClosed ? (
             <Link to="/sync" className="secondary-btn w-full">
@@ -236,6 +272,59 @@ export const StopDetailScreen = () => {
           ) : null}
         </div>
       </article>
+
+      {showFailedFlow ? (
+        <article className="panel p-5 space-y-4 ring-2 ring-red-200">
+          <div>
+            <p className="tiny-label text-red-600">Failed delivery — select reason</p>
+            <p className="mt-1 text-sm text-stone-600">Choose the reason and optionally add notes before confirming.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {FAIL_REASONS.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                onClick={() => setFailReason(reason)}
+                className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                  failReason === reason
+                    ? "border-red-500 bg-red-50 text-red-700"
+                    : "border-stone-200 bg-white text-stone-600"
+                }`}
+              >
+                {reason}
+              </button>
+            ))}
+          </div>
+          <div>
+            <label htmlFor="fail-notes" className="mb-2 block tiny-label">Notes (optional)</label>
+            <textarea
+              id="fail-notes"
+              className="field-input min-h-[72px] resize-none"
+              value={failNotes}
+              onChange={(e) => setFailNotes(e.target.value)}
+              placeholder="e.g. Left a card, will reattempt tomorrow"
+            />
+          </div>
+          <button
+            type="button"
+            className="danger-btn w-full"
+            disabled={!failReason}
+            onClick={() => {
+              advanceStopStatus(stop.id, "failed", { reason: failReason, notes: failNotes.trim() || undefined });
+              setShowFailedFlow(false);
+            }}
+          >
+            Confirm failed delivery
+          </button>
+          <button
+            type="button"
+            className="secondary-btn w-full"
+            onClick={() => { setShowFailedFlow(false); setFailReason(""); setFailNotes(""); }}
+          >
+            Cancel
+          </button>
+        </article>
+      ) : null}
     </section>
   );
 };

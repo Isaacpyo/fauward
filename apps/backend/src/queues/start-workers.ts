@@ -8,6 +8,7 @@ import { startWebhookWorker, stopWebhookWorker } from './webhook.worker.js';
 import { startHistoryWriterWorker, stopHistoryWriterWorker } from './history-writer.worker.js';
 import { startWsPublisherWorker, stopWsPublisherWorker } from './ws-publisher.worker.js';
 import { startEscalationSweeperWorker, stopEscalationSweeperWorker } from './escalation-sweeper.worker.js';
+import { startAgentWorker, stopAgentWorker } from '../modules/agent/agent.worker.js';
 
 export async function startWorkers(app: FastifyInstance) {
   startOutboxWorker(app);
@@ -18,6 +19,7 @@ export async function startWorkers(app: FastifyInstance) {
   startHistoryWriterWorker(app);
   startWsPublisherWorker(app);
   startEscalationSweeperWorker(app);
+  startAgentWorker(app);
   app.addHook('onClose', async () => {
     await stopOutboxWorker();
     await stopAnalyticsWorker();
@@ -27,5 +29,6 @@ export async function startWorkers(app: FastifyInstance) {
     await stopHistoryWriterWorker();
     await stopWsPublisherWorker();
     stopEscalationSweeperWorker();
+    await stopAgentWorker();
   });
 }

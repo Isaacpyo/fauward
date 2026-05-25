@@ -409,6 +409,7 @@ model Tenant {
   tenantAiUsages                TenantAiUsage[]
   tenantAiLimit                 TenantAiLimit?
   aiAgentRuns                   AiAgentRun[]
+  agentActions                  AgentAction[]
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
   slugHistory                   TenantSlugHistory[]
@@ -1782,9 +1783,30 @@ model AiAgentRun {
   status     String
   durationMs Int?
   createdAt  DateTime @default(now())
+  actions     AgentAction[]
 
   @@index([tenantId, createdAt])
   @@map("ai_agent_runs")
+}
+
+model AgentAction {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  runId       String?
+  run         AiAgentRun? @relation(fields: [runId], references: [id])
+  type        String
+  payload     Json
+  risk        String
+  status      String
+  result      Json?
+  error       String?
+  approvedBy  String?
+  appliedAt   DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, status])
+  @@map("agent_actions")
 }
 
 model ExceptionCase {

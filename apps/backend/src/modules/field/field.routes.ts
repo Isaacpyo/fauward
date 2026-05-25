@@ -793,8 +793,8 @@ export async function registerFieldRoutes(app: FastifyInstance) {
     // Also include directly assigned shipments (no RouteStop needed)
     const driver = await app.prisma.driver.findFirst({ where: { tenantId, userId } });
     const assignedWhere = role === 'TENANT_DRIVER' && driver
-      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] as const } }
-      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] as const } };
+      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } }
+      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } };
 
     const assignedShipments = await app.prisma.shipment.findMany({
       where: assignedWhere,
@@ -820,13 +820,18 @@ export async function registerFieldRoutes(app: FastifyInstance) {
       .map((s) => {
         const stage = workflowStageFromShipmentStatus(s.status);
         const addr = stage === 'pickup' ? s.originAddress : s.destinationAddress;
+        const jobStatus =
+          s.status === 'FAILED_DELIVERY' ? 'failed'
+          : s.status === 'EXCEPTION' ? 'exception'
+          : s.status === 'DELIVERED' ? 'completed'
+          : 'assigned';
         return {
           id: `job-direct-${s.id}`,
           shipmentId: s.id,
           trackingNumber: s.trackingNumber ?? undefined,
           type: stage,
           workflowStage: stage,
-          status: 'assigned',
+          status: jobStatus,
           priority: 'normal',
           routeId: undefined,
           stopId: undefined,
@@ -885,7 +890,7 @@ export async function registerFieldRoutes(app: FastifyInstance) {
         where: {
           tenantId,
           assignedDriverId: driver?.id ?? 'none',
-          status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED'] }
+          status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] }
         }
       });
       if (assignedCount > 0) {

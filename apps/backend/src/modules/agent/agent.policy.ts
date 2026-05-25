@@ -19,8 +19,10 @@ export function evaluatePolicy(tool: ToolName, ctx: PolicyContext): PolicyDecisi
     case 'get_shipment_details':
     case 'get_carrier_rates':
     case 'flag_sla_risk':
-    case 'send_customer_notification':
       return 'auto_approved';
+
+    case 'send_customer_notification':
+      return 'requires_approval';
 
     // All scoped analytics tools: auto-approved (read-only, tenant-scoped)
     case 'get_failed_shipments_count':

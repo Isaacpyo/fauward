@@ -6,10 +6,14 @@ import { runAgent } from './agent.service.js';
 import { persistAgentRun } from './agent.audit.js';
 import { buildToolHandlers } from './agent.handlers.impl.js';
 
-export const AGENT_QUEUE_NAME = 'fauward:agent:events';
+export const AGENT_QUEUE_NAME = 'fauward-agent-events';
+
+let worker: Worker | null = null;
 
 export function startAgentWorker(app: FastifyInstance) {
-  const worker = new Worker(
+  if (worker) return worker;
+
+  worker = new Worker(
     AGENT_QUEUE_NAME,
     async (job: Job) => {
       const parsed = AgentEventSchema.safeParse(job.data);
@@ -19,7 +23,7 @@ export function startAgentWorker(app: FastifyInstance) {
       }
 
       const handlers = buildToolHandlers(app);
-      const result = await runAgent(parsed.data, handlers, app.prisma);
+      const result = await runAgent(parsed.data, handlers, app.prisma, app.redis);
       await persistAgentRun(parsed.data, result);
 
       app.log.info({ jobId: job.id, runStatus: result.status }, 'agent job complete');
@@ -35,4 +39,10 @@ export function startAgentWorker(app: FastifyInstance) {
   });
 
   return worker;
+}
+
+export async function stopAgentWorker() {
+  if (!worker) return;
+  await worker.close();
+  worker = null;
 }

@@ -54,7 +54,7 @@ type FieldDataStore = {
   hydrateError?: string;
   hydrateAssignedWork: () => Promise<void>;
   resetFieldData: () => void;
-  advanceStopStatus: (stopId: string, nextStatus: StopStatus) => void;
+  advanceStopStatus: (stopId: string, nextStatus: StopStatus, options?: { reason?: string; notes?: string }) => void;
   savePodDraft: (stopId: string, draft: PodDraftUpdate) => void;
   submitPodForStop: (stopId: string, draft: PodDraftUpdate) => boolean;
   completeDeliveryWithProof: (stopId: string, proof: DeliveryProof) => boolean;
@@ -170,12 +170,24 @@ export const useFieldDataStore = create<FieldDataStore>()(
           set((state) => {
             const freshIds = new Set(reconciled.jobs.map((j) => j.id));
             const preservedCompleted = state.jobs.filter(
-              (j) => j.status === "completed" && !freshIds.has(j.id),
+              (j) =>
+                (j.status === "completed" || j.status === "failed" || j.status === "exception") &&
+                !freshIds.has(j.id),
+            );
+            // Preserve stops associated with completed jobs so detail screens remain accessible
+            const preservedStopIds = new Set(
+              preservedCompleted
+                .map((j) => j.stopId ?? j.trackingNumber ?? j.shipmentId)
+                .filter((id): id is string => Boolean(id)),
+            );
+            const freshStopIds = new Set(reconciled.stops.map((s) => s.id));
+            const preservedStops = state.stops.filter(
+              (s) => preservedStopIds.has(s.id) && !freshStopIds.has(s.id),
             );
             return {
               jobs: [...reconciled.jobs, ...preservedCompleted],
               routes: workload.routes,
-              stops: reconciled.stops,
+              stops: [...reconciled.stops, ...preservedStops],
               podDrafts: state.podDrafts,
               pendingMutations: state.pendingMutations,
               scanVerifications: state.scanVerifications,
@@ -192,7 +204,7 @@ export const useFieldDataStore = create<FieldDataStore>()(
         }
       },
       resetFieldData: () => set(emptyFieldData),
-      advanceStopStatus: (stopId, nextStatus) => {
+      advanceStopStatus: (stopId, nextStatus, options) => {
         const existingStop = get().stops.find((stop) => stop.id === stopId);
 
         if (!existingStop) {
@@ -225,6 +237,8 @@ export const useFieldDataStore = create<FieldDataStore>()(
                 stopId,
                 shipmentId: existingStop.shipmentId,
                 status: nextStatus,
+                ...(options?.reason ? { reason: options.reason } : {}),
+                ...(options?.notes ? { notes: options.notes } : {}),
               },
               createdAt: timestamp,
               retryCount: 0,

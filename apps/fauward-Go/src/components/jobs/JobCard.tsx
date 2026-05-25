@@ -1,9 +1,17 @@
 import { Link } from "react-router-dom";
 import { StatusPill } from "@/components/common/StatusPill";
-import { jobStatusLabel, priorityLabel, priorityTone, workflowStageLabel, type FieldJob } from "@/types/field";
+import { jobStatusLabel, stopStatusTone, workflowStageLabel, type FieldJob } from "@/types/field";
 
 type JobCardProps = {
   job: FieldJob;
+};
+
+const statusTone = (status: FieldJob["status"]) => {
+  if (status === "completed") return "success" as const;
+  if (status === "failed") return "danger" as const;
+  if (status === "in_progress") return "info" as const;
+  if (status === "exception") return "warning" as const;
+  return "neutral" as const;
 };
 
 export const JobCard = ({ job }: JobCardProps) => {
@@ -19,27 +27,15 @@ export const JobCard = ({ job }: JobCardProps) => {
           <h2 className="mt-2 text-lg font-semibold text-ink">{job.address}</h2>
           <p className="mt-1 text-sm text-stone-600">{job.contactName ?? "No contact assigned"}</p>
         </div>
-        <StatusPill label={priorityLabel[job.priority]} tone={priorityTone[job.priority]} />
+        <StatusPill label={jobStatusLabel[job.status]} tone={statusTone(job.status)} />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <StatusPill
-          label={jobStatusLabel[job.status]}
-          tone={
-            job.status === "failed"
-              ? "danger"
-              : job.status === "completed"
-                ? "success"
-                : job.status === "in_progress"
-                  ? "info"
-                  : "neutral"
-          }
-        />
-        <span className="text-sm font-medium text-brand">
+      {(job.timeWindowStart || job.timeWindowEnd) && (
+        <p className="mt-3 text-sm font-medium text-brand">
           {job.timeWindowStart} - {job.timeWindowEnd}
-        </span>
-      </div>
+        </p>
+      )}
       <Link to={detailHref} className="primary-btn mt-4 w-full">
-        Open job
+        {job.status === "completed" ? "View details" : "Open job"}
       </Link>
     </article>
   );

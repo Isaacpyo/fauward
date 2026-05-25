@@ -5,9 +5,13 @@ import { z } from 'zod';
 export type LLMModel = 'deepseek-v4-flash' | 'deepseek-v4-pro';
 
 export type LLMTool = {
-  name: string;
-  description?: string;
-  parameters?: Record<string, unknown>;
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+    strict?: boolean;
+  };
 };
 
 export const MODEL_ROUTING = {
@@ -36,6 +40,7 @@ type RunInput<T> = {
   input: Record<string, unknown>;
   outputSchema: ZodSchema<T>;
   tools?: LLMTool[];
+  systemPrompt?: string;
   allowAutoAction?: boolean;
 };
 
@@ -43,7 +48,16 @@ type CompletionClient = {
   chat: {
     completions: {
       create: (request: Record<string, unknown>) => Promise<{
-        choices: Array<{ message: { content?: string | null } }>;
+        choices: Array<{
+          message: {
+            content?: string | null;
+            tool_calls?: Array<{
+              id: string;
+              type: string;
+              function: { name: string; arguments: string };
+            }>;
+          };
+        }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
       }>;
     };
@@ -93,6 +107,7 @@ export class LLMGatewayService {
     tokensUsed: number;
     latencyMs: number;
     degraded: boolean;
+    runId: string | null;
   }> {
     const started = Date.now();
     const primaryModel = this.modelFor(String(input.task));
@@ -127,7 +142,8 @@ export class LLMGatewayService {
         model: response.model,
         tokensUsed: response.tokensUsed,
         latencyMs,
-        degraded: response.degraded
+        degraded: response.degraded,
+        runId
       };
     } catch (error) {
       const latencyMs = Date.now() - started;
@@ -179,17 +195,36 @@ export class LLMGatewayService {
 
   private async callModel<T>(input: RunInput<T>, model: LLMModel, degraded: boolean) {
     const timeoutMs = model === 'deepseek-v4-flash' ? 30_000 : 90_000;
-    const response = await this.client.chat.completions.create({
+    const request: Record<string, unknown> = {
       model,
       messages: [
-        { role: 'system', content: 'Return only valid JSON matching the requested output schema.' },
+        { role: 'system', content: input.systemPrompt ?? 'Return only valid JSON matching the requested output schema.' },
         { role: 'user', content: JSON.stringify({ task: input.task, input: input.input, allowAutoAction: input.allowAutoAction ?? false }) }
       ],
       temperature: 0.2,
-      response_format: { type: 'json_object' },
       timeout: timeoutMs
-    });
-    const content = response.choices[0]?.message.content;
+    };
+
+    if (input.tools && input.tools.length > 0) {
+      request.tools = input.tools;
+    } else {
+      request.response_format = { type: 'json_object' };
+    }
+
+    const response = await this.client.chat.completions.create(request);
+    const message = response.choices[0]?.message;
+    if (!message) throw new Error('AI response did not include a message');
+
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      return {
+        result: { content: message.content, tool_calls: message.tool_calls } as T,
+        model,
+        degraded,
+        tokensUsed: response.usage?.total_tokens ?? 0
+      };
+    }
+
+    const content = message.content;
     if (!content) throw new Error('AI response did not include content');
     return {
       result: JSON.parse(content) as T,
