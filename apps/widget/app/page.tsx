@@ -15,7 +15,7 @@ function WidgetPageContent() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen">
       <CreateShipmentForm
         embedded
         tenantSlug={tenantSlug}
@@ -29,7 +29,7 @@ function WidgetPageContent() {
 
 export default function WidgetPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-white" />}>
+    <Suspense fallback={<div className="min-h-screen" />}>
       <WidgetPageContent />
     </Suspense>
   );

@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
 import { tenantService } from './tenant.service.js';
 import { brandingSchema, domainSchema, settingsSchema } from './tenant.schema.js';
 
@@ -8,9 +9,18 @@ export const tenantController = {
     reply.send(tenant);
   },
   updateBranding: async (req: FastifyRequest, reply: FastifyReply) => {
-    const payload = brandingSchema.parse(req.body);
-    const tenant = await tenantService.updateBranding(req, payload);
-    reply.send(tenant);
+    try {
+      const payload = brandingSchema.parse(req.body);
+      const tenant = await tenantService.updateBranding(req, payload);
+      reply.send(tenant);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply
+          .status(400)
+          .send({ error: 'VALIDATION_ERROR', code: 'VALIDATION_ERROR', issues: error.issues });
+      }
+      throw error;
+    }
   },
   updateSettings: async (req: FastifyRequest, reply: FastifyReply) => {
     const payload = settingsSchema.parse(req.body);

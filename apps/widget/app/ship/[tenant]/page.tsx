@@ -63,24 +63,8 @@ export default async function HostedShipmentPage({ params }: PageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-white" style={style}>
-      <main className="mx-auto min-h-screen w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-        <header className="mb-6 flex items-center gap-3 border-b border-gray-100 pb-4">
-          {branding.logoUrl ? (
-            // External tenant logo domains are not known at build time.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={branding.logoUrl}
-              alt={`${tenant.displayName} logo`}
-              className="h-10 w-10 rounded object-contain"
-            />
-          ) : null}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Shipment booking</p>
-            <h1 className="text-xl font-semibold text-gray-950">{tenant.displayName}</h1>
-          </div>
-        </header>
-
+    <div className="min-h-screen" style={style}>
+      <main className="min-h-screen w-full">
         <CreateShipmentForm embedded={false} tenantSlug={tenant.slug} widgetToken={token} tenantConfig={tenantConfig} />
       </main>
     </div>

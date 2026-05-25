@@ -62,6 +62,8 @@ export type PricingConfig = {
 export type TenantConfig = {
   tenantId: string | null;
   tenantSlug: string | null;
+  displayName: string | null;
+  logoUrl: string | null;
   regionKey: string;
   enabledCountries: CountryOption[];
   corridors: CorridorConfig[];
@@ -528,6 +530,8 @@ export function buildTenantConfig(tenant: Tenant | null | undefined): TenantConf
   return {
     tenantId: tenant?.id ?? null,
     tenantSlug: tenant?.slug ?? null,
+    displayName: tenant?.displayName ?? tenant?.name ?? null,
+    logoUrl: tenant?.branding.logoUrl ?? tenant?.logoUrl ?? null,
     regionKey: profile.regionKey,
     enabledCountries,
     corridors,

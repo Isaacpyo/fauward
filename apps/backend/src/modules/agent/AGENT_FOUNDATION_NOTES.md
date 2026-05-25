@@ -179,3 +179,10 @@ These are next chunks.
 - `apps/backend/src/modules/shipments/shipments.routes.ts` — replaced HTTP `fireAgentEvent` with BullMQ `enqueueAgentEvent` (only for `FAILED_DELIVERY`)
 - `apps/backend/src/modules/driver/driver.routes.ts` — added `enqueueAgentEvent` after failed-delivery transaction
 - `apps/backend/src/modules/field/field.routes.ts` — added `enqueueAgentEvent` after `createShipmentEvent` when status is `FAILED_DELIVERY`
+
+---
+
+## UI polish — 2026-05-25 (branch `feat/agent-ui-polish`)
+
+- **Agent Actions screen** (`apps/tenant-portal/src/pages/agent/AgentActionsPage.tsx`) — now uses the portal's shared `EmptyState`, `Skeleton`, and `Badge` components instead of bespoke divs. The local `StatusBadge` used dynamic Tailwind colour classes (`bg-${color}-50`) that the JIT compiler couldn't see, so badges were rendering unstyled — replaced with the existing `Badge` variant map. Data now renders as readable cards (icon + plain-English summary derived from `type` + `payload` + timestamp + Approve/Reject) instead of a table. Error state has a `Try again` button wired to TanStack `refetch()`. Hooks, endpoints, and the approve-confirm `Dialog` are unchanged.
+- **`/agent` landing copy** (`apps/tenant-portal/src/pages/agent/AgentPage.tsx`) — rewritten to match what's actually built. Hero now describes failed-delivery handling + approval gating only. Capability cards split into **Available today** (Failed-delivery response, Human-approved actions, Instant read-only lookups) and **Coming soon** (Auto-assignment, SLA breach prediction, Carrier selection — visually muted with dashed border + `Coming soon` badge). The "Ask a question" section keeps the existing `/v1/agent/query` endpoint but is now flagged `Experimental` with honest scoping copy.

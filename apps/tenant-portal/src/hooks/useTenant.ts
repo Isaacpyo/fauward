@@ -57,6 +57,8 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     primaryColor?: string;
     accentColor?: string;
     displayName?: string;
+    brandName?: string | null;
+    trackingHeadline?: string | null;
     branding?: {
       primary?: string;
       accent?: string;
@@ -106,7 +108,9 @@ function normalizeTenantConfig(data: unknown): TenantConfig {
     // up their workspace — treating them as equivalent traps every new
     // tenant in /onboarding even after they've finished the wizard.
     onboarding_complete: raw.onboardingCompletedAt != null || raw.status === "ACTIVE",
-    support_email: raw.settings?.notificationEmail ?? "support@fauward.com"
+    support_email: raw.settings?.notificationEmail ?? "support@fauward.com",
+    brand_name: raw.brandName ?? null,
+    tracking_headline: raw.trackingHeadline ?? null
   };
 }
 

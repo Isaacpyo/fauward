@@ -340,6 +340,7 @@ model Tenant {
   primaryColor       String       @default("#0D1F3C")
   accentColor        String       @default("#D97706")
   brandName          String?
+  trackingHeadline   String?
   isRtl              Boolean      @default(false)
   defaultCurrency    String       @default("GBP")
   defaultLanguage    String       @default("en")

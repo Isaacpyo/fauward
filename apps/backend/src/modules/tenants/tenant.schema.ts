@@ -29,10 +29,20 @@ const paymentIntegrationProviderSchema = z.object({
 });
 
 export const brandingSchema = z.object({
-  primaryColor: z.string().regex(/^#([0-9a-fA-F]{6})$/),
-  accentColor: z.string().regex(/^#([0-9a-fA-F]{6})$/).optional(),
+  primaryColor: z.string().regex(/^#([0-9a-fA-F]{6})$/, 'Must be a 6-digit hex color (e.g. #2563EB)'),
+  accentColor: z
+    .string()
+    .regex(/^#([0-9a-fA-F]{6})$/, 'Must be a 6-digit hex color (e.g. #F59E0B)')
+    .optional(),
   brandName: z.string().min(2).max(100),
-  logoUrl: z.string().url().optional()
+  logoUrl: z
+    .union([
+      z.string().url().startsWith('https://', 'Logo URL must start with https://'),
+      z.literal('')
+    ])
+    .optional(),
+  supportEmail: z.union([z.string().email(), z.literal('')]).optional(),
+  trackingHeadline: z.string().max(280).optional()
 });
 
 export const settingsSchema = z.object({

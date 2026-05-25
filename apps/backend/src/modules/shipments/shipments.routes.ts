@@ -644,8 +644,22 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       if (!tenantId) return;
       const { id } = request.params as { id: string };
 
+      // Accept either the internal shipment id (uuid/cuid) or the human
+      // tracking number so the URL bar can carry the tracking ref instead of
+      // a wall of zeros. Both lookups are tenant-scoped.
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const isCuid = /^c[a-z0-9]{20,32}$/i.test(id);
+      const lookupClauses = isUuid || isCuid
+        ? [{ id }]
+        : [{ id }, { trackingNumber: id.toUpperCase() }];
+
       const shipment = await app.prisma.shipment.findFirst({
-        where: { id, tenantId, isSandbox: request.apiKey ? request.apiKey.isSandbox : undefined },
+        where: {
+          AND: [
+            { tenantId, isSandbox: request.apiKey ? request.apiKey.isSandbox : undefined },
+            { OR: lookupClauses }
+          ]
+        },
         include: {
           items: true,
           events: { orderBy: { timestamp: 'desc' } },

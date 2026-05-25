@@ -156,9 +156,9 @@ export default function BulkPaymentForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {loading ? (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
-          <div className="flex items-center gap-3 text-sm text-gray-700">
-            <span className="spinner text-[var(--brand-primary)]" />
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-5">
+          <div className="flex items-center gap-3 text-sm text-[var(--text-subtle)]">
+            <span className="spinner brand-accent-text" />
             Processing your payment...
           </div>
         </div>
@@ -172,7 +172,7 @@ export default function BulkPaymentForm({
       ) : null}
 
       <div className="space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Payment details</h3>
+        <h3 className="text-sm font-semibold text-[var(--text)]">Payment details</h3>
         <div className="brand-focus-panel">
           <PaymentElement />
         </div>
@@ -184,11 +184,11 @@ export default function BulkPaymentForm({
           id="bulk-terms"
           checked={agreedToTerms}
           onChange={(event) => setAgreedToTerms(event.target.checked)}
-          className="mt-1 h-4 w-4 rounded border-gray-300 text-[var(--brand-primary)] focus:ring-[var(--brand-primary)]"
+          className="mt-1 h-4 w-4 rounded border-[var(--border)] text-[var(--brand-primary)] focus:ring-[var(--brand-primary)]"
         />
-        <label htmlFor="bulk-terms" className="text-sm text-gray-700">
+        <label htmlFor="bulk-terms" className="text-sm text-[var(--text-subtle)]">
           I agree to the{" "}
-          <a href="/legal" target="_blank" className="text-[var(--brand-primary)] underline">
+          <a href="/legal" target="_blank" className="brand-accent-text underline">
             Terms and Privacy Policy
           </a>
           .

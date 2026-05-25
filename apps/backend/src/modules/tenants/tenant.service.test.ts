@@ -80,37 +80,95 @@ describe('planService.getFeatures', () => {
 // -----------------------------------------------------------------------------
 
 describe('brandingService.updateBranding', () => {
-  it('calls prisma.tenant.update with the correct fields', async () => {
-    const updatedTenant = { id: 'tenant-1', primaryColor: '#FF0000', brandName: 'Acme Cargo', logoUrl: 'https://cdn.example.com/logo.png' };
-    const prisma = {
-      tenant: { update: vi.fn().mockResolvedValue(updatedTenant) }
-    } as any;
+  function buildPrismaMock(updatedTenant: Record<string, unknown> = {}) {
+    const tenantUpdate = vi.fn().mockReturnValue({ __op: 'tenant.update', updatedTenant });
+    const settingsUpsert = vi.fn().mockReturnValue({ __op: 'tenantSettings.upsert' });
+    const $transaction = vi.fn().mockImplementation(async (ops: Array<{ __op: string; updatedTenant?: unknown }>) => {
+      return ops.map((op) => (op.__op === 'tenant.update' ? op.updatedTenant : { ok: true }));
+    });
+    return {
+      prisma: {
+        tenant: { update: tenantUpdate },
+        tenantSettings: { upsert: settingsUpsert },
+        $transaction
+      } as any,
+      tenantUpdate,
+      settingsUpsert,
+      $transaction
+    };
+  }
 
-    const result = await brandingService.updateBranding(prisma, 'tenant-1', {
+  it('updates the tenant row with the correct fields', async () => {
+    const updatedTenant = { id: 'tenant-1', primaryColor: '#FF0000', brandName: 'Acme Cargo', logoUrl: 'https://cdn.example.com/logo.png' };
+    const { prisma, tenantUpdate } = buildPrismaMock(updatedTenant);
+
+    const result = (await brandingService.updateBranding(prisma, 'tenant-1', {
       primaryColor: '#FF0000',
       brandName: 'Acme Cargo',
       logoUrl: 'https://cdn.example.com/logo.png'
-    });
+    })) as { primaryColor: string };
 
-    expect(prisma.tenant.update).toHaveBeenCalledWith({
+    expect(tenantUpdate).toHaveBeenCalledWith({
       where: { id: 'tenant-1' },
-      data: expect.objectContaining({ primaryColor: '#FF0000', brandName: 'Acme Cargo' })
+      data: expect.objectContaining({
+        primaryColor: '#FF0000',
+        brandName: 'Acme Cargo',
+        logoUrl: 'https://cdn.example.com/logo.png'
+      })
     });
     expect(result.primaryColor).toBe('#FF0000');
   });
 
   it('does not pass undefined accentColor to the update', async () => {
-    const prisma = {
-      tenant: { update: vi.fn().mockResolvedValue({}) }
-    } as any;
+    const { prisma, tenantUpdate } = buildPrismaMock();
 
     await brandingService.updateBranding(prisma, 'tenant-1', {
       primaryColor: '#000000',
       brandName: 'Test'
     });
 
-    const updateData = prisma.tenant.update.mock.calls[0][0].data;
+    const updateData = tenantUpdate.mock.calls[0][0].data;
     expect(updateData.accentColor).toBeUndefined();
+  });
+
+  it('clears logoUrl when an empty string is passed', async () => {
+    const { prisma, tenantUpdate } = buildPrismaMock();
+
+    await brandingService.updateBranding(prisma, 'tenant-1', {
+      primaryColor: '#000000',
+      brandName: 'Test',
+      logoUrl: ''
+    });
+
+    expect(tenantUpdate.mock.calls[0][0].data.logoUrl).toBeNull();
+  });
+
+  it('upserts notificationEmail on tenantSettings when supportEmail is provided', async () => {
+    const { prisma, settingsUpsert } = buildPrismaMock();
+
+    await brandingService.updateBranding(prisma, 'tenant-1', {
+      primaryColor: '#000000',
+      brandName: 'Test',
+      supportEmail: 'help@example.com'
+    });
+
+    expect(settingsUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { tenantId: 'tenant-1' },
+        update: { notificationEmail: 'help@example.com' }
+      })
+    );
+  });
+
+  it('does not touch tenantSettings when supportEmail is omitted', async () => {
+    const { prisma, settingsUpsert } = buildPrismaMock();
+
+    await brandingService.updateBranding(prisma, 'tenant-1', {
+      primaryColor: '#000000',
+      brandName: 'Test'
+    });
+
+    expect(settingsUpsert).not.toHaveBeenCalled();
   });
 });
 

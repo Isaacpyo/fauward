@@ -11,7 +11,11 @@ import { registerTenantSlugRoutes } from './slug.routes.js';
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
   app.get('/api/v1/tenants/me', { preHandler: [authenticate] }, tenantController.me);
-  app.patch('/api/v1/tenant/branding', { preHandler: [authenticate] }, tenantController.updateBranding);
+  app.patch(
+    '/api/v1/tenant/branding',
+    { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] },
+    tenantController.updateBranding
+  );
   app.patch('/api/v1/tenant/settings', { preHandler: [authenticate] }, tenantController.updateSettings);
 
   async function exitImpersonation(request: FastifyRequest, reply: FastifyReply) {

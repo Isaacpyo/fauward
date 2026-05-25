@@ -15,7 +15,7 @@ export function ShipmentCard({ shipment }: ShipmentCardProps) {
 
   return (
     <Link
-      to={`/shipments/${shipment.id}`}
+      to={`/shipments/${encodeURIComponent(shipment.tracking_number ?? shipment.id)}`}
       className="block rounded-lg border border-gray-200 bg-white p-4"
     >
       <div className="flex items-start justify-between gap-2">

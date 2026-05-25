@@ -160,7 +160,11 @@ export function ShipmentsListPage() {
     [filteredShipments, selectedIds]
   );
   const selectedShipment = useMemo(
-    () => allShipments.find((shipment) => shipment.id === selectedShipmentId),
+    () =>
+      allShipments.find(
+        (shipment) =>
+          shipment.id === selectedShipmentId || shipment.tracking_number === selectedShipmentId
+      ),
     [allShipments, selectedShipmentId]
   );
 
@@ -192,7 +196,7 @@ export function ShipmentsListPage() {
 
   const openShipmentWorkspace = (shipment: ShipmentListItem) => {
     const next = new URLSearchParams(searchParams);
-    next.set("selected", shipment.id);
+    next.set("selected", shipment.tracking_number ?? shipment.id);
     setSearchParams(next, { replace: true });
   };
 

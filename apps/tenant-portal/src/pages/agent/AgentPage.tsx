@@ -1,22 +1,22 @@
 import { useState } from "react";
 import {
-  Bot,
-  Truck,
   AlertTriangle,
+  BarChart3,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
   Clock,
-  Bell,
-  Package,
-  MessageSquare,
-  ShieldCheck,
-  Users,
   FileText,
   Loader2,
-  ChevronRight,
-  CheckCircle2,
+  Package,
+  ShieldCheck,
+  Truck,
+  Users,
   XCircle
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { PageShell } from "@/layouts/PageShell";
 
@@ -40,36 +40,39 @@ interface AgentQueryResult {
 
 // ─── Content ─────────────────────────────────────────────────────────────────
 
-const capabilities = [
-  {
-    icon: Truck,
-    title: "Shipment assignment",
-    body: "New shipments are automatically assigned to the best available Fauward Go operator based on proximity, capacity, and current workload. No dispatcher needed."
-  },
+const liveCapabilities = [
   {
     icon: AlertTriangle,
-    title: "Exception handling",
-    body: "Failed deliveries trigger instant customer notifications and SLA risk flags. Rerouting is recommended and escalated for your approval — never done silently."
+    title: "Failed-delivery response",
+    body: "Failed deliveries from the portal, driver app, or field app wake the agent. It pulls the shipment, considers the next step, and queues a proposal for your approval."
   },
   {
-    icon: Clock,
-    title: "SLA monitoring",
-    body: "Shipments approaching their deadline are flagged HIGH (>60 min delay) or MEDIUM (30–60 min) and logged for supervisor review before a breach occurs."
-  },
-  {
-    icon: Bell,
-    title: "Customer notifications",
-    body: "Status updates trigger email or SMS using approved templates — out for delivery, delayed, failed, reattempt scheduled. Duplicate sends are prevented automatically."
+    icon: ShieldCheck,
+    title: "Human-approved actions",
+    body: "Risky moves — reassigning a shipment, drafting a customer notification, flagging SLA risk — never run silently. They land on the Agent Actions screen for you to approve or reject."
   },
   {
     icon: Package,
-    title: "Carrier selection",
-    body: "Live rate card pricing is fetched per route and weight. The agent surfaces the best option by cost, service tier, and estimated delivery time."
+    title: "Instant read-only lookups",
+    body: "The agent can read shipment details, available drivers, and operational stats on its own. Anything read-only runs without bothering you."
+  }
+];
+
+const comingSoonCapabilities = [
+  {
+    icon: Truck,
+    title: "Auto-assignment",
+    body: "Proximity, capacity, and workload-aware dispatch to Fauward Go operators — no dispatcher needed."
   },
   {
-    icon: MessageSquare,
-    title: "Natural language queries",
-    body: 'Ask "How many shipments failed this week?" and get a direct answer — no dashboards, no filters, no SQL. Try it below.'
+    icon: Clock,
+    title: "SLA breach prediction",
+    body: "Flagging shipments at risk before they breach so you can intervene early, instead of after."
+  },
+  {
+    icon: BarChart3,
+    title: "Carrier selection",
+    body: "Surfacing the best carrier per route by cost, service tier, and estimated delivery time."
   }
 ];
 
@@ -94,8 +97,7 @@ const safetyPoints = [
 const exampleQuestions = [
   "How many shipments failed this week?",
   "What are the top delay reasons this month?",
-  "Show me SLA breach rate for the last 30 days",
-  "Which Fauward Go operators have the best on-time rate?"
+  "Show me SLA breach rate for the last 30 days"
 ];
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -152,40 +154,68 @@ export function AgentPage() {
                 </span>
               </div>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-700">
-                Fauward Agent runs inside your workspace. It automatically assigns shipments, monitors
-                SLA deadlines, handles failed deliveries, and answers your operations questions in plain
-                English — all within your existing plan, with no extra setup.
+                Fauward Agent runs inside your workspace. When a delivery fails — from your portal, the
+                driver app, or a field agent — it wakes up, looks at the shipment, and proposes the next
+                move for your approval. Read-only lookups run instantly; anything that changes data
+                waits for a human.
               </p>
             </div>
           </div>
         </section>
 
         {/* ── Capabilities ── */}
-        <section>
-          <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            What it does
-          </h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {capabilities.map((cap) => (
-              <div
-                key={cap.title}
-                className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-              >
-                <cap.icon className="h-5 w-5 text-[var(--tenant-primary)]" />
-                <h4 className="mt-4 text-sm font-semibold text-gray-900">{cap.title}</h4>
-                <p className="mt-1.5 text-sm leading-6 text-gray-600">{cap.body}</p>
-              </div>
-            ))}
+        <section className="space-y-6">
+          <div>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Available today
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {liveCapabilities.map((cap) => (
+                <div
+                  key={cap.title}
+                  className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
+                >
+                  <cap.icon className="h-5 w-5 text-[var(--tenant-primary)]" />
+                  <h4 className="mt-4 text-sm font-semibold text-gray-900">{cap.title}</h4>
+                  <p className="mt-1.5 text-sm leading-6 text-gray-600">{cap.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Coming soon
+            </h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {comingSoonCapabilities.map((cap) => (
+                <div
+                  key={cap.title}
+                  className="rounded-2xl border border-dashed border-gray-300 bg-gray-50/60 p-5"
+                >
+                  <div className="flex items-center justify-between">
+                    <cap.icon className="h-5 w-5 text-gray-400" />
+                    <Badge variant="neutral">Coming soon</Badge>
+                  </div>
+                  <h4 className="mt-4 text-sm font-semibold text-gray-700">{cap.title}</h4>
+                  <p className="mt-1.5 text-sm leading-6 text-gray-500">{cap.body}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
         {/* ── Query ── */}
         <section>
-          <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Ask a question
-          </h3>
+          <div className="mb-1 flex items-center gap-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+              Ask a question
+            </h3>
+            <Badge variant="warning">Experimental</Badge>
+          </div>
           <p className="mb-4 text-sm text-gray-500">
-            Type any question about your operations. The agent queries your live data and responds in plain English.
+            Early preview. Best at lookups about specific shipments, drivers, and recent operational
+            stats. General ops questions may not work yet.
           </p>
 
           <div className="flex gap-2">

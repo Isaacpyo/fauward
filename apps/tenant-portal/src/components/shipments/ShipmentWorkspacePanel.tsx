@@ -346,7 +346,7 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
                   Assign field operator
                 </Button>
                 <Button size="sm" variant="secondary" asChild>
-                  <Link to={`/shipments/${shipment.id}`}>Open full page</Link>
+                  <Link to={`/shipments/${encodeURIComponent(shipment.tracking_number ?? shipment.id)}`}>Open full page</Link>
                 </Button>
               </div>
 

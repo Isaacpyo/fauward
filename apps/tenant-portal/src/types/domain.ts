@@ -11,6 +11,7 @@ export type TenantRole =
 export type TenantConfig = {
   tenant_id: string;
   name: string;
+  brand_name?: string | null;
   logo_url: string;
   domain: string;
   region?: string;
@@ -29,6 +30,7 @@ export type TenantConfig = {
   onboarding_complete?: boolean;
   support_email?: string;
   support_phone?: string;
+  tracking_headline?: string | null;
 };
 
 export type User = {

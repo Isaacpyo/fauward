@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
-import { brandingService } from './branding.service.js';
+import type { Prisma } from '@prisma/client';
+import { brandingService, type BrandingPayload } from './branding.service.js';
 import { domainService } from './domain.service.js';
 import { planService } from './plan.service.js';
 import { usageService } from './usage.service.js';
@@ -46,7 +47,7 @@ export const tenantService = {
     }, {});
     return {
       ...tenant,
-      displayName: tenant.name,
+      displayName: tenant.brandName ?? tenant.name,
       branding: {
         primary: tenant.primaryColor,
         accent: tenant.accentColor,
@@ -60,10 +61,37 @@ export const tenantService = {
       settings
     };
   },
-  updateBranding: async (req: FastifyRequest, payload: { primaryColor: string; accentColor?: string; brandName: string; logoUrl?: string }) => {
+  updateBranding: async (req: FastifyRequest, payload: BrandingPayload) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
-    return brandingService.updateBranding(req.server.prisma, tenant.id, payload);
+
+    const before = await brandingService.getBrandingSnapshot(req.server.prisma, tenant.id);
+    const updated = await brandingService.updateBranding(req.server.prisma, tenant.id, payload);
+    const after = await brandingService.getBrandingSnapshot(req.server.prisma, tenant.id);
+
+    const diff: Record<string, { before: unknown; after: unknown }> = {};
+    (Object.keys(after) as Array<keyof typeof after>).forEach((key) => {
+      if (before[key] !== after[key]) diff[key] = { before: before[key], after: after[key] };
+    });
+
+    if (Object.keys(diff).length > 0) {
+      await req.server.prisma.auditLog.create({
+        data: {
+          tenantId: tenant.id,
+          actorId: req.user?.sub ?? null,
+          actorType: req.apiKey ? 'API_KEY' : 'USER',
+          actorIp: req.ip,
+          action: 'BRANDING_UPDATED',
+          resourceType: 'TENANT_BRANDING',
+          resourceId: tenant.id,
+          beforeState: before as unknown as Prisma.InputJsonValue,
+          afterState: after as unknown as Prisma.InputJsonValue,
+          metadata: { diff } as unknown as Prisma.InputJsonValue
+        }
+      });
+    }
+
+    return updated;
   },
   updateSettings: async (
     req: FastifyRequest,

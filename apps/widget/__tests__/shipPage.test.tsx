@@ -41,6 +41,8 @@ const activeTenant = {
   slug: "acme",
   name: "Acme Logistics",
   displayName: "Acme Logistics",
+  brandName: "Acme Logistics",
+  trackingHeadline: "Track your shipment",
   plan: "PRO",
   status: "ACTIVE",
   createdAt: "2026-01-01T00:00:00.000Z",

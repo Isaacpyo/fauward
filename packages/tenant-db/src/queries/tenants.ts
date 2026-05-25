@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "../client";
 const DEFAULT_PRIMARY = "#0D1F3C";
 const DEFAULT_ACCENT = "#D97706";
 const DEFAULT_RADIUS = "8px";
+const WCAG_AA_CONTRAST = 4.5;
 
 export type TenantBranding = {
   primary: string;
@@ -10,6 +11,42 @@ export type TenantBranding = {
   radius: string;
   logoUrl: string | null;
 };
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const channel = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrastRatio(a: string, b: string): number | null {
+  const rgbA = hexToRgb(a);
+  const rgbB = hexToRgb(b);
+  if (!rgbA || !rgbB) return null;
+  const lA = relativeLuminance(rgbA);
+  const lB = relativeLuminance(rgbB);
+  const [hi, lo] = lA >= lB ? [lA, lB] : [lB, lA];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * Accent must remain legible against the primary surface. If the stored accent
+ * fails WCAG AA (4.5:1) we fall back to the default accent rather than ship a
+ * white-label that becomes invisible. Output shape is unchanged.
+ */
+function ensureAccentContrast(primary: string, accent: string): string {
+  const ratio = contrastRatio(primary, accent);
+  if (ratio === null) return DEFAULT_ACCENT;
+  return ratio >= WCAG_AA_CONTRAST ? accent : DEFAULT_ACCENT;
+}
 
 export type TenantSettingsSummary = {
   paymentGateway: string;
@@ -28,7 +65,9 @@ export type Tenant = {
   id: string;
   slug: string;
   name: string;
+  brandName: string | null;
   displayName: string;
+  trackingHeadline: string | null;
   plan: string;
   status: string;
   createdAt: string | null;
@@ -66,6 +105,8 @@ type TenantRow = {
   id: string;
   slug: string;
   name: string;
+  brandName?: string | null;
+  trackingHeadline?: string | null;
   plan: string;
   status: string;
   createdAt?: string | null;
@@ -135,18 +176,22 @@ export function normalizeTenantRow(row: TenantRow, settings: TenantSettingsRow |
   if (!isVisibleTenantStatus(row.status)) return null;
 
   const primary = row.primaryColor ?? DEFAULT_PRIMARY;
-  const accent = row.accentColor ?? DEFAULT_ACCENT;
+  const rawAccent = row.accentColor ?? DEFAULT_ACCENT;
+  const accent = ensureAccentContrast(primary, rawAccent);
   const logoUrl = row.logoUrl ?? null;
   const createdAt = row.createdAt ?? row.created_at ?? null;
   const defaultCurrency = row.defaultCurrency ?? "GBP";
   const defaultLanguage = row.defaultLanguage ?? "en-GB";
   const timezone = row.timezone ?? "Europe/London";
+  const brandName = row.brandName ?? null;
 
   return {
     id: row.id,
     slug: row.slug,
     name: row.name,
-    displayName: row.name,
+    brandName,
+    displayName: brandName ?? row.name,
+    trackingHeadline: row.trackingHeadline ?? null,
     plan: row.plan,
     status: row.status,
     createdAt,
@@ -174,7 +219,7 @@ async function getTenantByColumn(column: "id" | "slug", value: string): Promise<
   const admin = getSupabaseAdmin();
   const { data, error } = await admin
     .from("tenants")
-    .select("id, slug, name, plan, status, createdAt, primaryColor, accentColor, logoUrl, region, defaultCurrency, defaultLanguage, timezone, isRtl, smsEnabled")
+    .select("id, slug, name, brandName, trackingHeadline, plan, status, createdAt, primaryColor, accentColor, logoUrl, region, defaultCurrency, defaultLanguage, timezone, isRtl, smsEnabled")
     .eq(column, value)
     .maybeSingle();
 
