@@ -32,7 +32,7 @@ const sections: DocsSection[] = [
 const dashboardMetrics = [
   {
     label: "Shipments today",
-    meaning: "Jobs created, collected, in transit, out for delivery, or delivered today.",
+    meaning: "Jobs created, processing, picked up, in transit, out for delivery, or delivered today.",
     action: "Open the shipment list filtered to today.",
   },
   {
@@ -47,7 +47,7 @@ const dashboardMetrics = [
   },
   {
     label: "Exceptions",
-    meaning: "Failed deliveries, held shipments, cancelled jobs, or returns that need attention.",
+    meaning: "Failed deliveries, exception shipments, cancelled jobs, or returns that need attention.",
     action: "Prioritise exception resolution before new dispatch planning.",
   },
 ];
@@ -55,13 +55,18 @@ const dashboardMetrics = [
 const shipmentStatuses = [
   {
     status: "PENDING",
-    meaning: "The shipment has been created but has not yet been collected.",
+    meaning: "The shipment has been created and is waiting for operational processing.",
     owner: "Dispatcher or operations team",
   },
   {
-    status: "COLLECTED",
+    status: "PROCESSING",
+    meaning: "The job is accepted, priced, assigned, or being prepared for pickup.",
+    owner: "Operations team or dispatcher",
+  },
+  {
+    status: "PICKED_UP",
     meaning: "The parcel, pallet, or cargo has been collected from the sender.",
-    owner: "Driver, agent, or dispatcher",
+    owner: "Driver, agent, or depot team",
   },
   {
     status: "IN_TRANSIT",
@@ -86,12 +91,12 @@ const exceptionStatuses = [
     when: "Recipient unavailable, wrong address, refused delivery, or delivery attempt failed.",
   },
   {
-    status: "RETURNED",
-    when: "The shipment is being returned to the sender or origin depot.",
+    status: "EXCEPTION",
+    when: "A shipment needs investigation because of a delay, damage report, customs issue, route issue, or manual override.",
   },
   {
-    status: "ON_HOLD",
-    when: "The shipment needs review, payment, documents, customs information, or manual approval.",
+    status: "RETURNED",
+    when: "The shipment is being returned to the sender or origin depot.",
   },
   {
     status: "CANCELLED",
@@ -101,27 +106,37 @@ const exceptionStatuses = [
 
 const teamRoles = [
   {
-    role: "Tenant Admin",
+    role: "TENANT_ADMIN",
     bestFor: "Business owners and senior operators",
     access: "Full access to billing, settings, users, branding, API keys, finance, and all operational data.",
   },
   {
-    role: "Tenant Manager",
+    role: "TENANT_MANAGER",
     bestFor: "Operations leads and finance managers",
-    access: "Operations and finance access without plan, billing, or ownership-level settings.",
+    access: "Broad operational access for shipments, dispatch, customers, reporting, and day-to-day exceptions.",
   },
   {
-    role: "Dispatcher",
+    role: "TENANT_FINANCE",
+    bestFor: "Finance and reconciliation users",
+    access: "Finance workflows such as invoices, payments, credit notes, exports, and billing reports.",
+  },
+  {
+    role: "TENANT_STAFF",
     bestFor: "Dispatch desk and depot coordinators",
     access: "Create shipments, assign jobs, manage statuses, and monitor routes.",
   },
   {
-    role: "Agent",
+    role: "TENANT_DRIVER",
     bestFor: "Drivers, warehouse scanners, and field staff",
-    access: "Field operations only through fauward Go or scanning workflows.",
+    access: "Field operations through Fauward Go, assigned stops, scan flows, proof capture, and status updates.",
   },
   {
-    role: "Customer User",
+    role: "CUSTOMER_ADMIN",
+    bestFor: "Customer account owners",
+    access: "Customer-organisation visibility for their own shipments, returns, tickets, and account users.",
+  },
+  {
+    role: "CUSTOMER_USER",
     bestFor: "Shippers, account customers, or consignee users",
     access: "View their own shipments, timelines, and documents only.",
   },
@@ -134,7 +149,12 @@ const notificationTriggers = [
     usualChannel: "Email",
   },
   {
-    trigger: "Collected",
+    trigger: "Processing",
+    customerMessage: "Confirms the shipment is booked and being prepared.",
+    usualChannel: "Email",
+  },
+  {
+    trigger: "Picked up",
     customerMessage: "Confirms the item has been picked up.",
     usualChannel: "Email or SMS",
   },
@@ -149,7 +169,7 @@ const notificationTriggers = [
     usualChannel: "Email or SMS",
   },
   {
-    trigger: "Failed delivery / held",
+    trigger: "Failed delivery / exception",
     customerMessage: "Explains the exception and prompts the customer to contact you or wait for updates.",
     usualChannel: "Email and SMS",
   },
@@ -159,17 +179,139 @@ const planDetails = [
   {
     name: "Starter",
     fit: "Small teams starting with core shipment operations.",
-    includes: "Customer tracking, shipment lifecycle, labels, basic team roles, and standard support.",
+    includes: "300 shipments/month, 3 staff seats, shipment creation, tracking, branded notifications, basic invoicing, and Fauward Go proof-of-delivery.",
   },
   {
     name: "Pro",
     fit: "Growing logistics businesses that need finance, dispatch, fleet workflows, and integrations.",
-    includes: "Everything in Starter plus invoicing, dispatch, fauward Go, API access, webhooks, and advanced reporting.",
+    includes: "2,000 shipments/month, 15 staff seats, API access, webhooks, custom domain, automation, messaging, Fauward Agent, and advanced reporting.",
   },
   {
     name: "Enterprise",
     fit: "High-volume operators with custom domain, support, security, or procurement needs.",
-    includes: "Everything in Pro plus custom domain, SLA, volume pricing, dedicated support, and tailored onboarding.",
+    includes: "Unlimited shipments and staff, SSO, audit logs, SLA-backed uptime, dedicated support, custom controls, and tailored onboarding.",
+  },
+];
+
+const invoiceStatuses = [
+  {
+    status: "DRAFT",
+    meaning: "Editable invoice that has not been sent to the customer.",
+  },
+  {
+    status: "SENT",
+    meaning: "Issued invoice awaiting payment.",
+  },
+  {
+    status: "PARTIALLY_PAID",
+    meaning: "One or more payments have been recorded, but the invoice total is not fully collected.",
+  },
+  {
+    status: "PAID",
+    meaning: "Completed payments meet or exceed the invoice total.",
+  },
+  {
+    status: "OVERDUE",
+    meaning: "A sent invoice passed its due date without being fully paid.",
+  },
+  {
+    status: "VOID",
+    meaning: "Invoice is cancelled for billing purposes and should not be collected.",
+  },
+];
+
+const apiScopes = [
+  {
+    scope: "shipments:read",
+    use: "Read shipment records and tracking state.",
+  },
+  {
+    scope: "shipments:write",
+    use: "Create shipments and update shipment workflows.",
+  },
+  {
+    scope: "labels:read",
+    use: "Read generated label metadata and label documents.",
+  },
+  {
+    scope: "rates:read / rates:write",
+    use: "Read or maintain rate and quote-related resources where enabled.",
+  },
+  {
+    scope: "webhooks:read / webhooks:write",
+    use: "List endpoints, create endpoints, send tests, and replay deliveries.",
+  },
+  {
+    scope: "api-keys:read / api-keys:write",
+    use: "Read usage and manage API keys for integrations.",
+  },
+  {
+    scope: "domains:read / domains:write",
+    use: "Read or update custom-domain settings.",
+  },
+  {
+    scope: "returns:read / customs:read",
+    use: "Read returns and customs workflows where your plan exposes those modules.",
+  },
+];
+
+const webhookEvents = [
+  {
+    event: "shipment.created",
+    source: "Shipment creation outbox event.",
+  },
+  {
+    event: "shipment.status.changed",
+    source: "Configured shipment webhook fired when the operational shipment status changes.",
+  },
+  {
+    event: "shipment.delivered",
+    source: "Tracking webhook for customer-visible delivered events.",
+  },
+  {
+    event: "shipment.failed_delivery",
+    source: "Tracking webhook for failed-delivery events.",
+  },
+  {
+    event: "shipment.out_for_delivery",
+    source: "Tracking webhook for out-for-delivery events.",
+  },
+  {
+    event: "webhook.test",
+    source: "Manual test delivery from the webhook settings screen.",
+  },
+];
+
+const planFeatureRows = [
+  {
+    feature: "Shipments / month",
+    starter: "300",
+    pro: "2,000",
+    enterprise: "Unlimited",
+  },
+  {
+    feature: "Staff seats",
+    starter: "3",
+    pro: "15",
+    enterprise: "Unlimited",
+  },
+  {
+    feature: "API access and webhooks",
+    starter: "No",
+    pro: "Yes",
+    enterprise: "Yes, higher limits",
+  },
+  {
+    feature: "Custom domain",
+    starter: "No",
+    pro: "Yes",
+    enterprise: "Yes",
+  },
+  {
+    feature: "SSO and audit logs",
+    starter: "No",
+    pro: "No",
+    enterprise: "Yes",
   },
 ];
 
@@ -364,16 +506,57 @@ export default function DocsPage() {
               ]}
             />
 
+            <SubHeading>Workspace setup order</SubHeading>
+            <SimpleTable
+              columns={["Step", "Why it matters", "Where to do it"]}
+              rows={[
+                {
+                  Step: "Identity",
+                  "Why it matters": "Sets the name, slug, support details, and public presence customers will see.",
+                  "Where to do it": "Settings -> Workspace",
+                },
+                {
+                  Step: "Branding",
+                  "Why it matters": "Applies your logo and colours to the portal, widget, emails, and customer documents.",
+                  "Where to do it": "Settings -> Branding",
+                },
+                {
+                  Step: "Team",
+                  "Why it matters": "Gives admins, dispatchers, finance users, and drivers the correct access before live work starts.",
+                  "Where to do it": "Settings -> Team",
+                },
+                {
+                  Step: "Operations",
+                  "Why it matters": "Validates shipment creation, tracking references, assignment, and proof of delivery.",
+                  "Where to do it": "Shipments and Dispatch",
+                },
+                {
+                  Step: "Integrations",
+                  "Why it matters": "Connects booking forms, tracking pages, APIs, and webhooks after the core workflow is proven.",
+                  "Where to do it": "Settings -> API Keys and Webhooks",
+                },
+              ]}
+            />
+
             <SubHeading>First-day checklist</SubHeading>
             <CheckList
               items={[
                 "Create a test shipment from your own address to a known recipient.",
                 "Assign it to yourself or a dispatcher, then move it through each status.",
                 "Generate a proof of delivery document and confirm the customer timeline is clear.",
+                "Check that the sender, recipient, package, price, and service fields are accurate before invoicing.",
                 "Send yourself a sample notification so you can review the sender name and branding.",
                 "Invite the team members who will operate live jobs and enforce MFA for sensitive roles.",
               ]}
             />
+
+            <SubHeading>First integration path</SubHeading>
+            <p>
+              Most teams start with the hosted booking page or tracking widget, then add API keys
+              and webhooks once they know which shipment fields their own systems should send and
+              receive. Use one internal test key first, then rotate to a dedicated production key
+              for each connected system.
+            </p>
 
             <Callout title="Portal access">
               <p>
@@ -397,6 +580,33 @@ export default function DocsPage() {
                 "What it means": metric.meaning,
                 "What to do next": metric.action,
               }))}
+            />
+
+            <SubHeading>Reading the dashboard</SubHeading>
+            <SimpleTable
+              columns={["Area", "Use it to answer", "Typical action"]}
+              rows={[
+                {
+                  Area: "Operations summary",
+                  "Use it to answer": "How many shipments are waiting, moving, completed, or blocked today?",
+                  "Typical action": "Open the filtered shipment list and clear the oldest operational blockers first.",
+                },
+                {
+                  Area: "Dispatch view",
+                  "Use it to answer": "Which drivers, agents, routes, or depots are overloaded?",
+                  "Typical action": "Reassign work, split a route, or delay new bookings before service levels slip.",
+                },
+                {
+                  Area: "Finance health",
+                  "Use it to answer": "What is draft, sent, partially paid, paid, or overdue?",
+                  "Typical action": "Send draft invoices, chase overdue balances, or reconcile partial payments.",
+                },
+                {
+                  Area: "Customer activity",
+                  "Use it to answer": "Which messages, exceptions, or tracking events need a customer response?",
+                  "Typical action": "Respond before the customer calls support or escalates a failed delivery.",
+                },
+              ]}
             />
 
             <SubHeading>Activity feed</SubHeading>
@@ -427,7 +637,7 @@ export default function DocsPage() {
                 {
                   title: "Review exceptions",
                   description:
-                    "Jump to failed deliveries, held shipments, returns, and cancelled work that needs a decision.",
+                    "Jump to failed deliveries, exception shipments, returns, and cancelled work that needs a decision.",
                 },
               ]}
             />
@@ -449,7 +659,7 @@ export default function DocsPage() {
             <p>Every shipment moves through a defined status lifecycle:</p>
             <div className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-4">
               <code className="whitespace-nowrap text-sm font-semibold text-gray-800">
-                PENDING -&gt; COLLECTED -&gt; IN_TRANSIT -&gt; OUT_FOR_DELIVERY -&gt; DELIVERED
+                PENDING -&gt; PROCESSING -&gt; PICKED_UP -&gt; IN_TRANSIT -&gt; OUT_FOR_DELIVERY -&gt; DELIVERED
               </code>
             </div>
 
@@ -471,6 +681,48 @@ export default function DocsPage() {
               }))}
             />
 
+            <SubHeading>Status transition rules</SubHeading>
+            <p>
+              Fauward accepts only valid next statuses. This protects timelines, invoices, and
+              customer notifications from skipping operational evidence.
+            </p>
+            <SimpleTable
+              columns={["From", "Allowed next statuses"]}
+              rows={[
+                {
+                  From: "PENDING",
+                  "Allowed next statuses": "PROCESSING or CANCELLED",
+                },
+                {
+                  From: "PROCESSING",
+                  "Allowed next statuses": "PICKED_UP or CANCELLED",
+                },
+                {
+                  From: "PICKED_UP",
+                  "Allowed next statuses": "IN_TRANSIT, FAILED_DELIVERY, or EXCEPTION",
+                },
+                {
+                  From: "IN_TRANSIT",
+                  "Allowed next statuses": "OUT_FOR_DELIVERY, FAILED_DELIVERY, or EXCEPTION",
+                },
+                {
+                  From: "OUT_FOR_DELIVERY",
+                  "Allowed next statuses": "DELIVERED, FAILED_DELIVERY, or EXCEPTION",
+                },
+                {
+                  From: "FAILED_DELIVERY or EXCEPTION",
+                  "Allowed next statuses": "Retry, return, or recover into the next operational state.",
+                },
+              ]}
+            />
+            <Callout title="Proof before delivered">
+              <p>
+                A shipment cannot be completed as delivered until proof of delivery evidence is
+                available. Capture the recipient name, OTP, signature, photo, or other required POD
+                fields before closing the job.
+              </p>
+            </Callout>
+
             <SubHeading>Creating a shipment</SubHeading>
             <p>
               Create shipments from the dashboard, shipment list, booking widget, or API. Fill in
@@ -488,6 +740,7 @@ export default function DocsPage() {
                 "Recipient details: name, company, address, phone, email, delivery notes, and notification preference.",
                 "Cargo details: item description, quantity, weight, dimensions, declared value, fragility, and special handling notes.",
                 "Commercial details: service level, price, tax treatment, customer account, and invoice reference.",
+                "Compliance details: customs category, item value, HS code, return instructions, and required labels where your workflow uses them.",
               ]}
             />
 
@@ -495,7 +748,8 @@ export default function DocsPage() {
             <p>
               Every status change is logged with a timestamp, source, and user where available. The
               internal timeline helps your team audit what happened. The customer timeline presents
-              the customer-safe version of the same journey.
+              the customer-safe version of the same journey, including milestones, exception states,
+              delivery attempts, and proof-of-delivery availability without exposing internal notes.
             </p>
 
             <SubHeading>Bulk operations</SubHeading>
@@ -559,7 +813,7 @@ export default function DocsPage() {
                 {
                   title: "Live progress",
                   description:
-                    "Track when jobs are collected, scanned, held, failed, or delivered without calling the field team.",
+                    "Track when jobs are picked up, scanned, delayed, failed, or delivered without calling the field team.",
                 },
               ]}
             />
@@ -577,6 +831,38 @@ export default function DocsPage() {
                 "Capture proof of delivery with recipient name, OTP, signature, or photo.",
                 "Add delivery notes when access is blocked, a recipient is unavailable, or cargo is damaged.",
                 "Work offline while scans and confirmations queue locally and sync when the device is back online.",
+              ]}
+            />
+
+            <SubHeading>Stop workflow</SubHeading>
+            <SimpleTable
+              columns={["Field action", "System update", "Back-office result"]}
+              rows={[
+                {
+                  "Field action": "Accept assigned work",
+                  "System update": "Confirms the driver or agent owns the stop list.",
+                  "Back-office result": "Dispatch can see who is responsible before pickup or delivery begins.",
+                },
+                {
+                  "Field action": "Scan at pickup",
+                  "System update": "Moves the shipment toward PICKED_UP when the right label is scanned.",
+                  "Back-office result": "Customers and dispatchers know collection has happened.",
+                },
+                {
+                  "Field action": "Start final delivery",
+                  "System update": "Moves eligible jobs to OUT_FOR_DELIVERY.",
+                  "Back-office result": "SMS or email updates can be sent for time-sensitive deliveries.",
+                },
+                {
+                  "Field action": "Capture proof",
+                  "System update": "Stores POD evidence and completes the job as DELIVERED.",
+                  "Back-office result": "Finance and support can reference a completion record.",
+                },
+                {
+                  "Field action": "Report a problem",
+                  "System update": "Marks FAILED_DELIVERY or EXCEPTION with notes and evidence.",
+                  "Back-office result": "The desk can reattempt, return, contact the customer, or investigate.",
+                },
               ]}
             />
 
@@ -612,6 +898,14 @@ export default function DocsPage() {
               For simpler scan-and-advance workflows, the agents app lets field staff quickly update
               shipment status by scanning a tracking label. It is useful at depots, warehouses,
               partner counters, and temporary collection points.
+            </p>
+
+            <SubHeading>Offline behaviour</SubHeading>
+            <p>
+              Fauward Go stores assigned stops, scans, notes, signatures, photos, and completion
+              attempts locally when connectivity drops. Field users should keep the app open until
+              queued actions sync, then confirm the job no longer shows as pending before leaving a
+              low-signal area.
             </p>
           </DocsSectionBlock>
 
@@ -649,18 +943,53 @@ export default function DocsPage() {
             <SubHeading>Invoice lifecycle</SubHeading>
             <div className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-4">
               <code className="whitespace-nowrap text-sm font-semibold text-gray-800">
-                DRAFT -&gt; SENT -&gt; PAID
+                DRAFT -&gt; SENT -&gt; PARTIALLY_PAID -&gt; PAID
               </code>
-              <span className="ml-3 text-sm text-gray-600">with OVERDUE for unpaid invoices past the due date</span>
+              <span className="ml-3 text-sm text-gray-600">with OVERDUE and VOID for exception cases</span>
             </div>
+
+            <SimpleTable
+              columns={["Status", "Meaning"]}
+              rows={invoiceStatuses.map((status) => ({
+                Status: status.status,
+                Meaning: status.meaning,
+              }))}
+            />
 
             <CheckList
               items={[
                 "Create quotes and convert them to invoices in one click.",
                 "Auto-populate line items from shipment pricing, service type, and customer account details.",
                 "Add manual line items for waiting time, storage, customs handling, insurance, or special services.",
+                "Record partial payments when a customer pays in stages or a remittance covers several invoices.",
                 "Send invoices to customer billing contacts and track when they become overdue.",
                 "Export invoice history, payments, and reconciliation reports to CSV.",
+              ]}
+            />
+
+            <SubHeading>Adjustments and cash workflows</SubHeading>
+            <CardGrid
+              items={[
+                {
+                  title: "Credit notes",
+                  description:
+                    "Use credit notes to record approved billing corrections, refunds, service failures, or negotiated adjustments.",
+                },
+                {
+                  title: "Cash on delivery",
+                  description:
+                    "Track COD collections where your plan and regional payment setup support collection and reconciliation.",
+                },
+                {
+                  title: "Payouts",
+                  description:
+                    "Review payout-ready collections and mark settlement progress for finance handover.",
+                },
+                {
+                  title: "Voids",
+                  description:
+                    "Void invoices that should no longer be collected instead of editing historical paid records.",
+                },
               ]}
             />
 
@@ -695,11 +1024,31 @@ export default function DocsPage() {
               before their first shift and that their assigned role matches the work they need to do.
             </p>
 
+            <SubHeading>Role assignment guidance</SubHeading>
+            <p>
+              The role names above are the exact tenant and customer role values used by the
+              platform. Platform-only administration is not assignable from a tenant workspace. Use
+              customer roles only for external customer account access, not for your internal
+              dispatch, finance, or driver staff.
+            </p>
+
+            <CheckList
+              items={[
+                "Use TENANT_ADMIN only for users who can change billing, API keys, branding, and account settings.",
+                "Use TENANT_MANAGER for operations leads who need broad control without every account-level responsibility.",
+                "Use TENANT_FINANCE for users who mainly manage invoices, payments, exports, and reconciliation.",
+                "Use TENANT_STAFF for dispatchers and depot operators who create and move shipments.",
+                "Use TENANT_DRIVER for field users who should work through Fauward Go instead of the full portal.",
+              ]}
+            />
+
             <SubHeading>Security controls</SubHeading>
             <CheckList
               items={[
                 "Enforce MFA with an authenticator app for admins, managers, finance users, and API key owners.",
                 "Use the lowest role that lets each user do their job.",
+                "Reset passwords from team settings when a user cannot complete the self-service flow.",
+                "Suspend users instead of deleting them when you need to preserve ownership history.",
                 "Remove inactive users when staff leave, change depot, or no longer need access.",
                 "Create separate user accounts instead of sharing one dispatcher or driver login.",
               ]}
@@ -716,7 +1065,33 @@ export default function DocsPage() {
             <SubHeading>Embed code</SubHeading>
             <p>Add one script tag to your site:</p>
             <pre className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-950 p-5 text-sm leading-6 text-gray-100">
-              <code>{`<script src="https://widget.fauward.com/embed.js" data-tenant="yourslug"></script>`}</code>
+              <code>{`<script
+  src="https://fauward.com/embed.js"
+  data-tenant="yourslug"
+  data-api-key="fw_your_public_widget_key"
+  async
+></script>`}</code>
+            </pre>
+
+            <SubHeading>Hosted booking page</SubHeading>
+            <p>
+              If you do not want to embed the form on your own site first, send customers to your
+              hosted booking page at{" "}
+              <code className="rounded bg-amber-50 px-1.5 py-0.5 text-sm font-semibold text-amber-700">
+                https://ship.fauward.com/yourslug
+              </code>
+              . The hosted page uses the same tenant branding and shipment-creation workflow as the
+              embeddable widget.
+            </p>
+
+            <SubHeading>Widget token flow</SubHeading>
+            <p>
+              The widget exchanges its tenant slug and API key for a short-lived embed token before
+              it submits shipment data. Your site never needs to expose a server secret value.
+            </p>
+            <pre className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-950 p-5 text-sm leading-6 text-gray-100">
+              <code>{`GET /api/embed/token?tenant=yourslug
+Authorization: Bearer fw_your_public_widget_key`}</code>
             </pre>
 
             <SubHeading>What customers see</SubHeading>
@@ -724,8 +1099,9 @@ export default function DocsPage() {
               items={[
                 "A branded tracking search field using your logo and colours.",
                 "Current shipment status, tracking reference, and customer-safe timeline.",
-                "Milestone timestamps such as collected, in transit, out for delivery, and delivered.",
-                "Exception states when a shipment is failed, held, returned, or cancelled.",
+                "Milestone timestamps such as processing, picked up, in transit, out for delivery, and delivered.",
+                "Exception states when a shipment has a failed delivery, exception, return, or cancellation.",
+                "Phone verification or payment prompts where your workflow enables them for customer-created shipments.",
               ]}
             />
 
@@ -767,12 +1143,12 @@ export default function DocsPage() {
                 {
                   title: "Domain",
                   description:
-                    "Use your Fauward subdomain immediately. Pro and Enterprise customers can add a custom tracking subdomain with a Vercel CNAME record.",
+                    "Use your Fauward subdomain immediately. Pro and Enterprise customers can add a custom customer-facing subdomain with DNS verification.",
                 },
                 {
                   title: "Email sender",
                   description:
-                    "Set the sender name customers see when receiving tracking and finance notifications.",
+                    "Set the sender name and support identity customers see when receiving tracking and finance notifications.",
                 },
                 {
                   title: "Languages and layout",
@@ -792,10 +1168,21 @@ export default function DocsPage() {
               items={[
                 "Use a clear logo that works on white backgrounds and small screens.",
                 "Choose a primary colour with enough contrast for buttons and important labels.",
+                "Add a support email, support phone number, and customer-facing business address where appropriate.",
                 "Preview the customer tracking page after making changes.",
-                "For a custom domain, add the CNAME shown in Settings -> Domain and wait for the status to become Live.",
+                "For a custom domain, add the CNAME shown in Settings -> Domain and wait for the verification status to become Live.",
                 "Send yourself a test notification to confirm the customer-facing sender name.",
                 "Review documents after brand changes if your team prints labels or PODs.",
+              ]}
+            />
+
+            <SubHeading>Domain setup flow</SubHeading>
+            <NumberedList
+              items={[
+                "Choose the customer-facing hostname you want to use, such as track.yourcompany.com.",
+                "Add it in Settings -> Domain and copy the DNS record shown in the portal.",
+                "Create the CNAME with your DNS provider and wait for verification.",
+                "Preview tracking, widget, emails, and documents before sharing the domain with customers.",
               ]}
             />
 
@@ -831,6 +1218,11 @@ export default function DocsPage() {
                   "Use it for": "Direct customer conversations inside your support inbox.",
                   Setup: "Use the Messaging tab powered by Relay.",
                 },
+                {
+                  Channel: "In-app",
+                  "Use it for": "Internal reminders, unread conversation state, and operational prompts.",
+                  Setup: "Available in the tenant portal for users with the right role.",
+                },
               ]}
             />
 
@@ -851,6 +1243,8 @@ export default function DocsPage() {
                 "Use your brand sender name so customers recognise the update.",
                 "Avoid exposing internal route, depot, or staff details in customer-facing messages.",
                 "Use failed-delivery messages to tell customers what happens next.",
+                "Use Relay conversations for two-way support instead of putting long operational notes into SMS templates.",
+                "Test templates after changing branding, phone verification, payment prompts, or support routing.",
                 "Review notifications when you change your operating hours or support process.",
               ]}
             />
@@ -871,8 +1265,27 @@ export default function DocsPage() {
 
             <p>All API calls use:</p>
             <pre className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-950 p-5 text-sm leading-6 text-gray-100">
-              <code>{`Authorization: Bearer <your-api-key>`}</code>
+              <code>{`Authorization: Bearer fw_your_api_key`}</code>
             </pre>
+
+            <SimpleTable
+              columns={["Scope", "Use"]}
+              rows={apiScopes.map((scope) => ({
+                Scope: scope.scope,
+                Use: scope.use,
+              }))}
+            />
+
+            <SubHeading>Request safety</SubHeading>
+            <CheckList
+              items={[
+                "Create a separate key for each integration so you can revoke one system without breaking another.",
+                "Use read-only scopes for reporting, tracking, and dashboard sync jobs.",
+                "Use write scopes only for systems that create shipments, update routes, send webhook tests, or manage domains.",
+                "Use idempotency keys for retryable create or update calls where the endpoint supports them.",
+                "Rotate keys when a team member leaves or a connected vendor changes access.",
+              ]}
+            />
 
             <SubHeading>Common API uses</SubHeading>
             <CardGrid
@@ -900,10 +1313,38 @@ export default function DocsPage() {
               ]}
             />
 
+            <SubHeading>Common endpoints</SubHeading>
+            <SimpleTable
+              columns={["Endpoint", "Use"]}
+              rows={[
+                {
+                  Endpoint: "GET /api/v1/shipments",
+                  Use: "List shipments for your tenant with filters and pagination.",
+                },
+                {
+                  Endpoint: "POST /api/v1/shipments",
+                  Use: "Create a shipment from a booking form, customer portal, or warehouse system.",
+                },
+                {
+                  Endpoint: "GET /api/v1/tenant/webhooks",
+                  Use: "List configured webhook endpoints and delivery health where webhooks are enabled.",
+                },
+                {
+                  Endpoint: "POST /api/v1/tenant/webhooks/:id/test",
+                  Use: "Send a signed test event to verify your receiving system.",
+                },
+                {
+                  Endpoint: "GET /api/v1/tenant/api-usage",
+                  Use: "Review API usage by key, endpoint, and date range.",
+                },
+              ]}
+            />
+
             <SubHeading>Webhooks</SubHeading>
             <p>
               Register webhook endpoints to receive real-time events when shipments change status,
-              invoices are paid, and other important updates happen. Configure endpoints from{" "}
+              deliveries complete, failed-delivery events occur, and other configured shipment
+              updates happen. Configure endpoints from{" "}
               <span className="font-semibold text-gray-900">Settings -&gt; Webhooks</span>.
             </p>
 
@@ -914,7 +1355,7 @@ export default function DocsPage() {
 
             <pre className="overflow-x-auto rounded-xl border border-gray-200 bg-gray-950 p-5 text-sm leading-6 text-gray-100">
               <code>{`{
-  "event": "shipment.status_updated",
+  "event": "shipment.status.changed",
   "tenant": "yourslug",
   "data": {
     "trackingReference": "FW-10482",
@@ -925,17 +1366,44 @@ export default function DocsPage() {
 }`}</code>
             </pre>
 
-            <SubHeading>Common events</SubHeading>
-            <CheckList
-              items={[
-                "shipment.status_updated",
-                "shipment.delivered",
-                "shipment.failed_delivery",
-                "invoice.paid",
-                "invoice.overdue",
-                "customer.message_received",
+            <SubHeading>Webhook headers</SubHeading>
+            <SimpleTable
+              columns={["Header", "Purpose"]}
+              rows={[
+                {
+                  Header: "X-Event-Type",
+                  Purpose: "Event name delivered to the endpoint.",
+                },
+                {
+                  Header: "X-Delivery-Id",
+                  Purpose: "Unique delivery attempt identifier for troubleshooting and replay.",
+                },
+                {
+                  Header: "X-Fauward-Event-Id",
+                  Purpose: "Stable event identifier for deduplication.",
+                },
+                {
+                  Header: "X-Webhook-Signature / X-Fauward-Signature",
+                  Purpose: "HMAC signature your receiver should verify before processing.",
+                },
               ]}
             />
+
+            <SubHeading>Common events</SubHeading>
+            <SimpleTable
+              columns={["Event", "Source"]}
+              rows={webhookEvents.map((event) => ({
+                Event: event.event,
+                Source: event.source,
+              }))}
+            />
+
+            <SubHeading>Delivery and replay</SubHeading>
+            <p>
+              Webhook deliveries are retried automatically with backoff when your endpoint does not
+              respond successfully. Use the delivery log to inspect response codes, latency, failed
+              attempts, and replay a delivery after fixing the receiving system.
+            </p>
 
             <Callout title="Operational advice">
               <p>
@@ -953,6 +1421,17 @@ export default function DocsPage() {
                 Plan: plan.name,
                 "Best fit": plan.fit,
                 Includes: plan.includes,
+              }))}
+            />
+
+            <SubHeading>Plan limits and gates</SubHeading>
+            <SimpleTable
+              columns={["Feature", "Starter", "Pro", "Enterprise"]}
+              rows={planFeatureRows.map((row) => ({
+                Feature: row.feature,
+                Starter: row.starter,
+                Pro: row.pro,
+                Enterprise: row.enterprise,
               }))}
             />
 
@@ -975,6 +1454,8 @@ export default function DocsPage() {
                 "Only users with billing access should manage plans, payment methods, and invoices.",
                 "Keep the billing contact email current so invoice and renewal notices reach the right person.",
                 "Review plan limits before seasonal peaks, new customer launches, or additional depot rollouts.",
+                "Check API and shipment usage before downgrading so critical workflows do not lose access.",
+                "Resolve failed payment status quickly to avoid account suspension and interrupted integrations.",
                 "Export operational and finance data before major account changes if your internal process requires it.",
               ]}
             />
