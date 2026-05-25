@@ -226,8 +226,8 @@ export const navItems: NavItem[] = [
     showWhenLocked: true,
     roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
     children: [
-      { to: "/agent", label: "Overview" },
-      { to: "/agent/actions", label: "Pending Actions" }
+      { to: "/agent/tasks", label: "Tasks" },
+      { to: "/agent/usage", label: "Usage" }
     ]
   },
   {

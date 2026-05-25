@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const AgentEventSchema = z.object({
   eventId: z.string().min(1),
-  type: z.enum(['shipment_created', 'status_changed', 'sla_check', 'failed_delivery', 'nl_query']),
+  type: z.enum(['shipment_created', 'status_changed', 'sla_check', 'failed_delivery', 'nl_query', 'sweep']),
   tenantId: z.string().min(1),
   shipmentId: z.string().optional(),
   payload: z.record(z.unknown()).optional()
@@ -25,8 +25,18 @@ export const ActionRecordSchema = z.object({
   error: z.string().optional()
 });
 
+const AgentActionStatusEnum = z.enum(['PENDING_APPROVAL', 'AUTO_APPLIED', 'APPLIED', 'REJECTED', 'FAILED']);
+
 export const AgentActionListQuerySchema = z.object({
-  status: z.enum(['PENDING_APPROVAL', 'AUTO_APPLIED', 'APPLIED', 'REJECTED', 'FAILED']).optional(),
+  status: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (!raw) return undefined;
+      const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      return parts.length > 0 ? parts : undefined;
+    })
+    .pipe(z.array(AgentActionStatusEnum).optional()),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(100).default(20)
 });

@@ -71,7 +71,9 @@ export function ShipmentDetailPage() {
     },
     onSuccess: async (_, payload) => {
       setShowStatusModal(false);
-      await queryClient.invalidateQueries({ queryKey: ["shipment-detail", id] });
+      // Actual key is ["shipment-detail", tenantId, id] — invalidate by bare
+      // prefix so the match works regardless of the tenant slot in the middle.
+      await queryClient.invalidateQueries({ queryKey: ["shipment-detail"] });
       await queryClient.invalidateQueries({ queryKey: ["shipments-list"] });
       if (payload.status === "RETURNED") {
         await queryClient.invalidateQueries({ queryKey: ["tenant-returns"] });
@@ -162,6 +164,30 @@ export function ShipmentDetailPage() {
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">To</p>
                   <p className="mt-0.5 truncate text-sm font-medium text-gray-900">{shipment.delivery_address}</p>
+                  {shipment.recipient_email || shipment.recipient_phone ? (
+                    <div className="mt-1 space-y-0.5 text-xs text-gray-600">
+                      {shipment.recipient_email ? (
+                        <p className="truncate">
+                          <a
+                            href={`mailto:${shipment.recipient_email}`}
+                            className="text-[var(--tenant-primary)] hover:underline"
+                          >
+                            {shipment.recipient_email}
+                          </a>
+                        </p>
+                      ) : null}
+                      {shipment.recipient_phone ? (
+                        <p>
+                          <a
+                            href={`tel:${shipment.recipient_phone}`}
+                            className="text-[var(--tenant-primary)] hover:underline"
+                          >
+                            {shipment.recipient_phone}
+                          </a>
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

@@ -81,6 +81,8 @@ export type ShipmentDetail = {
   pod_photo_url?: string;
   signature_url?: string;
   estimated_delivery_date?: string;
+  recipient_email?: string | null;
+  recipient_phone?: string | null;
 };
 
 export type DriverListItem = {

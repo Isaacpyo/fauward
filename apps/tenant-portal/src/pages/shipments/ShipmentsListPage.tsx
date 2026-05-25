@@ -13,6 +13,7 @@ import {
 } from "@/components/shipments/ShipmentFilterBar";
 import { ShipmentTable } from "@/components/shipments/ShipmentTable";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { LiveEventsRail } from "@/components/shared/LiveEventsRail";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -213,7 +214,7 @@ export function ShipmentsListPage() {
         <Button onClick={() => navigate("/shipments/create")}>Create Shipment</Button>
       }
     >
-      <div className={`grid gap-6 ${selectedShipmentId ? "lg:grid-cols-[minmax(0,1fr)_28rem]" : ""}`}>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="space-y-4">
         <div className="sticky top-16 z-20">
         <ShipmentFilterBar
@@ -361,6 +362,10 @@ export function ShipmentsListPage() {
             </div>
           </>
         )}
+        </div>
+
+        <div className="hidden lg:block">
+          <LiveEventsRail className="sticky top-20" />
         </div>
 
         <RadixDialog.Root open={!!selectedShipmentId} onOpenChange={(open) => { if (!open) closeShipmentWorkspace(); }}>

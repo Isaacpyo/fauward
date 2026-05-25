@@ -1,25 +1,44 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  QrCode,
-  ShieldCheck,
-  Camera,
-  WifiOff,
-  MapPin,
   AlertTriangle,
-  Check,
   ArrowRight,
-  Smartphone,
-  Signal,
+  BriefcaseBusiness,
+  Camera,
+  Check,
+  Home,
+  MapPin,
+  Navigation,
+  QrCode,
   RefreshCw,
+  Search,
+  Settings,
+  ShieldCheck,
+  Signal,
+  Smartphone,
+  WifiOff,
+  type LucideIcon,
 } from 'lucide-react';
 
 const MotionLink = motion(Link);
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-const FEATURES = [
+type Feature = {
+  icon: LucideIcon;
+  text: string;
+};
+
+type AppStat = {
+  label: string;
+  value: string;
+  helper: string;
+  tone: string;
+};
+
+const FEATURES: Feature[] = [
   { icon: QrCode,        text: 'QR scan for collection and delivery confirmation' },
   { icon: ShieldCheck,   text: 'OTP verification before releasing a shipment' },
   { icon: Camera,        text: 'Photo proof and digital signature capture' },
@@ -28,19 +47,11 @@ const FEATURES = [
   { icon: AlertTriangle, text: 'Failed delivery reason capture and escalation' },
 ];
 
-const JOBS = [
-  { ref: 'FW-7821', address: '14 Brook St, Manchester', status: 'Out for delivery', pillBg: 'bg-blue-500/20 text-blue-300', dot: 'bg-blue-400' },
-  { ref: 'FW-7819', address: '2 Canal Rd, Leeds',        status: 'POD required',     pillBg: 'bg-amber-500/20 text-amber-300', dot: 'bg-amber-400' },
-  { ref: 'FW-7815', address: '88 Park Lane, Sheffield',   status: 'Scheduled',        pillBg: 'bg-white/10 text-blue-200', dot: 'bg-blue-200' },
-];
-
-const FLOATING_BADGES = [
-  { icon: Signal,      label: 'Online',         tone: 'text-green-300 border-green-500/30 bg-green-500/10',  pos: { top: '6%',  left:  '4%'  } },
-  { icon: Camera,      label: 'Photo captured', tone: 'text-amber-300 border-amber-500/30 bg-amber-500/10',  pos: { top: '14%', right: '4%'  } },
-  { icon: ShieldCheck, label: 'OTP verified',   tone: 'text-blue-300  border-blue-500/30  bg-blue-500/10',   pos: { top: '46%', left:  '0%'  } },
-  { icon: RefreshCw,   label: 'Syncing 3 jobs', tone: 'text-purple-300 border-purple-500/30 bg-purple-500/10', pos: { top: '52%', right: '0%'  } },
-  { icon: MapPin,      label: 'GPS live',       tone: 'text-green-300 border-green-500/30 bg-green-500/10',  pos: { bottom: '14%', left:  '5%' } },
-  { icon: WifiOff,     label: 'Offline-safe',   tone: 'text-blue-300  border-blue-500/30  bg-blue-500/10',   pos: { bottom: '20%', right: '5%' } },
+const APP_STATS: AppStat[] = [
+  { label: 'Assigned', value: '18', helper: 'open stops', tone: 'from-white to-slate-50' },
+  { label: 'Queued', value: '7', helper: 'offline-safe updates', tone: 'from-white to-blue-50' },
+  { label: 'Verified', value: '42', helper: 'matched shipment scans', tone: 'from-white to-emerald-50' },
+  { label: 'POD', value: '11', helper: 'drafts awaiting upload', tone: 'from-white to-amber-50' },
 ];
 
 const headerContainer = {
@@ -61,134 +72,152 @@ const headerItem = {
   },
 };
 
+function PhoneNavItem({
+  icon: Icon,
+  label,
+  active = false,
+}: {
+  icon: LucideIcon;
+  label: string;
+  active?: boolean;
+}) {
+  return (
+    <div
+      className={`flex min-h-[48px] items-center justify-center gap-1.5 rounded-2xl px-2 text-[0.64rem] font-bold uppercase tracking-[0.16em] ${
+        active ? 'bg-[#0d1f3c] text-white shadow-sm' : 'text-stone-500'
+      }`}
+    >
+      <Icon size={13} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 function PhoneMockup() {
   return (
-    <div className="relative mx-auto w-full max-w-md">
-      {/* Floating badges around the phone */}
-      <div className="pointer-events-none absolute inset-0 z-20">
-        {FLOATING_BADGES.map((b, i) => (
-          <motion.span
-            key={b.label}
-            className={`absolute hidden whitespace-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold shadow-lg backdrop-blur-sm xl:inline-flex ${b.tone}`}
-            style={b.pos}
-            initial={{ opacity: 0, scale: 0.7, y: 6 }}
-            whileInView={{ opacity: 1, scale: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.5 + i * 0.1, duration: 0.5, ease: EASE }}
-          >
-            <b.icon size={11} /> {b.label}
-          </motion.span>
-        ))}
-      </div>
-
-      {/* Phone */}
+    <div className="relative mx-auto w-full max-w-[560px]">
       <motion.div
-        className="relative z-10 mx-auto w-[260px] overflow-hidden rounded-[2.5rem] border border-white/10 bg-[#070f1f] p-1.5 shadow-2xl"
-        initial={{ opacity: 0, scale: 0.92, y: 30 }}
+        className="absolute -left-2 top-16 hidden w-40 rounded-xl border border-white/10 bg-white/[0.07] p-3 text-white shadow-xl backdrop-blur lg:block xl:-left-8"
+        initial={{ opacity: 0, x: 16, y: 8 }}
+        whileInView={{ opacity: 1, x: 0, y: 0 }}
+        viewport={{ once: true, amount: 0.4 }}
+        transition={{ delay: 0.45, duration: 0.55, ease: EASE }}
+      >
+        <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-blue-200">
+          <Navigation size={12} />
+          Route live
+        </div>
+        <p className="mt-2 text-xl font-bold">24 stops</p>
+        <p className="mt-1 text-xs leading-snug text-blue-100/70">3 depots, 2 return pickups, 91% SLA cover.</p>
+      </motion.div>
+
+      <motion.div
+        className="absolute -right-2 bottom-24 hidden w-44 rounded-xl border border-white/10 bg-white/[0.07] p-3 text-white shadow-xl backdrop-blur lg:block xl:-right-8"
+        initial={{ opacity: 0, x: -16, y: 8 }}
+        whileInView={{ opacity: 1, x: 0, y: 0 }}
+        viewport={{ once: true, amount: 0.4 }}
+        transition={{ delay: 0.58, duration: 0.55, ease: EASE }}
+      >
+        <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-emerald-200">
+          <Signal size={12} />
+          Sync health
+        </div>
+        <p className="mt-2 text-xl font-bold">1.8s</p>
+        <p className="mt-1 text-xs leading-snug text-blue-100/70">Average replay after operators reconnect.</p>
+      </motion.div>
+
+      <motion.div
+        className="relative z-10 mx-auto w-full max-w-[342px] rounded-[2rem] border border-white/15 bg-slate-950/40 p-2 shadow-[0_28px_90px_-32px_rgba(0,0,0,0.85)]"
+        initial={{ opacity: 0, scale: 0.94, y: 28 }}
         whileInView={{ opacity: 1, scale: 1, y: 0 }}
         viewport={{ once: true, amount: 0.3 }}
         transition={{ duration: 0.8, ease: EASE }}
       >
-        {/* Animated gradient rim glow */}
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute -inset-px -z-10 rounded-[2.5rem]"
-          style={{
-            background:
-              'linear-gradient(135deg, rgba(245,158,11,0.4) 0%, transparent 50%, rgba(59,130,246,0.4) 100%)',
-          }}
-          animate={{ opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-        />
-
-        <div className="relative overflow-hidden rounded-[2.2rem] bg-[#0a1628]">
-          {/* Notch */}
-          <div className="flex justify-center pt-2">
-            <div className="h-5 w-24 rounded-b-2xl bg-black" />
-          </div>
-
-          {/* App header */}
-          <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
-            <div>
-              <div className="text-xs font-bold text-white">Fauward Go</div>
-              <div className="text-[10px] text-gray-500">Marcus Osei · Operator</div>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-              </span>
-              <span className="text-[10px] font-semibold text-green-400">Online</span>
-            </div>
-          </div>
-
-          {/* Summary */}
-          <div className="px-4 pt-3">
-            <motion.div
-              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-center"
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: 0.4, duration: 0.5 }}
-            >
-              <div className="text-sm font-bold text-amber-300">3 jobs today</div>
-              <div className="text-[10px] text-amber-400/80">1 completed · 2 active</div>
-            </motion.div>
-          </div>
-
-          {/* Jobs list */}
-          <div className="space-y-2 px-4 py-3">
-            {JOBS.map((job, i) => (
-              <motion.div
-                key={job.ref}
-                className="rounded-lg border border-white/10 bg-white/[0.04] p-2.5"
-                initial={{ opacity: 0, x: -16 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: 0.5 + i * 0.12, duration: 0.5, ease: EASE }}
-              >
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-gray-300">{job.ref}</span>
-                  <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${job.pillBg}`}>
-                    <span className={`h-1 w-1 rounded-full ${job.dot}`} />
-                    {job.status}
-                  </span>
+        <div className="overflow-hidden rounded-[1.6rem] border border-slate-200 bg-[#f4f5f7]">
+          <div className="flex min-h-[660px] flex-col p-3">
+            <div className="rounded-[1.45rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-3">
+                    <Image
+                      src="/brand/logo-mark.png"
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                    />
+                    <div>
+                      <p className="font-mono text-[1.05rem] font-bold leading-none tracking-[0.08em] text-[#0d1f3c]">
+                        FAUWARD GO
+                      </p>
+                      <p className="mt-1 text-[0.64rem] font-bold uppercase tracking-[0.22em] text-blue-600">
+                        Mobile execution
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-stone-600">Quick Ship - Field Operator</p>
                 </div>
-                <p className="text-[10px] leading-snug text-gray-400">{job.address}</p>
-              </motion.div>
-            ))}
-          </div>
+                <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Online
+                </div>
+              </div>
+            </div>
 
-          {/* Action buttons */}
-          <div className="grid grid-cols-3 gap-1.5 border-t border-white/5 px-3 py-3">
-            {[
-              { label: 'Scan QR',     icon: QrCode },
-              { label: 'OTP',         icon: ShieldCheck },
-              { label: 'Photo',       icon: Camera },
-            ].map((b) => (
-              <motion.button
-                key={b.label}
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.96 }}
-                className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] py-2 text-[10px] text-gray-300 transition hover:border-amber-500/40 hover:text-amber-300"
-              >
-                <b.icon size={14} />
-                {b.label}
-              </motion.button>
-            ))}
-          </div>
+            <div className="mt-4 rounded-[1.45rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[0.66rem] font-bold uppercase tracking-[0.24em] text-stone-500">
+                  Search assigned jobs
+                </p>
+                <RefreshCw size={15} className="text-[#0d1f3c]" />
+              </div>
+              <div className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs text-stone-400">
+                <Search size={14} />
+                <span>Search by reference number or name</span>
+              </div>
+              <div className="mt-3 flex h-11 items-center justify-center rounded-2xl bg-[#0d1f3c] text-sm font-bold text-white">
+                Search
+              </div>
+              <div className="mt-3 flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-bold text-[#0d1f3c]">
+                <QrCode size={16} />
+                Scan QR code
+              </div>
+            </div>
 
-          {/* Sync indicator */}
-          <div className="flex items-center gap-1.5 border-t border-white/5 px-4 py-2">
-            <motion.span
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2.4, repeat: Infinity, ease: 'linear' }}
-              className="text-blue-400"
-            >
-              <RefreshCw size={10} />
-            </motion.span>
-            <span className="font-mono text-[10px] text-blue-300/80">Syncing offline jobs…</span>
-            <span className="ml-auto text-[10px] text-blue-400/60">2 pending</span>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {APP_STATS.map((stat, index) => (
+                <motion.div
+                  key={stat.label}
+                  className={`rounded-[1.35rem] border border-slate-200 bg-gradient-to-br ${stat.tone} p-4 shadow-sm`}
+                  initial={{ opacity: 0, y: 14 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, amount: 0.25 }}
+                  transition={{ delay: 0.3 + index * 0.08, duration: 0.45, ease: EASE }}
+                >
+                  <p className="text-[0.64rem] font-bold uppercase tracking-[0.22em] text-stone-500">
+                    {stat.label}
+                  </p>
+                  <p className="mt-3 text-3xl font-bold leading-none text-[#0d1f3c]">{stat.value}</p>
+                  <p className="mt-3 min-h-[32px] text-xs leading-snug text-stone-600">{stat.helper}</p>
+                </motion.div>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-[1.35rem] border border-blue-200 bg-blue-50 p-4 shadow-sm">
+              <p className="text-[0.64rem] font-bold uppercase tracking-[0.22em] text-[#0d1f3c]">Verification</p>
+              <h3 className="mt-2 text-base font-bold leading-snug text-[#0d1f3c]">
+                Scan shipment, package, or label
+              </h3>
+              <p className="mt-2 text-xs text-slate-700">Live scanner plus manual fallback.</p>
+            </div>
+
+            <div className="mt-auto pt-3">
+              <div className="grid grid-cols-3 gap-1 rounded-[1.4rem] border border-slate-200 bg-white p-2 shadow-sm">
+                <PhoneNavItem icon={Home} label="Home" active />
+                <PhoneNavItem icon={BriefcaseBusiness} label="Jobs" />
+                <PhoneNavItem icon={Settings} label="Settings" />
+              </div>
+            </div>
           </div>
         </div>
       </motion.div>

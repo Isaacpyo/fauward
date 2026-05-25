@@ -31,15 +31,37 @@ export type AgentActionListResponse = {
   pages: number;
 };
 
+export type AgentActionStatusFilter = AgentActionStatus | AgentActionStatus[] | undefined;
+
 export async function fetchAgentActions(
-  status: AgentActionStatus = "PENDING_APPROVAL",
+  status: AgentActionStatusFilter = "PENDING_APPROVAL",
   page = 1,
   limit = 20
 ): Promise<AgentActionListResponse> {
+  const statusParam = Array.isArray(status) ? (status.length > 0 ? status.join(",") : undefined) : status;
   const res = await api.get<AgentActionListResponse>("/v1/agent/actions", {
-    params: { status, page, limit }
+    params: { ...(statusParam ? { status: statusParam } : {}), page, limit }
   });
   return res.data;
+}
+
+export type AgentActionSummary = {
+  needsYou: number;
+  flagged: number;
+  doneToday: number;
+  failed: number;
+};
+
+export async function fetchAgentActionSummary(): Promise<AgentActionSummary> {
+  const res = await api.get<AgentActionSummary>("/v1/agent/actions/summary");
+  return res.data;
+}
+
+export function useAgentActionSummary() {
+  return useQuery({
+    queryKey: ["agent-actions-summary"],
+    queryFn: fetchAgentActionSummary
+  });
 }
 
 export async function approveAgentAction(actionId: string) {
@@ -56,9 +78,14 @@ export async function rejectAgentAction(actionId: string) {
   return res.data;
 }
 
-export function useAgentActions(status: AgentActionStatus = "PENDING_APPROVAL", page = 1, limit = 20) {
+export function useAgentActions(
+  status: AgentActionStatusFilter = "PENDING_APPROVAL",
+  page = 1,
+  limit = 20
+) {
+  const key = Array.isArray(status) ? status.join(",") : (status ?? "all");
   return useQuery({
-    queryKey: ["agent-actions", status, page, limit],
+    queryKey: ["agent-actions", key, page, limit],
     queryFn: () => fetchAgentActions(status, page, limit)
   });
 }
@@ -69,6 +96,7 @@ export function useApproveAgentAction() {
     mutationFn: approveAgentAction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-actions"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-actions-summary"] });
     }
   });
 }
@@ -79,6 +107,7 @@ export function useRejectAgentAction() {
     mutationFn: rejectAgentAction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-actions"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-actions-summary"] });
     }
   });
 }

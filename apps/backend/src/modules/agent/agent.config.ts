@@ -3,7 +3,8 @@ export type AgentEventType =
   | 'status_changed'
   | 'sla_check'
   | 'failed_delivery'
-  | 'nl_query';
+  | 'nl_query'
+  | 'sweep';
 
 export const agentConfig = {
   reasoningEffort: (process.env.AGENT_REASONING_EFFORT ?? 'high') as 'low' | 'high' | 'max',
@@ -27,6 +28,8 @@ export function selectAgentTask(eventType: AgentEventType): string {
       return 'tracking_exception_analysis';
     case 'sla_check':
       return 'sla_risk_explanation';
+    case 'sweep':
+      return 'tracking_exception_analysis';
     default:
       return 'tracking_exception_analysis';
   }

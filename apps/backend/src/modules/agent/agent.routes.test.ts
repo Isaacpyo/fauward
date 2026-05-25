@@ -26,14 +26,20 @@ function buildApp(tenantOverrides: Record<string, unknown> = {}) {
       findMany: vi.fn().mockImplementation(async ({ where }: any) => {
         return agentActions.filter((a) => {
           if (where.tenantId && a.tenantId !== where.tenantId) return false;
-          if (where.status && a.status !== where.status) return false;
+          if (where.status) {
+            if (typeof where.status === 'string' && a.status !== where.status) return false;
+            if (typeof where.status === 'object' && Array.isArray(where.status.in) && !where.status.in.includes(a.status)) return false;
+          }
           return true;
         });
       }),
       count: vi.fn().mockImplementation(async ({ where }: any) => {
         return agentActions.filter((a) => {
           if (where.tenantId && a.tenantId !== where.tenantId) return false;
-          if (where.status && a.status !== where.status) return false;
+          if (where.status) {
+            if (typeof where.status === 'string' && a.status !== where.status) return false;
+            if (typeof where.status === 'object' && Array.isArray(where.status.in) && !where.status.in.includes(a.status)) return false;
+          }
           return true;
         }).length;
       }),
@@ -100,7 +106,7 @@ describe('GET /v1/agent/actions', () => {
 
     const res = await ctx.app.inject({
       method: 'GET',
-      url: '/v1/agent/actions?status=PENDING_APPROVAL',
+      url: '/api/v1/agent/actions?status=PENDING_APPROVAL',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -118,7 +124,7 @@ describe('GET /v1/agent/actions', () => {
 
     const res = await ctx.app.inject({
       method: 'GET',
-      url: '/v1/agent/actions?status=FAILED',
+      url: '/api/v1/agent/actions?status=FAILED',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -135,7 +141,7 @@ describe('GET /v1/agent/actions', () => {
 
     const res = await ctx.app.inject({
       method: 'GET',
-      url: '/v1/agent/actions',
+      url: '/api/v1/agent/actions',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -154,7 +160,7 @@ describe('POST /v1/agent/actions/:id/approve', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/approve',
+      url: '/api/v1/agent/actions/action-1/approve',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -178,7 +184,7 @@ describe('POST /v1/agent/actions/:id/approve', () => {
     // First approve
     const res1 = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/approve',
+      url: '/api/v1/agent/actions/action-1/approve',
       headers: { authorization: 'Bearer token' }
     });
     expect(res1.statusCode).toBe(200);
@@ -186,7 +192,7 @@ describe('POST /v1/agent/actions/:id/approve', () => {
     // Second approve
     const res2 = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/approve',
+      url: '/api/v1/agent/actions/action-1/approve',
       headers: { authorization: 'Bearer token' }
     });
     expect(res2.statusCode).toBe(409);
@@ -201,7 +207,7 @@ describe('POST /v1/agent/actions/:id/approve', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-3/approve',
+      url: '/api/v1/agent/actions/action-3/approve',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -217,7 +223,7 @@ describe('POST /v1/agent/actions/:id/approve', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/approve',
+      url: '/api/v1/agent/actions/action-1/approve',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -242,7 +248,7 @@ describe('POST /v1/agent/actions/:id/reject', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/reject',
+      url: '/api/v1/agent/actions/action-1/reject',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -261,7 +267,7 @@ describe('POST /v1/agent/actions/:id/reject', () => {
 
     const res = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-3/reject',
+      url: '/api/v1/agent/actions/action-3/reject',
       headers: { authorization: 'Bearer token' }
     });
 
@@ -275,13 +281,13 @@ describe('POST /v1/agent/actions/:id/reject', () => {
 
     await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/reject',
+      url: '/api/v1/agent/actions/action-1/reject',
       headers: { authorization: 'Bearer token' }
     });
 
     const res2 = await ctx.app.inject({
       method: 'POST',
-      url: '/v1/agent/actions/action-1/reject',
+      url: '/api/v1/agent/actions/action-1/reject',
       headers: { authorization: 'Bearer token' }
     });
 

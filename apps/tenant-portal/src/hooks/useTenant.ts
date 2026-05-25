@@ -118,9 +118,14 @@ export function useTenant() {
   const setTenant = useTenantStore((state) => state.setTenant);
   const setAppTenant = useAppStore((state) => state.setTenant);
   const tenant = useTenantStore((state) => state.tenant);
+  // Subscribe to the auth-store user so this hook re-runs the moment login
+  // completes. Without this, getAccessToken() is evaluated once at App mount
+  // (before the user logs in), the tenant-config query stays disabled, and
+  // the tenant store never populates until the user does a hard refresh.
+  const authUser = useAppStore((state) => state.user);
   const devSessionSnapshot = getDevTestSessionSnapshot();
   const devSession = useMemo(() => getDevTestSession(), [devSessionSnapshot]);
-  const hasToken = Boolean(getAccessToken());
+  const hasToken = Boolean(authUser) || Boolean(getAccessToken());
   const tenantSlug = resolvePathTenantSlug() ?? getTenantSlug();
 
   const query = useQuery({

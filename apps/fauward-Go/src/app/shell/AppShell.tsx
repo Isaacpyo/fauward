@@ -43,6 +43,22 @@ export const AppShell = () => {
                 <p className="mt-2 text-sm text-stone-600">{subtitleParts.join(" · ")}</p>
               ) : null}
             </div>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-widest ${
+                isOnline
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
+              aria-live="polite"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isOnline ? "bg-emerald-500" : "bg-amber-500"
+                }`}
+                aria-hidden="true"
+              />
+              {isOnline ? "Online" : "Offline"}
+            </span>
           </div>
         </header>
 

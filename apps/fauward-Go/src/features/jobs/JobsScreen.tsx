@@ -1,5 +1,5 @@
 import { useDeferredValue, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { ScreenHeader } from "@/components/common/ScreenHeader";
 import { JobCard } from "@/components/jobs/JobCard";
 import { useFieldDataStore } from "@/store/useFieldDataStore";
@@ -14,13 +14,11 @@ const priorityRank = {
 
 export const JobsScreen = () => {
   const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") ?? "";
   const jobs = useFieldDataStore((state) => state.jobs);
-  const [queryInput, setQueryInput] = useState("");
-  const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<WorkflowStage | "all">("all");
   const [showCompleted, setShowCompleted] = useState(false);
-  const deferredQuery = useDeferredValue(query);
-  const searchOnly = searchParams.get("mode") === "search";
+  const deferredQuery = useDeferredValue(initialQuery);
 
   const activeJobs = useMemo(
     () => jobs.filter((job) => job.status !== "completed"),
@@ -40,11 +38,6 @@ export const JobsScreen = () => {
     [activeJobs],
   );
 
-  const handleSearch = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setQuery(queryInput);
-  };
-
   const visibleJobs = activeJobs
     .filter((job) => {
       const haystack = `${job.shipmentId} ${job.contactName ?? ""}`.toLowerCase();
@@ -58,88 +51,59 @@ export const JobsScreen = () => {
     <section className="space-y-6">
       <ScreenHeader
         title="Assigned jobs"
-        subtitle={
-          searchOnly
-            ? "Search by reference number or name, or open the QR scanner to find the right job."
-            : "Assigned jobs can cover shipment creation, warehouse work, dispatch, pickup, linehaul, delivery, and returns."
-        }
+        subtitle="Assigned jobs can cover shipment creation, warehouse work, dispatch, pickup, linehaul, delivery, and returns."
       />
 
-      <form className="panel p-4" onSubmit={handleSearch}>
-        <label htmlFor="job-search" className="mb-2 block tiny-label">
-          Search assigned jobs
-        </label>
-        <input
-          id="job-search"
-          className="field-input"
-          value={queryInput}
-          onChange={(event) => setQueryInput(event.target.value)}
-          placeholder="Search by reference number or name"
-        />
-        <button type="submit" className="primary-btn mt-4 w-full">
-          Search
-        </button>
-        <div className="mt-3">
-          <Link to="/scan" className="secondary-btn w-full">
-            Scan QR code
-          </Link>
+      <div className="panel flex items-end justify-between gap-3 p-4">
+        <div>
+          <p className="tiny-label">Jobs</p>
+          <p className="mt-2 text-2xl font-semibold text-ink">{visibleJobs.length}</p>
         </div>
-      </form>
+        <div className="min-w-[11rem]">
+          <label htmlFor="job-stage-filter" className="mb-2 block tiny-label">
+            Filter
+          </label>
+          <select
+            id="job-stage-filter"
+            className="field-input"
+            value={stageFilter}
+            onChange={(event) => setStageFilter(event.target.value as WorkflowStage | "all")}
+          >
+            <option value="all">All stages</option>
+            {stageOptions.map((stage) => (
+              <option key={stage} value={stage}>
+                {workflowStageLabel[stage]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-      {!searchOnly ? (
-        <>
-          <div className="panel flex items-end justify-between gap-3 p-4">
-            <div>
-              <p className="tiny-label">Jobs</p>
-              <p className="mt-2 text-2xl font-semibold text-ink">{visibleJobs.length}</p>
-            </div>
-            <div className="min-w-[11rem]">
-              <label htmlFor="job-stage-filter" className="mb-2 block tiny-label">
-                Filter
-              </label>
-              <select
-                id="job-stage-filter"
-                className="field-input"
-                value={stageFilter}
-                onChange={(event) => setStageFilter(event.target.value as WorkflowStage | "all")}
-              >
-                <option value="all">All stages</option>
-                {stageOptions.map((stage) => (
-                  <option key={stage} value={stage}>
-                    {workflowStageLabel[stage]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+      <div className="space-y-3">
+        {visibleJobs.length === 0 ? (
+          <div className="panel p-5 text-sm text-stone-600">No jobs match the current filter.</div>
+        ) : (
+          visibleJobs.map((job) => <JobCard key={job.id} job={job} />)
+        )}
+      </div>
 
-          <div className="space-y-3">
-            {visibleJobs.length === 0 ? (
-              <div className="panel p-5 text-sm text-stone-600">No jobs match the current filter.</div>
-            ) : (
-              visibleJobs.map((job) => <JobCard key={job.id} job={job} />)
-            )}
-          </div>
-
-          {completedJobs.length > 0 && (
-            <div>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 py-2"
-                onClick={() => setShowCompleted((prev) => !prev)}
-              >
-                <span className="tiny-label">Completed jobs ({completedJobs.length})</span>
-                <span className="text-xs text-stone-400">{showCompleted ? "Hide" : "Show"}</span>
-              </button>
-              {showCompleted && (
-                <div className="mt-3 space-y-3">
-                  {completedJobs.map((job) => <JobCard key={job.id} job={job} />)}
-                </div>
-              )}
+      {completedJobs.length > 0 && (
+        <div>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 py-2"
+            onClick={() => setShowCompleted((prev) => !prev)}
+          >
+            <span className="tiny-label">Completed jobs ({completedJobs.length})</span>
+            <span className="text-xs text-stone-400">{showCompleted ? "Hide" : "Show"}</span>
+          </button>
+          {showCompleted && (
+            <div className="mt-3 space-y-3">
+              {completedJobs.map((job) => <JobCard key={job.id} job={job} />)}
             </div>
           )}
-        </>
-      ) : null}
+        </div>
+      )}
     </section>
   );
 };

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { agentConfig } from './agent.config.js';
 import { AgentEventSchema, AgentQuerySchema, AgentActionListQuerySchema } from './agent.schemas.js';
@@ -8,7 +8,42 @@ import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { runAgent, approveAgentAction } from './agent.service.js';
 import { persistAgentRun } from './agent.audit.js';
 import { buildToolHandlers } from './agent.handlers.impl.js';
+import { enqueueAgentSweep } from './agent.queue.js';
 import type { AgentEvent } from './agent.types.js';
+
+const SWEEP_FEATURE_KEY = 'agent_sweep';
+
+function monthKey(): string {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function enforceSweepLimits(app: FastifyInstance, tenantId: string): Promise<void> {
+  const limit = await app.prisma.tenantAiLimit.findUnique({ where: { tenantId } });
+  if (!limit) return;
+  if (
+    Array.isArray(limit.featuresEnabled) &&
+    limit.featuresEnabled.length > 0 &&
+    !limit.featuresEnabled.includes(SWEEP_FEATURE_KEY)
+  ) {
+    throw app.httpErrors.forbidden('AI feature disabled for this plan');
+  }
+  if (limit.monthlyBudgetUsd !== null && limit.monthlyBudgetUsd !== undefined) {
+    const usage = await app.prisma.tenantAiUsage.findMany({
+      where: { tenantId, month: monthKey() },
+      select: { costUsd: true }
+    });
+    const totalCost = usage.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0);
+    if (totalCost >= Number(limit.monthlyBudgetUsd)) {
+      throw app.httpErrors.paymentRequired('Monthly AI budget exhausted');
+    }
+  }
+}
+
+function sweepRateLimitKey(req: FastifyRequest): string {
+  const tenantId = req.tenant?.id;
+  return `agent-sweep:${tenantId ?? req.ip}`;
+}
 
 export async function registerAgentRoutes(app: FastifyInstance) {
   app.post('/v1/agent/handle-event', async (request, reply) => {
@@ -82,7 +117,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
   // ─── Agent Action Approval Endpoints ───────────────────────────────────────
 
   app.get(
-    '/v1/agent/actions',
+    '/api/v1/agent/actions',
     { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
     async (request, reply) => {
       const tenantId = request.tenant?.id;
@@ -98,7 +133,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
 
       const where = {
         tenantId,
-        ...(status ? { status } : {})
+        ...(status && status.length > 0 ? { status: { in: status } } : {})
       };
 
       const [items, total] = await Promise.all([
@@ -121,8 +156,36 @@ export async function registerAgentRoutes(app: FastifyInstance) {
     }
   );
 
+  app.get(
+    '/api/v1/agent/actions/summary',
+    { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+
+      // Status → tab mapping (kept in sync with TAB_FILTER on the frontend):
+      //   needsYou = PENDING_APPROVAL  → "Needs you" tab
+      //   flagged  = AUTO_APPLIED      → "Flagged" tab (flag_finding rows + auto-approved tool calls)
+      //   doneToday = APPLIED (today)  → "Done" tab (human-approved + executed)
+      //   failed   = FAILED            → surfaced in the strip + reachable via the All tab
+      const [needsYou, flagged, doneToday, failed] = await Promise.all([
+        app.prisma.agentAction.count({ where: { tenantId, status: 'PENDING_APPROVAL' } }),
+        app.prisma.agentAction.count({ where: { tenantId, status: 'AUTO_APPLIED' } }),
+        app.prisma.agentAction.count({
+          where: { tenantId, status: 'APPLIED', appliedAt: { gte: startOfToday } }
+        }),
+        app.prisma.agentAction.count({ where: { tenantId, status: 'FAILED' } })
+      ]);
+
+      return reply.send({ needsYou, flagged, doneToday, failed });
+    }
+  );
+
   app.post(
-    '/v1/agent/actions/:id/approve',
+    '/api/v1/agent/actions/:id/approve',
     { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
     async (request, reply) => {
       const tenantId = request.tenant?.id;
@@ -144,7 +207,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
   );
 
   app.post(
-    '/v1/agent/actions/:id/reject',
+    '/api/v1/agent/actions/:id/reject',
     { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
     async (request, reply) => {
       const tenantId = request.tenant?.id;
@@ -174,6 +237,135 @@ export async function registerAgentRoutes(app: FastifyInstance) {
       });
 
       return reply.send({ success: true });
+    }
+  );
+
+  // ─── Run Agent Sweep ────────────────────────────────────────────────────────
+
+  // `@fastify/rate-limit` is registered in production app.ts. Guard the preHandler so test
+  // harnesses that skip the plugin can still mount these routes.
+  const sweepPreHandlers: unknown[] = [app.authenticate, requireTenantMatch, requireFeature('agent')];
+  if (typeof (app as unknown as { rateLimit?: unknown }).rateLimit === 'function') {
+    sweepPreHandlers.push(
+      (app as unknown as { rateLimit: (opts: unknown) => unknown }).rateLimit({
+        max: 1,
+        timeWindow: '5 minutes',
+        keyGenerator: sweepRateLimitKey
+      })
+    );
+  }
+
+  app.post(
+    '/api/v1/agent/run',
+    { preHandler: sweepPreHandlers as never },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+      // Refuse fast if the tenant is out of AI budget — avoids queueing a sweep that
+      // each inner LLM call would reject anyway.
+      await enforceSweepLimits(app, tenantId);
+
+      const run = await app.prisma.aiAgentRun.create({
+        data: {
+          tenantId,
+          agentType: 'sweep',
+          input: {},
+          status: 'RUNNING',
+          stage: 'queued'
+        }
+      });
+
+      await enqueueAgentSweep(app, { runId: run.id, tenantId });
+
+      return reply.code(202).send({ runId: run.id });
+    }
+  );
+
+  app.get(
+    '/api/v1/agent/run/:id',
+    { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+      const { id } = request.params as { id: string };
+      const run = await app.prisma.aiAgentRun.findFirst({
+        where: { id, tenantId }
+      });
+      if (!run) throw app.httpErrors.notFound('Run not found');
+
+      return reply.send({
+        id: run.id,
+        status: run.status,
+        stage: run.stage,
+        scannedCount: run.scannedCount,
+        flaggedCount: run.flaggedCount,
+        proposedCount: run.proposedCount,
+        finishedAt: run.finishedAt,
+        output: run.output
+      });
+    }
+  );
+
+  // ─── Usage ──────────────────────────────────────────────────────────────────
+
+  app.get(
+    '/api/v1/agent/usage',
+    { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+      const month = monthKey();
+      const startOfMonth = new Date();
+      startOfMonth.setUTCDate(1);
+      startOfMonth.setUTCHours(0, 0, 0, 0);
+
+      const [limit, usageRows, totalThisMonth, autoApplied, applied, byType] = await Promise.all([
+        app.prisma.tenantAiLimit.findUnique({ where: { tenantId } }),
+        app.prisma.tenantAiUsage.findMany({ where: { tenantId, month } }),
+        app.prisma.agentAction.count({ where: { tenantId, createdAt: { gte: startOfMonth } } }),
+        app.prisma.agentAction.count({
+          where: { tenantId, status: 'AUTO_APPLIED', createdAt: { gte: startOfMonth } }
+        }),
+        app.prisma.agentAction.count({
+          where: { tenantId, status: 'APPLIED', createdAt: { gte: startOfMonth } }
+        }),
+        app.prisma.agentAction.groupBy({
+          by: ['type'],
+          where: { tenantId, createdAt: { gte: startOfMonth } },
+          _count: { _all: true }
+        })
+      ]);
+
+      const totalCost = usageRows.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0);
+      const totalRequests = usageRows.reduce((sum, row) => sum + Number(row.requestCount ?? 0), 0);
+      const totalTokens = usageRows.reduce((sum, row) => sum + Number(row.tokenCount ?? 0), 0);
+
+      return reply.send({
+        month,
+        actions: {
+          total: totalThisMonth,
+          autoApplied,
+          approved: applied,
+          autoHandledPct: totalThisMonth > 0 ? Math.round((autoApplied / totalThisMonth) * 100) : null,
+          byType: byType.map((row) => ({ type: row.type, count: row._count._all }))
+        },
+        ai: {
+          totalRequests,
+          totalTokens,
+          totalCostUsd: Number(totalCost.toFixed(6))
+        },
+        limit: limit
+          ? {
+              monthlyBudgetUsd: limit.monthlyBudgetUsd,
+              flashRequestLimit: limit.flashRequestLimit,
+              proRequestLimit: limit.proRequestLimit,
+              featuresEnabled: limit.featuresEnabled ?? []
+            }
+          : null
+      });
     }
   );
 }

@@ -1777,16 +1777,21 @@ model TenantAiLimit {
 }
 
 model AiAgentRun {
-  id         String   @id @default(cuid())
-  tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  agentType  String
-  input      Json
-  output     Json?
-  status     String
-  durationMs Int?
-  createdAt  DateTime @default(now())
-  actions     AgentAction[]
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  agentType     String
+  input         Json
+  output        Json?
+  status        String
+  stage         String?
+  scannedCount  Int       @default(0)
+  flaggedCount  Int       @default(0)
+  proposedCount Int       @default(0)
+  durationMs    Int?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  actions       AgentAction[]
 
   @@index([tenantId, createdAt])
   @@map("ai_agent_runs")

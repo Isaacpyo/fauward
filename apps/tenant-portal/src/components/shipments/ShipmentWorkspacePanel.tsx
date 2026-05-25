@@ -208,18 +208,27 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
       });
     },
     onSuccess: async () => {
+      // Detail page key is ["shipment-detail", tenantId, id] — invalidate by
+      // bare prefix so it matches regardless of tenant slot. Also kick the
+      // returns lists so Return-to-Sender immediately surfaces on the Returns
+      // page without a manual refresh.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["shipments-list"] }),
         queryClient.invalidateQueries({ queryKey: ["shipment-workspace", shipmentId] }),
-        queryClient.invalidateQueries({ queryKey: ["shipment-detail", shipmentId] }),
+        queryClient.invalidateQueries({ queryKey: ["shipment-detail"] }),
+        queryClient.invalidateQueries({ queryKey: ["tenant-returns"] }),
+        queryClient.invalidateQueries({ queryKey: ["returned-shipments"] }),
         queryClient.invalidateQueries({ queryKey: ["field-ops-overview"] })
       ]);
       addToast({ title: "Shipment status updated", variant: "success" });
     },
-    onError: () => {
+    onError: (error: unknown) => {
+      const axiosErr = error as { response?: { data?: { error?: string; message?: string } } };
+      const backendMessage =
+        axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? null;
       addToast({
         title: "Status update failed",
-        description: "Check the shipment rules. Delivered updates still require POD on the backend.",
+        description: backendMessage ?? "Check the shipment rules and try again.",
         variant: "error"
       });
     }
@@ -318,6 +327,32 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Customer</p>
                   <p className="mt-2 text-sm font-semibold text-gray-900">{shipment.customer_name}</p>
                   <p className="mt-1 text-sm text-gray-600">{shipment.delivery_address}</p>
+                  {shipment.recipient_email || shipment.recipient_phone ? (
+                    <div className="mt-2 space-y-0.5 text-xs text-gray-600">
+                      {shipment.recipient_email ? (
+                        <p>
+                          <span className="text-gray-400">Email: </span>
+                          <a
+                            href={`mailto:${shipment.recipient_email}`}
+                            className="text-[var(--tenant-primary)] hover:underline"
+                          >
+                            {shipment.recipient_email}
+                          </a>
+                        </p>
+                      ) : null}
+                      {shipment.recipient_phone ? (
+                        <p>
+                          <span className="text-gray-400">Phone: </span>
+                          <a
+                            href={`tel:${shipment.recipient_phone}`}
+                            className="text-[var(--tenant-primary)] hover:underline"
+                          >
+                            {shipment.recipient_phone}
+                          </a>
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </article>
                 <article className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Field Operator</p>

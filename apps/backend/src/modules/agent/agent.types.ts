@@ -3,7 +3,8 @@ export type AgentEventType =
   | 'status_changed'
   | 'sla_check'
   | 'failed_delivery'
-  | 'nl_query';
+  | 'nl_query'
+  | 'sweep';
 
 export type PolicyDecision = 'auto_approved' | 'requires_approval' | 'blocked';
 

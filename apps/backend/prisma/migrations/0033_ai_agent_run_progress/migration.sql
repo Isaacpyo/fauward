@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "ai_agent_runs"
+ADD COLUMN "stage" TEXT,
+ADD COLUMN "scannedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "flaggedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "proposedCount" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "finishedAt" TIMESTAMP(3);

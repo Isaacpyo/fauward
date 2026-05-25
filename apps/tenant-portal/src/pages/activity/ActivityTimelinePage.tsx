@@ -4,33 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { PageShell } from "@/layouts/PageShell";
-import { api } from "@/lib/api";
+import { fetchActivity, type ActivityEntryType, type ActivityTimeframe } from "@/lib/activity-feed";
 
-type ActivityEntry = {
-  id: string;
-  type: "shipment" | "return" | "ticket" | "invoice" | "audit";
-  title: string;
-  subtitle: string;
-  link: string;
-  timestamp: string;
-  icon: string;
-  colour: string;
-};
-
-async function fetchActivity(timeframe: string, type: string) {
-  const query = new URLSearchParams();
-  query.set("timeframe", timeframe);
-  if (type !== "all") query.set("type", type);
-  const response = await api.get<{ entries: ActivityEntry[] }>(`/v1/activity?${query.toString()}`);
-  return response.data.entries;
-}
-
-const timeframeOptions = ["1h", "24h", "7d", "30d"];
-const typeOptions = ["all", "shipment", "return", "ticket", "invoice", "audit"];
+const timeframeOptions: ActivityTimeframe[] = ["1h", "24h", "7d", "30d"];
+const typeOptions: Array<"all" | ActivityEntryType> = ["all", "shipment", "return", "ticket", "invoice", "audit"];
 
 export function ActivityTimelinePage() {
-  const [timeframe, setTimeframe] = useState("24h");
-  const [type, setType] = useState("all");
+  const [timeframe, setTimeframe] = useState<ActivityTimeframe>("24h");
+  const [type, setType] = useState<"all" | ActivityEntryType>("all");
 
   const query = useQuery({
     queryKey: ["activity", timeframe, type],

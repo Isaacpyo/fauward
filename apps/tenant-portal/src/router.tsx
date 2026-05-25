@@ -53,8 +53,8 @@ import { OperationsOverviewPage } from "@/pages/operations/OperationsOverviewPag
 import { PermissionRequestsPage } from "@/pages/operations/PermissionRequestsPage";
 import { NotificationsInboxPage } from "@/pages/activity/NotificationsInboxPage";
 import { MessagingPage } from "@/pages/messaging/MessagingPage";
-import { AgentPage } from "@/pages/agent/AgentPage";
-import { AgentActionsPage } from "@/pages/agent/AgentActionsPage";
+import { AgentTasksPage } from "@/pages/agent/AgentTasksPage";
+import { AgentUsagePage } from "@/pages/agent/AgentUsagePage";
 import { RatesPage } from "@/pages/rates/RatesPage";
 import { ShippingRulesPage } from "@/pages/shipping-rules/ShippingRulesPage";
 import { LabelsPage } from "@/pages/labels/LabelsPage";
@@ -166,8 +166,9 @@ function WorkspaceRoutes() {
       <Route path="activity/notifications" element={<NotificationsInboxPage />} />
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
       <Route path="messaging" element={<PlanFeatureRoute feature="messaging"><MessagingPage /></PlanFeatureRoute>} />
-      <Route path="agent" element={<PlanFeatureRoute feature="agent"><AgentPage /></PlanFeatureRoute>} />
-      <Route path="agent/actions" element={<PlanFeatureRoute feature="agent"><AgentActionsPage /></PlanFeatureRoute>} />
+      <Route path="agent" element={<Navigate to="tasks" replace />} />
+      <Route path="agent/tasks" element={<PlanFeatureRoute feature="agent"><AgentTasksPage /></PlanFeatureRoute>} />
+      <Route path="agent/usage" element={<PlanFeatureRoute feature="agent"><AgentUsagePage /></PlanFeatureRoute>} />
       <Route path="reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
       <Route path="operations" element={<OperationsOverviewPage />} />
       <Route path="operations/live-map" element={<LiveMapPage />} />

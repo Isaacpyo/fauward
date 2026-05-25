@@ -72,6 +72,39 @@ function deriveFileName(value: string, fallback: string) {
   }
 }
 
+// Keys that hold contact info — never rendered inline in the address blob.
+const ADDRESS_CONTACT_KEYS = new Set([
+  "name",
+  "email",
+  "phone",
+  "contactName",
+  "contact_name",
+  "contactEmail",
+  "contact_email",
+  "contactPhone",
+  "contact_phone"
+]);
+
+function emailFromAddress(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const email = asString(record.email) || asString(record.contactEmail) || asString(record.contact_email);
+  return email && email.includes("@") ? email : null;
+}
+
+function phoneFromAddress(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  const phone = asString(record.phone) || asString(record.contactPhone) || asString(record.contact_phone);
+  return phone || null;
+}
+
+function nameFromAddress(value: unknown): string | null {
+  const record = asRecord(value);
+  if (!record) return null;
+  return asString(record.name) || asString(record.contactName) || asString(record.contact_name) || null;
+}
+
 function addressToString(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -99,7 +132,7 @@ function addressToString(value: unknown): string {
   const values = [
     ...preferredKeys.map((key) => asString(record[key])).filter(Boolean),
     ...Object.entries(record)
-      .filter(([key]) => !preferredKeys.includes(key))
+      .filter(([key]) => !preferredKeys.includes(key) && !ADDRESS_CONTACT_KEYS.has(key))
       .map(([, entry]) => asString(entry))
       .filter(Boolean)
   ];
@@ -288,6 +321,7 @@ export function normalizeShipmentDetail(input: unknown, fallbackId: string): Shi
     asString(shipment?.customer_name)
     || asString(shipment?.customerName)
     || asString(organisation?.name)
+    || nameFromAddress(shipment?.destinationAddress ?? shipment?.destination_address ?? shipment?.delivery_address)
     || "Customer";
   const weight = asNumber(shipment?.package_weight_kg ?? shipment?.packageWeightKg ?? shipment?.weightKg);
   const packageQuantity = asNumber(shipment?.package_quantity ?? shipment?.packageQuantity)
@@ -361,7 +395,11 @@ export function normalizeShipmentDetail(input: unknown, fallbackId: string): Shi
     estimated_delivery_date:
       asString(shipment?.estimated_delivery_date)
       || asString(shipment?.estimatedDelivery)
-      || undefined
+      || undefined,
+    recipient_email:
+      emailFromAddress(shipment?.destinationAddress ?? shipment?.destination_address ?? shipment?.delivery_address),
+    recipient_phone:
+      phoneFromAddress(shipment?.destinationAddress ?? shipment?.destination_address ?? shipment?.delivery_address)
   };
 }
 
