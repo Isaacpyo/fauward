@@ -9,8 +9,7 @@ import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { emitTrackingStatusUpdate } from '../tracking/tracking.websocket.js';
 import { notificationQueue, webhookQueue } from '../../queues/queues.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
-import { agentConfig } from '../agent/agent.config.js';
-import type { AgentEvent } from '../agent/agent.types.js';
+import { enqueueAgentEvent } from '../agent/agent.queue.js';
 import { createTrackingEvent, buildStatusTitle, statusToEventType } from '../tracking/tracking-event.service.js';
 import { legacyToTrackingStatus } from '../tracking/tracking-status-mapper.js';
 import { TrackingSource, TrackingActorType, TrackingVisibility } from '@fauward/tracking-core';
@@ -828,17 +827,20 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         return { next, event };
       });
 
-      void fireAgentEvent(app, {
-        eventId: `status-${shipment.id}-${updated.event.id}`,
-        type: status === 'FAILED_DELIVERY' ? 'failed_delivery' : 'status_changed',
-        tenantId,
-        shipmentId: shipment.id,
-        payload: {
-          newStatus: status,
-          previousStatus: shipment.status,
-          ...(failedReason ? { reason: failedReason } : {})
-        }
-      });
+      if (status === 'FAILED_DELIVERY') {
+        void enqueueAgentEvent(app, {
+          eventId: `failed-delivery-${shipment.id}-${updated.event.id}`,
+          type: 'failed_delivery',
+          tenantId,
+          shipmentId: shipment.id,
+          payload: {
+            newStatus: status,
+            previousStatus: shipment.status,
+            source: 'TENANT_PORTAL',
+            ...(failedReason ? { reason: failedReason } : {})
+          }
+        });
+      }
 
       emitTrackingStatusUpdate({
         tenantId,
@@ -1076,19 +1078,4 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
   );
 }
 
-function fireAgentEvent(
-  app: FastifyInstance,
-  event: AgentEvent
-): void {
-  if (!agentConfig.serviceToken) return;
-  fetch('http://localhost:3001/v1/agent/handle-event', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${agentConfig.serviceToken}`
-    },
-    body: JSON.stringify(event)
-  }).catch((err: unknown) => {
-    app.log.warn({ err, eventId: event.eventId }, 'agent event fire failed');
-  });
-}
+

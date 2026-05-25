@@ -9,9 +9,10 @@ import {
 } from "lucide-react";
 import { Fragment, FormEvent, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearTokens, getDevTestSession, getRefreshToken, hasDevTestSession } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { normalizeShipmentDetail } from "@/lib/shipment-normalizers";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -38,8 +39,6 @@ function formatRegion(region: string | undefined) {
 const breadcrumbLabelMap: Record<string, string> = {
   shipments: "Shipments",
   create: "Create",
-  routes: "Routes",
-  dispatch: "Dispatch",
   crm: "CRM",
   finance: "Finance",
   analytics: "Analytics",
@@ -47,7 +46,7 @@ const breadcrumbLabelMap: Record<string, string> = {
   returns: "Returns",
   support: "Support",
   reports: "Reports",
-  operations: "Operations",
+  operations: "Control Tower",
   "live-map": "Live Map",
   fleet: "Fleet",
   pricing: "Pricing",
@@ -59,6 +58,16 @@ const breadcrumbLabelMap: Record<string, string> = {
   login: "Login",
   register: "Register"
 };
+
+// Opaque entity identifiers (UUIDs, cuids, long numeric ids) should not be
+// expanded into the breadcrumb — they render as a wall of digits/zeros and
+// add no signal. The page title is responsible for showing the entity name.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CUID_RE = /^c[a-z0-9]{20,32}$/i;
+
+function isOpaqueId(segment: string): boolean {
+  return UUID_RE.test(segment) || CUID_RE.test(segment) || /^\d{9,}$/.test(segment);
+}
 
 function humanizeSegment(segment: string): string {
   return breadcrumbLabelMap[segment] || segment.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
@@ -80,16 +89,43 @@ export function TopBar() {
   const [regionRequestLoading, setRegionRequestLoading] = useState(false);
   const [regionRequestError, setRegionRequestError] = useState<string | null>(null);
 
+  // If we're on /shipments/:opaqueId, fetch the shipment so the breadcrumb can
+  // substitute the human tracking number for the wall-of-zeros UUID. Shares
+  // the cache with ShipmentDetailPage (same queryKey), so no double request.
+  const shipmentIdInPath = useMemo(() => {
+    const parts = location.pathname.split("/").filter(Boolean);
+    if (parts[0] !== "shipments" || !parts[1]) return null;
+    return isOpaqueId(parts[1]) ? parts[1] : null;
+  }, [location.pathname]);
+  const tenantIdForBreadcrumb = tenant?.tenant_id;
+  const breadcrumbShipmentQuery = useQuery({
+    queryKey: ["shipment-detail", tenantIdForBreadcrumb, shipmentIdInPath],
+    queryFn: async () =>
+      normalizeShipmentDetail((await api.get(`/v1/shipments/${shipmentIdInPath}`)).data, shipmentIdInPath ?? ""),
+    enabled: Boolean(tenantIdForBreadcrumb && shipmentIdInPath),
+    retry: 1,
+    staleTime: 60_000,
+  });
+  const trackingNumberForBreadcrumb = breadcrumbShipmentQuery.data?.tracking_number;
+
   const breadcrumbs = useMemo(() => {
     const parts = location.pathname.split("/").filter(Boolean);
     const list = [{ label: "Dashboard", to: "/" }];
     let currentPath = "";
     parts.forEach((part) => {
       currentPath += `/${part}`;
+      if (isOpaqueId(part)) {
+        // For known entity routes, swap the opaque id for a human label
+        // (currently shipments → tracking number). Otherwise skip the segment.
+        if (part === shipmentIdInPath && trackingNumberForBreadcrumb) {
+          list.push({ label: trackingNumberForBreadcrumb, to: currentPath });
+        }
+        return;
+      }
       list.push({ label: humanizeSegment(part), to: currentPath });
     });
     return list;
-  }, [location.pathname]);
+  }, [location.pathname, shipmentIdInPath, trackingNumberForBreadcrumb]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

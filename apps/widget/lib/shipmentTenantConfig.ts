@@ -101,28 +101,62 @@ export const COUNTRIES: CountryOption[] = [
   { iso2: "FR", name: "France", dialCode: "33" },
   { iso2: "DE", name: "Germany", dialCode: "49" },
   { iso2: "ES", name: "Spain", dialCode: "34" },
+  { iso2: "IT", name: "Italy", dialCode: "39" },
+  { iso2: "PT", name: "Portugal", dialCode: "351" },
+  { iso2: "BE", name: "Belgium", dialCode: "32" },
   { iso2: "NL", name: "Netherlands", dialCode: "31" },
   { iso2: "CH", name: "Switzerland", dialCode: "41" },
+  { iso2: "SE", name: "Sweden", dialCode: "46" },
+  { iso2: "NO", name: "Norway", dialCode: "47" },
+  { iso2: "DK", name: "Denmark", dialCode: "45" },
+  { iso2: "PL", name: "Poland", dialCode: "48" },
   { iso2: "NG", name: "Nigeria", dialCode: "234" },
   { iso2: "GH", name: "Ghana", dialCode: "233" },
+  { iso2: "BJ", name: "Benin", dialCode: "229" },
+  { iso2: "TG", name: "Togo", dialCode: "228" },
   { iso2: "CI", name: "Cote d'Ivoire", dialCode: "225" },
   { iso2: "SN", name: "Senegal", dialCode: "221" },
+  { iso2: "CM", name: "Cameroon", dialCode: "237" },
+  { iso2: "SL", name: "Sierra Leone", dialCode: "232" },
+  { iso2: "LR", name: "Liberia", dialCode: "231" },
+  { iso2: "GM", name: "Gambia", dialCode: "220" },
+  { iso2: "GN", name: "Guinea", dialCode: "224" },
+  { iso2: "ML", name: "Mali", dialCode: "223" },
+  { iso2: "BF", name: "Burkina Faso", dialCode: "226" },
+  { iso2: "NE", name: "Niger", dialCode: "227" },
   { iso2: "KE", name: "Kenya", dialCode: "254" },
   { iso2: "UG", name: "Uganda", dialCode: "256" },
   { iso2: "TZ", name: "Tanzania", dialCode: "255" },
   { iso2: "RW", name: "Rwanda", dialCode: "250" },
+  { iso2: "ET", name: "Ethiopia", dialCode: "251" },
   { iso2: "ZA", name: "South Africa", dialCode: "27" },
+  { iso2: "BW", name: "Botswana", dialCode: "267" },
+  { iso2: "NA", name: "Namibia", dialCode: "264" },
+  { iso2: "MZ", name: "Mozambique", dialCode: "258" },
   { iso2: "ZM", name: "Zambia", dialCode: "260" },
   { iso2: "ZW", name: "Zimbabwe", dialCode: "263" },
   { iso2: "AE", name: "United Arab Emirates", dialCode: "971" },
   { iso2: "SA", name: "Saudi Arabia", dialCode: "966" },
+  { iso2: "QA", name: "Qatar", dialCode: "974" },
+  { iso2: "KW", name: "Kuwait", dialCode: "965" },
+  { iso2: "OM", name: "Oman", dialCode: "968" },
+  { iso2: "BH", name: "Bahrain", dialCode: "973" },
   { iso2: "EG", name: "Egypt", dialCode: "20" },
   { iso2: "MA", name: "Morocco", dialCode: "212" },
+  { iso2: "TN", name: "Tunisia", dialCode: "216" },
   { iso2: "US", name: "United States", dialCode: "1" },
   { iso2: "CA", name: "Canada", dialCode: "1" },
+  { iso2: "MX", name: "Mexico", dialCode: "52" },
   { iso2: "IN", name: "India", dialCode: "91" },
+  { iso2: "PK", name: "Pakistan", dialCode: "92" },
+  { iso2: "BD", name: "Bangladesh", dialCode: "880" },
   { iso2: "AU", name: "Australia", dialCode: "61" },
+  { iso2: "NZ", name: "New Zealand", dialCode: "64" },
   { iso2: "SG", name: "Singapore", dialCode: "65" },
+  { iso2: "MY", name: "Malaysia", dialCode: "60" },
+  { iso2: "CN", name: "China", dialCode: "86" },
+  { iso2: "JP", name: "Japan", dialCode: "81" },
+  { iso2: "KR", name: "South Korea", dialCode: "82" },
 ];
 
 const BASE_CATEGORIES: CategoryRule[] = [
@@ -140,7 +174,7 @@ const BASE_CATEGORIES: CategoryRule[] = [
 const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   uk_europe: {
     regionKey: "uk_europe",
-    countries: ["GB", "IE", "FR", "DE", "ES", "NL", "CH"],
+    countries: ["GB", "IE", "FR", "DE", "ES", "IT", "PT", "BE", "NL", "CH", "SE", "NO", "DK", "PL"],
     currencies: ["GBP", "EUR", "CHF"],
     locale: "en-GB",
     languages: [
@@ -156,7 +190,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   west_africa: {
     regionKey: "west_africa",
-    countries: ["NG", "GH", "CI", "SN", "GB"],
+    countries: ["NG", "GH", "BJ", "TG", "CI", "SN", "CM", "SL", "LR", "GM", "GN", "ML", "BF", "NE", "GB"],
     currencies: ["NGN", "GHS", "XOF", "GBP"],
     locale: "en-NG",
     languages: [
@@ -176,7 +210,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   east_africa: {
     regionKey: "east_africa",
-    countries: ["KE", "UG", "TZ", "RW", "GB"],
+    countries: ["KE", "UG", "TZ", "RW", "ET", "ZM", "GB"],
     currencies: ["KES", "UGX", "TZS", "RWF", "GBP"],
     locale: "en-KE",
     languages: [
@@ -191,7 +225,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   southern_africa: {
     regionKey: "southern_africa",
-    countries: ["ZA", "ZM", "ZW", "GB"],
+    countries: ["ZA", "ZM", "ZW", "BW", "NA", "MZ", "GB"],
     currencies: ["ZAR", "ZMW", "ZWL", "GBP"],
     locale: "en-ZA",
     languages: [
@@ -207,7 +241,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   mena: {
     regionKey: "mena",
-    countries: ["AE", "SA", "EG", "MA", "GB"],
+    countries: ["AE", "SA", "QA", "KW", "OM", "BH", "EG", "MA", "TN", "GB"],
     currencies: ["AED", "SAR", "EGP", "MAD", "GBP", "USD"],
     locale: "ar-AE",
     languages: [
@@ -227,7 +261,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   north_america: {
     regionKey: "north_america",
-    countries: ["US", "CA"],
+    countries: ["US", "CA", "MX"],
     currencies: ["USD", "CAD"],
     locale: "en-US",
     languages: [
@@ -242,7 +276,7 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   asia_pacific: {
     regionKey: "asia_pacific",
-    countries: ["IN", "AU", "SG", "AE"],
+    countries: ["IN", "PK", "BD", "AU", "NZ", "SG", "MY", "CN", "JP", "KR", "AE"],
     currencies: ["INR", "AUD", "SGD", "AED", "USD"],
     locale: "en-SG",
     languages: [{ locale: "en-SG", label: "English", textDirection: "ltr" }],
@@ -254,7 +288,12 @@ const REGION_PROFILES: Record<string, RegionProfileDefaults> = {
   },
   global: {
     regionKey: "global",
-    countries: ["GB", "NG", "AE", "US", "CA", "IN", "AU", "SG"],
+    countries: [
+      "GB", "IE", "FR", "DE", "ES", "IT", "PT", "BE", "NL", "CH", "SE", "NO", "DK", "PL",
+      "NG", "GH", "BJ", "TG", "CI", "SN", "CM", "KE", "UG", "TZ", "RW", "ZA", "ZM", "ZW",
+      "AE", "SA", "QA", "KW", "OM", "BH", "EG", "MA", "US", "CA", "MX",
+      "IN", "PK", "BD", "AU", "NZ", "SG", "MY", "CN", "JP", "KR",
+    ],
     currencies: ["GBP", "NGN", "AED", "USD", "CAD", "INR", "AUD", "SGD"],
     locale: "en-GB",
     languages: [

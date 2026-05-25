@@ -3,7 +3,7 @@ import {
   Bot,
   Map,
   BookOpen,
-  CalendarClock,
+  BriefcaseBusiness,
   CreditCard,
   Gauge,
   GitBranch,
@@ -16,7 +16,6 @@ import {
   Terminal,
   Truck,
   DollarSign,
-  Route,
   ShieldCheck,
   Settings,
   Users,
@@ -127,20 +126,6 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
   },
   {
-    to: "/routes",
-    label: "Routes",
-    icon: Route,
-    feature: "routes",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
-  },
-  {
-    to: "/dispatch",
-    label: "Dispatch",
-    icon: CalendarClock,
-    feature: "dispatch",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
-  },
-  {
     to: "/crm",
     label: "CRM",
     icon: Users,
@@ -168,7 +153,11 @@ export const navItems: NavItem[] = [
     label: "Activity",
     icon: Bell,
     feature: "activity",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: [
+      { to: "/activity", label: "Timeline" },
+      { to: "/activity/notifications", label: "Notifications" }
+    ]
   },
   {
     to: "/audit",
@@ -209,18 +198,16 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"]
   },
   {
-    to: "/operations/live-map",
-    label: "Live Map",
-    icon: Map,
-    feature: "liveMap",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
-  },
-  {
-    to: "/operations/permission-requests",
-    label: "Permission Requests",
-    icon: ShieldCheck,
+    to: "/operations",
+    label: "Control Tower",
+    icon: BriefcaseBusiness,
     feature: "fauwardGo",
-    roles: ["TENANT_ADMIN", "TENANT_MANAGER"]
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER"],
+    children: [
+      { to: "/operations", label: "Overview" },
+      { to: "/operations/live-map", label: "Live Map" },
+      { to: "/operations/permission-requests", label: "Permission Requests" }
+    ]
   },
   {
     to: "/fleet",

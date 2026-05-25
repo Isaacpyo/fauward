@@ -7,6 +7,7 @@ import {
   SHIPMENT_EVENT_COD_COLLECTED,
   type CodCollectionPayload
 } from '../shipments/shipment-events.const.js';
+import { enqueueAgentEvent } from '../agent/agent.queue.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -295,7 +296,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
     const attemptedAt = payload.attemptedAt ? new Date(payload.attemptedAt) : new Date();
 
-    await app.prisma.$transaction(async (tx) => {
+    const event = await app.prisma.$transaction(async (tx) => {
       await tx.shipment.update({
         where: { id: shipment.id },
         data: {
@@ -304,7 +305,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.shipmentEvent.create({
+      const shipmentEvent = await tx.shipmentEvent.create({
         data: {
           tenantId,
           shipmentId: shipment.id,
@@ -326,6 +327,21 @@ export async function registerDriverRoutes(app: FastifyInstance) {
           status: 'QUEUED'
         }
       });
+
+      return shipmentEvent;
+    });
+
+    void enqueueAgentEvent(app, {
+      eventId: `failed-delivery-${shipment.id}-${event.id}`,
+      type: 'failed_delivery',
+      tenantId,
+      shipmentId: shipment.id,
+      payload: {
+        newStatus: 'FAILED_DELIVERY',
+        previousStatus: shipment.status,
+        reason: payload.reason,
+        source: 'DRIVER_APP'
+      }
     });
 
     reply.send({ success: true });

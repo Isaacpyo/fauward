@@ -156,24 +156,24 @@ export default function BulkPaymentForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {loading ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
           <div className="flex items-center gap-3 text-sm text-gray-700">
-            <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-[var(--brand-primary)]" />
+            <span className="spinner text-[var(--brand-primary)]" />
             Processing your payment...
           </div>
         </div>
       ) : null}
 
       {error ? (
-        <div ref={errorRef} className="scroll-mt-24 rounded-lg border-2 border-red-200 bg-red-50 p-4">
-          <h3 className="mb-1 text-sm font-semibold text-red-800">Payment failed</h3>
-          <p className="text-sm text-red-700">{error}</p>
+        <div ref={errorRef} className="notice-error scroll-mt-24">
+          <h3 className="mb-1 text-sm font-semibold">Payment failed</h3>
+          <p>{error}</p>
         </div>
       ) : null}
 
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">Payment details</h3>
-        <div className="rounded-lg border border-gray-300 bg-white px-3 py-3 focus-within:border-[var(--brand-primary)] focus-within:ring-2 focus-within:ring-[var(--brand-primary)]">
+        <div className="brand-focus-panel">
           <PaymentElement />
         </div>
       </div>
@@ -198,7 +198,7 @@ export default function BulkPaymentForm({
       <button
         type="submit"
         disabled={!stripe || loading || !agreedToTerms}
-        className="w-full rounded-lg bg-[var(--brand-primary)] py-3.5 font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60"
+        className="btn-brand w-full"
       >
         {loading ? "Processing..." : `Pay ${formatMinorAmount(amount, currency, locale)}`}
       </button>

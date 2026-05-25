@@ -112,3 +112,70 @@ All tests in `agent.service.test.ts` pass (8 tests):
 3. **Notifications when actions are waiting** — Email or in-app notification when new pending actions arrive.
 4. **Agent action retry** — For `FAILED` actions, expose a retry mechanism.
 5. **Metrics / alerting** — Add counters for action rates.
+
+
+---
+
+# Agent Trigger Build — Failed Delivery
+
+> Date: 2026-05-25
+
+## What is now wired
+
+The agent now wakes up on a **real** `FAILED_DELIVERY` transition. Three code paths emit a BullMQ event onto `fauward-agent-events`:
+
+| Path | File | Endpoint | Emit location |
+|---|---|---|---|
+| Tenant portal | `shipments.routes.ts:831` | `PATCH /api/v1/shipments/:id/status` | After transaction, when `status === 'FAILED_DELIVERY'` |
+| Driver app | `driver.routes.ts:298` | `PATCH /api/v1/driver/shipments/:id/failed` | After transaction (captured `shipmentEvent.id`) |
+| Field app (Fauward Go) | `field.routes.ts:571` | `POST /api/v1/field/mutations` (`exception_submit`) | After `createShipmentEvent`, when `nextShipmentStatus === 'FAILED_DELIVERY'` |
+
+### Shared enqueue helper
+
+`apps/backend/src/modules/agent/agent.queue.ts` — `enqueueAgentEvent(app, event)`:
+- Enqueues to `agentQueue` (BullMQ) with `jobId: event.eventId`
+- Catches errors, logs a warning, and **swallows** — the calling route's delivery flow is never broken
+- Event shape matches what `AgentEventSchema` already expects
+
+### Stable event id
+
+Format: `failed-delivery-{shipmentId}-{shipmentEventId}`
+- `shipmentEventId` is the UUID of the `ShipmentEvent` row created in the same transaction
+- Unique per transition attempt
+- `jobId` on the BullMQ job is set to this value, so queue-level deduplication is possible if the same eventId is reused
+
+### What happens end to end
+
+1. A driver marks a delivery as failed (or tenant portal does, or field app does)
+2. Shipment status becomes `FAILED_DELIVERY`
+3. A `ShipmentEvent` is created
+4. `enqueueAgentEvent` fires a BullMQ job with `type: 'failed_delivery'`
+5. The registered worker (`startAgentWorker`) picks it up
+6. `runAgent()` runs the LLM with `tracking_exception_analysis` task
+7. Proposed tools go through `evaluatePolicy()`:
+   - Safe tools → `AUTO_APPLIED`
+   - Risky tools → `PENDING_APPROVAL` (visible in the tenant portal)
+8. Redis idempotency (`agent:event:{eventId}`) prevents double-processing
+
+## Tests
+
+- `agent.queue.test.ts` (3 tests): enqueue with correct data/jobId, error swallowed, dedup via jobId
+- Existing agent service + route tests still pass
+
+## What is intentionally NOT wired yet
+
+- **Stuck / SLA events** — no automatic trigger on SLA breach
+- **Delivered events** — no trigger on `DELIVERED` status
+- **Shipment created** — the existing `shipment_created` event type exists but no queue emission is wired
+- **Natural language queries** — still only via the `POST /v1/agent/query` endpoint
+
+These are next chunks.
+
+## Files changed
+
+- `apps/backend/src/queues/queues.ts` — added `agentQueue`
+- `apps/backend/src/modules/agent/agent.queue.ts` — new shared enqueue helper
+- `apps/backend/src/modules/agent/agent.queue.test.ts` — enqueue tests
+- `apps/backend/src/modules/shipments/shipments.routes.ts` — replaced HTTP `fireAgentEvent` with BullMQ `enqueueAgentEvent` (only for `FAILED_DELIVERY`)
+- `apps/backend/src/modules/driver/driver.routes.ts` — added `enqueueAgentEvent` after failed-delivery transaction
+- `apps/backend/src/modules/field/field.routes.ts` — added `enqueueAgentEvent` after `createShipmentEvent` when status is `FAILED_DELIVERY`

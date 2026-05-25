@@ -14,7 +14,6 @@ import {
   NotFoundPage,
   PublicBookingPage,
   RegisterPage,
-  RoutesPage,
   SettingsPage,
   TeamPage as LegacyTeamPage
 } from "@/pages/AppPages";
@@ -49,9 +48,10 @@ import { TaxPage } from "@/pages/pricing/TaxPage";
 import { CurrencyRatesPage } from "@/pages/pricing/CurrencyRatesPage";
 import { PricingSettingsPage } from "@/pages/pricing/PricingSettingsPage";
 import { PricingCalculatorPage } from "@/pages/pricing/PricingCalculatorPage";
-import { DispatchPage } from "@/pages/dispatch/DispatchPage";
 import { FauwardGoPage } from "@/pages/operations/FauwardGoPage";
+import { OperationsOverviewPage } from "@/pages/operations/OperationsOverviewPage";
 import { PermissionRequestsPage } from "@/pages/operations/PermissionRequestsPage";
+import { NotificationsInboxPage } from "@/pages/activity/NotificationsInboxPage";
 import { MessagingPage } from "@/pages/messaging/MessagingPage";
 import { AgentPage } from "@/pages/agent/AgentPage";
 import { AgentActionsPage } from "@/pages/agent/AgentActionsPage";
@@ -148,8 +148,6 @@ function WorkspaceRoutes() {
       <Route path="labels" element={<LabelsPage />} />
       <Route path="customs/:shipmentId" element={<CustomsDeclarationPage />} />
       <Route path="developer" element={<DeveloperPage />} />
-      <Route path="routes" element={<RoutesPage />} />
-      <Route path="dispatch" element={<DispatchPage />} />
       <Route path="crm" element={<CrmPage />} />
       <Route path="crm/:id" element={<CrmDetailPage />} />
       <Route path="finance" element={<FinancePage />} />
@@ -165,11 +163,13 @@ function WorkspaceRoutes() {
       <Route path="support" element={<TicketsListPage />} />
       <Route path="support/:id" element={<TicketDetailPage />} />
       <Route path="activity" element={<ActivityTimelinePage />} />
+      <Route path="activity/notifications" element={<NotificationsInboxPage />} />
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
       <Route path="messaging" element={<PlanFeatureRoute feature="messaging"><MessagingPage /></PlanFeatureRoute>} />
       <Route path="agent" element={<PlanFeatureRoute feature="agent"><AgentPage /></PlanFeatureRoute>} />
       <Route path="agent/actions" element={<PlanFeatureRoute feature="agent"><AgentActionsPage /></PlanFeatureRoute>} />
       <Route path="reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
+      <Route path="operations" element={<OperationsOverviewPage />} />
       <Route path="operations/live-map" element={<LiveMapPage />} />
       <Route path="operations/permission-requests" element={<PermissionRequestsPage />} />
       <Route path="fleet" element={<PlanFeatureRoute feature="fleet"><FleetPage /></PlanFeatureRoute>} />

@@ -21,7 +21,7 @@ type SidebarProps = {
 };
 
 const NAV_GROUPS: { label: string; paths: string[] }[] = [
-  { label: "Operations", paths: ["/", "/shipments", "/fauward-go", "/routes", "/dispatch", "/operations/live-map", "/fleet"] },
+  { label: "Operations", paths: ["/", "/shipments", "/fauward-go", "/operations", "/operations/live-map", "/fleet"] },
   { label: "Business", paths: ["/crm", "/finance", "/analytics", "/pricing", "/returns"] },
   { label: "Admin", paths: ["/team", "/activity", "/support", "/reports", "/settings", "/developer"] },
   { label: "Customer", paths: ["/book"] },
@@ -139,7 +139,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
 
           const parentClass = ({ isActive }: { isActive: boolean }) =>
             cn(
-              "relative flex min-h-[40px] w-full items-center rounded-md px-3 text-left text-sm font-medium transition",
+              "relative flex min-h-[34px] w-full items-center rounded-md px-3 text-left text-xs font-medium transition",
               locked
                 ? "text-gray-400 hover:bg-amber-50 hover:text-amber-700"
                 : isActive || (hasChildren && (parentIsActiveSelf || isExpanded))
@@ -174,7 +174,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
           return (
             <div key={`${item.to}-${item.label}`}>
               {showGroup && (
-                <p className="mb-1 mt-4 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400 first:mt-0">
+                <p className="mb-1 mt-3 px-3 text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400 first:mt-0">
                   {groupLabel}
                 </p>
               )}
@@ -198,7 +198,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                         <NavLink
                           to={child.to}
                           className={cn(
-                            "flex min-h-[32px] items-center rounded-md py-1.5 pl-10 pr-3 text-xs font-medium transition",
+                            "flex min-h-[28px] items-center rounded-md py-1 pl-10 pr-3 text-[11px] font-medium transition",
                             childActive
                               ? "bg-[var(--tenant-primary)]/10 text-[var(--tenant-primary)]"
                               : childLocked
@@ -227,7 +227,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
       {/* Footer */}
       <footer className="space-y-2 border-t border-gray-100 p-2">
         <div className={cn("rounded-lg bg-gray-50 px-3 py-2", sidebarCollapsed && !mobile ? "px-2" : "")}>
-          <p className="truncate text-sm font-semibold text-gray-900">{tenant?.name ?? "Tenant"}</p>
+          <p className="truncate text-xs font-semibold text-gray-900">{tenant?.name ?? "Tenant"}</p>
           {!sidebarCollapsed || mobile ? (
             <p className="truncate text-xs text-gray-400">{tenant?.domain}</p>
           ) : null}

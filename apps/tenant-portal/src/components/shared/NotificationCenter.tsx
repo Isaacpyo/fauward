@@ -1,15 +1,18 @@
 import * as RadixDropdown from "@radix-ui/react-dropdown-menu";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRelayNotifications } from "@fauward/relay-ui";
-import { AlertCircle, Bell, BellOff, MessageSquare, RefreshCw, Wallet } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Bell, BellOff, MessageSquare } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 import { api } from "@/lib/api";
 import { getAccessToken, hasDevTestSession } from "@/lib/auth";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
+import { iconForNotificationType, toRelativeTime } from "@/lib/notification-display";
 import { isNotificationSoundMuted, playNotificationChime, setNotificationSoundMuted } from "@/lib/notification-sound";
+
+const UNREAD_ONLY_STORAGE_KEY = "fw-bell-unread-only";
 
 type InAppNotification = {
   id: string;
@@ -20,23 +23,6 @@ type InAppNotification = {
   isRead: boolean;
   createdAt: string;
 };
-
-function toRelativeTime(dateIso: string) {
-  const date = new Date(dateIso);
-  const diffSec = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (diffSec < 60) return "just now";
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-  return `${Math.floor(diffSec / 86400)}d ago`;
-}
-
-function iconForType(type: string) {
-  if (type.includes("return")) return <RefreshCw size={14} className="text-amber-600" />;
-  if (type.includes("ticket")) return <MessageSquare size={14} className="text-emerald-600" />;
-  if (type.includes("payment")) return <Wallet size={14} className="text-indigo-600" />;
-  if (type.includes("exception")) return <AlertCircle size={14} className="text-rose-600" />;
-  return <Bell size={14} className="text-slate-600" />;
-}
 
 async function fetchNotifications() {
   const response = await api.get<{ notifications: InAppNotification[] }>("/v1/notifications?limit=50");
@@ -57,6 +43,10 @@ export function NotificationCenter() {
   const canFetchNotifications = Boolean(getAccessToken()) && !isDevSession;
   const relayTenantId = isDevSession ? "tenant_dev" : tenant?.tenant_id;
   const [muted, setMuted] = useState<boolean>(() => isNotificationSoundMuted());
+  const [unreadOnly, setUnreadOnly] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(UNREAD_ONLY_STORAGE_KEY) === "1";
+  });
   // Tracks IDs we've already alerted on so we only fire toast + sound for
   // genuinely new arrivals, not for every poll or remount.
   const seenIdsRef = useRef<Set<string> | null>(null);
@@ -65,6 +55,9 @@ export function NotificationCenter() {
     queryKey: ["notifications"],
     queryFn: fetchNotifications,
     staleTime: 10_000,
+    // Without an active poll the new-arrival detection effect below never sees
+    // notifications created while the dashboard is open — toast + chime never fire.
+    refetchInterval: 15_000,
     enabled: canFetchNotifications
   });
 
@@ -132,6 +125,23 @@ export function NotificationCenter() {
   });
   const unreadCount = (unreadCountQuery.data ?? notifications.filter((item) => !item.isRead).length) + relayNotifications.unreadCount;
 
+  // Defensive sort + unread-only filter. Backend already orders desc, but
+  // re-sorting locally keeps behaviour stable if the response ever shifts.
+  const sortedNotifications = useMemo(
+    () => [...notifications].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notifications]
+  );
+  const visibleNotifications = unreadOnly
+    ? sortedNotifications.filter((n) => !n.isRead)
+    : sortedNotifications;
+
+  const persistUnreadOnly = (next: boolean) => {
+    setUnreadOnly(next);
+    if (typeof window === "undefined") return;
+    if (next) window.localStorage.setItem(UNREAD_ONLY_STORAGE_KEY, "1");
+    else window.localStorage.removeItem(UNREAD_ONLY_STORAGE_KEY);
+  };
+
   return (
     <RadixDropdown.Root>
       <RadixDropdown.Trigger asChild>
@@ -161,7 +171,21 @@ export function NotificationCenter() {
         >
           <div className="mb-1 flex items-center justify-between gap-2 px-2 py-1.5">
             <p className="text-sm font-semibold text-gray-900">Notifications</p>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
+                  unreadOnly
+                    ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] text-[var(--tenant-primary)]"
+                    : "border-gray-200 text-gray-500 hover:border-gray-300"
+                }`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  persistUnreadOnly(!unreadOnly);
+                }}
+              >
+                Unread only
+              </button>
               <button
                 type="button"
                 className="text-gray-500 hover:text-gray-700"
@@ -222,10 +246,12 @@ export function NotificationCenter() {
               </div>
             ) : null}
 
-            {notifications.length === 0 && relayNotifications.items.length === 0 ? (
-              <p className="px-2 py-8 text-center text-sm text-gray-500">No notifications</p>
+            {visibleNotifications.length === 0 && relayNotifications.items.length === 0 ? (
+              <p className="px-2 py-8 text-center text-sm text-gray-500">
+                {unreadOnly && notifications.length > 0 ? "No unread notifications" : "No notifications"}
+              </p>
             ) : (
-              notifications.map((notification) => (
+              visibleNotifications.map((notification) => (
                 <button
                   key={notification.id}
                   type="button"
@@ -239,7 +265,7 @@ export function NotificationCenter() {
                     }
                   }}
                 >
-                  <div className="mt-0.5 shrink-0">{iconForType(notification.type)}</div>
+                  <div className="mt-0.5 shrink-0">{iconForNotificationType(notification.type)}</div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <p className="line-clamp-1 text-sm font-medium text-gray-900">{notification.title}</p>
@@ -253,6 +279,17 @@ export function NotificationCenter() {
                 </button>
               ))
             )}
+          </div>
+
+          <div className="mt-1 border-t border-gray-100 pt-1">
+            <RadixDropdown.Item asChild>
+              <Link
+                to="/activity/notifications"
+                className="block rounded-md px-2 py-2 text-center text-xs font-medium text-[var(--tenant-primary)] hover:bg-gray-50 hover:underline focus:outline-none"
+              >
+                View all notifications
+              </Link>
+            </RadixDropdown.Item>
           </div>
         </RadixDropdown.Content>
       </RadixDropdown.Portal>

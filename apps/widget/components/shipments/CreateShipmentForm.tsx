@@ -259,6 +259,9 @@ export default function CreateShipmentForm({
   const [bulkBatchRef, setBulkBatchRef] = useState<string | null>(null);
   const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
+  const shellClassName = embedded
+    ? "mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:py-10"
+    : "mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:py-10";
 
   useEffect(() => {
     if (tenantConfig) {
@@ -534,11 +537,20 @@ export default function CreateShipmentForm({
 
   if (success && !suppressSuccessView) {
     return (
-      <div ref={formRef} dir={dir} className={embedded ? "max-w-none p-0" : "mx-auto max-w-3xl p-4 sm:p-6"}>
-        <Card title={t("success.title")}>
-          <div className="space-y-4">
-            <SummaryRow label={t("success.track")} value={success.trackingRef} />
-            <div className="flex flex-wrap gap-3">
+      <div ref={formRef} dir={dir} className={shellClassName}>
+        <Card title="">
+          <div className="mx-auto max-w-xl space-y-6 text-center">
+            <div className="success-mark mx-auto flex h-12 w-12 items-center justify-center rounded-full border">
+              <span className="text-2xl leading-none">✓</span>
+            </div>
+            <div>
+              <h2 className="text-2xl font-semibold leading-tight text-gray-900">{t("success.title")}</h2>
+              <p className="mt-2 text-sm leading-6 text-gray-500">{t("success.track")}</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="font-mono text-lg font-semibold tracking-wide text-gray-900">{success.trackingRef}</div>
+            </div>
+            <div className="flex flex-col justify-center gap-3 sm:flex-row">
               <button
                 type="button"
                 className="btn-outline"
@@ -557,23 +569,15 @@ export default function CreateShipmentForm({
   }
 
   return (
-    <div ref={formRef} dir={dir} className={embedded ? "max-w-none p-0" : "mx-auto max-w-3xl p-4 sm:p-6"} style={BRAND_STYLE}>
-      {embedded ? (
-        <div className="mb-2 flex justify-end">
-          <button type="button" onClick={() => postMessageToHost({ type: "WIDGET_CLOSE" })} className="text-sm text-gray-500 hover:text-gray-700">
-            {t("app.close")}
-          </button>
-        </div>
-      ) : null}
-
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className={embedded ? "text-xl font-semibold text-gray-950" : "text-2xl font-semibold text-gray-950"}>{t("app.title")}</h1>
-          <p className="mt-1 text-sm text-gray-600">{t("app.subtitle")}</p>
-          {configError ? <p className="mt-2 text-sm text-red-700">{configError}</p> : null}
+    <div ref={formRef} dir={dir} className={shellClassName} style={BRAND_STYLE}>
+      <div className="mb-10 grid gap-5 md:grid-cols-[1fr_auto_1fr] md:items-start">
+        <div className="md:col-start-2 text-center">
+          <h1 className="text-2xl font-semibold leading-tight text-gray-900 sm:text-3xl">{t("app.title")}</h1>
+          <p className="mt-2 text-sm leading-6 text-gray-500">{t("app.subtitle")}</p>
+          {configError ? <p className="notice-error mt-4 text-start">{configError}</p> : null}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-2 md:justify-end">
           <LanguageSwitcher
             label={t("language.label")}
             languages={config.supportedLanguages}
@@ -630,13 +634,13 @@ export default function CreateShipmentForm({
             onChange={selectCorridor}
           />
 
-          <div className="mb-4">
+          <div className="mb-8">
             <Stepper steps={steps} active={step} t={t} onStepClick={(index) => index <= step && setStep(index)} />
           </div>
 
           {activeStep === "addresses" ? (
             <Card title={t("steps.addresses")}>
-              <div className="grid gap-6">
+              <div className="grid gap-8">
                 <PartyForm
                   title={t("party.sender")}
                   party={draft.sender}
@@ -663,14 +667,14 @@ export default function CreateShipmentForm({
 
           {activeStep === "package" ? (
             <Card title={t("package.title")}>
-              <p className="mb-4 text-sm text-gray-600">{t("package.help")}</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <p className="mb-6 text-sm leading-6 text-gray-500">{t("package.help")}</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <NumberInput label={t("package.length")} value={draft.pkg.lengthCm} onChange={(lengthCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, lengthCm } }))} />
                 <NumberInput label={t("package.width")} value={draft.pkg.widthCm} onChange={(widthCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, widthCm } }))} />
                 <NumberInput label={t("package.height")} value={draft.pkg.heightCm} onChange={(heightCm) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, heightCm } }))} />
                 <NumberInput label={t("package.weight")} value={draft.pkg.weightKg} min={5} placeholder={t("package.minWeight")} onChange={(weightKg) => setDraft((current) => ({ ...current, pkg: { ...current.pkg, weightKg } }))} />
               </div>
-              <div className="mt-4 grid gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2">
+              <div className="mt-8 grid gap-4 rounded-xl border border-gray-200 bg-gray-50 p-5 md:grid-cols-2">
                 <SummaryRow label={t("package.chargeable")} value={`${number.format(pricing.chargeableWeight)} kg`} compact />
                 <SummaryRow label={t("review.total")} value={money.format(pricing.total)} compact />
               </div>
@@ -705,7 +709,7 @@ export default function CreateShipmentForm({
           {activeStep === "phone" ? (
             <Card title={t("phone.title")}>
               {draft.phoneVerified ? (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm font-medium text-green-800">{t("phone.verified")}</div>
+                <div className="notice-success font-medium">{t("phone.verified")}</div>
               ) : (
                 <PhoneVerification
                   country={draft.sender.country}
@@ -737,9 +741,9 @@ export default function CreateShipmentForm({
           {activeStep === "payment" ? (
             <Card title={t("payment.title")}>
               {paymentLoading ? (
-                <div className="flex items-center justify-center py-12 text-sm text-gray-600">{t("payment.loading")}</div>
+                <div className="flex min-h-[180px] items-center justify-center gap-3 text-sm text-gray-500"><span className="spinner text-[var(--brand-primary)]" />{t("payment.loading")}</div>
               ) : paymentError ? (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{paymentError}</div>
+                <div className="notice-error">{paymentError}</div>
               ) : paymentSession?.provider === "stripe" && stripePromise ? (
                 <Elements stripe={stripePromise} options={{ clientSecret: paymentSession.clientSecret }}>
                   <StripeCheckoutForm
@@ -759,14 +763,14 @@ export default function CreateShipmentForm({
                   onPaid={() => handlePaystackSingleCreated(paymentSession)}
                 />
               ) : (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{t("payment.failedInit")}</div>
+                <div className="notice-error">{t("payment.failedInit")}</div>
               )}
             </Card>
           ) : null}
 
-          {submitError ? <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{submitError}</div> : null}
+          {submitError ? <div className="notice-error mt-6">{submitError}</div> : null}
 
-          <div className="mt-6 flex items-center justify-between gap-3">
+          <div className="mt-8 flex items-center justify-between gap-4">
             <button type="button" onClick={back} disabled={step === 0 || submitting} className="btn-outline disabled:opacity-40">
               {t("actions.back")}
             </button>
@@ -795,9 +799,9 @@ function LanguageSwitcher({
 }) {
   if (languages.length <= 1) return null;
   return (
-    <label className="flex items-center gap-2 text-xs font-medium text-gray-600">
+    <label className="flex min-h-11 items-center gap-2 text-xs font-medium text-gray-700">
       <span>{label}</span>
-      <select value={locale} onChange={(event) => onChange(event.target.value)} className="rounded-lg border border-gray-200 bg-white px-2 py-2 text-xs text-gray-900">
+      <select value={locale} onChange={(event) => onChange(event.target.value)} className="field min-w-[120px] !px-3 !text-xs">
         {languages.map((language) => (
           <option key={language.locale} value={language.locale}>
             {language.label}
@@ -818,15 +822,15 @@ function SegmentedButton({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1">
+    <div className="inline-flex min-h-11 rounded-[var(--brand-radius)] border border-gray-200 bg-gray-50 p-1">
       {items.map((item) => (
         <button
           key={item.key}
           type="button"
           onClick={() => onChange(item.key)}
           className={[
-            "rounded-md px-3 py-1.5 text-xs font-semibold transition",
-            value === item.key ? "bg-[var(--brand-primary)] text-white" : "text-gray-700 hover:bg-white",
+                "min-h-9 rounded-md px-4 text-xs font-semibold transition-colors",
+                value === item.key ? "bg-[var(--brand-primary)] text-white" : "text-gray-700 hover:bg-white",
           ].join(" ")}
         >
           {item.label}
@@ -858,7 +862,7 @@ function CorridorPicker({
 
   if (config.corridors.length === 1 && corridor) {
     return (
-      <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+      <div className="mb-8 rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm leading-6 text-gray-700">
         <span className="font-semibold">{t("corridor.single")}</span> {displayCountryName(corridor.originCountry, locale)} to{" "}
         {displayCountryName(corridor.destinationCountry, locale)}
       </div>
@@ -867,7 +871,7 @@ function CorridorPicker({
 
   return (
     <Card title={t("corridor.title")}>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-2">
         <CountrySelect
           label={t("corridor.origin")}
           countries={originCountries}
@@ -904,32 +908,63 @@ function Stepper({
   t: (key: string) => string;
   onStepClick: (index: number) => void;
 }) {
+  const activeLabel = t(`steps.${steps[active] ?? steps[0]}`);
   return (
-    <ol className="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-white p-2 sm:grid-cols-3 lg:grid-cols-7">
-      {steps.map((step, index) => {
-        const isActive = index === active;
-        const done = index < active;
-        return (
-          <li key={step}>
-            <button
-              type="button"
-              disabled={index > active}
-              onClick={() => onStepClick(index)}
-              className={[
-                "h-full w-full rounded-md border px-2 py-2 text-start text-xs font-semibold transition",
-                isActive
-                  ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
-                  : done
-                    ? "border-[var(--brand-primary)] bg-white text-[var(--brand-primary)]"
-                    : "border-gray-200 bg-gray-50 text-gray-600",
-              ].join(" ")}
-            >
-              {t(`steps.${step}`)}
-            </button>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="space-y-4">
+      <div className="rounded-xl border border-gray-200 bg-white p-4 md:hidden">
+        <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          Step {active + 1} of {steps.length}
+        </div>
+        <div className="mt-1 text-base font-semibold text-gray-900">{activeLabel}</div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="h-full rounded-full bg-[var(--brand-primary)] transition-[width]"
+            style={{ width: `${((active + 1) / steps.length) * 100}%` }}
+          />
+        </div>
+      </div>
+      <ol className="hidden w-full items-center md:flex">
+        {steps.map((step, index) => {
+          const isActive = index === active;
+          const done = index < active;
+          return (
+            <li key={step} className="flex flex-1 items-center">
+              <button
+                type="button"
+                disabled={index > active}
+                onClick={() => onStepClick(index)}
+                className={[
+                  "group flex min-w-0 items-center gap-2 bg-transparent text-start transition-colors disabled:cursor-not-allowed",
+                  isActive ? "text-gray-900" : done ? "text-gray-700" : "text-gray-400",
+                ].join(" ")}
+              >
+                <span
+                  className={[
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors",
+                    done
+                      ? "border-[var(--brand-primary)] bg-[var(--brand-primary)] text-white"
+                      : isActive
+                        ? "border-[var(--brand-primary)] bg-white text-[var(--brand-primary)]"
+                        : "border-gray-200 bg-white text-gray-400",
+                  ].join(" ")}
+                >
+                  {done ? "✓" : index + 1}
+                </span>
+                <span className="truncate text-sm font-medium">{t(`steps.${step}`)}</span>
+              </button>
+              {index < steps.length - 1 ? (
+                <span
+                  className={[
+                    "mx-3 h-px flex-1 transition-colors",
+                    index < active ? "bg-[var(--brand-primary)]" : "bg-gray-200",
+                  ].join(" ")}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 
@@ -955,8 +990,8 @@ function PartyForm({
   const schema = getAddressSchema(party.country);
   return (
     <section>
-      <h3 className="mb-3 text-base font-semibold text-gray-950">{title}</h3>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <h3 className="mb-5 text-lg font-semibold leading-7 text-gray-900">{title}</h3>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <TextInput label={t("party.fullName")} value={party.fullName} onChange={(fullName) => onChange({ ...party, fullName })} required />
         <TextInput label={t("party.email")} type="email" value={party.email} onChange={(email) => onChange({ ...party, email })} />
         <TextInput label={t("party.phone")} type="tel" value={party.phone} onChange={(phone) => onChange({ ...party, phone })} required />
@@ -1007,10 +1042,10 @@ function GoodsForm({
 }) {
   const category = config.allowedCategories.find((item) => item.key === goods.category);
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-sm text-gray-700">{t("goods.category")}</span>
+          <span className="mb-2 block text-sm font-medium text-gray-700">{t("goods.category")}</span>
           <select value={goods.category} onChange={(event) => onChange({ ...goods, category: event.target.value })} className="field">
             <option value="">{t("goods.category")}</option>
             {config.allowedCategories.map((item) => (
@@ -1023,22 +1058,24 @@ function GoodsForm({
         <NumberInput label={`${t("goods.value")} (${config.currency})`} value={goods.declaredValue} onChange={(declaredValue) => onChange({ ...goods, declaredValue })} />
       </div>
       {category?.status === "restricted" && category.message ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{t("goods.restricted", { message: category.message })}</div>
+        <div className="notice-warning">{t("goods.restricted", { message: category.message })}</div>
       ) : null}
       {category?.status === "blocked" && category.message ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{t("goods.blocked", { message: category.message })}</div>
+        <div className="notice-error">{t("goods.blocked", { message: category.message })}</div>
       ) : null}
       <div>
-        <span className="mb-2 block text-sm text-gray-700">{t("goods.insurance")}</span>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <span className="mb-3 block text-sm font-medium text-gray-700">{t("goods.insurance")}</span>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {config.pricing.insuranceTiers.filter((tier) => tier.enabled).map((tier) => (
             <button
               key={tier.key}
               type="button"
               onClick={() => onChange({ ...goods, insurance: tier.key })}
               className={[
-                "rounded-lg border p-3 text-start text-sm transition",
-                goods.insurance === tier.key ? "border-[var(--brand-primary)] bg-white" : "border-gray-200 bg-white",
+                "min-h-[88px] rounded-xl border p-4 text-start text-sm transition-colors",
+                goods.insurance === tier.key
+                  ? "brand-selected-panel bg-white"
+                  : "border-gray-200 bg-white hover:border-gray-300",
               ].join(" ")}
             >
               <span className="block font-semibold text-gray-950">{tier.label}</span>
@@ -1070,16 +1107,16 @@ function CustomsForm({
   onChange: (customs: CustomsDeclarationInput) => void;
 }) {
   if (!required) {
-    return <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">{t("customs.domestic")}</div>;
+    return <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm leading-6 text-gray-700">{t("customs.domestic")}</div>;
   }
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+    <div className="space-y-6">
+      <div className="notice-info">
         {t("customs.help", { system: config.customsSystemLabel ?? "Customs" })}
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-sm text-gray-700">{t("customs.type")}</span>
+          <span className="mb-2 block text-sm font-medium text-gray-700">{t("customs.type")}</span>
           <select value={customs.type} onChange={(event) => onChange({ ...customs, type: event.target.value as "DDP" | "DDU" })} className="field">
             <option value="DDU">DDU</option>
             <option value="DDP">DDP</option>
@@ -1087,10 +1124,10 @@ function CustomsForm({
         </label>
         <TextInput label={t("customs.reason")} value={customs.reasonForExport} onChange={(reasonForExport) => onChange({ ...customs, reasonForExport })} required />
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         {customs.items.map((item, index) => (
-          <div key={index} className="rounded-lg border border-gray-200 bg-white p-3">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div key={index} className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <TextInput label={t("customs.description")} value={item.description} onChange={(description) => updateCustomsItem(customs, index, { ...item, description }, onChange)} required />
               <TextInput label={t("customs.hsCode")} value={item.hsCode} onChange={(hsCode) => updateCustomsItem(customs, index, { ...item, hsCode }, onChange)} required />
               <NumberInput label={t("customs.quantity")} value={item.quantity} onChange={(quantity) => updateCustomsItem(customs, index, { ...item, quantity }, onChange)} min={1} />
@@ -1104,7 +1141,7 @@ function CustomsForm({
               />
             </div>
             {customs.items.length > 1 ? (
-              <button type="button" className="mt-3 text-sm font-semibold text-red-700" onClick={() => onChange({ ...customs, items: customs.items.filter((_, itemIndex) => itemIndex !== index) })}>
+              <button type="button" className="mt-4 text-sm font-semibold text-[var(--semantic-error)]" onClick={() => onChange({ ...customs, items: customs.items.filter((_, itemIndex) => itemIndex !== index) })}>
                 {t("customs.removeItem")}
               </button>
             ) : null}
@@ -1209,13 +1246,13 @@ function PhoneVerification({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">{t("phone.channel", { channel })}</div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr]">
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm leading-6 text-gray-700">{t("phone.channel", { channel })}</div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[120px_1fr]">
         <TextInput label="Code" value={`+${getDialCodeForCountry(country)}`} onChange={() => null} disabled />
         <TextInput label={t("party.phone")} type="tel" value={phone} onChange={onPhoneChange} required />
       </div>
-      {message ? <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">{message}</div> : null}
-      {error ? <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+      {message ? <div className="notice-success">{message}</div> : null}
+      {error ? <div className="notice-error">{error}</div> : null}
       <div className="flex flex-col gap-3 sm:flex-row">
         <button type="button" className="btn-brand" disabled={sending || !phoneE164} onClick={sendOtp}>
           {sending ? t("phone.sending") : sent ? t("phone.resend") : t("phone.send")}
@@ -1247,18 +1284,18 @@ function Review({
   t: (key: string, values?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-4 text-sm">
       <SummaryRow label={t("review.route")} value={corridor?.route ?? "-"} />
       <SummaryRow label={t("review.sender")} value={`${draft.sender.fullName || "-"}, ${draft.sender.country}`} />
       <SummaryRow label={t("review.recipient")} value={`${draft.recipient.fullName || "-"}, ${draft.recipient.country}`} />
       <SummaryRow label={t("review.goods")} value={`${draft.goods.category || "-"} (${money.format(draft.goods.declaredValue)})`} />
       <SummaryRow label={t("review.weight")} value={`${number.format(pricing.chargeableWeight)} kg`} />
-      <div className="rounded-lg border border-gray-200 bg-white p-3">
-        <div className="mb-2 flex items-center justify-between font-semibold text-gray-900">
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5">
+        <div className="mb-4 flex items-center justify-between gap-4 font-semibold text-gray-900">
           <span>{t("review.breakdown")}</span>
-          <span>{money.format(pricing.total)}</span>
+          <span className="text-lg">{money.format(pricing.total)}</span>
         </div>
-        <div className="space-y-1.5 text-xs text-gray-600">
+        <div className="space-y-3 text-sm text-gray-600">
           <PriceRow label={t("review.weightCharge")} value={money.format(pricing.weightCharge)} />
           <PriceRow label={t("review.insurance")} value={money.format(pricing.insuranceFee)} />
           {config.taxRule?.enabled ? (
@@ -1316,12 +1353,14 @@ function StripeCheckoutForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="notice-error">
           <span className="font-semibold">{t("payment.failed")}</span>
           <p className="mt-1">{error}</p>
         </div>
       ) : null}
-      <PaymentElement />
+      <div className="brand-focus-panel">
+        <PaymentElement />
+      </div>
       <button type="submit" disabled={!stripe || processing || submitting} className="btn-brand w-full">
         {processing || submitting ? t("payment.processing") : t("payment.pay", { amount: money.format(amount) })}
       </button>
@@ -1387,12 +1426,12 @@ function PaystackCheckoutForm({
   return (
     <div className="space-y-4">
       {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="notice-error">
           <span className="font-semibold">{t("payment.failed")}</span>
           <p className="mt-1">{error}</p>
         </div>
       ) : null}
-      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 text-sm text-gray-700">
         <SummaryRow label="Paystack" value={session.reference} compact />
       </div>
       <button type="button" disabled={processing || submitting} className="btn-brand w-full" onClick={() => void handlePaystack()}>
@@ -1567,11 +1606,11 @@ function BulkFlow({
 
   return (
     <Card title={t("bulk.title")}>
-      <div className="space-y-4 text-sm text-gray-700">
+      <div className="space-y-8 text-sm text-gray-700">
         {bulkStep === "upload" ? (
           <>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">{t("bulk.guide")}</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-5 leading-6">{t("bulk.guide")}</div>
+            <div className="flex flex-wrap gap-3">
               <button type="button" className="btn-outline" onClick={templateCsv}>
                 {t("bulk.download")}
               </button>
@@ -1610,9 +1649,9 @@ function BulkFlow({
         ) : null}
 
         {bulkErrors.length > 0 ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-            <div className="mb-2 font-semibold text-red-800">{t("bulk.errors")}</div>
-            <ul className="list-disc space-y-1 pl-5 text-red-700">
+          <div className="notice-error">
+            <div className="mb-2 font-semibold">{t("bulk.errors")}</div>
+            <ul className="list-disc space-y-1 ps-5">
               {bulkErrors.slice(0, 12).map((error) => (
                 <li key={error}>{error}</li>
               ))}
@@ -1621,9 +1660,9 @@ function BulkFlow({
         ) : null}
 
         {bulkStep === "review" && bulkRows.length > 0 ? (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("bulk.valid", { count: bulkRows.length })}</div>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-6">
+            <div className="notice-success">{t("bulk.valid", { count: bulkRows.length })}</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SummaryRow label={t("bulk.totalShipments")} value={number.format(bulkRows.length)} compact />
               <SummaryRow label={t("bulk.totalAmount")} value={money.format(total)} compact />
             </div>
@@ -1634,9 +1673,9 @@ function BulkFlow({
         ) : null}
 
         {bulkStep === "phone" ? (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {bulkPhoneVerified ? (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("phone.verified")}</div>
+              <div className="notice-success">{t("phone.verified")}</div>
             ) : (
               <PhoneVerification
                 country={bulkRows[0]?.sender.country ?? config.enabledCountries[0]?.name ?? "United Kingdom"}
@@ -1683,12 +1722,15 @@ function BulkFlow({
         ) : null}
 
         {bulkStep === "creating" ? (
-          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-800">{bulkSubmitting ? t("bulk.creating") : t("bulk.created")}</div>
+          <div className="notice-info flex items-center gap-3">
+            {bulkSubmitting ? <span className="spinner" /> : null}
+            {bulkSubmitting ? t("bulk.creating") : t("bulk.created")}
+          </div>
         ) : null}
 
         {bulkStep === "complete" ? (
-          <div className="space-y-3">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-800">{t("bulk.created")}</div>
+          <div className="space-y-4">
+            <div className="notice-success">{t("bulk.created")}</div>
             {bulkResults.map((result) => (
               <SummaryRow key={`${result.row}-${result.ok ? "ok" : "error"}`} label={`Row ${result.row}`} value={result.ok ? result.trackingRef : result.error} />
             ))}
@@ -1894,7 +1936,7 @@ function CountrySelect({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} className="field">
         <option value="">{label}</option>
         {countries.map((country) => (
@@ -1924,9 +1966,9 @@ function TextInput({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm text-gray-700">
+      <span className="mb-2 block text-sm font-medium text-gray-700">
         {label}
-        {required ? " *" : ""}
+        {required ? <span className="text-gray-500"> *</span> : null}
       </span>
       <input type={type} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} className="field disabled:bg-gray-50 disabled:text-gray-500" />
     </label>
@@ -1948,7 +1990,7 @@ function NumberInput({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
       <input
         type="number"
         inputMode="decimal"
@@ -1975,7 +2017,7 @@ function TextArea({
 }) {
   return (
     <label className="block sm:col-span-2">
-      <span className="mb-1 block text-sm text-gray-700">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-gray-700">{label}</span>
       <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="field min-h-[88px]" />
     </label>
   );
@@ -1983,8 +2025,8 @@ function TextArea({
 
 function Card({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-      <h2 className="mb-3 text-lg font-semibold text-gray-950">{title}</h2>
+    <section className="form-card mb-8 p-6 md:p-8">
+      {title ? <h2 className="mb-6 text-xl font-semibold leading-8 text-gray-900">{title}</h2> : null}
       {children}
     </section>
   );
@@ -1992,9 +2034,9 @@ function Card({ title, children }: { title: string; children: ReactNode }) {
 
 function SummaryRow({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className={["flex items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white", compact ? "p-3" : "p-3"].join(" ")}>
+    <div className={["flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white", compact ? "p-4" : "p-4"].join(" ")}>
       <span className="text-gray-600">{label}</span>
-      <span className="text-end font-semibold text-gray-950">{value}</span>
+      <span className="text-end font-semibold text-gray-900">{value}</span>
     </div>
   );
 }

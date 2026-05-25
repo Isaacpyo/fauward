@@ -61,3 +61,11 @@ export const routeOptimizationQueue = new Queue<QueuePayload>('route-optimizatio
     backoff: { type: 'exponential', delay: 5_000 }
   }
 });
+
+export const agentQueue = new Queue<QueuePayload>('fauward-agent-events', {
+  connection: bullmqConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2_000 }
+  }
+});

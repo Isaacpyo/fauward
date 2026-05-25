@@ -568,7 +568,7 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
       }
     });
 
-    await createShipmentEvent(app, {
+    const shipmentEvent = await createShipmentEvent(app, {
       tenantId,
       shipmentId: shipment.id,
       status: nextShipmentStatus,
@@ -583,6 +583,21 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
           : `Field stop ${stopState.replace('_', ' ')}`,
       timestamp: mutation.occurredAt
     });
+
+    if (nextShipmentStatus === 'FAILED_DELIVERY') {
+      void enqueueAgentEvent(app, {
+        eventId: `failed-delivery-${shipment.id}-${shipmentEvent.id}`,
+        type: 'failed_delivery',
+        tenantId,
+        shipmentId: shipment.id,
+        payload: {
+          newStatus: nextShipmentStatus,
+          previousStatus: shipment.status,
+          reason: typeof payload.reason === 'string' ? payload.reason : undefined,
+          source: 'FAUWARD_GO'
+        }
+      });
+    }
 
     await publishFieldEvent(app, {
       aggregateId: stop?.id ?? shipment.id,

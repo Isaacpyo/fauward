@@ -1,12 +1,16 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, BriefcaseBusiness, ClipboardList, MapPinned, ShieldCheck, Smartphone, Truck, Users } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BriefcaseBusiness, CalendarClock, ClipboardList, MapPinned, Route as RouteIcon, ShieldCheck, Smartphone, Truck, Users } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
+import { loadRouteOptions, saveRouteOptions, type TenantRouteOption } from "@/lib/route-options";
 
 type FieldOpsOverview = {
   kpis: {
@@ -165,7 +169,7 @@ const formatDateTime = (value: string | null) => {
 };
 
 type KpiKey = "activeRoutes" | "openStops" | "deliveredToday" | "exceptionsToday" | "activeDrivers";
-type FauwardGoView = "main" | "workflow" | "records";
+type FauwardGoView = "main" | "workflow" | "records" | "dispatch" | "routes";
 
 type AssignedTask = {
   id: string;
@@ -175,6 +179,279 @@ type AssignedTask = {
   deliveryAddress: string;
   assignedAt: string;
 };
+
+type DispatchShipmentRow = {
+  id: string;
+  trackingNumber: string;
+  status: string;
+  assignedDriverId?: string | null;
+  driver?: {
+    id: string;
+    user?: { firstName?: string | null; lastName?: string | null; email?: string | null } | null;
+  } | null;
+};
+
+type DriverGroup = {
+  key: string;
+  driverName: string;
+  rows: DispatchShipmentRow[];
+};
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function DispatchSubview({ onBack }: { onBack: () => void }) {
+  const [date, setDate] = useState(todayIso());
+
+  const query = useQuery({
+    queryKey: ["fauward-go-dispatch", date],
+    queryFn: async () => {
+      const statuses = ["PROCESSING", "PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"].join(",");
+      const response = await api.get<{ data: DispatchShipmentRow[] }>(
+        `/v1/shipments?status=${statuses}&dateFrom=${date}&dateTo=${date}`
+      );
+      return response.data.data ?? [];
+    },
+    refetchInterval: 60_000,
+  });
+
+  const groups = useMemo<DriverGroup[]>(() => {
+    const rows = query.data ?? [];
+    const byDriver = new Map<string, DriverGroup>();
+
+    for (const row of rows) {
+      const driverId = row.assignedDriverId ?? "unassigned";
+      const driverName = row.driver
+        ? [row.driver.user?.firstName, row.driver.user?.lastName].filter(Boolean).join(" ") ||
+          row.driver.user?.email ||
+          "Assigned Field Operator"
+        : "Unassigned";
+
+      if (!byDriver.has(driverId)) {
+        byDriver.set(driverId, { key: driverId, driverName, rows: [] });
+      }
+      byDriver.get(driverId)!.rows.push(row);
+    }
+
+    return [...byDriver.values()].sort((a, b) => {
+      if (a.key === "unassigned") return -1;
+      if (b.key === "unassigned") return 1;
+      return a.driverName.localeCompare(b.driverName);
+    });
+  }, [query.data]);
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Dispatch board</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Active shipments grouped by field operator</h2>
+            <p className="mt-2 max-w-3xl text-sm text-gray-600">
+              Operational view of in-flight shipments for the selected date. Capacity warnings appear when a single
+              operator holds more than 20 stops.
+            </p>
+          </div>
+          <Button variant="secondary" leftIcon={<ArrowLeft size={14} />} onClick={onBack}>
+            Back to Fauward Go
+          </Button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Input
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            className="max-w-[220px]"
+          />
+          <Button type="button" variant="secondary" onClick={() => void query.refetch()}>
+            Refresh
+          </Button>
+        </div>
+      </section>
+
+      {groups.length === 0 ? (
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <EmptyState
+            icon={Truck}
+            title="No active shipments for this date"
+            description="Pick another date or wait for new dispatch events to land."
+          />
+        </section>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {groups.map((group) => {
+            const stopCount = group.rows.length;
+            const delivered = group.rows.filter((row) => row.status === "DELIVERED").length;
+            const progressPct = stopCount > 0 ? Math.round((delivered / stopCount) * 100) : 0;
+            const capacityWarning = stopCount > 20;
+
+            return (
+              <section key={group.key} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-900">{group.driverName}</h3>
+                  {capacityWarning ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">
+                      Capacity warning
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs text-gray-500">Stops: {stopCount}</p>
+                <div className="mt-3 h-2 w-full rounded-full bg-gray-200">
+                  <div
+                    className="h-2 rounded-full bg-[var(--tenant-primary)]"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <div className="mt-3 space-y-2">
+                  {group.rows.map((row) => (
+                    <div key={row.id} className="rounded-md border border-gray-200 p-2 text-xs">
+                      <div className="font-mono text-gray-900">{row.trackingNumber}</div>
+                      <div className="text-gray-600">{row.status}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoutesSubview({ onBack }: { onBack: () => void }) {
+  const [routeOptions, setRouteOptions] = useState<TenantRouteOption[]>(() => loadRouteOptions());
+  const [routeLabel, setRouteLabel] = useState("");
+  const [routeDescription, setRouteDescription] = useState("");
+
+  const createRouteOption = () => {
+    if (!routeLabel.trim()) return;
+
+    const normalizedSlug = routeLabel
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    const nextRoutes = [
+      {
+        id: `route-${normalizedSlug || crypto.randomUUID()}`,
+        label: routeLabel.trim(),
+        description: routeDescription.trim() || "No route description provided yet.",
+      },
+      ...routeOptions,
+    ];
+
+    setRouteOptions(nextRoutes);
+    saveRouteOptions(nextRoutes);
+    setRouteLabel("");
+    setRouteDescription("");
+  };
+
+  const removeRouteOption = (routeId: string) => {
+    const nextRoutes = routeOptions.filter((route) => route.id !== routeId);
+    setRouteOptions(nextRoutes);
+    saveRouteOptions(nextRoutes);
+  };
+
+  return (
+    <div className="space-y-6">
+      <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Route catalog</p>
+            <h2 className="mt-1 text-lg font-semibold text-gray-900">Reusable route options</h2>
+            <p className="mt-2 max-w-3xl text-sm text-gray-600">
+              Build named route options here. They surface in shipment filtering and route planning to keep dispatch
+              decisions consistent.
+            </p>
+          </div>
+          <Button variant="secondary" leftIcon={<ArrowLeft size={14} />} onClick={onBack}>
+            Back to Fauward Go
+          </Button>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Saved options</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">{routeOptions.length}</p>
+            <p className="mt-1 text-sm text-gray-500">Route templates available for filtering.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Field Operators on duty</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">31</p>
+            <p className="mt-1 text-sm text-gray-500">Current dispatch staffing snapshot.</p>
+          </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h3 className="text-sm font-semibold text-gray-900">Pending assignments</h3>
+            <p className="mt-2 text-3xl font-semibold text-gray-900">4</p>
+            <p className="mt-1 text-sm text-gray-500">Loads still waiting for route planning.</p>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-[0.95fr,1.25fr]">
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Create route option</p>
+          <h2 className="mt-1 text-lg font-semibold text-gray-900">Add a route with description</h2>
+          <p className="mt-2 text-sm text-gray-600">
+            Create reusable route options here. They will appear in the shipment route filter for planning and review.
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <Input
+              value={routeLabel}
+              onChange={(event) => setRouteLabel(event.target.value)}
+              placeholder="Route name"
+            />
+            <Textarea
+              value={routeDescription}
+              onChange={(event) => setRouteDescription(event.target.value)}
+              placeholder="Describe the route coverage, operating window, or assignment purpose"
+              className="min-h-[140px]"
+            />
+            <Button onClick={createRouteOption} disabled={!routeLabel.trim()} className="w-full">
+              Create route option
+            </Button>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Route catalog</p>
+          <h2 className="mt-1 text-lg font-semibold text-gray-900">Available route options</h2>
+          <div className="mt-4 space-y-3">
+            {routeOptions.length === 0 ? (
+              <EmptyState
+                icon={RouteIcon}
+                title="No route options yet"
+                description="Use the form to add your first reusable route."
+              />
+            ) : (
+              routeOptions.map((route) => (
+                <article key={route.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-gray-900">{route.label}</h3>
+                      <p className="mt-2 text-sm text-gray-600">{route.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="neutral">{route.id}</Badge>
+                      <Button size="sm" variant="ghost" onClick={() => removeRouteOption(route.id)}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
 
 export function FauwardGoPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -207,7 +484,9 @@ export function FauwardGoPage() {
   const detailPanelRef = useRef<HTMLDivElement | null>(null);
   const viewParam = searchParams.get("view");
   const activeView: FauwardGoView =
-    viewParam === "workflow" || viewParam === "records" ? viewParam : "main";
+    viewParam === "workflow" || viewParam === "records" || viewParam === "dispatch" || viewParam === "routes"
+      ? viewParam
+      : "main";
   const roleGuidance = [
     {
       role: "TENANT_ADMIN",
@@ -289,8 +568,8 @@ export function FauwardGoPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Active routes</p>
               <h2 className="mt-1 text-lg font-semibold text-gray-900">Routes currently feeding Fauward Go</h2>
             </div>
-            <Button asChild variant="secondary" size="sm">
-              <Link to="/routes">Open routes</Link>
+            <Button variant="secondary" size="sm" onClick={() => openSubview("routes")}>
+              Open routes
             </Button>
           </div>
           <div className="mt-4 space-y-3">
@@ -330,8 +609,8 @@ export function FauwardGoPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Open stops</p>
               <h2 className="mt-1 text-lg font-semibold text-gray-900">Stops still awaiting field completion</h2>
             </div>
-            <Button asChild variant="secondary" size="sm">
-              <Link to="/dispatch">Open dispatch</Link>
+            <Button variant="secondary" size="sm" onClick={() => openSubview("dispatch")}>
+              Open dispatch
             </Button>
           </div>
           <div className="mt-4 space-y-3">
@@ -565,8 +844,8 @@ export function FauwardGoPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Current workflow queue</p>
                 <h3 className="mt-1 text-lg font-semibold text-gray-900">Jobs moving through active steps</h3>
               </div>
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/dispatch">Open dispatch board</Link>
+              <Button variant="secondary" size="sm" onClick={() => openSubview("dispatch")}>
+                Open dispatch board
               </Button>
             </div>
 
@@ -640,11 +919,11 @@ export function FauwardGoPage() {
                 <Button asChild>
                   <Link to="/shipments">Review existing shipments</Link>
                 </Button>
-                <Button asChild variant="secondary">
-                  <Link to="/routes">Open routes</Link>
+                <Button variant="secondary" onClick={() => openSubview("routes")}>
+                  Open routes
                 </Button>
-                <Button asChild variant="secondary">
-                  <Link to="/dispatch">Open dispatch</Link>
+                <Button variant="secondary" onClick={() => openSubview("dispatch")}>
+                  Open dispatch
                 </Button>
               </div>
             </section>
@@ -792,7 +1071,11 @@ export function FauwardGoPage() {
       ? "Manage the Fauward Go workflow stages and route handoffs without leaving this tab."
       : activeView === "records"
         ? "Review synced job records and field outcomes without leaving the Fauward Go tab."
-        : "The tenant portal now reads the same field workload, route execution, and telemetry data used by the Fauward Go app.";
+        : activeView === "dispatch"
+          ? "Active shipments grouped by field operator for the selected date."
+          : activeView === "routes"
+            ? "Create and manage reusable route options for dispatch planning."
+            : "The tenant portal now reads the same field workload, route execution, and telemetry data used by the Fauward Go app.";
 
   return (
     <PageShell
@@ -803,8 +1086,8 @@ export function FauwardGoPage() {
       actions={
         activeView === "main" ? (
           <>
-            <Button asChild variant="secondary">
-              <Link to="/routes">Dispatch board</Link>
+            <Button variant="secondary" onClick={() => openSubview("dispatch")}>
+              Dispatch board
             </Button>
             <Button asChild>
               <Link to="/operations/live-map">Live map</Link>
@@ -822,6 +1105,10 @@ export function FauwardGoPage() {
           renderWorkflowSubview()
         ) : activeView === "records" ? (
           renderRecordsSubview()
+        ) : activeView === "dispatch" ? (
+          <DispatchSubview onBack={returnToMain} />
+        ) : activeView === "routes" ? (
+          <RoutesSubview onBack={returnToMain} />
         ) : (
           <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -943,8 +1230,8 @@ export function FauwardGoPage() {
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Shared field workload</p>
                   <h2 className="mt-1 text-lg font-semibold text-gray-900">Current stops from Fauward Go</h2>
                 </div>
-                <Button asChild variant="secondary" size="sm">
-                  <Link to="/dispatch">Manage dispatch</Link>
+                <Button variant="secondary" size="sm" onClick={() => openSubview("dispatch")}>
+                  Manage dispatch
                 </Button>
               </div>
 
@@ -1069,8 +1356,8 @@ export function FauwardGoPage() {
                 <Button asChild>
                   <Link to="/team">Manage users</Link>
                 </Button>
-                <Button asChild variant="secondary">
-                  <Link to="/routes">Review dispatch roles</Link>
+                <Button variant="secondary" onClick={() => openSubview("dispatch")}>
+                  Review dispatch roles
                 </Button>
               </div>
             </section>
