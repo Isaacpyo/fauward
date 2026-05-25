@@ -17,6 +17,14 @@ vi.mock("@/lib/widgetToken", () => ({
   signWidgetToken: vi.fn(),
 }));
 
+const headerStore = { host: "www.fauward.com" };
+
+vi.mock("next/headers", () => ({
+  headers: vi.fn(() => ({
+    get: (name: string) => (name.toLowerCase() === "host" ? headerStore.host : null),
+  })),
+}));
+
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -99,6 +107,7 @@ describe("hosted shipment page", () => {
     vi.mocked(signWidgetToken).mockReset();
     vi.mocked(notFound).mockClear();
     vi.mocked(permanentRedirect).mockClear();
+    headerStore.host = "www.fauward.com";
   });
 
   it("renders an active tenant with first-party widget props and branding", async () => {
@@ -131,7 +140,7 @@ describe("hosted shipment page", () => {
     });
   });
 
-  it("permanently redirects old slugs to the current slug", async () => {
+  it("permanently redirects old slugs to /ship/<currentSlug> on non-ship hosts", async () => {
     vi.mocked(getTenantBySlugOrHistory).mockResolvedValue({
       tenant: activeTenant,
       redirectToSlug: "acme",
@@ -141,6 +150,19 @@ describe("hosted shipment page", () => {
       digest: "NEXT_REDIRECT;replace;/ship/acme;308;",
     });
     expect(permanentRedirect).toHaveBeenCalledWith("/ship/acme");
+  });
+
+  it("permanently redirects old slugs to bare /<currentSlug> under ship.fauward.com", async () => {
+    headerStore.host = "ship.fauward.com";
+    vi.mocked(getTenantBySlugOrHistory).mockResolvedValue({
+      tenant: activeTenant,
+      redirectToSlug: "acme",
+    });
+
+    await expect(HostedShipmentPage({ params: { tenant: "old-acme" } })).rejects.toMatchObject({
+      digest: "NEXT_REDIRECT;replace;/acme;308;",
+    });
+    expect(permanentRedirect).toHaveBeenCalledWith("/acme");
   });
 
   it("calls notFound for missing or reserved slugs", async () => {
