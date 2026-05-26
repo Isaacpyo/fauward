@@ -417,3 +417,79 @@ The failure body shows a clear "Couldn't complete this action — please try aga
 ### Tests
 
 [ActionConfirmDialog.spec.tsx](apps/tenant-portal/src/pages/agent/ActionConfirmDialog.spec.tsx) — 10 specs cover: confirm-step click → mutate called with action id; working step renders + hides confirm buttons; per-type success message (parametrized across all 5 mapped types); Done calls onClose; failure body shows + Try again retries; reject kind uses the reject mutation (not approve); reject success says "Rejected" regardless of action type.
+
+## Classification: actionable vs informational (UI-side rules)
+
+Not every agent item is a "should I send this?" decision. Some are pure FYIs the operator
+should be aware of but doesn't need to approve. The split is enforced by a **rule-based
+client-side classifier** so unrecognised types stay safe and predictable.
+
+Source of truth: [agent-actions.rules.ts](apps/tenant-portal/src/pages/agent/agent-actions.rules.ts).
+
+### Classification map
+
+| Action type | Classification | Notes |
+|---|---|---|
+| `flag_finding` | informational | Detector output — already `AUTO_APPLIED` on write |
+| `assign_shipment` | actionable | Real driver assignment |
+| `reroute_shipment` | actionable | Real driver swap |
+| `flag_sla_risk` | actionable | Marks the shipment as at-risk |
+| `send_customer_notification` (`failed_delivery`, `delayed`, `sla_risk_update`) | actionable | Human decides whether to send the message |
+| `send_customer_notification` (`out_for_delivery`, `reattempt_scheduled`) | informational | Pure status FYIs (future use; sweep doesn't emit these today) |
+| `send_customer_notification` (unknown templateKey) | **actionable** (safe default) | Better to over-ask than silently drop a customer message |
+| anything else | **actionable** (safe default) | Same safety rule |
+
+### Safety rule
+
+**Unmapped action types and unknown notification templates default to actionable.** Over-asking
+the operator is harmless; silently dropping a real proposal isn't. This is asserted by a test
+in [agent-actions.rules.test.ts](apps/tenant-portal/src/pages/agent/agent-actions.rules.test.ts).
+
+### How classification composes with the server `actionable` flag
+
+`CoverageGroup.actionable` (from `/v1/agent/coverage`) gates `showActions` per group on the
+card. The new client classifier composes **strictly on top** — even if the server marks a
+group actionable, an informational row inside it (e.g. a `flag_finding`) gets buttons
+suppressed. The two can disagree and that's fine; the client view is intentionally stricter.
+
+### Visual treatment
+
+Informational rows render with a muted `FYI` pill beside the status badge and no action
+buttons. Actionable rows render their per-action verbs (see below). Archival tabs
+(Done/Rejected/All) hide buttons regardless — the FYI pill still renders as a stable visual
+signal.
+
+## Per-action verbs
+
+Generic "Approve / Reject" copy is misleading for some actions ("Approve" a customer message?).
+The verb table lives next to the classifier in
+[agent-actions.rules.ts](apps/tenant-portal/src/pages/agent/agent-actions.rules.ts) and drives
+**both** the card buttons and the confirm dialog's heading, working label, and success label.
+
+| Action type | Approve verb | Reject verb | Confirm heading (approve) | Success label (approve) |
+|---|---|---|---|---|
+| `send_customer_notification` | Send now | Dismiss | "Send this notification?" | "Notification sent" |
+| `assign_shipment` | Assign | Skip | "Assign this driver?" | "Driver assigned" |
+| `reroute_shipment` | Reroute | Skip | "Reroute this shipment?" | "Shipment rerouted" |
+| anything else | Approve | Reject | "Approve this action?" | "Done" |
+
+Reject verbs follow the same per-type pattern (e.g. "Dismiss this notification?" /
+"Dismissed", "Skip this assignment?" / "Skipped"); the dialog's *Cancel* button stays
+"Cancel" — Cancel cancels the dialog, the secondary verb is the action.
+
+The animated `confirm → working → success | failure` state machine documented above is
+unchanged; only the copy at each step is now per-action. Failure copy stays generic
+("Couldn't complete — please try again.") so we don't claim a specific action succeeded when
+it didn't.
+
+### Tests
+
+- [agent-actions.rules.test.ts](apps/tenant-portal/src/pages/agent/agent-actions.rules.test.ts)
+  — classifier (incl. default-to-actionable for unknown types and unknown templateKeys) + verb
+  map (per-type + fallback).
+- [ActionCard.spec.tsx](apps/tenant-portal/src/pages/agent/ActionCard.spec.tsx) — flag_finding
+  → FYI pill + no buttons; FYI templateKey → no buttons; per-action verbs render on the card;
+  archival rows never show buttons.
+- [ActionConfirmDialog.spec.tsx](apps/tenant-portal/src/pages/agent/ActionConfirmDialog.spec.tsx)
+  — extended with parametrized assertions across `(type, templateKey)` → heading + primary
+  label + working label + success label, for both approve and reject kinds.

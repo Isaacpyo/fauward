@@ -8,6 +8,7 @@ import {
 } from "@/api/agent-actions";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
+import { verbsForAction, type ActionVerbSet } from "./agent-actions.rules";
 
 export type ActionConfirmKind = "approve" | "reject";
 
@@ -20,62 +21,39 @@ type Props = {
 
 type Step = "confirm" | "working" | "success" | "failure";
 
-const COPY: Record<
-  ActionConfirmKind,
-  {
-    confirmTitle: string;
-    confirmBody: string;
-    confirmCta: string;
-    workingTitle: string;
-    workingBody: string;
-    successTitle: string;
-    failureTitle: string;
-    failureBody: string;
-  }
-> = {
+const FALLBACK_BY_KIND: Record<ActionConfirmKind, ActionVerbSet> = {
   approve: {
-    confirmTitle: "Approve this action?",
-    confirmBody:
-      "This will execute the agent's proposed action immediately. It cannot be undone.",
-    confirmCta: "Approve",
-    workingTitle: "Applying…",
-    workingBody: "Executing the agent's action.",
-    successTitle: "Done",
-    failureTitle: "Couldn't approve",
-    failureBody: "Couldn't complete this action — please try again."
+    label: "Approve",
+    heading: "Approve this action?",
+    workingLabel: "Applying…",
+    successLabel: "Done"
   },
   reject: {
-    confirmTitle: "Reject this suggestion?",
-    confirmBody:
-      "The agent won't act on this. You can run the sweep again later if you change your mind.",
-    confirmCta: "Reject",
-    workingTitle: "Rejecting…",
-    workingBody: "Rejecting the suggestion.",
-    successTitle: "Done",
-    failureTitle: "Couldn't reject",
-    failureBody: "Couldn't reject this — please try again."
+    label: "Reject",
+    heading: "Reject this suggestion?",
+    workingLabel: "Rejecting…",
+    successLabel: "Rejected"
   }
 };
 
-const SUCCESS_BY_TYPE: Record<string, string> = {
-  assign_shipment: "Driver assigned",
-  reroute_shipment: "Shipment rerouted",
-  send_customer_notification: "Customer notified",
-  flag_sla_risk: "Risk flagged"
+const CONFIRM_BODY: Record<ActionConfirmKind, string> = {
+  approve: "This will execute the agent's proposed action immediately. It cannot be undone.",
+  reject: "The agent won't act on this. You can run the sweep again later if you change your mind."
 };
 
-function successMessage(action: AgentAction | null, kind: ActionConfirmKind): string {
-  if (kind === "reject") return "Rejected";
-  if (action && SUCCESS_BY_TYPE[action.type]) return SUCCESS_BY_TYPE[action.type];
-  return "Action completed";
-}
+const FAILURE_TITLE: Record<ActionConfirmKind, string> = {
+  approve: "Couldn't complete",
+  reject: "Couldn't reject"
+};
+
+const FAILURE_BODY = "Couldn't complete — please try again.";
 
 export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
   // Both hooks are called unconditionally to satisfy React's rules; pick the active one.
   const approve = useApproveAgentAction();
   const reject = useRejectAgentAction();
   const mutation = kind === "approve" ? approve : reject;
-  const copy = COPY[kind];
+  const copy: ActionVerbSet = action ? verbsForAction(action)[kind] : FALLBACK_BY_KIND[kind];
 
   // Step is derived from the mutation's real lifecycle — no useState, so the dialog body
   // never gets out of sync with the server work that's actually happening.
@@ -110,16 +88,19 @@ export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
     onClose();
   }
 
+  // Title is per-action for confirm + working (operators want to see *what* is happening),
+  // but kind-generic for success + failure so the title doesn't duplicate the body's
+  // per-action message ("Driver assigned" / etc.) right below it.
   const title =
     step === "confirm"
-      ? copy.confirmTitle
+      ? copy.heading
       : step === "working"
-      ? copy.workingTitle
+      ? copy.workingLabel
       : step === "success"
-      ? copy.successTitle
-      : copy.failureTitle;
+      ? "Done"
+      : FAILURE_TITLE[kind];
 
-  const description = step === "confirm" ? copy.confirmBody : undefined;
+  const description = step === "confirm" ? CONFIRM_BODY[kind] : undefined;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange} title={title} description={description}>
@@ -140,7 +121,7 @@ export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
                 )
               }
             >
-              {copy.confirmCta}
+              {copy.label}
             </Button>
           </div>
         </div>
@@ -149,7 +130,7 @@ export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
       {step === "working" && (
         <div key="working" className="animate-fauward-fade-in py-6 text-center">
           <Loader2 className="mx-auto h-7 w-7 animate-spin text-amber-500" />
-          <p className="mt-3 text-sm text-gray-600">{copy.workingBody}</p>
+          <p className="mt-3 text-sm text-gray-600">Hang tight — finishing up…</p>
         </div>
       )}
 
@@ -158,9 +139,7 @@ export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600 animate-fauward-pop-in">
             <CheckCircle2 className="h-7 w-7" />
           </div>
-          <p className="mt-3 text-sm font-medium text-gray-900">
-            {successMessage(action, kind)}
-          </p>
+          <p className="mt-3 text-sm font-medium text-gray-900">{copy.successLabel}</p>
           <div className="mt-5 flex justify-center">
             <Button size="sm" onClick={onClose}>
               Done
@@ -174,7 +153,7 @@ export function ActionConfirmDialog({ action, kind, open, onClose }: Props) {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600 animate-fauward-pop-in">
             <AlertTriangle className="h-7 w-7" />
           </div>
-          <p className="mt-3 text-sm font-medium text-gray-900">{copy.failureBody}</p>
+          <p className="mt-3 text-sm font-medium text-gray-900">{FAILURE_BODY}</p>
           {mutation.error instanceof Error && mutation.error.message ? (
             <p className="mt-1 text-xs text-gray-500">{mutation.error.message}</p>
           ) : null}

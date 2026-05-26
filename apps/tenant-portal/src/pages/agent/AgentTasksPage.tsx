@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
 import { ActionConfirmDialog, type ActionConfirmKind } from "./ActionConfirmDialog";
+import { classifyAction, verbsForAction } from "./agent-actions.rules";
 import { actionIcon, actionSummary, actionTitle } from "./agent-tasks.format";
 import { RunAgentSheet } from "./RunAgentSheet";
 
@@ -75,8 +76,14 @@ type ActionCardProps = {
   onReject: () => void;
 };
 
-function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProps) {
+export function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProps) {
   const ToolIcon = actionIcon(action);
+  const verbs = verbsForAction(action);
+  // The Coverage `actionable` flag from /v1/agent/coverage gates `showActions` per group.
+  // The client classifier composes strictly on top: even if the server marks a group
+  // actionable, an informational row inside it gets buttons suppressed. Intentional.
+  const isInformational = classifyAction(action) === "informational";
+  const canAct = showActions && !isInformational && action.status === "PENDING_APPROVAL";
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -88,6 +95,11 @@ function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProp
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-medium text-gray-900">{actionTitle(action)}</h3>
               <StatusBadge status={action.status} />
+              {isInformational && (
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600">
+                  FYI
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-gray-600">{actionSummary(action)}</p>
             <p className="mt-1.5 text-xs text-gray-400">
@@ -95,7 +107,7 @@ function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProp
             </p>
           </div>
         </div>
-        {showActions && (
+        {canAct && (
           <div className="flex shrink-0 items-center gap-2">
             <Button
               size="sm"
@@ -104,14 +116,14 @@ function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProp
               leftIcon={<XCircle className="h-4 w-4" />}
               className="text-red-600 hover:bg-red-50 hover:text-red-700"
             >
-              Reject
+              {verbs.reject.label}
             </Button>
             <Button
               size="sm"
               onClick={onApprove}
               leftIcon={<CheckCircle2 className="h-4 w-4" />}
             >
-              Approve
+              {verbs.approve.label}
             </Button>
           </div>
         )}
