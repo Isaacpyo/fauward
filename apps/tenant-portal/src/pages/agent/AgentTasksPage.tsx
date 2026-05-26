@@ -4,19 +4,18 @@ import { AlertTriangle, CheckCircle2, Clock, Play, XCircle } from "lucide-react"
 import {
   useAgentActions,
   useAgentActionSummary,
-  useApproveAgentAction,
-  useRejectAgentAction,
   type AgentAction,
   type AgentActionStatusFilter
 } from "@/api/agent-actions";
-import { useStartSweep, type StartSweepError, type SweepRun } from "@/api/agent-run";
+import { useAgentCoverage, type CoverageGroup } from "@/api/agent-coverage";
+import { useStartSweep, type StartSweepError } from "@/api/agent-run";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
+import { ActionConfirmDialog, type ActionConfirmKind } from "./ActionConfirmDialog";
 import { actionIcon, actionSummary, actionTitle } from "./agent-tasks.format";
 import { RunAgentSheet } from "./RunAgentSheet";
 
@@ -62,38 +61,79 @@ function SummaryStrip({
       {items.map((item) => (
         <div key={item.label} className="text-center sm:text-left">
           <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{item.label}</p>
-          <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.tone}`}>{item.value}</p>
+          <p className={`mt-1 text-xl font-semibold tabular-nums ${item.tone}`}>{item.value}</p>
         </div>
       ))}
     </div>
   );
 }
 
-// Status → tab mapping. Kept in sync with the summary endpoint.
-//   needs_you (PENDING_APPROVAL): risky proposals waiting for human approval.
-//   flagged   (AUTO_APPLIED):     flag_finding rows from sweeps + auto-approved tool calls.
-//   done      (APPLIED):          human-approved actions that executed successfully.
-//   rejected  (REJECTED):         actions the human rejected or policy blocked.
-//   all       (no filter):        everything (incl. FAILED).
-type TabKey = "needs_you" | "flagged" | "done" | "rejected" | "all";
+type ActionCardProps = {
+  action: AgentAction;
+  showActions: boolean;
+  onApprove: () => void;
+  onReject: () => void;
+};
 
-const TAB_FILTER: Record<TabKey, AgentActionStatusFilter> = {
-  needs_you: "PENDING_APPROVAL",
-  flagged: "AUTO_APPLIED",
+function ActionCard({ action, showActions, onApprove, onReject }: ActionCardProps) {
+  const ToolIcon = actionIcon(action);
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-gray-500">
+            <ToolIcon size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium text-gray-900">{actionTitle(action)}</h3>
+              <StatusBadge status={action.status} />
+            </div>
+            <p className="mt-1 text-sm text-gray-600">{actionSummary(action)}</p>
+            <p className="mt-1.5 text-xs text-gray-400">
+              Proposed {new Date(action.createdAt).toLocaleString()}
+            </p>
+          </div>
+        </div>
+        {showActions && (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onReject}
+              leftIcon={<XCircle className="h-4 w-4" />}
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            >
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              onClick={onApprove}
+              leftIcon={<CheckCircle2 className="h-4 w-4" />}
+            >
+              Approve
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Tabs: Coverage is the live workspace; the rest are archival lenses on history.
+//   coverage  → grouped sections (problems-first) + on-track summary  (via useAgentCoverage)
+//   done      → APPLIED  (human-approved + executed)
+//   rejected  → REJECTED
+//   all       → no filter (incl. AUTO_APPLIED + FAILED)
+type TabKey = "coverage" | "done" | "rejected" | "all";
+
+const ARCHIVAL_FILTER: Record<Exclude<TabKey, "coverage">, AgentActionStatusFilter> = {
   done: "APPLIED",
   rejected: "REJECTED",
   all: undefined
 };
 
-const TAB_EMPTY_COPY: Record<TabKey, { title: string; description: string }> = {
-  needs_you: {
-    title: "You're all caught up",
-    description: "Fauward Agent will flag anything that needs your decision here — failed deliveries, risky reroutes, customer notifications."
-  },
-  flagged: {
-    title: "Nothing flagged",
-    description: "Run the agent to scan your shipments and surface anything worth a look."
-  },
+const ARCHIVAL_EMPTY_COPY: Record<Exclude<TabKey, "coverage">, { title: string; description: string }> = {
   done: {
     title: "Nothing handled yet",
     description: "Actions you approve and that run successfully land here."
@@ -109,41 +149,23 @@ const TAB_EMPTY_COPY: Record<TabKey, { title: string; description: string }> = {
 };
 
 export function AgentTasksPage() {
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabKey>("needs_you");
+  const [pending, setPending] = useState<{ action: AgentAction; kind: ActionConfirmKind } | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("coverage");
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [startError, setStartError] = useState<StartSweepError | null>(null);
-  const filter = TAB_FILTER[activeTab];
 
-  const { data, isLoading, error, refetch } = useAgentActions(filter, 1, 50);
   const summary = useAgentActionSummary();
-  const approve = useApproveAgentAction();
-  const reject = useRejectAgentAction();
   const startSweep = useStartSweep();
-
-  const actions = data?.items ?? [];
-  const showActionButtons = activeTab === "needs_you";
 
   const tabItems = useMemo(() => {
     const needsYouCount = summary.data?.needsYou ?? 0;
-    const flaggedCount = summary.data?.flagged ?? 0;
     return [
-      { value: "needs_you", label: needsYouCount > 0 ? `Needs you (${needsYouCount})` : "Needs you" },
-      { value: "flagged", label: flaggedCount > 0 ? `Flagged (${flaggedCount})` : "Flagged" },
+      { value: "coverage", label: needsYouCount > 0 ? `Coverage (${needsYouCount})` : "Coverage" },
       { value: "done", label: "Done" },
       { value: "rejected", label: "Rejected" },
       { value: "all", label: "All" }
     ];
   }, [summary.data]);
-
-  async function handleApprove(id: string) {
-    setConfirmId(null);
-    await approve.mutateAsync(id);
-  }
-
-  async function handleReject(id: string) {
-    await reject.mutateAsync(id);
-  }
 
   function handleRunAgent() {
     setStartError(null);
@@ -161,6 +183,16 @@ export function AgentTasksPage() {
   const buttonDisabled = startSweep.isPending || sweepRunning;
   const buttonLabel = startSweep.isPending ? "Starting…" : sweepRunning ? "Running…" : "Run agent";
 
+  const renderCard = (action: AgentAction, withButtons: boolean) => (
+    <ActionCard
+      key={action.id}
+      action={action}
+      showActions={withButtons && action.status === "PENDING_APPROVAL"}
+      onApprove={() => setPending({ action, kind: "approve" })}
+      onReject={() => setPending({ action, kind: "reject" })}
+    />
+  );
+
   return (
     <PageShell
       title="Tasks"
@@ -176,7 +208,7 @@ export function AgentTasksPage() {
         </Button>
       }
     >
-      <div className="space-y-5">
+      <div className="mx-auto max-w-3xl space-y-5">
         <SummaryStrip summary={summary.data} loading={summary.isLoading} />
 
         {startError && (
@@ -187,134 +219,169 @@ export function AgentTasksPage() {
 
         <RunAgentSheet
           runId={activeRunId}
-          onDone={(run) => {
+          onDone={() => {
             setActiveRunId(null);
-            if (run) {
-              // Pending proposals are the urgent stack; otherwise show what the sweep flagged.
-              const hasPending = run.proposedCount > run.flaggedCount;
-              if (hasPending) {
-                setActiveTab("needs_you");
-              } else if (run.flaggedCount > 0) {
-                setActiveTab("flagged");
-              }
-            }
+            // Coverage is the default; it auto-refetches via the mutation invalidation.
+            setActiveTab("coverage");
           }}
         />
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)} items={tabItems}>
-          <div className="space-y-4">
-            {isLoading && (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 w-full rounded-2xl" />
-                ))}
-              </div>
-            )}
-
-            {!isLoading && error && (
-              <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                    <p className="text-sm text-red-700">Failed to load tasks.</p>
-                  </div>
-                  <Button variant="secondary" size="sm" onClick={() => refetch()}>
-                    Try again
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {!isLoading && !error && actions.length === 0 && (
-              <EmptyState
-                icon={CheckCircle2}
-                title={TAB_EMPTY_COPY[activeTab].title}
-                description={TAB_EMPTY_COPY[activeTab].description}
-              />
-            )}
-
-            {!isLoading && actions.length > 0 && (
-              <div className="space-y-3">
-                {actions.map((action) => {
-                  const ToolIcon = actionIcon(action);
-                  const approving = approve.isPending && confirmId === action.id;
-                  return (
-                    <div
-                      key={action.id}
-                      className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="flex min-w-0 flex-1 items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gray-50 text-gray-500">
-                            <ToolIcon size={18} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-sm font-semibold text-gray-900">{actionTitle(action)}</h3>
-                              <StatusBadge status={action.status} />
-                            </div>
-                            <p className="mt-1.5 text-sm text-gray-600">{actionSummary(action)}</p>
-                            <p className="mt-2 text-xs text-gray-400">
-                              Proposed {new Date(action.createdAt).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        {showActionButtons && (
-                          <div className="flex shrink-0 items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleReject(action.id)}
-                              disabled={reject.isPending || approve.isPending}
-                              loading={reject.isPending}
-                              leftIcon={<XCircle className="h-4 w-4" />}
-                              className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                            >
-                              Reject
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => setConfirmId(action.id)}
-                              disabled={approve.isPending || reject.isPending}
-                              loading={approving}
-                              leftIcon={<CheckCircle2 className="h-4 w-4" />}
-                            >
-                              Approve
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {activeTab === "coverage" ? (
+            <CoveragePanel renderCard={renderCard} />
+          ) : (
+            <ArchivalPanel tabKey={activeTab} renderCard={renderCard} />
+          )}
         </Tabs>
       </div>
 
-      <Dialog
-        open={Boolean(confirmId)}
-        onOpenChange={(open) => !open && setConfirmId(null)}
-        title="Approve this action?"
-        description="This will execute the agent's proposed action immediately. It cannot be undone."
-      >
-        <div className="py-2">
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setConfirmId(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => confirmId && handleApprove(confirmId)}
-              disabled={approve.isPending}
-              loading={approve.isPending}
-              leftIcon={<CheckCircle2 className="h-4 w-4" />}
-            >
-              Approve
+      <ActionConfirmDialog
+        action={pending?.action ?? null}
+        kind={pending?.kind ?? "approve"}
+        open={pending !== null}
+        onClose={() => setPending(null)}
+      />
+    </PageShell>
+  );
+}
+
+function CoveragePanel({ renderCard }: { renderCard: (a: AgentAction, withButtons: boolean) => React.ReactNode }) {
+  const { data, isLoading, error, refetch } = useAgentCoverage();
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <Skeleton key={i} className="h-24 w-full rounded-2xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <p className="text-sm text-red-700">Failed to load coverage.</p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={() => refetch()}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const hasNeverRun = data.lastRunAt === null && data.groups.length === 0 && data.onTrack === 0;
+  if (hasNeverRun) {
+    return (
+      <EmptyState
+        icon={Play}
+        title="Run the agent to scan your shipments"
+        description="The agent groups problems by kind so the few that need your attention float above hundreds of healthy shipments."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {data.groups.map((group) => (
+        <CoverageGroupSection key={group.kind} group={group} renderCard={renderCard} />
+      ))}
+      <OnTrackSummary count={data.onTrack} />
+    </div>
+  );
+}
+
+function CoverageGroupSection({
+  group,
+  renderCard
+}: {
+  group: CoverageGroup;
+  renderCard: (a: AgentAction, withButtons: boolean) => React.ReactNode;
+}) {
+  return (
+    <section className="space-y-3">
+      <header className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold text-gray-900">
+          {group.label}{" "}
+          <span className="text-xs font-normal text-gray-500">({group.items.length})</span>
+        </h2>
+        {group.actionable && (
+          <Badge variant="warning" className="text-[10px] uppercase tracking-wide">
+            Needs you
+          </Badge>
+        )}
+      </header>
+      <div className="space-y-2.5">
+        {group.items.map((action) => renderCard(action, group.actionable))}
+      </div>
+    </section>
+  );
+}
+
+function OnTrackSummary({ count }: { count: number }) {
+  if (count <= 0) return null;
+  const noun = count === 1 ? "shipment" : "shipments";
+  return (
+    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-3 text-center">
+      <p className="text-sm text-gray-600">
+        <span className="font-semibold tabular-nums text-gray-900">{count.toLocaleString()}</span>{" "}
+        {noun} on track — no action needed
+      </p>
+    </div>
+  );
+}
+
+function ArchivalPanel({
+  tabKey,
+  renderCard
+}: {
+  tabKey: Exclude<TabKey, "coverage">;
+  renderCard: (a: AgentAction, withButtons: boolean) => React.ReactNode;
+}) {
+  const { data, isLoading, error, refetch } = useAgentActions(ARCHIVAL_FILTER[tabKey], 1, 50);
+  const actions = data?.items ?? [];
+
+  return (
+    <div className="space-y-4">
+      {isLoading && (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && error && (
+        <div className="rounded-xl border border-red-100 bg-red-50 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+              <p className="text-sm text-red-700">Failed to load tasks.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => refetch()}>
+              Try again
             </Button>
           </div>
         </div>
-      </Dialog>
-    </PageShell>
+      )}
+
+      {!isLoading && !error && actions.length === 0 && (
+        <EmptyState
+          icon={CheckCircle2}
+          title={ARCHIVAL_EMPTY_COPY[tabKey].title}
+          description={ARCHIVAL_EMPTY_COPY[tabKey].description}
+        />
+      )}
+
+      {!isLoading && actions.length > 0 && (
+        <div className="space-y-3">{actions.map((action) => renderCard(action, false))}</div>
+      )}
+    </div>
   );
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { ReadingProgress } from "@/components/marketing/effects/ReadingProgress";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
@@ -16,13 +18,15 @@ const CONTACT_EMAIL = "privacy@fauward.com";
 
 export default function PrivacyPolicyPage() {
   return (
-    <section className="bg-white py-16 lg:py-24">
+    <>
+      <ReadingProgress />
+      <section className="bg-white py-16 lg:py-24">
       <div className="marketing-container max-w-3xl">
         <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 px-6 py-4 text-sm text-amber-800">
           <strong>Last updated:</strong> {LAST_UPDATED}. This is a summary notice. A full legally-reviewed privacy policy will be published before public launch.
         </div>
 
-        <h1 className="text-3xl font-bold text-gray-900 md:text-4xl">Privacy Policy</h1>
+        <MaskRevealHeading className="text-3xl font-bold text-gray-900 md:text-4xl">Privacy Policy</MaskRevealHeading>
         <p className="mt-4 text-lg text-gray-600">
           This Privacy Policy explains how {CONTROLLER} (&quot;Fauward&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;) collects, uses, and protects personal data when you use our website, platform, and services.
         </p>
@@ -30,13 +34,13 @@ export default function PrivacyPolicyPage() {
         <div className="mt-10 space-y-10 text-sm leading-relaxed text-gray-700">
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">1. Data controller</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">1. Data controller</MaskRevealHeading>
             <p>{CONTROLLER} is the data controller for personal data processed through this website and the Fauward platform. We are registered in England and Wales.</p>
             <p className="mt-2">Contact us regarding data protection at: <a href={`mailto:${CONTACT_EMAIL}`} className="text-amber-700 underline">{CONTACT_EMAIL}</a></p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">2. What data we collect</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">2. What data we collect</MaskRevealHeading>
             <ul className="space-y-2 list-disc pl-5">
               <li><strong>Account data:</strong> Name, email address, company name, and password when you create a Fauward account.</li>
               <li><strong>Usage data:</strong> Pages visited, features used, browser type, device type, and IP address — collected via analytics tools.</li>
@@ -47,7 +51,7 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">3. Legal bases for processing</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">3. Legal bases for processing</MaskRevealHeading>
             <ul className="space-y-2 list-disc pl-5">
               <li><strong>Contract performance:</strong> To provide the Fauward service you have signed up for.</li>
               <li><strong>Legitimate interests:</strong> To improve the platform, prevent fraud, and respond to enquiries.</li>
@@ -57,7 +61,7 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">4. How we use your data</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">4. How we use your data</MaskRevealHeading>
             <ul className="space-y-2 list-disc pl-5">
               <li>Providing, operating, and improving the Fauward platform</li>
               <li>Processing payments and sending invoices</li>
@@ -69,7 +73,7 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">5. Data sharing and sub-processors</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">5. Data sharing and sub-processors</MaskRevealHeading>
             <p>We share data with the following categories of third parties to operate the platform:</p>
             <ul className="mt-2 space-y-1 list-disc pl-5">
               <li>Cloud infrastructure providers (hosting and storage)</li>
@@ -82,17 +86,17 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">6. International transfers</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">6. International transfers</MaskRevealHeading>
             <p>Fauward operates across the UK & Europe, Africa, and Asia. Where personal data is transferred outside the UK or European Economic Area, we rely on UK International Data Transfer Agreements (IDTAs) or EU Standard Contractual Clauses (SCCs), or we transfer to countries with an adequacy decision.</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">7. Data retention</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">7. Data retention</MaskRevealHeading>
             <p>We retain account data for as long as your account is active, plus up to 7 years for tax and accounting records. Shipment operational data is retained for the duration of your subscription plus 3 years. You can request deletion at any time (subject to legal retention obligations).</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">8. Your rights</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">8. Your rights</MaskRevealHeading>
             <p>Under UK GDPR and applicable data protection laws, you have the right to:</p>
             <ul className="mt-2 space-y-1 list-disc pl-5">
               <li>Access the personal data we hold about you</li>
@@ -106,17 +110,17 @@ export default function PrivacyPolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">9. Complaints</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">9. Complaints</MaskRevealHeading>
             <p>If you believe we have not handled your personal data correctly, you have the right to lodge a complaint with the UK Information Commissioner&apos;s Office (ICO) at <a href="https://ico.org.uk" target="_blank" rel="noreferrer" className="text-amber-700 underline">ico.org.uk</a> or by calling 0303 123 1113.</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">10. Cookies</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">10. Cookies</MaskRevealHeading>
             <p>We use essential cookies to operate the platform and optional analytics cookies to understand usage. You can manage cookie preferences via the consent banner shown on first visit. See our <a href="/legal/cookies" className="text-amber-700 underline">Cookie Policy</a> for full details.</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">11. Changes to this policy</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">11. Changes to this policy</MaskRevealHeading>
             <p>We will update this policy as our practices evolve. Material changes will be communicated by email to registered users and via a notice on this page. Continued use of the platform after changes constitutes acceptance.</p>
           </div>
 
@@ -127,6 +131,7 @@ export default function PrivacyPolicyPage() {
           </div>
         </div>
       </div>
-    </section>
+      </section>
+    </>
   );
 }

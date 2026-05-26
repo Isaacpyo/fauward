@@ -97,6 +97,7 @@ export function useApproveAgentAction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-actions"] });
       queryClient.invalidateQueries({ queryKey: ["agent-actions-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-coverage"] });
     }
   });
 }
@@ -108,6 +109,7 @@ export function useRejectAgentAction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-actions"] });
       queryClient.invalidateQueries({ queryKey: ["agent-actions-summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-coverage"] });
     }
   });
 }

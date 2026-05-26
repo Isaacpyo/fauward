@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
+import { MagneticButton } from "@/components/marketing/effects/MagneticButton";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+
 export default function ForgotPasswordPageClient() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
@@ -40,7 +43,9 @@ export default function ForgotPasswordPageClient() {
     <section className="flex min-h-screen items-center justify-center bg-gray-50 bg-grid py-16">
       <div className="w-full max-w-md px-4">
         <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm lg:p-8">
-          <h1 className="text-3xl font-bold text-gray-900">Forgot password</h1>
+          <MaskRevealHeading className="text-3xl font-bold text-gray-900">
+            Forgot password
+          </MaskRevealHeading>
           <p className="mt-2 text-sm text-gray-600">Enter your account email to request a password reset.</p>
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
@@ -62,13 +67,14 @@ export default function ForgotPasswordPageClient() {
             {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
             {message ? <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p> : null}
 
-            <button
+            <MagneticButton
               type="submit"
               disabled={loading}
+              block
               className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-amber-600 px-6 text-base font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-amber-300"
             >
               {loading ? 'Sending...' : 'Send reset link'}
-            </button>
+            </MagneticButton>
           </form>
 
           <div className="mt-4 text-sm">

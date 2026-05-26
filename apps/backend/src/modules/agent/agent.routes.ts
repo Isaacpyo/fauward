@@ -9,7 +9,34 @@ import { runAgent, approveAgentAction } from './agent.service.js';
 import { persistAgentRun } from './agent.audit.js';
 import { buildToolHandlers } from './agent.handlers.impl.js';
 import { enqueueAgentSweep } from './agent.queue.js';
+import { NON_TERMINAL_STATUSES, type FindingKind } from './sweep.detectors.js';
 import type { AgentEvent } from './agent.types.js';
+
+// Coverage view groups: problems first (actionable) → informational. Empty groups are
+// omitted before the response leaves the server.
+const COVERAGE_GROUPS: Array<{ kind: FindingKind; label: string; actionable: boolean }> = [
+  { kind: 'unassigned',        label: 'Needs a driver',     actionable: true },
+  { kind: 'failed_unhandled',  label: 'Failed deliveries',  actionable: true },
+  { kind: 'past_deadline',     label: 'Past deadline',      actionable: true },
+  { kind: 'at_risk_soon',      label: 'At risk',            actionable: false },
+  { kind: 'stuck',             label: 'Stuck',              actionable: false },
+  { kind: 'overloaded_driver', label: 'Overloaded drivers', actionable: false }
+];
+
+function findingKindOf(action: { type: string; payload: unknown }): FindingKind | null {
+  const p = action.payload as Record<string, unknown>;
+  if (action.type === 'flag_finding') {
+    const k = String(p.kind ?? '');
+    return COVERAGE_GROUPS.some((g) => g.kind === k) ? (k as FindingKind) : null;
+  }
+  const k = String(p.findingKind ?? '');
+  return COVERAGE_GROUPS.some((g) => g.kind === k) ? (k as FindingKind) : null;
+}
+
+function shipmentIdOf(action: { payload: unknown }): string | null {
+  const p = action.payload as Record<string, unknown>;
+  return typeof p.shipmentId === 'string' ? p.shipmentId : null;
+}
 
 const SWEEP_FEATURE_KEY = 'agent_sweep';
 
@@ -302,8 +329,80 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         scannedCount: run.scannedCount,
         flaggedCount: run.flaggedCount,
         proposedCount: run.proposedCount,
+        onTrackCount: run.onTrackCount,
         finishedAt: run.finishedAt,
         output: run.output
+      });
+    }
+  );
+
+  // ─── Coverage view ─────────────────────────────────────────────────────────
+
+  app.get(
+    '/api/v1/agent/coverage',
+    { preHandler: [app.authenticate, requireTenantMatch, requireFeature('agent')] },
+    async (request, reply) => {
+      const tenantId = request.tenant?.id;
+      if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+
+      // Most recent completed sweep scopes the flag_finding rows (so stale flags from
+      // older runs don't clutter the view). PENDING_APPROVAL proposals are not scoped —
+      // they remain visible until approved or rejected, no matter how old the run.
+      const [latestRun, pendingActions, nonTerminalCount] = await Promise.all([
+        app.prisma.aiAgentRun.findFirst({
+          where: { tenantId, agentType: 'sweep', status: 'COMPLETED' },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, createdAt: true }
+        }),
+        app.prisma.agentAction.findMany({
+          where: { tenantId, status: 'PENDING_APPROVAL' },
+          orderBy: { createdAt: 'desc' }
+        }),
+        app.prisma.shipment.count({
+          where: { tenantId, status: { in: NON_TERMINAL_STATUSES } }
+        })
+      ]);
+
+      const flagActions = latestRun
+        ? await app.prisma.agentAction.findMany({
+            where: {
+              tenantId,
+              runId: latestRun.id,
+              type: 'flag_finding',
+              status: 'AUTO_APPLIED'
+            },
+            orderBy: { createdAt: 'desc' }
+          })
+        : [];
+
+      const allActions = [...pendingActions, ...flagActions];
+      const itemsByKind = new Map<FindingKind, typeof allActions>();
+      const flaggedShipmentIds = new Set<string>();
+      for (const action of allActions) {
+        const kind = findingKindOf(action);
+        if (!kind) continue;
+        const bucket = itemsByKind.get(kind);
+        if (bucket) bucket.push(action);
+        else itemsByKind.set(kind, [action]);
+        const sid = shipmentIdOf(action);
+        if (sid) flaggedShipmentIds.add(sid);
+      }
+
+      const groups = COVERAGE_GROUPS
+        .map((g) => ({
+          kind: g.kind,
+          label: g.label,
+          actionable: g.actionable,
+          items: itemsByKind.get(g.kind) ?? []
+        }))
+        .filter((g) => g.items.length > 0);
+
+      const onTrack = Math.max(0, nonTerminalCount - flaggedShipmentIds.size);
+
+      return reply.send({
+        groups,
+        onTrack,
+        lastRunAt: latestRun?.createdAt ?? null
       });
     }
   );

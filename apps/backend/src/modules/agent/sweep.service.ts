@@ -1,7 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma, type PrismaClient } from '@prisma/client';
 
-import { ACTIVE_STATUSES, runDetectors, type Finding } from './sweep.detectors.js';
+import {
+  ACTIVE_STATUSES,
+  NON_TERMINAL_STATUSES,
+  runDetectors,
+  type Finding
+} from './sweep.detectors.js';
 
 type ProgressData = {
   stage?: string;
@@ -9,6 +14,7 @@ type ProgressData = {
   scannedCount?: number;
   flaggedCount?: number;
   proposedCount?: number;
+  onTrackCount?: number;
   finishedAt?: Date;
   output?: Prisma.InputJsonValue;
 };
@@ -19,10 +25,11 @@ export async function runSweep(app: FastifyInstance, runId: string, tenantId: st
   try {
     await updateRun(app, runId, { stage: 'scanning' });
 
-    // Phase 1: deterministic detectors (no LLM).
+    // Phase 1: deterministic detectors (no LLM). `scanned` counts the non-terminal universe
+    // the sweep actually cares about, so the Run modal's "N checked" matches Coverage's denom.
     const [findings, scanned] = await Promise.all([
       runDetectors(prisma, tenantId),
-      prisma.shipment.count({ where: { tenantId } })
+      prisma.shipment.count({ where: { tenantId, status: { in: NON_TERMINAL_STATUSES } } })
     ]);
 
     await updateRun(app, runId, {
@@ -35,6 +42,7 @@ export async function runSweep(app: FastifyInstance, runId: string, tenantId: st
       await updateRun(app, runId, {
         stage: 'complete',
         status: 'COMPLETED',
+        onTrackCount: scanned,
         finishedAt: new Date(),
         output: { findings: [] }
       });
@@ -45,7 +53,7 @@ export async function runSweep(app: FastifyInstance, runId: string, tenantId: st
 
     // Phase 2: for every finding, (a) record a visible `flag_finding` row, and (b) for
     // actionable kinds, deterministically write a `PENDING_APPROVAL` AgentAction so the admin
-    // gets concrete Approve/Reject choices in the Tasks list — no LLM dependency.
+    // gets concrete Approve/Reject choices in the Coverage view — no LLM dependency.
     // Approval re-runs evaluatePolicy and executes the existing handler, so the safety gate
     // and audit trail are unchanged.
     let proposed = 0;
@@ -71,10 +79,19 @@ export async function runSweep(app: FastifyInstance, runId: string, tenantId: st
       }
     }
 
+    // Healthy coverage: non-terminal shipments that the sweep did NOT flag. Computed once,
+    // not stored per-shipment — that's the whole point of the Coverage view.
+    const flaggedShipmentIds = new Set<string>();
+    for (const f of findings) {
+      if ('shipmentId' in f) flaggedShipmentIds.add(f.shipmentId);
+    }
+    const onTrackCount = Math.max(0, scanned - flaggedShipmentIds.size);
+
     await updateRun(app, runId, {
       stage: 'complete',
       status: 'COMPLETED',
       proposedCount: proposed,
+      onTrackCount,
       finishedAt: new Date(),
       output: { findings: findings.map(summariseFinding) }
     });
@@ -97,11 +114,17 @@ export async function runSweep(app: FastifyInstance, runId: string, tenantId: st
  * For each actionable finding kind, write a concrete `PENDING_APPROVAL` AgentAction that the
  * admin can Approve or Reject. Returns true when a proposal row was written.
  *
+ * Each proposal payload carries `findingKind` + `trackingNumber` so the Coverage endpoint can
+ * group proposals back to their originating detector and the frontend can render a readable
+ * label without an extra Shipment lookup.
+ *
  * Mapping (kept in sync with AGENT_FOUNDATION_NOTES.md):
- *   unassigned       → assign_shipment (best available driver, lightest load)
- *   failed_unhandled → send_customer_notification (template: failed_delivery)
- *   past_deadline    → send_customer_notification (template: delayed)
- *   overloaded_driver, stuck → informational, no proposal
+ *   unassigned        → assign_shipment (best available driver, lightest load)
+ *   failed_unhandled  → send_customer_notification (template: failed_delivery)
+ *   past_deadline     → send_customer_notification (template: delayed)
+ *   overloaded_driver → informational, no proposal
+ *   stuck             → informational, no proposal
+ *   at_risk_soon      → informational, no proposal (pre-deadline; no sensible auto-action)
  */
 async function proposeFix(
   prisma: PrismaClient,
@@ -120,6 +143,8 @@ async function proposeFix(
           type: 'assign_shipment',
           payload: {
             shipmentId: finding.shipmentId,
+            trackingNumber: finding.trackingNumber,
+            findingKind: 'unassigned',
             driverId: driver.id,
             reason: `Sweep: shipment ${finding.trackingNumber} has no driver. Suggested ${driver.name} (currently ${driver.activeJobCount} active jobs).`,
             tenantId
@@ -138,6 +163,8 @@ async function proposeFix(
           type: 'send_customer_notification',
           payload: {
             shipmentId: finding.shipmentId,
+            trackingNumber: finding.trackingNumber,
+            findingKind: 'failed_unhandled',
             channel: 'email',
             templateKey: 'failed_delivery',
             customMessage: null,
@@ -157,6 +184,8 @@ async function proposeFix(
           type: 'send_customer_notification',
           payload: {
             shipmentId: finding.shipmentId,
+            trackingNumber: finding.trackingNumber,
+            findingKind: 'past_deadline',
             channel: 'email',
             templateKey: 'delayed',
             customMessage: null,
@@ -170,7 +199,8 @@ async function proposeFix(
     }
     case 'overloaded_driver':
     case 'stuck':
-      // Informational — no auto-fix. Surfaces in the Flagged tab via the flag_finding row.
+    case 'at_risk_soon':
+      // Informational — no auto-fix. Surfaces in the Coverage view as a flag-only group.
       return false;
   }
 }
@@ -215,6 +245,8 @@ function summariseFinding(f: Finding): { kind: string; ref: string } {
     case 'failed_unhandled':
       return { kind: f.kind, ref: f.trackingNumber };
     case 'stuck':
+      return { kind: f.kind, ref: f.trackingNumber };
+    case 'at_risk_soon':
       return { kind: f.kind, ref: f.trackingNumber };
   }
 }

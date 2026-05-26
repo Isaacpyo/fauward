@@ -294,3 +294,126 @@ A per-finding try/catch isolates write failures so one bad proposal doesn't abor
 - **Fix the gateway confidence parse** at [llm-gateway.service.ts:128-130](apps/backend/src/shared/services/llm-gateway.service.ts#L128-L130) — pre-existing bug; affects every LLM-driven path (failed-delivery agent, `/v1/agent/query`), not just the sweep. The schema should either include `confidence` or the gateway should treat it as optional and fall back to a default.
 - **Reintroduce the LLM** for cases that need genuine judgment — e.g. proposing reroute targets when the failed delivery doesn't have an obvious "notify and wait" path. Behind a feature flag and only after the gateway bug above is fixed.
 - **Past-deadline detector** could also propose `flag_sla_risk` AUTO_APPLIED (records the risk without bothering the human). Skipped for v1 to keep the spec's "informational vs PENDING" decision crisp; revisit when the SLA risk dashboard exists.
+
+---
+
+## Coverage view + premium polish — 2026-05-26
+
+### Coverage view
+
+The Tasks page now has a single **Coverage** tab (default) that accounts for every non-delivered shipment. Tabs are `Coverage | Done | Rejected | All` — `Needs you` and `Flagged` are gone; Coverage subsumes both with explicit grouping.
+
+`GET /api/v1/agent/coverage` returns:
+
+```
+groups: [
+  { kind: 'unassigned',        label: 'Needs a driver',     actionable: true,  items: AgentAction[] },
+  { kind: 'failed_unhandled',  label: 'Failed deliveries',  actionable: true,  items: AgentAction[] },
+  { kind: 'past_deadline',     label: 'Past deadline',      actionable: true,  items: AgentAction[] },
+  { kind: 'at_risk_soon',      label: 'At risk',            actionable: false, items: AgentAction[] },
+  { kind: 'stuck',             label: 'Stuck',              actionable: false, items: AgentAction[] },
+  { kind: 'overloaded_driver', label: 'Overloaded drivers', actionable: false, items: AgentAction[] }
+],
+onTrack: number,
+lastRunAt: string | null
+```
+
+Empty groups are omitted server-side so the frontend never renders an empty section. Items per group:
+
+- **Actionable groups**: all `PENDING_APPROVAL` AgentActions where `payload.findingKind === group.kind` (the proposals) + `AUTO_APPLIED` `flag_finding` rows from the most recent COMPLETED sweep with that kind (the underlying flags).
+- **Informational groups**: `flag_finding` rows from the most recent COMPLETED sweep only (avoids stale flags from prior sweeps cluttering the view).
+
+### Healthy is computed, never stored
+
+`onTrack = count(non-terminal shipments) - count(distinct shipmentIds across all returned group items)`. **No `AgentAction` row is ever created per healthy shipment.** This is enforced by a test: seed 5 shipments where 1 is unassigned and 4 are healthy → sweep writes exactly 2 rows (1 flag + 1 proposal), never 5. The Coverage view's bottom "N on track — no action needed" row is the only place healthy shipments are surfaced.
+
+### `findingKind` convention on proposal payloads
+
+Every proposal payload that comes from a sweep carries `findingKind: <kind>` + `trackingNumber: <string>`, so the Coverage endpoint can group proposals back to their originating detector without an extra Shipment lookup, and the frontend's `actionSummary` can render readable labels straight from the payload.
+
+| Detector | Proposal `type` | `findingKind` | `templateKey` |
+|---|---|---|---|
+| `unassigned` | `assign_shipment` | `unassigned` | — |
+| `failed_unhandled` | `send_customer_notification` | `failed_unhandled` | `failed_delivery` |
+| `past_deadline` | `send_customer_notification` | `past_deadline` | `delayed` |
+| `at_risk_soon` | (none — flag-only) | — | — |
+| `stuck` | (none — flag-only) | — | — |
+| `overloaded_driver` | (none — flag-only) | — | — |
+
+### New `at_risk_soon` detector
+
+`findAtRiskSoon` in [sweep.detectors.ts](apps/backend/src/modules/agent/sweep.detectors.ts) flags shipments whose `estimatedDelivery` falls in `[now, now + 24h]` and whose status is non-terminal AND not already past deadline. Informational only — pre-deadline there's no sensible auto-action (notifying the customer of a future risk is premature; the dispatcher should watch it). The 24h window is exported as `AT_RISK_WINDOW_HOURS` for future tuning.
+
+### Run modal — onTrackCount surfaced
+
+`AiAgentRun` gets a new `onTrackCount Int @default(0)` column via migration `0034_ai_agent_run_on_track`. The sweep computes it at completion (`scanned - distinct flagged shipmentIds`) and `GET /v1/agent/run/:id` returns it so the Run modal can show the on-track total alongside flagged/proposed.
+
+### Dialog animation
+
+[tailwind.config.ts](apps/tenant-portal/tailwind.config.ts) gets four custom keyframes + animation utilities — `fauward-fade-in/out` (140/120ms) and `fauward-zoom-in/out` (160/120ms, Radix cubic-bezier). Applied on `RadixDialog.Overlay` (fade) and `RadixDialog.Content` (zoom) in [Dialog.tsx](apps/tenant-portal/src/components/ui/Dialog.tsx) via `data-[state=open]:animate-... data-[state=closed]:animate-...`. **One change covers every dialog in the portal** — the Approve confirm, the Run sweep modal, every future Radix-Dialog-based modal. No new npm dependency (tailwindcss-animate not needed).
+
+### Polish constants applied (so future agent pages stay consistent)
+
+| Element | Class / Constraint |
+|---|---|
+| Page content width | `mx-auto max-w-3xl` (≈768px centered column) |
+| Card chrome | `rounded-2xl border border-gray-200 bg-white p-4 shadow-sm` (was `p-5`) |
+| Card icon chip | `h-9 w-9 rounded-lg bg-gray-50` (was `h-10 w-10 rounded-xl`) |
+| Card title | `text-sm font-medium` (was `font-semibold`) |
+| Summary strip number | `text-xl font-semibold tabular-nums` (was `text-2xl`) |
+| On-track summary row | `border-dashed border-gray-200 bg-gray-50/60` |
+| Shipment identifier | full tracking number when present (no truncation); last 6 chars of cuid as fallback |
+
+---
+
+## Animated confirm → working → success/failure dialog — 2026-05-26
+
+### State machine
+
+The old approve confirm was static and snap-closed before the server finished — no working feedback, no success cue. Replaced with a single generic component, [ActionConfirmDialog.tsx](apps/tenant-portal/src/pages/agent/ActionConfirmDialog.tsx), that handles both Approve and Reject through one state machine:
+
+```
+[confirm] ──Approve/Reject──► [working] ──┬─► [success]  ──Done──► onClose()
+                                          │
+                                          └─► [failure]  ──Try again──► [working]
+                                                         └─Close──► onClose()
+```
+
+The step is **derived directly from the mutation's lifecycle** — `mutation.isPending → working`, `isSuccess → success`, `isError → failure`, otherwise `confirm`. No `useState` for step, so the dialog body never gets out of sync with the real server work. On `open` → true the mutation is `reset()` so a prior session's success/failure doesn't leak into the next confirm.
+
+### Working state is bound to the real mutation
+
+`working` is shown for exactly as long as the mutation is pending — not a fixed timer. Close (Escape + backdrop click) is blocked during `working` so the user can't dismiss while the server is mid-execution. After success or failure, close works normally.
+
+### Per-action success message
+
+| `action.type` | Success message |
+|---|---|
+| `assign_shipment` | "Driver assigned" |
+| `reroute_shipment` | "Shipment rerouted" |
+| `send_customer_notification` | "Customer notified" |
+| `flag_sla_risk` | "Risk flagged" |
+| anything else | "Action completed" |
+| reject (any type) | "Rejected" |
+
+### Reject got the same treatment
+
+Previously the card's Reject button fired the mutation directly with zero confirmation. It now opens the same dialog with `kind="reject"` — confirm body explains "the agent won't act on this", then working → "Rejected" → Done. No more silent destructive clicks.
+
+### Animation reuse — no new library
+
+- Container fade + zoom from the existing `fauward-fade-in/out` + `fauward-zoom-in/out` utilities (added in the prior build).
+- Inner-body cross-fade: each step block has a `key` on its outer `<div>` so React remounts on step change, retriggering `animate-fauward-fade-in` on the new body. The Radix Dialog container stays mounted, so its own zoom doesn't re-trigger awkwardly.
+- New `fauward-pop-in` keyframe in [tailwind.config.ts](apps/tenant-portal/tailwind.config.ts) (200ms, Radix cubic-bezier) — same easing as the dialog zoom, but **without** the `translate(-50%, -50%)` baked into `fauwardZoomIn` (which is for the centered container). Applied to the success ✓ and failure ⚠ icons inside the body so they scale in inline.
+
+### a11y cleanup
+
+[Dialog.tsx](apps/tenant-portal/src/components/ui/Dialog.tsx) now passes `aria-describedby={undefined}` to `RadixDialog.Content` when the caller doesn't supply a header description. The working / success / failure steps drop the header description (the body carries the meaning), and this opt-out silences Radix's accessibility warning without forcing duplicate copy.
+
+### Failure is honest
+
+The failure body shows a clear "Couldn't complete this action — please try again" plus the mutation's error message when one is present. **It never shows the success layout.** A regression test asserts both: that the success copy is absent and that the Done button doesn't render when `isError === true`.
+
+### Tests
+
+[ActionConfirmDialog.spec.tsx](apps/tenant-portal/src/pages/agent/ActionConfirmDialog.spec.tsx) — 10 specs cover: confirm-step click → mutate called with action id; working step renders + hides confirm buttons; per-type success message (parametrized across all 5 mapped types); Done calls onClose; failure body shows + Try again retries; reject kind uses the reject mutation (not approve); reject success says "Rejected" regardless of action type.

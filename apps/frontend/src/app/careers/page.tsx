@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import StructuredData from "@/components/seo/StructuredData";
 import { buildBreadcrumbSchema, buildMetadata } from "@/lib/seo";
 import { sampleRoles } from "@/components/careers/careers-data";
+import { CounterUp } from "@/components/marketing/effects/CounterUp";
+import { MagneticButton } from "@/components/marketing/effects/MagneticButton";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { TiltCard } from "@/components/marketing/effects/TiltCard";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
@@ -46,6 +49,12 @@ const benefits = [
   },
 ];
 
+const heroStats: Array<{ to: number; suffix?: string; label: string }> = [
+  { to: 50, suffix: "+", label: "Team members" },
+  { to: 18, label: "Countries served" },
+  { to: 6, label: "Open roles" },
+];
+
 export default function CareersPage() {
   const featuredRoles = sampleRoles.slice(0, 3);
 
@@ -56,30 +65,30 @@ export default function CareersPage() {
       <section className="bg-[#0d1f3c] py-20 text-white lg:py-28">
         <div className="marketing-container">
           <p className="mb-5 text-xs font-bold uppercase tracking-[0.16em] text-amber-400">Careers at Fauward</p>
-          <h1 className="max-w-5xl text-5xl font-extrabold leading-[0.98] tracking-tight md:text-7xl">
+          <MaskRevealHeading className="max-w-5xl text-5xl font-extrabold leading-[0.98] tracking-tight md:text-7xl">
             Move the world&apos;s goods. Build what moves them.
-          </h1>
+          </MaskRevealHeading>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-blue-200">
             Fauward builds logistics software for operators moving freight across regions, modes, and customer expectations.
             <br />
             Join the team turning real-world supply chain pressure into fast, reliable product systems.
           </p>
-          <Link
-            href="/careers/open-roles"
-            className="mt-8 inline-flex h-11 items-center justify-center rounded-lg bg-amber-600 px-7 text-sm font-semibold text-white transition hover:bg-amber-700"
-          >
-            View open roles -&gt;
-          </Link>
+          <div className="mt-8">
+            <MagneticButton
+              href="/careers/open-roles"
+              className="inline-flex h-11 items-center justify-center rounded-lg bg-amber-600 px-7 text-sm font-semibold text-white transition hover:bg-amber-700"
+            >
+              View open roles -&gt;
+            </MagneticButton>
+          </div>
 
           <div className="mt-16 grid gap-6 border-t border-white/15 pt-6 sm:grid-cols-3">
-            {[
-              ["50+", "Team members"],
-              ["18", "Countries served"],
-              ["6", "Open roles"],
-            ].map(([value, label], index) => (
-              <div key={label} className={index > 0 ? "sm:border-l sm:border-white/15 sm:pl-6" : ""}>
-                <p className="text-2xl font-extrabold text-white">{value}</p>
-                <p className="mt-1 text-sm text-blue-200">{label}</p>
+            {heroStats.map((stat, index) => (
+              <div key={stat.label} className={index > 0 ? "sm:border-l sm:border-white/15 sm:pl-6" : ""}>
+                <p className="text-2xl font-extrabold text-white">
+                  <CounterUp to={stat.to} suffix={stat.suffix} />
+                </p>
+                <p className="mt-1 text-sm text-blue-200">{stat.label}</p>
               </div>
             ))}
           </div>
@@ -90,9 +99,9 @@ export default function CareersPage() {
         <div className="marketing-container grid gap-10 md:grid-cols-[0.65fr,1.35fr]">
           <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Why Fauward</p>
           <div>
-            <h2 className="max-w-3xl text-3xl font-extrabold leading-tight tracking-tight text-gray-900 md:text-5xl">
+            <MaskRevealHeading as="h2" className="max-w-3xl text-3xl font-extrabold leading-tight tracking-tight text-gray-900 md:text-5xl">
               Operational software with consequences beyond the screen.
-            </h2>
+            </MaskRevealHeading>
             <div className="mt-6 max-w-3xl space-y-4 text-base leading-7 text-gray-600">
               <p>
                 Logistics SaaS sits directly inside the movement of inventory, drivers, depots, invoices, and customers.
@@ -110,22 +119,30 @@ export default function CareersPage() {
         <div className="marketing-container">
           <div className="mb-8">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Open Roles</p>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">Featured roles</h2>
+            <MaskRevealHeading as="h2" className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">
+              Featured roles
+            </MaskRevealHeading>
           </div>
           <div className="grid gap-4 md:grid-cols-3">
             {featuredRoles.map((role) => (
-              <article key={role.slug} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl">
+              <TiltCard key={role.slug} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" intensity={5}>
                 <h3 className="text-lg font-bold text-gray-900">{role.title}</h3>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.department}</span>
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.location}</span>
                 </div>
-              </article>
+              </TiltCard>
             ))}
           </div>
-          <Link href="/careers/open-roles" className="mt-6 inline-flex text-sm font-bold text-amber-700 transition hover:text-amber-600">
-            View all open roles -&gt;
-          </Link>
+          <div className="mt-6">
+            <MagneticButton
+              href="/careers/open-roles"
+              strength={0.18}
+              className="inline-flex text-sm font-bold text-amber-700 transition hover:text-amber-600"
+            >
+              View all open roles -&gt;
+            </MagneticButton>
+          </div>
         </div>
       </section>
 
@@ -133,11 +150,13 @@ export default function CareersPage() {
         <div className="marketing-container">
           <div className="mb-8">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Benefits</p>
-            <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">Built for focused, durable work.</h2>
+            <MaskRevealHeading as="h2" className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">
+              Built for focused, durable work.
+            </MaskRevealHeading>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {benefits.map((benefit) => (
-              <article key={benefit.label} className="rounded-xl border border-gray-200 bg-white p-6">
+              <TiltCard key={benefit.label} className="rounded-xl border border-gray-200 bg-white p-6" intensity={6}>
                 <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-amber-700">
                   <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden>
                     {benefit.icon}
@@ -145,7 +164,7 @@ export default function CareersPage() {
                 </span>
                 <h3 className="mt-4 font-bold text-gray-900">{benefit.label}</h3>
                 <p className="mt-2 text-sm leading-6 text-gray-600">{benefit.description}</p>
-              </article>
+              </TiltCard>
             ))}
           </div>
         </div>

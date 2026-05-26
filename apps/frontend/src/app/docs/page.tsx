@@ -3,6 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import DocsLayout, { type DocsSection } from "@/components/marketing/DocsLayout";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { ReadingProgress } from "@/components/marketing/effects/ReadingProgress";
+import { TiltCard } from "@/components/marketing/effects/TiltCard";
 
 const docsTitle = "Documentation | Fauward";
 const docsDescription =
@@ -357,7 +360,7 @@ function DocsSectionBlock({
       id={id}
       className="scroll-mt-28 border-b border-gray-200 py-12 first:pt-0 last:border-0 last:pb-0"
     >
-      <h2 className="text-3xl font-bold tracking-tight text-gray-900">{title}</h2>
+      <MaskRevealHeading as="h2" className="text-3xl font-bold tracking-tight text-gray-900">{title}</MaskRevealHeading>
       <div className="mt-5 space-y-6 text-base leading-7 text-gray-700">{children}</div>
     </section>
   );
@@ -384,10 +387,10 @@ function CardGrid({
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {items.map((item) => (
-        <div key={item.title} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <TiltCard key={item.title} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" intensity={5}>
           <h3 className="text-lg font-bold text-gray-900">{item.title}</h3>
           <p className="mt-2 text-sm leading-6 text-gray-600">{item.description}</p>
-        </div>
+        </TiltCard>
       ))}
     </div>
   );
@@ -436,6 +439,7 @@ function SimpleTable({
 export default function DocsPage() {
   return (
     <>
+      <ReadingProgress />
       <section className="relative overflow-hidden bg-white py-16 lg:py-24">
         <div className="absolute inset-0 -z-10 bg-grid opacity-60" aria-hidden />
         <div className="marketing-container">
@@ -443,9 +447,9 @@ export default function DocsPage() {
             <p className="mb-5 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
               Tenant documentation
             </p>
-            <h1 className="text-4xl font-bold leading-tight text-gray-900 md:text-5xl lg:text-6xl">
+            <MaskRevealHeading className="text-4xl font-bold leading-tight text-gray-900 md:text-5xl lg:text-6xl">
               Run your logistics business on <span className="text-amber-600">Fauward.</span>
-            </h1>
+            </MaskRevealHeading>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-gray-600">
               Set up your branded portal, manage shipments, coordinate field teams, invoice
               customers, and keep every customer informed from one workspace.

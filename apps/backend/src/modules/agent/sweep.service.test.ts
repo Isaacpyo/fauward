@@ -83,6 +83,7 @@ describe('runSweep', () => {
           ])
           .mockResolvedValueOnce([]) // past_deadline
           .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([]) // at_risk_soon
       }
       // no available drivers → no PENDING proposal for the unassigned finding
     });
@@ -105,8 +106,9 @@ describe('runSweep', () => {
         findMany: vi
           .fn()
           .mockResolvedValueOnce([{ id: 'ship-1', trackingNumber: 'TR-1', status: 'PENDING' }])
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]) // past_deadline
+          .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([]) // at_risk_soon
       },
       driver: {
         findMany: vi.fn().mockResolvedValue([
@@ -136,6 +138,8 @@ describe('runSweep', () => {
     expect(assignWrite!.data.runId).toBe('run-assign');
     expect(assignWrite!.data.payload).toMatchObject({
       shipmentId: 'ship-1',
+      trackingNumber: 'TR-1',
+      findingKind: 'unassigned',
       driverId: 'drv-light',
       tenantId: TENANT_A
     });
@@ -149,8 +153,9 @@ describe('runSweep', () => {
         findMany: vi
           .fn()
           .mockResolvedValueOnce([{ id: 'ship-1', trackingNumber: 'TR-1', status: 'PENDING' }])
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]) // past_deadline
+          .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([]) // at_risk_soon
       },
       driver: { findMany: vi.fn().mockResolvedValue([]) }
     });
@@ -175,6 +180,7 @@ describe('runSweep', () => {
             // failed_unhandled
             { id: 'ship-fail', trackingNumber: 'TR-FAIL', events: [{ timestamp: new Date() }] }
           ])
+          .mockResolvedValueOnce([]) // at_risk_soon
       }
     });
 
@@ -186,10 +192,93 @@ describe('runSweep', () => {
     expect(notify!.data.risk).toBe('requires_approval');
     expect(notify!.data.payload).toMatchObject({
       shipmentId: 'ship-fail',
+      trackingNumber: 'TR-FAIL',
+      findingKind: 'failed_unhandled',
       channel: 'email',
       templateKey: 'failed_delivery',
       tenantId: TENANT_A
     });
+  });
+
+  it('at_risk_soon stays flag-only (no PENDING_APPROVAL)', async () => {
+    const inWindow = new Date(Date.now() + 12 * 60 * 60 * 1000);
+    const { app, prisma } = buildApp({
+      shipment: {
+        count: vi.fn().mockResolvedValue(1),
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([]) // unassigned
+          .mockResolvedValueOnce([]) // past_deadline
+          .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([
+            { id: 'ship-risk', trackingNumber: 'TR-RISK', estimatedDelivery: inWindow }
+          ])
+      }
+    });
+
+    await runSweep(app, 'run-risk', TENANT_A);
+
+    const writes = agentActionCreates(prisma);
+    expect(writes).toHaveLength(1);
+    expect(writes[0].data.type).toBe('flag_finding');
+    expect((writes[0].data.payload as Record<string, unknown>).kind).toBe('at_risk_soon');
+    expect(writes.find((c) => c.data.status === 'PENDING_APPROVAL')).toBeUndefined();
+  });
+
+  it('healthy coverage: 5 shipments with 1 unassigned writes 2 AgentAction rows (1 flag + 1 proposal), not 5', async () => {
+    const { app, prisma } = buildApp({
+      shipment: {
+        // 5 non-terminal shipments total; 4 of them are healthy in-transit and never become rows.
+        count: vi.fn().mockResolvedValue(5),
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce([{ id: 'ship-unassigned', trackingNumber: 'TR-1', status: 'PENDING' }])
+          .mockResolvedValueOnce([]) // past_deadline
+          .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([]) // at_risk_soon
+      },
+      driver: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'drv-1',
+            createdAt: new Date('2026-01-01'),
+            user: { firstName: 'D', lastName: 'One', email: 'd1@x.com' },
+            _count: { shipments: 1 }
+          }
+        ])
+      }
+    });
+
+    await runSweep(app, 'run-coverage', TENANT_A);
+
+    const writes = agentActionCreates(prisma);
+    // Exactly 2 rows: 1 flag_finding for the unassigned shipment + 1 assign_shipment proposal.
+    // NEVER one row per healthy shipment — that's what the Coverage view's on-track count is for.
+    expect(writes).toHaveLength(2);
+    expect(writes.filter((c) => c.data.type === 'flag_finding')).toHaveLength(1);
+    expect(writes.filter((c) => c.data.type === 'assign_shipment')).toHaveLength(1);
+
+    // onTrackCount = scanned (5) - unique flagged shipmentIds (1) = 4.
+    const completed = (prisma.aiAgentRun.update as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0].data.status === 'COMPLETED'
+    );
+    expect(completed?.[0].data.onTrackCount).toBe(4);
+  });
+
+  it('empty sweep records onTrackCount equal to scanned', async () => {
+    const { app, prisma } = buildApp({
+      shipment: {
+        count: vi.fn().mockResolvedValue(120),
+        findMany: vi.fn().mockResolvedValue([])
+      }
+    });
+
+    await runSweep(app, 'run-clear', TENANT_A);
+
+    const completed = (prisma.aiAgentRun.update as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0].data.status === 'COMPLETED'
+    );
+    expect(completed?.[0].data.onTrackCount).toBe(120);
   });
 
   it('overloaded_driver stays flag-only (no PENDING_APPROVAL)', async () => {
@@ -226,8 +315,9 @@ describe('runSweep', () => {
         findMany: vi
           .fn()
           .mockResolvedValueOnce([{ id: 'ship-1', trackingNumber: 'TR-1', status: 'PENDING' }])
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]) // past_deadline
+          .mockResolvedValueOnce([]) // failed_unhandled
+          .mockResolvedValueOnce([]) // at_risk_soon
       },
       driver: {
         findMany: vi

@@ -12,7 +12,7 @@ export const ACTIVE_STATUSES: ShipmentStatus[] = [
 
 const UNASSIGNED_STATUSES: ShipmentStatus[] = ['PENDING', 'PROCESSING', 'PICKED_UP', 'OUT_FOR_DELIVERY'];
 
-const NON_TERMINAL_STATUSES: ShipmentStatus[] = [
+export const NON_TERMINAL_STATUSES: ShipmentStatus[] = [
   'PENDING',
   'PROCESSING',
   'PICKED_UP',
@@ -23,6 +23,18 @@ const NON_TERMINAL_STATUSES: ShipmentStatus[] = [
 ];
 
 export const DRIVER_OVERLOAD_THRESHOLD = 8;
+
+// "At risk" = estimated to deliver within this many hours, status still active.
+// Past that mark, the shipment falls into past_deadline (a separate, actionable group).
+export const AT_RISK_WINDOW_HOURS = 24;
+
+export type FindingKind =
+  | 'unassigned'
+  | 'overloaded_driver'
+  | 'past_deadline'
+  | 'failed_unhandled'
+  | 'stuck'
+  | 'at_risk_soon';
 
 export type Finding =
   | {
@@ -54,6 +66,12 @@ export type Finding =
       shipmentId: string;
       trackingNumber: string;
       exceptionCaseId: string;
+    }
+  | {
+      kind: 'at_risk_soon';
+      shipmentId: string;
+      trackingNumber: string;
+      estimatedDelivery: string;
     };
 
 export async function findUnassigned(prisma: PrismaClient, tenantId: string): Promise<Finding[]> {
@@ -166,13 +184,41 @@ export async function findStuck(prisma: PrismaClient, tenantId: string): Promise
     }));
 }
 
+export async function findAtRiskSoon(
+  prisma: PrismaClient,
+  tenantId: string,
+  windowHours: number = AT_RISK_WINDOW_HOURS
+): Promise<Finding[]> {
+  const now = new Date();
+  const horizon = new Date(now.getTime() + windowHours * 60 * 60 * 1000);
+  const rows = await prisma.shipment.findMany({
+    where: {
+      tenantId,
+      // Inside the window, not yet past — past_deadline owns that case.
+      estimatedDelivery: { gte: now, lte: horizon },
+      status: { in: NON_TERMINAL_STATUSES }
+    },
+    select: { id: true, trackingNumber: true, estimatedDelivery: true },
+    take: 200
+  });
+  return rows
+    .filter((r): r is typeof r & { estimatedDelivery: Date } => r.estimatedDelivery !== null)
+    .map((r) => ({
+      kind: 'at_risk_soon' as const,
+      shipmentId: r.id,
+      trackingNumber: r.trackingNumber,
+      estimatedDelivery: r.estimatedDelivery.toISOString()
+    }));
+}
+
 export async function runDetectors(prisma: PrismaClient, tenantId: string): Promise<Finding[]> {
-  const [unassigned, overloaded, pastDeadline, failed, stuck] = await Promise.all([
+  const [unassigned, overloaded, pastDeadline, failed, stuck, atRisk] = await Promise.all([
     findUnassigned(prisma, tenantId),
     findOverloadedDrivers(prisma, tenantId),
     findPastDeadline(prisma, tenantId),
     findFailedUnhandled(prisma, tenantId),
-    findStuck(prisma, tenantId)
+    findStuck(prisma, tenantId),
+    findAtRiskSoon(prisma, tenantId)
   ]);
-  return [...unassigned, ...overloaded, ...pastDeadline, ...failed, ...stuck];
+  return [...unassigned, ...overloaded, ...pastDeadline, ...failed, ...stuck, ...atRisk];
 }

@@ -67,15 +67,22 @@ export function actionTitle(action: AgentAction): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function shortRef(id: unknown): string {
-  return `#${String(id).slice(0, 8)}…`;
+// Last 8 chars of a cuid distinguish far better than the first 8 (cuids share a prefix).
+function shortId(id: unknown): string {
+  const s = String(id ?? "");
+  return s.length > 8 ? `#${s.slice(-8)}` : `#${s}`;
 }
 
-// Prefer the human-friendly tracking number when the detector has it; fall back to the
-// truncated shipment id so flags never read as "(unknown)".
-function shipmentRef(p: Record<string, unknown>): string {
+// Prefer the human-friendly tracking number (rendered in full — they're short and unique).
+// Only fall back to the truncated internal cuid when no tracking number is on the payload,
+// so two cards for different shipments never look alike at a glance.
+function shipmentLabel(p: Record<string, unknown>): string {
   if (p.trackingNumber) return `#${String(p.trackingNumber)}`;
-  if (p.shipmentId) return shortRef(p.shipmentId);
+  if (p.shipmentId) {
+    const s = String(p.shipmentId);
+    // Last 6 chars distinguish far better than the first 8 (cuids share a prefix).
+    return `#${s.length > 6 ? s.slice(-6) : s}`;
+  }
   return "(unknown)";
 }
 
@@ -87,7 +94,7 @@ export function actionSummary(action: AgentAction): string {
     switch (kind) {
       case "unassigned": {
         const status = p.status ? ` (${String(p.status)})` : "";
-        return `Shipment ${shipmentRef(p)}${status} has no driver assigned`;
+        return `Shipment ${shipmentLabel(p)}${status} has no driver assigned`;
       }
       case "overloaded_driver": {
         const name = String(p.driverName ?? "Driver");
@@ -99,19 +106,19 @@ export function actionSummary(action: AgentAction): string {
           ? new Date(String(p.estimatedDelivery)).toLocaleDateString()
           : null;
         return eta
-          ? `Shipment ${shipmentRef(p)} is past its estimated delivery (${eta})`
-          : `Shipment ${shipmentRef(p)} is past its estimated delivery`;
+          ? `Shipment ${shipmentLabel(p)} is past its estimated delivery (${eta})`
+          : `Shipment ${shipmentLabel(p)} is past its estimated delivery`;
       }
       case "failed_unhandled": {
         const when = p.failedAt
           ? new Date(String(p.failedAt)).toLocaleDateString()
           : null;
         return when
-          ? `Delivery ${shipmentRef(p)} failed ${when} and hasn't been re-actioned`
-          : `Delivery ${shipmentRef(p)} failed and hasn't been re-actioned`;
+          ? `Delivery ${shipmentLabel(p)} failed ${when} and hasn't been re-actioned`
+          : `Delivery ${shipmentLabel(p)} failed and hasn't been re-actioned`;
       }
       case "stuck":
-        return `Shipment ${shipmentRef(p)} has stalled (open exception case)`;
+        return `Shipment ${shipmentLabel(p)} has stalled (open exception case)`;
       default:
         return kind ? `Flagged ${kind.replaceAll("_", " ")}` : "Flagged finding";
     }
@@ -120,24 +127,24 @@ export function actionSummary(action: AgentAction): string {
   switch (action.type) {
     case "reroute_shipment": {
       const tail = p.reason ? ` — ${String(p.reason)}` : "";
-      return `Reroute shipment ${shortRef(p.shipmentId)} to driver ${shortRef(p.newDriverId)}${tail}`;
+      return `Reroute shipment ${shipmentLabel(p)} to driver ${shortId(p.newDriverId)}${tail}`;
     }
     case "assign_shipment": {
       const tail = p.reason ? ` — ${String(p.reason)}` : "";
-      return `Assign shipment ${shortRef(p.shipmentId)} to driver ${shortRef(p.driverId)}${tail}`;
+      return `Assign shipment ${shipmentLabel(p)} to driver ${shortId(p.driverId)}${tail}`;
     }
     case "send_customer_notification": {
       const channel = p.channel ? String(p.channel) : "email";
       const tpl = p.templateKey ? String(p.templateKey).replaceAll("_", " ") : "status update";
-      return `Send ${channel} notification to customer for shipment ${shortRef(p.shipmentId)} (${tpl})`;
+      return `Send ${channel} notification to customer for shipment ${shipmentLabel(p)} (${tpl})`;
     }
     case "flag_sla_risk": {
       const level = p.riskLevel ? String(p.riskLevel) : "MEDIUM";
       const tail = p.reason ? ` — ${String(p.reason)}` : "";
-      return `Flag shipment ${shortRef(p.shipmentId)} as ${level} SLA risk${tail}`;
+      return `Flag shipment ${shipmentLabel(p)} as ${level} SLA risk${tail}`;
     }
     case "get_shipment_details":
-      return `Look up shipment ${shortRef(p.shipmentId)}`;
+      return `Look up shipment ${shipmentLabel(p)}`;
     case "get_available_drivers":
       return p.originPostcode
         ? `Look up available drivers near ${String(p.originPostcode)}`

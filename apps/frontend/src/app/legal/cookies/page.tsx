@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { ReadingProgress } from "@/components/marketing/effects/ReadingProgress";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
@@ -13,9 +15,11 @@ const LAST_UPDATED = "18 April 2026";
 
 export default function CookiePolicyPage() {
   return (
-    <section className="bg-white py-16 lg:py-24">
+    <>
+      <ReadingProgress />
+      <section className="bg-white py-16 lg:py-24">
       <div className="marketing-container max-w-3xl">
-        <h1 className="text-3xl font-bold text-gray-900 md:text-4xl">Cookie Policy</h1>
+        <MaskRevealHeading className="text-3xl font-bold text-gray-900 md:text-4xl">Cookie Policy</MaskRevealHeading>
         <p className="mt-2 text-sm text-gray-500">Last updated: {LAST_UPDATED}</p>
         <p className="mt-5 text-lg text-gray-600">
           This Cookie Policy explains what cookies are, which cookies Fauward uses, and how you can control them.
@@ -24,12 +28,12 @@ export default function CookiePolicyPage() {
         <div className="mt-10 space-y-10 text-sm leading-relaxed text-gray-700">
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">What are cookies?</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">What are cookies?</MaskRevealHeading>
             <p>Cookies are small text files stored on your device when you visit a website. They allow websites to remember your preferences, keep you logged in, and measure how the site is used.</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">Cookies we use</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">Cookies we use</MaskRevealHeading>
             <div className="overflow-hidden rounded-xl border border-gray-200">
               <table className="w-full text-left text-xs">
                 <thead className="bg-gray-50">
@@ -62,7 +66,7 @@ export default function CookiePolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">Managing your preferences</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">Managing your preferences</MaskRevealHeading>
             <p>When you first visit Fauward, you will be shown a consent banner allowing you to accept or decline non-essential cookies. You can change your preferences at any time by clicking &quot;Cookie preferences&quot; in the site footer.</p>
             <p className="mt-3">You can also control cookies at the browser level:</p>
             <ul className="mt-2 space-y-1 list-disc pl-5">
@@ -75,16 +79,17 @@ export default function CookiePolicyPage() {
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">Third-party cookies</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">Third-party cookies</MaskRevealHeading>
             <p>Analytics and marketing tools we use may set their own cookies. We only activate these where you have given consent. A full list of third-party tools is included in our <a href="/legal/privacy" className="text-amber-700 underline">Privacy Policy</a>.</p>
           </div>
 
           <div>
-            <h2 className="mb-3 text-xl font-bold text-gray-900">Contact</h2>
+            <MaskRevealHeading as="h2" className="mb-3 text-xl font-bold text-gray-900">Contact</MaskRevealHeading>
             <p>Questions about cookies? Email <a href="mailto:privacy@fauward.com" className="text-amber-700 underline">privacy@fauward.com</a>.</p>
           </div>
         </div>
       </div>
-    </section>
+      </section>
+    </>
   );
 }

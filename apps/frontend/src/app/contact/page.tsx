@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { buildMetadata } from "@/lib/seo";
 import StructuredData from "@/components/seo/StructuredData";
 import { buildBreadcrumbSchema } from "@/lib/seo";
+import { MagneticButton } from "@/components/marketing/effects/MagneticButton";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { TiltCard } from "@/components/marketing/effects/TiltCard";
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
@@ -77,9 +80,9 @@ export default function ContactPage() {
           <p className="mb-4 inline-flex items-center gap-2 rounded-full bg-amber-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-widest text-amber-400">
             Get in touch
           </p>
-          <h1 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
+          <MaskRevealHeading className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">
             We&apos;d love to hear from you
-          </h1>
+          </MaskRevealHeading>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-blue-200">
             Whether you&apos;re evaluating Fauward for your logistics operation or you&apos;re an existing customer, we&apos;ll get back to you fast.
           </p>
@@ -91,19 +94,22 @@ export default function ContactPage() {
         <div className="marketing-container">
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {channels.map((ch) => (
-              <div key={ch.category} className={`card-lift rounded-2xl border p-7 ${ch.color}`}>
+              <TiltCard key={ch.category} className={`rounded-2xl border p-7 ${ch.color}`}>
                 <span className={`mb-4 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${ch.badge}`}>
                   {ch.category}
                 </span>
                 <p className="mt-2 text-sm leading-relaxed text-gray-700">{ch.description}</p>
                 <p className="mt-3 text-sm font-medium text-gray-900">{ch.email}</p>
-                <a
-                  href={ch.href}
-                  className="mt-4 inline-flex h-9 items-center rounded-lg bg-white border border-gray-200 px-5 text-xs font-semibold text-gray-900 transition hover:bg-gray-50 shadow-sm"
-                >
-                  {ch.cta} →
-                </a>
-              </div>
+                <div className="mt-4">
+                  <MagneticButton
+                    href={ch.href}
+                    strength={0.18}
+                    className="inline-flex h-9 items-center rounded-lg bg-white border border-gray-200 px-5 text-xs font-semibold text-gray-900 transition hover:bg-gray-50 shadow-sm"
+                  >
+                    {ch.cta} →
+                  </MagneticButton>
+                </div>
+              </TiltCard>
             ))}
           </div>
         </div>
@@ -112,15 +118,17 @@ export default function ContactPage() {
       {/* Offices */}
       <section className="bg-gray-50 py-16">
         <div className="marketing-container">
-          <h2 className="text-2xl font-bold text-gray-900">Where we operate</h2>
+          <MaskRevealHeading as="h2" className="text-2xl font-bold text-gray-900">
+            Where we operate
+          </MaskRevealHeading>
           <p className="mt-2 text-sm text-gray-600">Fauward is a UK-registered company serving logistics businesses across four regions.</p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {offices.map((o) => (
-              <div key={o.region} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+              <TiltCard key={o.region} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm" intensity={5}>
                 <p className="text-2xl">{o.flag}</p>
                 <p className="mt-2 font-semibold text-gray-900">{o.region}</p>
                 <p className="text-sm text-gray-500">{o.detail}</p>
-              </div>
+              </TiltCard>
             ))}
           </div>
           <p className="mt-6 text-xs text-gray-500">
@@ -132,18 +140,20 @@ export default function ContactPage() {
       {/* Response time */}
       <section className="bg-white py-16">
         <div className="marketing-container max-w-2xl text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Response times</h2>
+          <MaskRevealHeading as="h2" className="text-2xl font-bold text-gray-900">
+            Response times
+          </MaskRevealHeading>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             {[
               { label: "Sales enquiries", time: "Within 4 hours", sub: "Mon–Fri, 9am–6pm GMT" },
               { label: "Support tickets", time: "Within 2 hours", sub: "Enterprise SLA; Pro best-effort" },
               { label: "General enquiries", time: "Within 1 business day", sub: "All time zones" },
             ].map((r) => (
-              <div key={r.label} className="rounded-xl border border-gray-200 p-5">
+              <TiltCard key={r.label} className="rounded-xl border border-gray-200 p-5" intensity={5}>
                 <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">{r.label}</p>
                 <p className="mt-2 text-lg font-bold text-gray-900">{r.time}</p>
                 <p className="mt-1 text-xs text-gray-500">{r.sub}</p>
-              </div>
+              </TiltCard>
             ))}
           </div>
         </div>

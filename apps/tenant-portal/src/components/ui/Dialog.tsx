@@ -16,12 +16,22 @@ export function Dialog({ open, onOpenChange, title, description, children }: Dia
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
+        <RadixDialog.Overlay
+          className={cn(
+            "fixed inset-0 z-40 bg-black/40",
+            "data-[state=open]:animate-fauward-fade-in data-[state=closed]:animate-fauward-fade-out"
+          )}
+        />
         <RadixDialog.Content
           className={cn(
             "fixed left-1/2 top-1/2 z-50 flex w-[min(92vw,680px)] max-h-[90vh] flex-col -translate-x-1/2 -translate-y-1/2 rounded-xl border border-gray-200 bg-white shadow-sm",
-            "focus-visible:outline-none"
+            "focus-visible:outline-none",
+            "data-[state=open]:animate-fauward-zoom-in data-[state=closed]:animate-fauward-zoom-out"
           )}
+          // When the caller doesn't provide a header description (working / success /
+          // failure states swap to a body-only layout), explicitly opt out of Radix's
+          // auto-generated aria-describedby so it doesn't warn about a missing target.
+          {...(description ? {} : { "aria-describedby": undefined })}
         >
           <div className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-100 px-6 py-4">
             <div>

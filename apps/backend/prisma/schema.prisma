@@ -1788,6 +1788,7 @@ model AiAgentRun {
   scannedCount  Int       @default(0)
   flaggedCount  Int       @default(0)
   proposedCount Int       @default(0)
+  onTrackCount  Int       @default(0)
   durationMs    Int?
   finishedAt    DateTime?
   createdAt     DateTime  @default(now())

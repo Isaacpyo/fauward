@@ -37,15 +37,28 @@ describe("actionTitle", () => {
 });
 
 describe("actionSummary — flag_finding rows carry the identifier", () => {
-  it("unassigned: includes the tracking number and is not the generic 'Flag finding' string", () => {
+  it("unassigned: includes the FULL tracking number (no truncation) and is not 'Flag finding'", () => {
     const summary = actionSummary(
       makeAction({
         payload: { kind: "unassigned", trackingNumber: "TR-12345", shipmentId: "ship-abc", status: "PENDING" }
       })
     );
-    expect(summary).toContain("TR-12345");
+    expect(summary).toContain("#TR-12345");
+    // Truncation marker should not appear — TR codes render in full.
+    expect(summary).not.toContain("…");
     expect(summary.toLowerCase()).toContain("no driver");
     expect(summary).not.toBe("Flag finding");
+  });
+
+  it("unassigned: falls back to last-6 of shipmentId when no tracking number is present", () => {
+    const summary = actionSummary(
+      makeAction({
+        payload: { kind: "unassigned", shipmentId: "c1000abc123456ghi789", status: "PENDING" }
+      })
+    );
+    // Last 6 of the cuid — distinguishes far better than the first 8 (cuids share a prefix).
+    expect(summary).toContain("#ghi789");
+    expect(summary.toLowerCase()).toContain("no driver");
   });
 
   it("overloaded_driver: names the driver and job count", () => {

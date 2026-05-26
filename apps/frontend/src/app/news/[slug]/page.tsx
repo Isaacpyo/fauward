@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import CTABanner from "@/components/marketing/CTABanner";
+import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
+import { ReadingProgress } from "@/components/marketing/effects/ReadingProgress";
 import StructuredData from "@/components/seo/StructuredData";
 import { NEWS_ARTICLES } from "@/lib/marketing-data";
 import { NEWS_ARTICLE_DETAILS } from "@/lib/news-content";
@@ -85,6 +87,7 @@ export default function NewsArticlePage({ params }: NewsArticlePageProps) {
           }),
         ]}
       />
+      <ReadingProgress />
       <article className="bg-white py-16 lg:py-24">
         <div className="marketing-container max-w-4xl">
           <Link href="/news" className="text-sm font-semibold text-brand-navy underline-offset-4 hover:underline">
@@ -94,9 +97,9 @@ export default function NewsArticlePage({ params }: NewsArticlePageProps) {
             <p className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-amber-700">
               {article.category}
             </p>
-            <h1 className="mt-5 text-4xl font-bold leading-tight text-gray-900 lg:text-5xl">
+            <MaskRevealHeading className="mt-5 text-4xl font-bold leading-tight text-gray-900 lg:text-5xl">
               {article.title}
-            </h1>
+            </MaskRevealHeading>
             <div className="mt-5 flex flex-wrap items-center gap-4 text-sm text-gray-500">
               <span>{formatDate(article.publishedAt)}</span>
               <span>{article.readMinutes} min read</span>
