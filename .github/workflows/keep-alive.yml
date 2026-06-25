@@ -1,0 +1,53 @@
+name: Supabase Keep-Alive
+
+# Supabase free tier pauses a project after 7 days of inactivity.
+# This workflow runs an authenticated REST query against a real table
+# every 3 days to count as external activity and reset the timer.
+
+on:
+  schedule:
+    # At 06:00 UTC every 3rd day of the month (~every 3 days).
+    - cron: '0 6 */3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping Supabase REST API
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query tenants table (SELECT id LIMIT 1)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL and/or SUPABASE_ANON_KEY repo secrets are not set."
+            exit 1
+          fi
+
+          # Strip any trailing slash from the base URL.
+          BASE_URL="${SUPABASE_URL%/}"
+          ENDPOINT="${BASE_URL}/rest/v1/tenants?select=id&limit=1"
+
+          echo "Querying: ${ENDPOINT}"
+
+          # -s silent, -S show errors, -w capture HTTP status, write body to file.
+          HTTP_STATUS=$(curl -sS -o response.txt -w '%{http_code}' \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Accept: application/json" \
+            "${ENDPOINT}")
+
+          echo "HTTP status: ${HTTP_STATUS}"
+          echo "Response body:"
+          cat response.txt
+
+          # Fail loudly on any non-2xx response so GitHub sends a failure email.
+          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ]; then
+            echo "::error::Supabase keep-alive query failed with HTTP ${HTTP_STATUS}."
+            exit 1
+          fi
+
+          echo "Supabase keep-alive query succeeded."
