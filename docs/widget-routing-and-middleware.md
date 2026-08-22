@@ -1,23 +1,34 @@
 # Routing and Middleware
 
-Widget routing is split between the marketing apex project and the widget project.
+Widget routing is split between the canonical `ship.` subdomain, the marketing apex, and the widget project itself.
+
+## Canonical hosted URL
+
+`https://ship.fauward.com/<slug>` is the **only** advertised hosted shipment URL. The host is a CNAME on the `fauward-widget` Vercel project. The tenant slug lives in the path — `ship.fauward.com` is treated as a platform host, not a tenant host. It does not go through `resolveTenantByHost`.
+
+The legacy `https://fauward.com/ship/<slug>` URL is permanently retired and now returns **301** to `https://ship.fauward.com/<slug>` (see Apex Redirects below).
 
 ## Widget Project Middleware
 
 `apps/widget/middleware.ts` handles non-API page requests in the widget project.
 
-1. Platform hosts return `NextResponse.next()`.
-   - This includes the widget Vercel host and local development hosts.
-   - Platform hosts are allowed to serve `/`, `/ship/<slug>`, and other app routes normally.
-2. Portal-owned Fauward hosts return `404`.
-   - `app.fauward.com` and `*.fauward.com` are tenant portal surfaces.
-   - They must never be served by the widget project.
-3. Custom hosts are resolved through Edge Config.
+1. **`ship.fauward.com` (PATH-based slug)** runs first.
+   - Root `/` returns 404.
+   - `/<slug>` (and any deeper path) is rewritten internally to `/ship/<slug>`, which is served by `app/ship/[tenant]/page.tsx`.
+   - Edge Config is not consulted — slug comes from the path.
+2. **Platform hosts** return `NextResponse.next()`.
+   - `fauward.com`, `www.fauward.com`, localhost, and `*.vercel.app` (including widget preview deployments).
+3. **Portal-owned Fauward hosts** return `404`.
+   - `app.fauward.com` and any other `*.fauward.com` (e.g. `acme.fauward.com`).
+   - These belong to the tenant portal and must never be served by the widget project.
+   - `ship.fauward.com` is handled by step 1 before this rule, so it is not 404'd.
+4. **Tenant-owned custom domains (dormant)** resolve through Edge Config.
    - `resolveTenantByHost()` normalizes the host and reads `domains` from Edge Config.
-   - A mapped host rewrites to `/ship/<tenantSlug>`.
+   - A mapped host rewrites to `/ship/<tenantSlug><path>`.
    - An unknown host returns `404`.
+   - Code is parked, not advertised — kept functional for future white-label use.
 
-The middleware matcher excludes `api`, `_next`, and static asset paths. API routes are handled directly by Next route handlers.
+The matcher excludes `api`, `_next`, and static asset paths. API routes are handled directly by Next route handlers.
 
 ## Hosted Slugs
 
@@ -25,20 +36,33 @@ The middleware matcher excludes `api`, `_next`, and static asset paths. API rout
 
 - Current slug found: render the hosted shipment form.
 - Missing slug: `notFound()`, returning 404.
-- Old unexpired slug found in `tenant_slug_history`: `permanentRedirect()` to `/ship/<currentSlug>`, which produces a permanent 308 redirect.
+- Old unexpired slug found in `tenant_slug_history`: `permanentRedirect()` to the current slug, returning a 308.
+  - Under `ship.fauward.com` the target is bare `/<currentSlug>` (so the browser hits `ship.fauward.com/<currentSlug>` and the middleware rewrites it back to `/ship/<currentSlug>`). Redirecting to `/ship/<currentSlug>` here would double-prefix to `/ship/ship/<currentSlug>` and 404.
+  - On other hosts (preview deployments and dormant custom-domain rewrites) the target stays `/ship/<currentSlug>`.
 
-The 308 behavior is covered in tests, but it has not yet been verified end-to-end against production data because no seeded tenant slug/history rows were available during Phase 2 smoke testing.
+## Apex Redirects
 
-## Apex Option A Rewrites
+`apps/frontend/next.config.mjs` permanently redirects the legacy `/ship` paths off the apex:
 
-`apps/frontend/next.config.mjs` implements Option A by rewriting three path groups from the marketing apex to the widget production URL, `https://fauward-widget.vercel.app`:
+- `/ship` → `https://ship.fauward.com/` (301)
+- `/ship/:path*` → `https://ship.fauward.com/:path*` (301)
 
-- `/ship/:path*` -> hosted and white-label shipment pages served through the apex.
-- `/api/embed/token` -> widget token minting for the embed SDK.
-- `/api/widget/:path*` -> widget token verification, phone OTP endpoints, and shipment creation.
+The widget API rewrites are unchanged:
 
-All three rewrites are required. The embed SDK defaults to `https://fauward.com/api/embed/token`, so existing deployed embeds need the apex token route to keep working. The form posts widget API calls relative to the serving origin, so `/api/widget/:path*` must also reach the widget project. Omitting `/ship/:path*` would break hosted shipment pages from the apex.
+- `/api/embed/token` → `https://fauward-widget.vercel.app/api/embed/token` (dormant embed token minting)
+- `/api/widget/:path*` → `https://fauward-widget.vercel.app/api/widget/:path*` (live — used by the hosted form)
 
-`fauward.com` currently redirects to `www.fauward.com` with 307, then the rewrites apply on the canonical host.
+The embed SDK still defaults to `https://fauward.com/api/embed/token`, so the apex token rewrite must stay to keep already-deployed embeds working.
+
+`fauward.com` currently redirects to `www.fauward.com` with 307; the `/ship*` 301s apply on the canonical host.
+
+## Parked / dormant tiers
+
+These code paths are kept functional but are no longer advertised:
+
+- **Iframe embed**: `app/page.tsx`, `packages/widget-sdk`, `app/api/embed/token`.
+- **White-label custom domains**: `resolveTenantByHost`, `lib/vercelDomains`, `lib/edgeConfigAdmin`, `app/api/admin/domains`, the `tenant_widget_domains` table, and the Edge Config `domains` item.
+
+Do not delete them. Re-advertising would require restoring marketing copy + signup-flow plumbing, not adding code.
 
 See also [Architecture](widget-architecture.md), [Tokens and Auth](widget-tokens-and-auth.md), and [Deployment](widget-deployment.md).
