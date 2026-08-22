@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { runAgent } from './agent.service.js';
+import type { AgentEvent } from './agent.types.js';
 import { LLMGatewayService } from '../../shared/services/llm-gateway.service.js';
 
 vi.mock('../../shared/services/llm-gateway.service.js', () => ({
@@ -171,7 +172,7 @@ describe('runAgent', () => {
     const redis = { set: vi.fn().mockResolvedValue('OK') };
     const prisma = buildPrisma();
 
-    const event = { eventId: 'evt-e2e', type: 'failed_delivery', tenantId: 'tenant-e2e', shipmentId: 'ship-e2e' };
+    const event: AgentEvent = { eventId: 'evt-e2e', type: 'failed_delivery', tenantId: 'tenant-e2e', shipmentId: 'ship-e2e' };
     const result = await runAgent(
       event,
       { get_shipment_details: safeHandler, reroute_shipment: riskyHandler } as any,
@@ -220,7 +221,7 @@ describe('runAgent', () => {
 
     const prisma = buildPrisma();
 
-    const event = { eventId: 'evt-idem-1', type: 'shipment_created', tenantId: 'tenant-idem' };
+    const event: AgentEvent = { eventId: 'evt-idem-1', type: 'shipment_created', tenantId: 'tenant-idem' };
 
     const result1 = await runAgent(event, { get_available_drivers: handler } as any, prisma, redis);
     const result2 = await runAgent(event, { get_available_drivers: handler } as any, prisma, redis);

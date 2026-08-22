@@ -4,6 +4,7 @@ import type { Prisma, Shipment, UserRole } from '@prisma/client';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
+import { enqueueAgentEvent } from '../agent/agent.queue.js';
 
 const INTERNAL_FIELD_ROLES: UserRole[] = ['TENANT_ADMIN', 'TENANT_MANAGER', 'TENANT_STAFF', 'TENANT_DRIVER'];
 
@@ -807,9 +808,9 @@ export async function registerFieldRoutes(app: FastifyInstance) {
 
     // Also include directly assigned shipments (no RouteStop needed)
     const driver = await app.prisma.driver.findFirst({ where: { tenantId, userId } });
-    const assignedWhere = role === 'TENANT_DRIVER' && driver
-      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } }
-      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } };
+    const assignedWhere: Prisma.ShipmentWhereInput = role === 'TENANT_DRIVER' && driver
+      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] } }
+      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] } };
 
     const assignedShipments = await app.prisma.shipment.findMany({
       where: assignedWhere,
