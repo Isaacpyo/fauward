@@ -2,12 +2,12 @@ name: Supabase Keep-Alive
 
 # Supabase free tier pauses a project after 7 days of inactivity.
 # This workflow runs an authenticated REST query against a real table
-# every 3 days to count as external activity and reset the timer.
+# every day to count as external activity and reset the timer.
 
 on:
   schedule:
-    # At 06:00 UTC every 3rd day of the month (~every 3 days).
-    - cron: '0 6 */3 * *'
+    # Daily at 06:00 UTC.
+    - cron: '0 6 * * *'
   workflow_dispatch: {}
 
 jobs:
