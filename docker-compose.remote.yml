@@ -1,0 +1,23 @@
+# Override for running docker-compose.yml on the Oracle VM (see docs/vm-docker.md).
+# Ports are bound to 127.0.0.1 on the VM and chosen per slot by scripts/vm-slot.sh.
+# Used as: docker compose -p fauward-sN -f docker-compose.yml -f docker-compose.remote.yml ...
+services:
+  uptime-kuma:
+    container_name: !reset null   # a fixed name would stop a second stack from starting
+    ports: !override
+      - "127.0.0.1:${FW_KUMA_PORT:-4002}:4000"
+  postgres:
+    ports: !override
+      - "127.0.0.1:${FW_PG_PORT:-5432}:5432"
+  redis:
+    ports: !override
+      - "127.0.0.1:${FW_REDIS_PORT:-6379}:6379"
+  mailhog:
+    # mailhog/mailhog is x86-only and crashes on the ARM VM; Mailpit is a drop-in (same ports 8025 UI, 1025 SMTP).
+    image: axllent/mailpit:latest
+    ports: !override
+      - "127.0.0.1:${FW_MAILUI_PORT:-8025}:8025"
+      - "127.0.0.1:${FW_SMTP_PORT:-1025}:1025"
+  python-api:
+    ports: !override
+      - "127.0.0.1:${FW_API_PORT:-8000}:8000"
