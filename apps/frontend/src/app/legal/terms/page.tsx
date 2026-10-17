@@ -12,7 +12,7 @@ export function generateMetadata(): Metadata {
 }
 
 const LAST_UPDATED = "18 April 2026";
-const COMPANY = "Fauward Ltd";
+const COMPANY = "Vitalos Technologies Limited";
 
 export default function TermsPage() {
   return (
