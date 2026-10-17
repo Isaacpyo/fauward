@@ -256,7 +256,7 @@ export default function Footer() {
           <div className="space-y-1">
             <p className="text-xs text-blue-400">© {new Date().getFullYear()} Fauward Ltd. All rights reserved.</p>
             <p className="text-xs text-blue-500">
-              Fauward Ltd is registered in England &amp; Wales. Company No: [pending]. Registered office: [address]. VAT No: [pending].
+              Fauward is a product of Vitalos Technologies Limited · Company number 16696895
             </p>
           </div>
           <div className="flex items-center gap-2">
