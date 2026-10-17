@@ -13,7 +13,7 @@ export function generateMetadata(): Metadata {
 }
 
 const LAST_UPDATED = "18 April 2026";
-const CONTROLLER = "Fauward Ltd";
+const CONTROLLER = "Vitalos Technologies Limited";
 const CONTACT_EMAIL = "privacy@fauward.com";
 
 export default function PrivacyPolicyPage() {
