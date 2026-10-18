@@ -26,6 +26,8 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/impersonation/sessions' },
   // trust.jit (WP-1.7)
   { method: 'POST', url: '/api/internal/jit/requests/:id/approve' },
+  // trust.audit (WP-1.9)
+  { method: 'POST', url: '/api/internal/audit/export' },
   // revenue.billing (WP-0.6, WP-1.5)
   { method: 'POST', url: '/api/internal/billing/invoices/:id/void' },
   { method: 'POST', url: '/api/internal/billing/payments' },
