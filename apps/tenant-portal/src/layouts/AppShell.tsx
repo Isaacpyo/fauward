@@ -71,7 +71,7 @@ export function AppShell() {
       <MobileNav />
       <CommandPalette />
       <ToastStack />
-      <SuspendedOverlay active={showSuspendedOverlay} reason={tenant?.suspensionReason} />
+      <SuspendedOverlay active={showSuspendedOverlay} />
     </div>
   );
 }

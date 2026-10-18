@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
-import { handleDunningEvent } from './billing.service.js';
+import { handleDunningEvent, handleDunningPaid } from './billing.service.js';
 import { stripeService } from './stripe.service.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
@@ -411,12 +411,20 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
     if (eventType === 'invoice.payment_failed') {
       const tenantId = String(eventAny.data?.object?.metadata?.tenantId ?? '');
       const attemptCount = Number(eventAny.data?.object?.attempt_count ?? 1);
+      const invoiceRef = String(eventAny.data?.object?.id ?? '');
       if (tenantId) {
-        await handleDunningEvent(app.prisma, {
+        await handleDunningEvent(app, {
           tenantId,
-          attempt: attemptCount
+          attempt: attemptCount,
+          invoiceRef
         });
       }
+    }
+
+    if (eventType === 'invoice.paid') {
+      const tenantId = String(eventAny.data?.object?.metadata?.tenantId ?? '');
+      const invoiceRef = String(eventAny.data?.object?.id ?? '');
+      if (tenantId && invoiceRef) await handleDunningPaid(app, { tenantId, invoiceRef });
     }
 
     if (eventType === 'checkout.session.completed') {

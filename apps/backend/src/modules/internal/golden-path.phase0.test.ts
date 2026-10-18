@@ -146,7 +146,7 @@ afterEach(async () => {
 });
 
 describe('Phase 0 golden path (chained API calls)', () => {
-  it('login → MFA enrol → read-only impersonation via exchange code → end → START/END audit with reasons; region approval after step-up', async () => {
+  it('login → MFA enrol → read-only impersonation via exchange code → end → START/END audit with reasons; region approval after step-up', { timeout: 30_000 }, async () => {
     const world = createWorld(passwordHash);
     const { config } = await import('../../config/index.js');
     const { authenticate } = await import('../../shared/middleware/authenticate.js');

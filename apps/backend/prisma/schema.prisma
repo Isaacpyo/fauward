@@ -2338,18 +2338,33 @@ model FraudSignal {
   @@map("fraud_signals")
 }
 
+/// One cause of a tenant suspension (D3). Written only by services/tenant-suspension.service.ts; a tenant is ACTIVE again
+/// only when no ACTIVE record remains.
 model SuspensionRecord {
   id             String   @id @default(uuid())
   tenantId       String
+  /// Internal reason, visible to staff only.
   reason         String
+  /// Shown to the tenant in the suspension overlay.
+  publicReason   String?
+  /// PLATFORM | DUNNING | FRAUD | AUP | LEGAL | SYSTEM
+  source         String   @default("PLATFORM")
+  /// BILLING | FRAUD | AUP | SECURITY | LEGAL | OTHER
+  category       String   @default("OTHER")
   sourceSignalId String?
+  /// What caused it: Stripe invoice id, fraud signal id, …
+  sourceRef      String?
   suspendedBy    String
   liftedBy       String?
+  /// MANUAL | APPEAL | PAYMENT | EXPIRY
+  liftedVia      String?
+  liftReason     String?
   status         String   @default("ACTIVE")
   createdAt      DateTime @default(now())
   liftedAt       DateTime?
 
   @@index([tenantId, status])
+  @@index([source, status])
   @@map("suspension_records")
 }
 

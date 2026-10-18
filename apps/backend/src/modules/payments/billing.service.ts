@@ -1,11 +1,22 @@
-import type { PrismaClient } from '@prisma/client';
+import type { FastifyInstance } from 'fastify';
 import { domainService } from '../tenants/domain.service.js';
+import { getActiveSuspensions, liftDunningSuspensionForInvoice, suspendTenant } from '../../services/tenant-suspension.service.js';
 
-export async function handleDunningEvent(prisma: PrismaClient, event: {
+const STRIPE_ACTOR = { type: 'SYSTEM' as const, label: 'Stripe billing' };
+
+/**
+ * Stripe `invoice.payment_failed` (D3 caller 3): attempt 2 opens a DUNNING suspension for that Stripe invoice through
+ * the suspension service; `invoice.paid` lifts it (handleDunningPaid). WP-4.5 replaces the attempt-2 suspend with the
+ * dunning sequence.
+ */
+export async function handleDunningEvent(app: FastifyInstance, event: {
   tenantId: string;
   attempt: number;
+  /** Stripe invoice id; becomes the suspension's sourceRef so the matching `invoice.paid` lifts it. */
+  invoiceRef: string;
 }) {
   const { tenantId, attempt } = event;
+  const prisma = app.prisma;
 
   if (attempt === 1) {
     await prisma.notificationLog.create({
@@ -20,19 +31,15 @@ export async function handleDunningEvent(prisma: PrismaClient, event: {
   }
 
   if (attempt === 2) {
-    await prisma.tenant.update({
-      where: { id: tenantId },
-      data: { status: 'SUSPENDED' }
+    const result = await suspendTenant(app, {
+      tenantId,
+      source: 'DUNNING',
+      category: 'BILLING',
+      reason: `Stripe invoice ${event.invoiceRef}: payment attempt 2 failed`,
+      actor: STRIPE_ACTOR,
+      sourceRef: event.invoiceRef
     });
-    await prisma.notificationLog.create({
-      data: {
-        tenantId,
-        channel: 'EMAIL',
-        event: 'billing_payment_failed_attempt_2',
-        status: 'QUEUED'
-      }
-    });
-    return { tenantStatus: 'SUSPENDED', retryInDays: 4 };
+    return { tenantStatus: result.tenant.status, retryInDays: 4 };
   }
 
   if (attempt >= 3) {
@@ -46,7 +53,10 @@ export async function handleDunningEvent(prisma: PrismaClient, event: {
     });
 
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (tenant?.status === 'SUSPENDED' && tenant.updatedAt < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
+    // 30 days after the DUNNING cause opened (not since the tenant row last changed).
+    const dunning = (await getActiveSuspensions(prisma, tenantId)).filter((record) => record.source === 'DUNNING');
+    const since = dunning.length > 0 ? dunning[dunning.length - 1].createdAt : tenant?.suspendedAt ?? tenant?.updatedAt;
+    if (tenant?.status === 'SUSPENDED' && since && since < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
       await domainService.removeCustomDomain(prisma, {
         tenantId,
         actorUserId: null,
@@ -69,4 +79,9 @@ export async function handleDunningEvent(prisma: PrismaClient, event: {
   }
 
   return { tenantStatus: 'ACTIVE', retryInDays: 0 };
+}
+
+/** Stripe `invoice.paid`: lifts the DUNNING suspension opened for that invoice (via PAYMENT), if there is one. */
+export async function handleDunningPaid(app: FastifyInstance, event: { tenantId: string; invoiceRef: string }) {
+  return liftDunningSuspensionForInvoice(app, { tenantId: event.tenantId, invoiceRef: event.invoiceRef, actor: STRIPE_ACTOR });
 }

@@ -1,4 +1,5 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import { TenantPlan, TenantStatus } from '@prisma/client';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
@@ -8,6 +9,7 @@ import { redactPlatformLogValue } from '../../../services/platform-redaction.ser
 import { resolveEffectiveTenantPlan } from '../../../services/platform-plan-override.service.js';
 import { recordAndPublishActivity, staffActor } from '../../../services/platform-activity.service.js';
 import { platformAuditActor, reasonOf } from '../request-meta.js';
+import { SUSPENSION_CATEGORIES, SuspensionError, liftSuspension, staffSuspensionActor, suspendTenant } from '../../../services/tenant-suspension.service.js';
 import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../../regions/region-change-requests.store.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
@@ -15,6 +17,18 @@ import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../..
 const SUPPORTED_REGIONS = new Set(['africa', 'europe', 'northAmerica', 'global', 'uk_europe']);
 const OVERRIDE_PLANS = new Set<TenantPlan>(['STARTER', 'PRO', 'ENTERPRISE']);
 const readPre = [authenticatePlatformSession, requireConsolePermission('platform.tenants.read')];
+
+const suspendBody = z.object({
+  category: z.enum(SUSPENSION_CATEGORIES),
+  reason: z.string().min(8),
+  publicReason: z.string().trim().max(500).optional()
+});
+const unsuspendBody = z.object({ suspensionId: z.string().min(1).optional(), all: z.boolean().optional(), reason: z.string().min(8) });
+
+export function sendSuspensionError(reply: FastifyReply, error: unknown) {
+  if (error instanceof SuspensionError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+  throw error;
+}
 
 function activityDeps(app: FastifyInstance) {
   return { prisma: app.prisma, redis: app.redis, log: app.log };
@@ -200,56 +214,35 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
 
   app.post('/api/internal/tenants/:id/suspend', { preHandler: dangerous('platform.tenants.suspend') }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
-    const reason = reasonOf(request) ?? 'Platform suspension';
-    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'SUSPENDED', suspensionReason: reason, suspendedAt: new Date() } });
-    await writePlatformAuditLog(app.prisma, {
-      ...platformAuditActor(request),
-      actorType: 'PLATFORM_USER',
-      action: 'TENANT_SUSPENSION',
-      targetTenantId: id,
-      reason,
-      metadata: { previousStatus: tenant.status, nextStatus: 'SUSPENDED' }
-    });
-    await recordAndPublishActivity(activityDeps(app), {
-      service: 'platform.tenants',
-      type: 'tenant.suspended',
-      tenantId: id,
-      ...staffActor(request),
-      subjectType: 'tenant',
-      subjectId: id,
-      summary: `${tenant.name} suspended`,
-      severity: 'CRITICAL',
-      consoleLink: `/platform/tenants/${id}`
-    });
-    return reply.send(updated);
+    const parsed = suspendBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    try {
+      const result = await suspendTenant(app, {
+        tenantId: id,
+        source: 'PLATFORM',
+        category: parsed.data.category,
+        reason: parsed.data.reason.trim(),
+        publicReason: parsed.data.publicReason,
+        actor: staffSuspensionActor(request)
+      });
+      return reply.send({ suspension: result.record, tenant: { id: result.tenant.id, status: result.tenant.status, suspendedAt: result.tenant.suspendedAt, suspensionReason: result.tenant.suspensionReason } });
+    } catch (error) {
+      return sendSuspensionError(reply, error);
+    }
   });
 
   app.post('/api/internal/tenants/:id/unsuspend', { preHandler: dangerous('platform.tenants.suspend') }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
-    const updated = await app.prisma.tenant.update({ where: { id }, data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null } });
-    await writePlatformAuditLog(app.prisma, {
-      ...platformAuditActor(request),
-      actorType: 'PLATFORM_USER',
-      action: 'TENANT_UNSUSPEND',
-      targetTenantId: id,
-      reason: reasonOf(request),
-      metadata: { previousStatus: tenant.status, nextStatus: 'ACTIVE' }
-    });
-    await recordAndPublishActivity(activityDeps(app), {
-      service: 'platform.tenants',
-      type: 'tenant.unsuspended',
-      tenantId: id,
-      ...staffActor(request),
-      subjectType: 'tenant',
-      subjectId: id,
-      summary: `${tenant.name} unsuspended`,
-      severity: 'ATTENTION',
-      consoleLink: `/platform/tenants/${id}`
-    });
-    return reply.send(updated);
+    const parsed = unsuspendBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    if (!parsed.data.suspensionId && parsed.data.all !== true) {
+      return reply.status(400).send({ error: 'SUSPENSION_ID_REQUIRED', message: 'Choose which suspension to lift, or confirm lifting all of them with all: true.' });
+    }
+    try {
+      const result = await liftSuspension(app, { tenantId: id, suspensionId: parsed.data.suspensionId ?? null, via: 'MANUAL', reason: parsed.data.reason.trim(), actor: staffSuspensionActor(request) });
+      return reply.send({ lifted: result.lifted, remaining: result.remaining, tenant: { id: result.tenant.id, status: result.tenant.status, suspendedAt: result.tenant.suspendedAt, suspensionReason: result.tenant.suspensionReason } });
+    } catch (error) {
+      return sendSuspensionError(reply, error);
+    }
   });
 }

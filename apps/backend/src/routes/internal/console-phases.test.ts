@@ -47,6 +47,14 @@ vi.mock('../../middleware/require-console-permission.js', () => {
   };
 });
 
+const suspendTenantMock = vi.hoisted(() => vi.fn(async (_app: unknown, input: { tenantId: string }) => ({ record: { id: 'susp_001', tenantId: input.tenantId }, tenant: { id: input.tenantId, status: 'SUSPENDED' }, becameSuspended: true, duplicate: false })));
+const liftSuspensionMock = vi.hoisted(() => vi.fn(async () => ({ lifted: [], remaining: [], tenant: { status: 'ACTIVE' }, becameActive: true })));
+vi.mock('../../services/tenant-suspension.service.js', () => ({
+  suspendTenant: suspendTenantMock,
+  liftSuspension: liftSuspensionMock,
+  staffSuspensionActor: () => ({ type: 'STAFF', platformUserId: 'staff_001', email: 'staff@fauward.com', label: 'Staff' })
+}));
+
 vi.mock('../../services/staff-iam.service.js', () => ({
   staffPermissionContextForPlatformUser: async () => ({
     staff: { id: 'staff_user_001' },
@@ -131,12 +139,12 @@ describe('internal console phase routes', () => {
     vi.clearAllMocks();
   });
 
-  it('suspends a tenant after dunning retry attempts exceed the limit and writes audit', async () => {
+  it('ACC-SUS-1 (caller 2) the dunning retry limit suspends through the suspension service with DUNNING/BILLING and the invoice', async () => {
     currentPermissions = ['revenue.dunning.write'];
     const tenant = { id: 'tenant_001', name: 'Acme', status: 'ACTIVE' };
     const prisma = {
-      invoice: { findUnique: vi.fn(async () => ({ id: 'inv_001', tenantId: tenant.id, tenant })) },
-      tenant: { update: vi.fn(async () => ({ ...tenant, status: 'SUSPENDED' })) },
+      invoice: { findUnique: vi.fn(async () => ({ id: 'inv_001', invoiceNumber: 'INV-001', tenantId: tenant.id, tenant })) },
+      tenant: { update: vi.fn() },
       dunningEvent: delegate({ count: vi.fn(async () => 3) })
     };
     const app = await buildApp(prisma);
@@ -144,8 +152,31 @@ describe('internal console phase routes', () => {
     const response = await app.inject({ method: 'POST', url: '/api/internal/dunning/retry/inv_001', payload: { reason: 'Retry ceiling' } });
 
     expect(response.statusCode).toBe(200);
-    expect(prisma.tenant.update).toHaveBeenCalledWith({ where: { id: tenant.id }, data: { status: 'SUSPENDED' } });
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'dunning.tenant.suspend_after_retry_limit', target_id: tenant.id }));
+    expect(response.json()).toMatchObject({ suspended: true, suspension: { id: 'susp_001' } });
+    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: tenant.id, source: 'DUNNING', category: 'BILLING', sourceRef: 'inv_001' }));
+    expect(prisma.tenant.update).not.toHaveBeenCalled();
+  });
+
+  it('ACC-SUS-4 a fraud SUSPEND decision creates a FRAUD suspension whose sourceRef is the signal id', async () => {
+    currentPermissions = ['trust.safety.suspend'];
+    const prisma = { fraudSignal: delegate({ findUnique: vi.fn(async () => ({ id: 'sig_042', tenantId: 'tenant_009' })) }), notificationLog: { create: vi.fn() } };
+    const app = await buildApp(prisma);
+    const response = await app.inject({ method: 'POST', url: '/api/internal/safety/fraud/sig_042/decision', payload: { decision: 'suspend', reason: 'Radar confirmed card testing' } });
+    expect(response.statusCode).toBe(200);
+    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', source: 'FRAUD', category: 'FRAUD', sourceRef: 'sig_042', sourceSignalId: 'sig_042', reason: 'Radar confirmed card testing' }));
+    expect(prisma.notificationLog.create).not.toHaveBeenCalled();
+  });
+
+  it('approving an appeal lifts the suspension linked server-side (via APPEAL), ignoring any suspensionId in the body', async () => {
+    currentPermissions = ['trust.safety.suspend'];
+    const prisma = {
+      tenantAppeal: delegate({ findUnique: vi.fn(async () => ({ id: 'appeal_1', tenantId: 'tenant_009', status: 'PENDING', suspensionId: 'susp_linked' })) }),
+      suspensionRecord: { findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => (where.id === 'susp_linked' ? { id: 'susp_linked', tenantId: 'tenant_009', status: 'ACTIVE' } : null)) }
+    };
+    const app = await buildApp(prisma);
+    const response = await app.inject({ method: 'PATCH', url: '/api/internal/safety/appeals/appeal_1', payload: { status: 'APPROVED', suspensionId: 'susp_from_client', reason: 'Customer provided invoices' } });
+    expect(response.statusCode).toBe(200);
+    expect(liftSuspensionMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', suspensionId: 'susp_linked', via: 'APPEAL' }));
   });
 
   it('rejects self approval for JIT requests', async () => {

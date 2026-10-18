@@ -8,6 +8,7 @@ import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, web
 import { dlqOutboxQueue } from '../../queues/outbox.worker.js';
 import { dlqWebhookQueue } from '../../queues/webhook.worker.js';
 import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../regions/region-change-requests.store.js';
+import { SuspensionError, liftSuspension, suspendTenant } from '../../services/tenant-suspension.service.js';
 
 export async function registerSuperAdminRoutes(app: FastifyInstance) {
   // Deprecated compatibility namespace. New platform control-plane code must use /api/v1/platform/*.
@@ -144,52 +145,34 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
     reply.send(updated);
   });
 
+  // D3 caller 5 (removed with this module in WP-1.6): routed through the one suspension path.
   app.post('/api/v1/admin/tenants/:id/suspend', { preHandler: preHandlers }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const payload = request.body as { reason?: string };
-
-    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-
-    const updated = await app.prisma.tenant.update({
-      where: { id: tenant.id },
-      data: { status: 'SUSPENDED' }
-    });
-
-    await app.prisma.notificationLog.create({
-      data: {
-        tenantId: tenant.id,
-        channel: 'EMAIL',
-        event: 'tenant_suspended',
-        status: 'QUEUED',
-        error: payload.reason
-      }
-    });
-
-    reply.send(updated);
+    const payload = (request.body ?? {}) as { reason?: string };
+    try {
+      const result = await suspendTenant(app, {
+        tenantId: id,
+        source: 'PLATFORM',
+        category: 'OTHER',
+        reason: payload.reason?.trim() || 'Suspended from the legacy admin API',
+        actor: { type: 'SYSTEM', label: `Legacy admin API (${request.user?.email ?? 'unknown user'})` }
+      });
+      reply.send(result.tenant);
+    } catch (error) {
+      if (error instanceof SuspensionError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.post('/api/v1/admin/tenants/:id/unsuspend', { preHandler: preHandlers }, async (request, reply) => {
     const { id } = request.params as { id: string };
-
-    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-
-    const updated = await app.prisma.tenant.update({
-      where: { id: tenant.id },
-      data: { status: 'ACTIVE' }
-    });
-
-    await app.prisma.notificationLog.create({
-      data: {
-        tenantId: tenant.id,
-        channel: 'EMAIL',
-        event: 'tenant_unsuspended',
-        status: 'QUEUED'
-      }
-    });
-
-    reply.send(updated);
+    try {
+      const result = await liftSuspension(app, { tenantId: id, via: 'MANUAL', reason: 'Lifted from the legacy admin API', actor: { type: 'SYSTEM', label: `Legacy admin API (${request.user?.email ?? 'unknown user'})` } });
+      reply.send(result.tenant);
+    } catch (error) {
+      if (error instanceof SuspensionError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   // S7: legacy impersonation issued unrevocable tokens. Gone; the console's Impersonation Center replaces it
@@ -197,7 +180,7 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
   app.post('/api/v1/admin/tenants/:id/impersonate', async (_request, reply) => {
     reply.status(410).send({
       error: 'GONE',
-      message: 'Legacy impersonation is retired. Use the console Impersonation Center (POST /api/v1/platform/tenants/:id/impersonation-sessions).',
+      message: 'Legacy impersonation is retired. Use the console Impersonation Center (POST /api/internal/impersonation/sessions).',
       console: '/platform/impersonation'
     });
   });

@@ -11,7 +11,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0036_console_mfa (real: `0037_console_mfa`, C11) | P0 / WP-0.1 | `PlatformUser.mfaPendingSecretEncrypted`, `mfaEnrolledAt` |
 | 0037_impersonation_hardening (real: `0038_…`, C11) | P0 / WP-0.5 | `PlatformImpersonationSession.endedAt/endedReason/exchangedAt`; `TenantSettings.notifyOnStaffAccess` |
 | 0038_refund_integrity (real: `0039_…`, C11) | P0 / WP-0.6 | `Refund.currency`, `failureReason`; refund status set |
-| 0039_suspension_unification | P1 / WP-1.3 | `SuspensionRecord` source/category/publicReason/sourceRef/liftedVia/liftReason + backfill |
+| 0039_suspension_unification (real: `0042_suspension_unification`, backfill `0042-suspension-records.ts`, C11) | P1 / WP-1.3 | `SuspensionRecord` source/category/publicReason/sourceRef/liftedVia/liftReason + backfill |
 | 0040_ledger_kind | P1 / WP-1.5 | `enum LedgerKind`; `kind` on Invoice/Payment/Refund/CreditNote; `Invoice.stripeInvoiceId` |
 | 0041_tenant_entitlements | P1 / WP-1.4 | `TenantFeatureOverride` |
 | 0042_tenant_close | P1 / WP-1.2 | `Tenant.closedAt`, `closedReason`, `purgeAfter` |

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
+import { getActiveSuspension } from '../../services/tenant-suspension.service.js';
 
 function tenantFrom(request: FastifyRequest, reply: FastifyReply) {
   const tenant = request.tenant;
@@ -11,9 +12,45 @@ function tenantFrom(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function registerAppealRoutes(app: FastifyInstance) {
+  // What the SuspendedOverlay shows (D3): category, public reason, since when, and the appeal state. Never the internal
+  // reason.
+  app.get('/api/v1/tenants/me/suspension', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenant = tenantFrom(request, reply);
+    if (!tenant) return;
+    const suspended = tenant.status === 'SUSPENDED';
+    const closed = tenant.status === 'CANCELLED';
+    const [active, appeal] = await Promise.all([
+      getActiveSuspension(app.prisma, tenant.id),
+      app.prisma.tenantAppeal.findFirst({ where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' } })
+    ]);
+    const relevantAppeal = appeal && (!active || !appeal.suspensionId || appeal.suspensionId === active.id) ? appeal : null;
+    const pending = relevantAppeal ? ['OPEN', 'PENDING'].includes(relevantAppeal.status) : false;
+    return reply.send({
+      suspended,
+      closed,
+      category: active?.category ?? null,
+      publicReason: active?.publicReason ?? tenant.suspensionReason ?? null,
+      since: (tenant.suspendedAt ?? active?.createdAt)?.toISOString() ?? null,
+      appealable: suspended && !closed && !pending,
+      appeal: relevantAppeal
+        ? {
+            id: relevantAppeal.id,
+            status: relevantAppeal.status,
+            createdAt: relevantAppeal.createdAt.toISOString(),
+            decidedAt: ['APPROVED', 'REJECTED'].includes(relevantAppeal.status) ? relevantAppeal.updatedAt.toISOString() : null,
+            resolution: relevantAppeal.reviewNote ?? null
+          }
+        : null
+    });
+  });
+
   app.post('/api/v1/tenants/me/suspension-appeal', { preHandler: [authenticate] }, async (request, reply) => {
     const tenant = tenantFrom(request, reply);
     if (!tenant) return;
+    // A closed tenant is never reactivated, so it cannot appeal (D3).
+    if (tenant.status === 'CANCELLED') {
+      return reply.status(409).send({ error: 'TENANT_CLOSED', message: 'This workspace has been closed and cannot be appealed.' });
+    }
     if (tenant.status !== 'SUSPENDED') {
       return reply.status(400).send({ error: 'Tenant is not suspended' });
     }

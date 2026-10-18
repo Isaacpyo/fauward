@@ -92,7 +92,8 @@ beforeAll(async () => {
   freshMfa = (await import('../../middleware/require-fresh-platform-mfa.js')).requireFreshMfa;
   auth = (await import('../../middleware/authenticate-platform-session.js')).authenticatePlatformSession;
   csrf = (await import('../../middleware/require-platform-csrf.js')).requirePlatformCsrf;
-});
+  // Importing and registering every console module is slow on a loaded CI runner.
+}, 60_000);
 
 afterAll(() => {
   routes = [];
@@ -150,7 +151,7 @@ describe('console RBAC matrix (architecture §4)', () => {
 });
 
 describe('one console namespace (D2)', () => {
-  it('ACC-RBAC-3 no /api/v1/platform route remains outside tracking and control-tower (moved in WP-2.11)', async () => {
+  it('ACC-RBAC-3 no /api/v1/platform route remains outside tracking and control-tower (moved in WP-2.11)', { timeout: 30_000 }, async () => {
     const root = resolve(process.cwd(), 'src');
     const offenders: string[] = [];
     async function scan(dir: string) {

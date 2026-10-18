@@ -27,5 +27,8 @@ export const EMAIL_TEMPLATES = {
   ops_new_shipment: 'ops_new_shipment',
   trial_expiry: 'trial_expiry',
   return_fee: 'return_fee',
-  permission_request_approval: 'permission_request_approval'
+  permission_request_approval: 'permission_request_approval',
+  // Fauward → tenant (PlatformNotifier, D6). SendGrid template ids come from SENDGRID_TEMPLATE_<KEY>.
+  tenant_suspended: 'tenant_suspended',
+  tenant_unsuspended: 'tenant_unsuspended'
 } as const;

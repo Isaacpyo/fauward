@@ -10,6 +10,7 @@ import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.s
 import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
+import { liftSuspension, staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -379,13 +380,19 @@ function registerDunning(app: FastifyInstance) {
 
     const attempt = await delegate(app, 'dunningEvent').count({ where: { invoiceId, eventType: 'manual_retry' } });
     if (attempt >= 3) {
-      const before = invoice.tenant;
-      const after = await app.prisma.tenant.update({ where: { id: invoice.tenantId }, data: { status: 'SUSPENDED' } });
+      // D3 caller 2: the retry limit suspends through the one suspension path.
+      const result = await suspendTenant(app, {
+        tenantId: invoice.tenantId,
+        source: 'DUNNING',
+        category: 'BILLING',
+        reason: `Dunning retry limit exceeded for invoice ${invoice.invoiceNumber ?? invoiceId}`,
+        actor: staffSuspensionActor(request),
+        sourceRef: invoiceId
+      });
       await delegate(app, 'dunningEvent').create({
         data: { tenantId: invoice.tenantId, invoiceId, eventType: 'suspended_after_max_retries', attempt: attempt + 1, actorId: actorId(request) }
       });
-      await writeInternalAudit(request, 'dunning.tenant.suspend_after_retry_limit', 'tenant', invoice.tenantId, before, after, 'Dunning retry limit exceeded');
-      return reply.send({ suspended: true, attempt: attempt + 1, tenant: after });
+      return reply.send({ suspended: true, attempt: attempt + 1, suspension: result.record, tenant: result.tenant });
     }
 
     const event = await createAndAudit(
@@ -915,24 +922,41 @@ function registerSafety(app: FastifyInstance) {
     if (!signal) return reply.status(404).send({ error: 'Fraud signal not found' });
     const updated = await updateAndAudit(request, model, id, { status: 'CLOSED', reviewedBy: actorId(request), decision }, 'safety.fraud.decision', 'fraud_signal', stringValue(body.reason, decision));
     if (decision === 'suspend' && signal.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: signal.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({ where: { id: signal.tenantId }, data: { status: 'SUSPENDED' } });
-      await delegate(app, 'suspensionRecord').create({ data: { tenantId: signal.tenantId, sourceSignalId: id, suspendedBy: actorId(request), reason: stringValue(body.reason, 'Trust and safety suspension') } });
-      await app.prisma.notificationLog.create({
-        data: {
-          tenantId: signal.tenantId,
-          channel: 'EMAIL',
-          event: 'trust_safety_tenant_suspended',
-          status: 'QUEUED'
-        }
+      // D3 caller 4: FRAUD cause linked to the signal (sourceRef); the service writes the record, status, audit,
+      // activity and notifies tenant admins.
+      await suspendTenant(app, {
+        tenantId: signal.tenantId,
+        source: 'FRAUD',
+        category: 'FRAUD',
+        reason: stringValue(body.reason, 'Trust and safety suspension'),
+        publicReason: stringValue(body.publicReason) || null,
+        actor: staffSuspensionActor(request),
+        sourceRef: id,
+        sourceSignalId: id
       });
-      await writeInternalAudit(request, 'safety.tenant.suspend', 'tenant', signal.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Trust and safety suspension'));
     }
     reply.send(updated);
   });
 
-  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'suspensionRecord'), { orderBy: { createdAt: 'desc' }, take: 100 }));
+  // Every SuspensionRecord from every source (D3), with filters and the tenant for each row.
+  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
+    const query = request.query as { source?: string; status?: string; tenantId?: string; category?: string; cursor?: string; limit?: string };
+    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
+    const rows = await app.prisma.suspensionRecord.findMany({
+      where: {
+        ...(query.source ? { source: query.source.toUpperCase() } : {}),
+        ...(query.status ? { status: query.status.toUpperCase() } : {}),
+        ...(query.category ? { category: query.category.toUpperCase() } : {}),
+        ...(query.tenantId ? { tenantId: query.tenantId } : {})
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
+    });
+    const page = rows.slice(0, limit);
+    const tenants = await app.prisma.tenant.findMany({ where: { id: { in: [...new Set(page.map((row) => row.tenantId))] } }, select: { id: true, name: true, slug: true, status: true } });
+    const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+    reply.send({ data: page.map((row) => ({ ...row, tenant: byId.get(row.tenantId) ?? null })), nextCursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null });
   });
 
   app.get('/api/internal/safety/appeals', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
@@ -954,7 +978,7 @@ function registerSafety(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Invalid appeal status' });
     }
     const model = delegate(app, 'tenantAppeal');
-    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string } | null;
+    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string; suspensionId?: string | null } | null;
     if (!before) return reply.status(404).send({ error: 'Appeal not found' });
 
     const after = await model.update({
@@ -967,16 +991,11 @@ function registerSafety(app: FastifyInstance) {
       }
     });
     if (status === 'APPROVED' && before.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: before.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({
-        where: { id: before.tenantId },
-        data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null }
-      });
-      await delegate(app, 'suspensionRecord').update({
-        where: { id: stringValue(body.suspensionId, '') },
-        data: { status: 'LIFTED', liftedBy: actorId(request), liftedAt: new Date() }
-      }).catch(() => null);
-      await writeInternalAudit(request, 'safety.appeal.approve_unsuspend', 'tenant', before.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Appeal approved'));
+      // The suspension comes from the appeal (set server-side at creation), never from the client (D3).
+      const active = await app.prisma.suspensionRecord.findFirst({ where: { tenantId: before.tenantId, status: 'ACTIVE', ...(before.suspensionId ? { id: before.suspensionId } : {}) }, orderBy: { createdAt: 'desc' } });
+      if (active) {
+        await liftSuspension(app, { tenantId: before.tenantId, suspensionId: active.id, via: 'APPEAL', reason: stringValue(body.reason, 'Appeal approved'), actor: staffSuspensionActor(request) });
+      }
     }
     await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
     reply.send(after);

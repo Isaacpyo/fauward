@@ -28,7 +28,7 @@ type Grant = { id: string; requesterPlatformUserId: string; permission: string; 
 function createWorld(role: Role, grants: Grant[] = []) {
   const staff = { id: 'staff_csm', platformUserId: 'pu_csm', email: 'csm@fauward.com', roleAssignments: [{ role: { id: role, permissions: ROLE_PERMISSIONS[role] } }] };
   const tenant = { id: 'tenant_1', name: 'Northwind', slug: 'northwind', status: 'ACTIVE', plan: 'PRO' };
-  return {
+  const world = {
     staffUser: { findUnique: vi.fn(async () => staff) },
     jitAccessRequest: {
       findMany: vi.fn(async ({ where }: { where: { requesterPlatformUserId: string; expiresAt: { gt: Date } } }) =>
@@ -40,8 +40,17 @@ function createWorld(role: Role, grants: Grant[] = []) {
       update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => Object.assign(tenant, data))
     },
     platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: 'act_1', ...create })) },
-    $queryRaw: vi.fn(async () => [{ ok: 1 }])
+    suspensionRecord: {
+      findFirst: vi.fn(async () => null),
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: `susp_${Date.now()}`, createdAt: new Date(), ...data }))
+    },
+    platformAuditLog: { findFirst: vi.fn(async () => null), create: vi.fn(async () => ({})) },
+    user: { findMany: vi.fn(async () => []) },
+    $queryRaw: vi.fn(async () => [{ ok: 1 }]),
+    $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(world))
   };
+  return world;
 }
 
 const openApps: FastifyInstance[] = [];
@@ -97,12 +106,12 @@ describe('requireConsolePermission (D2)', () => {
     expect(me.json()).toMatchObject({ jit: [{ permission: 'platform.tenants.suspend', expiresAt: expiresAt.toISOString() }] });
     expect((me.json() as { permissions: string[] }).permissions).toContain('platform.tenants.suspend');
 
-    const suspend = await app.inject({ method: 'POST', url: '/api/internal/tenants/tenant_1/suspend', payload: { reason: 'Chargeback fraud confirmed by Stripe' } });
+    const suspend = await app.inject({ method: 'POST', url: '/api/internal/tenants/tenant_1/suspend', payload: { category: 'FRAUD', reason: 'Chargeback fraud confirmed by Stripe' } });
     expect(suspend.statusCode).toBe(200);
 
     vi.setSystemTime(new Date(expiresAt.getTime() + 60_000));
     mfaVerifiedAt = new Date();
-    const expired = await app.inject({ method: 'POST', url: '/api/internal/tenants/tenant_1/suspend', payload: { reason: 'Chargeback fraud confirmed by Stripe' } });
+    const expired = await app.inject({ method: 'POST', url: '/api/internal/tenants/tenant_1/suspend', payload: { category: 'FRAUD', reason: 'Chargeback fraud confirmed by Stripe' } });
     expect(expired.statusCode).toBe(403);
     expect(expired.json()).toEqual({ error: 'Forbidden', permission: 'platform.tenants.suspend' });
     const meAfter = await app.inject({ method: 'GET', url: '/api/internal/auth/me' });
