@@ -1,7 +1,8 @@
 import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { Link, useLocation } from "react-router-dom";
 
-import { PILLARS, findPillarById } from "@/pillars/_manifests";
+import { StatusPill } from "@/components/service-kit/StatusPill";
+import { PILLARS, findPillarById, navigableServices } from "@/pillars/_manifests";
 
 export function PillarSidebar() {
   const location = useLocation();
@@ -28,7 +29,7 @@ export function PillarSidebar() {
     );
   }
 
-  const visibleServices = pillar.services.filter((service) => hasPermission(permissions, service.requiredPermission));
+  const visibleServices = navigableServices(pillar).filter((service) => hasPermission(permissions, service.requiredPermission));
 
   return (
     <aside className="hidden w-[280px] shrink-0 border-r border-[var(--color-border)] bg-white lg:block">
@@ -55,6 +56,7 @@ export function PillarSidebar() {
                 {active ? <span className="absolute inset-y-1 left-0 w-0.5 rounded-r" style={{ backgroundColor: pillar.accent }} /> : null}
                 <service.icon size={15} className="shrink-0" />
                 <span className="truncate">{service.name}</span>
+                {service.status === "preview" ? <StatusPill status="preview" /> : null}
               </Link>
             );
           })

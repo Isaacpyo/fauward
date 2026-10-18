@@ -2,7 +2,7 @@ import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { Link } from "react-router-dom";
 
 import type { PlatformPermissionContext } from "@/lib/platform-session";
-import type { PillarManifest } from "@/pillars/_manifests";
+import { navigableServices, type PillarManifest } from "@/pillars/_manifests";
 import { ServiceRow } from "@/shell/ServiceRow";
 
 type PillarCardProps = {
@@ -11,7 +11,7 @@ type PillarCardProps = {
 
 export function PillarCard({ pillar }: PillarCardProps) {
   const permissionContext = usePermission() as PlatformPermissionContext;
-  const visibleServices = pillar.services.filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
+  const visibleServices = navigableServices(pillar).filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
   const disabled = visibleServices.length === 0;
   const alertCount = pillar.id === "platform" && visibleServices.some((service) => service.badgeKey === "dlq-depth") ? 1 : 0;
 

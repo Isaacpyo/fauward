@@ -28,6 +28,8 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C16 | WP-0.1/§2.5: `MfaStepUpModal` mounted in `ShellLayout` | `/admin/regions` (exit-criterion golden path) renders under the legacy `AdminLayout`, not `ShellLayout` | The modal is mounted once in `SuperAdminGuard`, the parent of both layouts |
 | C17 | WP-0.2: pages render `ConsoleApiError` when a query fails | react-query's default 3 retries with back-off kept 4xx failures in "loading" for ~7 s | Console `queryClient` retries only network/5xx errors (twice); 4xx render immediately |
 | C18 | WP-0.2: tests for the client | `apps/super-admin` had no unit-test runner | Added vitest + jsdom + Testing Library (`npm run test` in the workspace) |
+| C19 | WP-0.3: sidebar/palette/overview read `status`; D1 router built from per-service `routes.tsx` | `CommandPalette` listed hardcoded fake tenants/invoices; router hand-listed 137 routes | Palette now lists manifest services only (entity search returns with `/api/internal/search`, WP-1.2). Routes moved into one table `src/console-routes.tsx` that the reconciliation test reads; per-service `routes.tsx` files arrive as each service is rebuilt |
+| C20 | ADR snapshot: commissions/partners/pricing stay `preview` | They are not planned (`livePhase: null`) but keep their pages until WP-4.0b | Manifest: `status: preview`, `livePhase: null`; banner says "being removed" |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 
