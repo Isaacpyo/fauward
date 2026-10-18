@@ -13,7 +13,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0038_refund_integrity (real: `0039_…`, C11) | P0 / WP-0.6 | `Refund.currency`, `failureReason`; refund status set |
 | 0039_suspension_unification (real: `0042_suspension_unification`, backfill `0042-suspension-records.ts`, C11) | P1 / WP-1.3 | `SuspensionRecord` source/category/publicReason/sourceRef/liftedVia/liftReason + backfill |
 | 0040_ledger_kind | P1 / WP-1.5 | `enum LedgerKind`; `kind` on Invoice/Payment/Refund/CreditNote; `Invoice.stripeInvoiceId` |
-| 0041_tenant_entitlements | P1 / WP-1.4 | `TenantFeatureOverride` |
+| 0041_tenant_entitlements (real: `0043_tenant_entitlements`, C11) | P1 / WP-1.4 | `TenantFeatureOverride` |
 | 0042_tenant_close | P1 / WP-1.2 | `Tenant.closedAt`, `closedReason`, `purgeAfter` |
 | 0043_platform_activity (real: `0040_platform_activity`, C11) | P1 / WP-1.0 | `PlatformActivity`; `OutboxEvent.tenantId` |
 | 0044_staff_notifications (real: `0041_staff_notifications`, C11) | P1 / WP-1.0 | `StaffNotification` |

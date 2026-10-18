@@ -10,7 +10,9 @@ import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.s
 import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
+import { dangerous } from '../../middleware/dangerous.js';
 import { liftSuspension, staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
+import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -1020,18 +1022,43 @@ function registerFlags(app: FastifyInstance) {
 
   app.get('/api/internal/flags/:key', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
     const { key } = request.params as { key: string };
-    const audits = await delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ key, audits, vendor: vendorUnavailable('launchdarkly') });
+    const [overrides, audits] = await Promise.all([
+      app.prisma.tenantFeatureOverride.findMany({ where: { featureKey: key }, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 })
+    ]);
+    reply.send({ key, overrides, audits, vendor: vendorUnavailable('launchdarkly') });
   });
 
-  // S9: the old handler called LaunchDarkly `turnFlagOn`, switching the flag on for every tenant. Until native
-  // per-tenant overrides land (WP-1.4) this route makes no vendor call and reports that it is unavailable.
-  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (_request, reply) => {
-    reply.status(501).send({
-      error: 'FLAG_OVERRIDE_UNAVAILABLE',
-      message: 'Per-tenant flag overrides are not available yet; they arrive with native overrides in WP-1.4.',
-      notWired: 'WP-1.4'
-    });
+  // S9 / WP-1.4: a flag override is a native per-tenant TenantFeatureOverride. LaunchDarkly is never called here
+  // (the old handler's `turnFlagOn` switched the flag on for every tenant); LD mirroring arrives with WP-4.1.
+  app.post('/api/internal/flags/:key/overrides', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { key } = request.params as { key: string };
+    const body = bodyObject(request);
+    const tenantId = stringValue(body.tenantId);
+    if (!tenantId) return reply.status(400).send({ error: 'TENANT_REQUIRED', message: 'tenantId is required' });
+    if (typeof body.enabled !== 'boolean') return reply.status(400).send({ error: 'ENABLED_REQUIRED', message: 'enabled must be true or false' });
+    const expiresAt = body.expiresAt ? new Date(stringValue(body.expiresAt)) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) return reply.status(400).send({ error: 'INVALID_EXPIRY', message: 'expiresAt must be an ISO date' });
+    try {
+      const override = await createFeatureOverride(app, { tenantId, featureKey: key, enabled: body.enabled, reason: stringValue(body.reason).trim(), expiresAt, actor: consoleOverrideActor(request) });
+      return reply.status(201).send({ override, mirror: { vendor: 'launchdarkly', status: 'NOT_MIRRORED', fixedBy: 'WP-4.1' } });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
+  });
+
+  app.delete('/api/internal/flags/:key/overrides/:id', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { key, id } = request.params as { key: string; id: string };
+    const existing = await app.prisma.tenantFeatureOverride.findFirst({ where: { id, featureKey: key }, select: { tenantId: true } });
+    if (!existing) return reply.status(404).send({ error: 'OVERRIDE_NOT_FOUND', message: 'Feature override not found' });
+    try {
+      const override = await revokeFeatureOverride(app, { tenantId: existing.tenantId, overrideId: id, featureKey: key, reason: stringValue(bodyObject(request).reason).trim(), actor: consoleOverrideActor(request) });
+      return reply.send({ override });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {

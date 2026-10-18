@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import type Redis from 'ioredis';
 import { config } from '../config/index.js';
 import { signAccessToken } from '../shared/utils/jwt.js';
-import { getActiveTenantPlanOverride } from './platform-plan-override.service.js';
+import { effectivePlanFor } from './tenant-entitlements.service.js';
 
 // Impersonation token transport (D8, S18): the console gets a single-use exchange code, never the token.
 
@@ -61,14 +61,15 @@ export async function signImpersonationToken(
     targetUser: { id: string; email: string; role: string };
   }
 ) {
-  const override = await getActiveTenantPlanOverride(prisma, input.tenant.id);
+  // The token's plan claim is the override-aware effective plan (WP-1.4).
+  const plan = await effectivePlanFor(prisma, input.tenant);
   return signAccessToken({
     sub: input.targetUser.id,
     email: input.targetUser.email,
     role: input.targetUser.role,
     tenantId: input.tenant.id,
     tenantSlug: input.tenant.slug,
-    plan: override?.plan ?? input.tenant.plan,
+    plan,
     mfaVerified: true,
     impersonator: input.platformUser.id,
     impersonatorEmail: input.platformUser.email,

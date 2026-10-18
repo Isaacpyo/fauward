@@ -15,6 +15,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/tenants/:id/plan-overrides' },
   { method: 'DELETE', url: '/api/internal/tenants/:id/plan-overrides/:overrideId' },
   { method: 'POST', url: '/api/internal/tenants/region-requests/:id/decision' },
+  { method: 'POST', url: '/api/internal/tenants/:id/feature-overrides' },
+  { method: 'DELETE', url: '/api/internal/tenants/:id/feature-overrides/:overrideId' },
+  // platform.flags (WP-1.4 native overrides)
+  { method: 'POST', url: '/api/internal/flags/:key/overrides' },
+  { method: 'DELETE', url: '/api/internal/flags/:key/overrides/:id' },
   // platform.impersonation (WP-1.1 move)
   { method: 'POST', url: '/api/internal/impersonation/sessions' },
   // revenue.billing (WP-0.6)

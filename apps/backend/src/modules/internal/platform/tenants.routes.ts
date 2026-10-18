@@ -10,6 +10,9 @@ import { resolveEffectiveTenantPlan } from '../../../services/platform-plan-over
 import { recordAndPublishActivity, staffActor } from '../../../services/platform-activity.service.js';
 import { platformAuditActor, reasonOf } from '../request-meta.js';
 import { SUSPENSION_CATEGORIES, SuspensionError, liftSuspension, staffSuspensionActor, suspendTenant } from '../../../services/tenant-suspension.service.js';
+import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../../services/feature-override.service.js';
+import { invalidateTenantEntitlements, resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
+import { planService } from '../../tenants/plan.service.js';
 import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../../regions/region-change-requests.store.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
@@ -23,7 +26,18 @@ const suspendBody = z.object({
   reason: z.string().min(8),
   publicReason: z.string().trim().max(500).optional()
 });
+const featureOverrideBody = z.object({
+  featureKey: z.string().min(1),
+  enabled: z.boolean(),
+  reason: z.string().min(8),
+  expiresAt: z.string().datetime().nullable().optional()
+});
 const unsuspendBody = z.object({ suspensionId: z.string().min(1).optional(), all: z.boolean().optional(), reason: z.string().min(8) });
+
+export function sendFeatureOverrideError(reply: FastifyReply, error: unknown) {
+  if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+  throw error;
+}
 
 export function sendSuspensionError(reply: FastifyReply, error: unknown) {
   if (error instanceof SuspensionError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
@@ -176,8 +190,8 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
       severity: 'ATTENTION',
       consoleLink: `/platform/tenants/${tenant.id}`
     });
+    await invalidateTenantEntitlements(app.redis, tenant.id);
     await app.redis.publish(`tenant:${tenant.id}:plan-changed`, JSON.stringify({ tenantId: tenant.id, plan: payload.plan, overrideId: override.id }));
-    await app.redis.del(`tenant:${tenant.id}:cache`);
     return reply.status(201).send({ override });
   });
 
@@ -207,8 +221,8 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
       severity: 'ATTENTION',
       consoleLink: `/platform/tenants/${id}`
     });
+    await invalidateTenantEntitlements(app.redis, id);
     await app.redis.publish(`tenant:${id}:plan-changed`, JSON.stringify({ tenantId: id, overrideId, revoked: true }));
-    await app.redis.del(`tenant:${id}:cache`);
     return reply.send({ override: revoked });
   });
 
@@ -243,6 +257,47 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
       return reply.send({ lifted: result.lifted, remaining: result.remaining, tenant: { id: result.tenant.id, status: result.tenant.status, suspendedAt: result.tenant.suspendedAt, suspensionReason: result.tenant.suspensionReason } });
     } catch (error) {
       return sendSuspensionError(reply, error);
+    }
+  });
+
+  // Per-tenant feature overrides (WP-1.4): the native source of truth for flags (D9).
+  app.get('/api/internal/tenants/:id/feature-overrides', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.flags.read')] }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true, plan: true, maxStaff: true, maxShipmentsPm: true, maxOrganisations: true } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const [overrides, entitlements] = await Promise.all([
+      app.prisma.tenantFeatureOverride.findMany({ where: { tenantId: id }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      resolveTenantEntitlements(app.prisma, tenant)
+    ]);
+    return reply.send({ featureKeys: planService.featureKeys(), overrides, entitlements });
+  });
+
+  app.post('/api/internal/tenants/:id/feature-overrides', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = featureOverrideBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    try {
+      const override = await createFeatureOverride(app, {
+        tenantId: id,
+        featureKey: parsed.data.featureKey,
+        enabled: parsed.data.enabled,
+        reason: parsed.data.reason.trim(),
+        expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
+        actor: consoleOverrideActor(request)
+      });
+      return reply.status(201).send({ override });
+    } catch (error) {
+      return sendFeatureOverrideError(reply, error);
+    }
+  });
+
+  app.delete('/api/internal/tenants/:id/feature-overrides/:overrideId', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { id, overrideId } = request.params as { id: string; overrideId: string };
+    try {
+      const override = await revokeFeatureOverride(app, { tenantId: id, overrideId, reason: reasonOf(request) ?? '', actor: consoleOverrideActor(request) });
+      return reply.send({ override });
+    } catch (error) {
+      return sendFeatureOverrideError(reply, error);
     }
   });
 }

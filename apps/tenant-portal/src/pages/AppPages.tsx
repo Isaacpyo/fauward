@@ -28,7 +28,8 @@ import { useTenantStore } from "@/stores/useTenantStore";
 import { clearTokens, createDevTestSession, isDevTestEmail, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { getFirebaseAuthErrorMessage, signInWithGoogle } from "@/lib/firebase";
 import { resolvePathTenantSlug } from "@/lib/tenantResolver";
-import { formatPlanLabel, hasPlanAccess, type Plan } from "@/lib/plan-features";
+import { formatPlanLabel, type Plan } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -289,6 +290,7 @@ export function TeamPage() {
 
 export function SettingsPage() {
   const user = useAppStore((state) => state.user);
+  const access = useFeatureAccess();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") ?? "profile";
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([currentTab]));
@@ -298,7 +300,7 @@ export function SettingsPage() {
   }, [currentTab]);
 
   const tabItems = settingsTabs.map((tab) => {
-    const locked = !hasPlanAccess(user?.plan, tab.minimumPlan);
+    const locked = !access.hasPlan(tab.minimumPlan);
     return {
       value: tab.value,
       label: (
@@ -311,7 +313,7 @@ export function SettingsPage() {
   });
 
   function renderSettingsTab(tab: (typeof settingsTabs)[number], content: React.ReactNode) {
-    if (!hasPlanAccess(user?.plan, tab.minimumPlan)) {
+    if (!access.hasPlan(tab.minimumPlan)) {
       return <LockedSettingsPanel minimumPlan={tab.minimumPlan} feature={tab.label} />;
     }
     return content;

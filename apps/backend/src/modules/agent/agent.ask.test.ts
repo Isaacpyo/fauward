@@ -66,6 +66,9 @@ function buildApp(tenantOverrides: Record<string, unknown> = {}, userOverrides: 
   let clock = 0;
 
   const prisma = {
+    // requireFeature reads entitlements (WP-1.4): no plan or feature overrides for these tenants.
+    tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    tenantFeatureOverride: { findMany: vi.fn(async () => []) },
     agentAction: {
       create: vi.fn(async ({ data }: { data: unknown }) => {
         agentActionRows.push(data);
@@ -187,6 +190,9 @@ function buildApp(tenantOverrides: Record<string, unknown> = {}, userOverrides: 
       id: 'tenant-1',
       slug: 'acme',
       plan: 'PRO',
+      maxStaff: 15,
+      maxShipmentsPm: 2000,
+      maxOrganisations: -1,
       ...tenantOverrides
     };
     done();

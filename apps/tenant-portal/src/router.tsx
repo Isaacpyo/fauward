@@ -62,7 +62,8 @@ import { CustomsDeclarationPage } from "@/pages/customs/CustomsDeclarationPage";
 import { DeveloperPage } from "@/pages/developer/DeveloperPage";
 import { AuditLogPage } from "@/features/admin/audit/AuditLogPage";
 import { Button } from "@/components/ui/Button";
-import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess, type FeatureKey } from "@/lib/plan-features";
+import { formatPlanLabel, getFeatureMinimumPlan, type FeatureKey } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { useAppStore } from "@/stores/useAppStore";
 import { ImpersonateCallbackPage } from "@/pages/auth/ImpersonateCallbackPage";
 import { setTenantSlug } from "@/lib/auth";
@@ -99,10 +100,10 @@ function GuestGuard() {
 }
 
 function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children: ReactElement }) {
-  const user = useAppStore((state) => state.user);
+  const access = useFeatureAccess();
   const minimumPlan = getFeatureMinimumPlan(feature);
 
-  if (!hasFeatureAccess(user?.plan, feature)) {
+  if (!access.hasFeature(feature)) {
     return (
       <div className="p-6">
         <div className="rounded-2xl border border-amber-300 bg-amber-50 px-6 py-8">
@@ -111,7 +112,7 @@ function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children
           </p>
           <h1 className="mt-3 text-2xl font-semibold text-amber-950">Upgrade required</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900">
-            This workspace is currently on the {formatPlanLabel(user?.plan ?? "starter")} plan. Upgrade to{" "}
+            This workspace is currently on the {formatPlanLabel(access.plan)} plan. Upgrade to{" "}
             {formatPlanLabel(minimumPlan)} or higher to use this feature.
           </p>
           <Button asChild className="mt-5">

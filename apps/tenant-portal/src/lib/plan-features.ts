@@ -90,6 +90,31 @@ export function hasFeatureAccess(currentPlan: string | undefined | null, feature
   return hasPlanAccess(currentPlan, featureMinimumPlan[feature]);
 }
 
+/**
+ * Portal features that the backend gates with `requireFeature` (WP-1.4). For these the server's entitlements decide —
+ * including per-tenant feature overrides; the minimum-plan table above is only the fallback for UI-only features.
+ */
+export const BACKEND_FEATURE_KEY: Partial<Record<FeatureKey, string>> = {
+  agent: "agent",
+  apiAccess: "apiAccess",
+  webhooks: "webhooks",
+  customDomain: "customDomain",
+  auditLogs: "auditLog",
+  sso: "sso",
+  financeReturns: "financeReturns",
+  financeCod: "financeCod",
+  financeSettlementsReconciliation: "financeSettlementsReconciliation"
+};
+
+export type EntitlementFeatures = Record<string, { enabled: boolean; source: "plan" | "override" }>;
+
+/** Access from the tenant's live entitlements: backend feature keys use the server's answer, others the effective plan. */
+export function hasEntitledFeature(features: EntitlementFeatures | null | undefined, effectivePlan: string | undefined | null, feature: FeatureKey) {
+  const backendKey = BACKEND_FEATURE_KEY[feature];
+  if (backendKey && features && features[backendKey]) return features[backendKey].enabled;
+  return hasFeatureAccess(effectivePlan, feature);
+}
+
 export function getFeatureMinimumPlan(feature: FeatureKey) {
   return featureMinimumPlan[feature];
 }

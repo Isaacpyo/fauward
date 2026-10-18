@@ -70,8 +70,8 @@ export function OpsRoute({ permission, title, description, endpoint, related, pr
 }
 
 const flagOverridesNotWired = (
-  <DegradedBanner variant="not-wired" fixedBy="WP-1.4">
-    Per-tenant flag overrides are switched off: the old action turned the flag on for every tenant. Native overrides arrive in WP-1.4.
+  <DegradedBanner variant="not-wired" fixedBy="WP-4.1">
+    Per-tenant feature overrides are native now and are set on each tenant's Plan &amp; entitlements tab. This page is rebuilt on them in WP-4.1; LaunchDarkly is not mirrored yet.
   </DegradedBanner>
 );
 

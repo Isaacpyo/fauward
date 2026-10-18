@@ -253,7 +253,7 @@ export function WebhooksTab() {
   const deliveries = useMemo(() => deliveriesQuery.data ?? [], [deliveriesQuery.data]);
 
   return (
-    <PlanGate minimumPlan="pro" currentPlan={user?.plan}>
+    <PlanGate minimumPlan="pro" feature="webhooks">
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div>

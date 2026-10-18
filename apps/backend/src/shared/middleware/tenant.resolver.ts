@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Tenant } from '@prisma/client';
 import { config } from '../../config/index.js';
 import type { TenantContext } from '../../context/tenant.context.js';
+import { loadRequestEntitlements } from './entitlements.js';
 
 function normalizeHost(host: string) {
   return host.split(':')[0].toLowerCase();
@@ -235,5 +236,17 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
 
   req.tenant = tenant;
 
-  return tenantContext(tenant);
+  // The context carries the override-aware plan and features (WP-1.4). A failure here is not fatal: requireFeature and
+  // requirePlan load entitlements themselves.
+  const context = tenantContext(tenant);
+  try {
+    const entitlements = await loadRequestEntitlements(req);
+    if (entitlements) {
+      context.effectivePlan = entitlements.effectivePlan;
+      context.features = Object.fromEntries(Object.entries(entitlements.features).map(([key, value]) => [key, value.enabled]));
+    }
+  } catch (err) {
+    req.log.warn({ err, tenantId: tenant.id }, 'Could not load tenant entitlements for the request context');
+  }
+  return context;
 }

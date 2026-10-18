@@ -395,6 +395,7 @@ model Tenant {
   weightDiscountTiers           WeightDiscountTier[]
   inAppNotifications            InAppNotification[]
   planOverrides                 TenantPlanOverride[]
+  featureOverrides              TenantFeatureOverride[]
   platformImpersonationSessions PlatformImpersonationSession[]
   trackingEvents                TrackingEvent[]
   trackingBreadcrumbs           TrackingBreadcrumb[]
@@ -602,6 +603,26 @@ model TenantPlanOverride {
 
   @@index([tenantId, revokedAt, expiresAt])
   @@map("tenant_plan_overrides")
+}
+
+/// Per-tenant feature switch on top of the effective plan (WP-1.4). The native source of truth for flags (D9);
+/// read by resolveTenantEntitlements. The latest active row per featureKey wins.
+model TenantFeatureOverride {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id])
+  /// planService feature key, e.g. `apiAccess`
+  featureKey              String
+  enabled                 Boolean
+  reason                  String
+  expiresAt               DateTime?
+  createdByPlatformUserId String
+  revokedAt               DateTime?
+  revokedByPlatformUserId String?
+  createdAt               DateTime  @default(now())
+
+  @@index([tenantId, featureKey, revokedAt])
+  @@map("tenant_feature_overrides")
 }
 
 model TenantSettings {

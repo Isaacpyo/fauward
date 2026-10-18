@@ -50,6 +50,7 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C38 | WP-1.6 deletes `LogsPanel` in `router.tsx` | `ShellLayout` had a second `LogsPanel` calling the removed `/api/v1/platform/logs` | Removed in WP-1.1; the delivery log is `GET /api/internal/comms/delivery-log` (`customer.comms.read`, unredacted view needs fresh MFA + reason) |
 | C39 | §4: `/announcements` etc. live in `modules/internal/**` | `announcements.routes.ts` and `onboarding.routes.ts` register both tenant and `/api/internal` routes | Left in place for now; the rbac-matrix test registers them too, so their console routes are held to the same guard rules and appear in `route-index.ts` |
 | C40 | `/auth/me` permissions; e2e mocks used `role: SUPER_ADMIN` with `permissions: []` | The console derived ROOT permissions from the legacy role name | No derivation (D2): mocks send explicit permissions (`ROOT_PERMISSIONS` in `e2e/support`) |
+| C41 | WP-1.4: portal `PlanGate` / `lib/plan-features.ts` consumers read `/tenants/me/entitlements` | The portal's `FeatureKey` set and minimum plans differ from `planService` (e.g. portal `crm`/`finance` are STARTER, backend `crmModule`/`financeModule` are PRO+) | Only portal features with the same backend key and minimum plan use the server's feature answer (`BACKEND_FEATURE_KEY`); every other gate uses the server's override-aware `effectivePlan` with the static table. Aligning the two catalogues changes STARTER behaviour and is left for the owner |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

@@ -4,6 +4,10 @@ export interface TenantContext {
   tenantId: string;
   tenantSlug: string;
   plan: string;
+  /** Override-aware plan (WP-1.4); absent for system contexts or when entitlements could not be loaded. */
+  effectivePlan?: string;
+  /** Feature key → enabled, after plan and feature overrides (WP-1.4). */
+  features?: Record<string, boolean>;
   region: string;
   isSuperAdmin: boolean;
 }

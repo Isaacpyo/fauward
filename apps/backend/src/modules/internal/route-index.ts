@@ -3,9 +3,11 @@
 // (D1 check (d)). Plain data on purpose: no imports, one route per line.
 export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'DELETE /api/internal/announcements/:id',
+  'DELETE /api/internal/flags/:key/overrides/:id',
   'DELETE /api/internal/iam/role-assignments/:id',
   'DELETE /api/internal/iam/users/:id',
   'DELETE /api/internal/impersonation/sessions/:id',
+  'DELETE /api/internal/tenants/:id/feature-overrides/:overrideId',
   'DELETE /api/internal/tenants/:id/plan-overrides/:overrideId',
   'GET /api/internal/announcements',
   'GET /api/internal/attribution',
@@ -119,6 +121,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'GET /api/internal/tax/returns',
   'GET /api/internal/tenants',
   'GET /api/internal/tenants/:id',
+  'GET /api/internal/tenants/:id/feature-overrides',
   'GET /api/internal/tenants/region-requests',
   'GET /api/internal/trials',
   'GET /api/internal/trials/:tenantId',
@@ -191,6 +194,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/support/tickets',
   'POST /api/internal/support/tickets/:id/reply',
   'POST /api/internal/tax/exemptions/:id/approve',
+  'POST /api/internal/tenants/:id/feature-overrides',
   'POST /api/internal/tenants/:id/plan-overrides',
   'POST /api/internal/tenants/:id/suspend',
   'POST /api/internal/tenants/:id/unsuspend',

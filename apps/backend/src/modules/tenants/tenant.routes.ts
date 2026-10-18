@@ -7,10 +7,18 @@ import { config } from '../../config/index.js';
 import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
 import { registerDomainRoutes } from './domain.routes.js';
 import { registerTenantSlugRoutes } from './slug.routes.js';
+import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
   app.get('/api/v1/tenants/me', { preHandler: [authenticate] }, tenantController.me);
+  // What the tenant may use right now (WP-1.4): effective plan, plan override, features with their source, limits.
+  // The portal's PlanGate reads this instead of the static plan table.
+  app.get('/api/v1/tenants/me/entitlements', { preHandler: [authenticate] }, async (request, reply) => {
+    const entitlements = await loadRequestEntitlements(request);
+    if (!entitlements) return reply.status(400).send({ error: 'Tenant context required' });
+    return reply.send(entitlements);
+  });
   app.patch(
     '/api/v1/tenant/branding',
     { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] },

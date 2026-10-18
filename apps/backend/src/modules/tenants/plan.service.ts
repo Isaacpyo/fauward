@@ -93,5 +93,9 @@ export const planService = {
   },
   getFeatures(plan: string) {
     return PLAN_FEATURES[plan] ?? PLAN_FEATURES.STARTER;
+  },
+  /** Every on/off feature key any plan defines (entitlements and feature overrides use these). */
+  featureKeys(): string[] {
+    return [...new Set(Object.values(PLAN_FEATURES).flatMap((features) => Object.entries(features).filter(([, value]) => typeof value === 'boolean').map(([key]) => key)))].sort();
   }
 };

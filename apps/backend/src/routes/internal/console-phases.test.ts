@@ -21,8 +21,8 @@ vi.mock('../../queues/queues.js', () => ({
 vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
     request.platform = {
-      user: { id: 'staff_001', email: 'ops@fauward.com', role: 'SUPER_ADMIN' },
-      session: { id: 'platform_session_001' }
+      user: { id: 'staff_001', email: 'ops@fauward.com', name: 'Ops', role: 'SUPER_ADMIN', mfaEnabled: true },
+      session: { id: 'platform_session_001', mfaVerifiedAt: new Date() }
     };
   }
 }));
@@ -54,6 +54,12 @@ vi.mock('../../services/tenant-suspension.service.js', () => ({
   liftSuspension: liftSuspensionMock,
   staffSuspensionActor: () => ({ type: 'STAFF', platformUserId: 'staff_001', email: 'staff@fauward.com', label: 'Staff' })
 }));
+
+const createFeatureOverrideMock = vi.hoisted(() => vi.fn(async (_app: unknown, input: Record<string, unknown>) => ({ id: 'tfo_001', ...input })));
+vi.mock('../../services/feature-override.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/feature-override.service.js')>();
+  return { ...actual, createFeatureOverride: createFeatureOverrideMock };
+});
 
 vi.mock('../../services/staff-iam.service.js', () => ({
   staffPermissionContextForPlatformUser: async () => ({
@@ -209,17 +215,18 @@ describe('internal console phase routes', () => {
     expect(approvalModel.upsert).not.toHaveBeenCalled();
   });
 
-  it('ACC-SEC-2 the flag override route makes no LaunchDarkly call and returns 501', async () => {
+  it('ACC-SEC-2 ACC-FLG-1 the flag override route never calls LaunchDarkly and writes a per-tenant TenantFeatureOverride', async () => {
     currentPermissions = ['platform.flags.write'];
     process.env.LAUNCHDARKLY_API_TOKEN = 'ld-test-token';
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const audit = delegate();
     const app = await buildApp({ featureFlagOverrideAudit: audit });
 
-    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-checkout/overrides', payload: { tenantId: 'tenant_001', value: true, reason: 'Pilot for one tenant' } });
+    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', enabled: true, reason: 'Pilot for one tenant' } });
 
-    expect(response.statusCode).toBe(501);
-    expect(response.json()).toMatchObject({ error: 'FLAG_OVERRIDE_UNAVAILABLE', notWired: 'WP-1.4' });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ override: { id: 'tfo_001' }, mirror: { status: 'NOT_MIRRORED' } });
+    expect(createFeatureOverrideMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_001', featureKey: 'apiAccess', enabled: true, reason: 'Pilot for one tenant' }));
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(audit.create).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
@@ -445,11 +452,13 @@ describe('internal console phase routes', () => {
     }));
   });
 
-  it('ACC-SEC-2 the flag override route returns 501 even when LaunchDarkly is unconfigured', async () => {
+  it('the flag override route is dangerous: no reason → 400, no enabled flag → 400', async () => {
     currentPermissions = ['platform.flags.write'];
     const app = await buildApp({});
-    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-flow/overrides', payload: { tenantId: 'tenant_001', value: true } });
-    expect(response.statusCode).toBe(501);
+    const noReason = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', enabled: true } });
+    expect(noReason.json()).toMatchObject({ error: 'REASON_REQUIRED' });
+    const noEnabled = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', value: true, reason: 'Pilot for one tenant' } });
+    expect(noEnabled.json()).toMatchObject({ error: 'ENABLED_REQUIRED' });
   });
 
   it('rejects secret metadata mutations for read-only secret users', async () => {

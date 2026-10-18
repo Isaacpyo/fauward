@@ -6,6 +6,7 @@ import type { JwtPayload } from '../shared/utils/jwt.js';
 import type { PlatformJwtClaims } from '../services/platform-session.service.js';
 import type { AuditWriteInput } from '@fauward/internal-audit';
 import type { ConsoleRequestContext } from '../middleware/require-console-permission.js';
+import type { TenantEntitlements } from '../services/tenant-entitlements.service.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -16,6 +17,8 @@ declare module 'fastify' {
 
   interface FastifyRequest {
     tenant?: Tenant;
+    /** Effective plan + feature overrides for `tenant`, loaded once per request (WP-1.4). */
+    entitlements?: TenantEntitlements;
     user?: JwtPayload;
     apiKey?: ApiKey;
     rawBody?: Buffer;

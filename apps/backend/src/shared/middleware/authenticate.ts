@@ -27,7 +27,7 @@ function isReadMethod(method: string) {
 }
 
 function isSuspendedTenantAllowedPath(method: string, path: string) {
-  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/tenants/me/suspension', '/api/v1/payments/billing-status'].includes(path)) {
+  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/tenants/me/suspension', '/api/v1/tenants/me/entitlements', '/api/v1/payments/billing-status'].includes(path)) {
     return true;
   }
   if (method === 'GET' && (path === '/api/v1/tenant/announcements' || path === '/api/v1/tenants/me/announcements' || path === '/api/v1/tenants/me/health')) {

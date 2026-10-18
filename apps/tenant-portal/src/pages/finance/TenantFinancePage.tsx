@@ -40,7 +40,8 @@ import { Textarea } from "@/components/ui/Textarea";
 import { PageShell } from "@/layouts/PageShell";
 import { getAccessToken } from "@/lib/auth";
 import { api } from "@/lib/api";
-import { formatPlanLabel, hasPlanAccess, type Plan } from "@/lib/plan-features";
+import { formatPlanLabel, type Plan } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
@@ -1197,6 +1198,7 @@ function SettlementsReconciliation({
 
 export function TenantFinancePage() {
   const user = useAppStore((state) => state.user);
+  const access = useFeatureAccess();
   const addToast = useAppStore((state) => state.addToast);
   const tenant = useTenantStore((state) => state.tenant);
   const queryClient = useQueryClient();
@@ -1293,10 +1295,10 @@ export function TenantFinancePage() {
     else if (tab === "reconciliation") setSearchParams({ tab: "settlements" }, { replace: true });
   }, [searchParams, setSearchParams]);
 
-  const planForGating = (user?.plan ?? tenant?.plan ?? "starter") as string;
-  const canUseCod = hasPlanAccess(planForGating, "pro");
-  const canUseReturns = hasPlanAccess(planForGating, "pro");
-  const canUseSettlements = hasPlanAccess(planForGating, "enterprise");
+  // Live entitlements (effective plan + feature overrides, WP-1.4).
+  const canUseCod = access.hasFeature("financeCod");
+  const canUseReturns = access.hasFeature("financeReturns");
+  const canUseSettlements = access.hasFeature("financeSettlementsReconciliation");
 
   const collectionsQuery = useQuery({
     queryKey: ["finance-collections"],
@@ -1455,7 +1457,7 @@ export function TenantFinancePage() {
     formatCurrencyCode(amount, createInvoiceForm.currency.trim().toUpperCase() || tenant?.currency || "GBP", tenant?.locale || "en-GB");
 
   const tabItems = financeTabs.map((tab) => {
-    const locked = !hasPlanAccess(user?.plan, tab.minimumPlan);
+    const locked = !access.hasPlan(tab.minimumPlan);
     return {
       value: tab.value,
       label: (
@@ -1469,7 +1471,7 @@ export function TenantFinancePage() {
   });
 
   function renderPlanGatedTab(tab: (typeof financeTabs)[number], content: ReactNode) {
-    if (!hasPlanAccess(user?.plan, tab.minimumPlan)) {
+    if (!access.hasPlan(tab.minimumPlan)) {
       return <LockedFinancePanel minimumPlan={tab.minimumPlan} feature={tab.label} />;
     }
     return content;
@@ -1539,7 +1541,7 @@ export function TenantFinancePage() {
       description="Tenant finance workspace for invoices, payments, collections, refunds, settlements, and reconciliation."
       actions={
         <div className="flex flex-wrap gap-2">
-          {hasPlanAccess(user?.plan, "pro") ? (
+          {access.hasPlan("pro") ? (
             <Button asChild variant="secondary">
               <Link to="/reports">Export finance report</Link>
             </Button>
