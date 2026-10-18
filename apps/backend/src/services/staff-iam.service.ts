@@ -117,3 +117,13 @@ export async function platformUserHasStaffPermission(prisma: PrismaClient, user:
   const context = await staffPermissionContextForPlatformUser(prisma, user);
   return context.permissions.includes(permission);
 }
+
+/** Role permissions ∪ active JIT grants — the same rule as requireInternalPermission, for checks inside handlers. */
+export async function platformUserHasConsolePermission(prisma: PrismaClient, user: PlatformUser, permission: Permission) {
+  if (await platformUserHasStaffPermission(prisma, user, permission)) return true;
+  const grant = await prisma.jitAccessRequest.findFirst({
+    where: { requesterPlatformUserId: user.id, permission, status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true }
+  });
+  return Boolean(grant);
+}

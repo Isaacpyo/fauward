@@ -25,9 +25,10 @@ export async function registerTenantRoutes(app: FastifyInstance) {
       return reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId ?? ''}` });
     }
 
+    const now = new Date();
     await app.prisma.platformImpersonationSession.updateMany({
-      where: { id: sessionId, targetTenantId: tenantId, revokedAt: null },
-      data: { revokedAt: new Date() }
+      where: { id: sessionId, targetTenantId: tenantId, revokedAt: null, endedAt: null },
+      data: { revokedAt: now, endedAt: now, endedReason: 'LOGOUT' }
     });
     await app.redis.del(`platform:impersonation:${sessionId}`);
     reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId}` });

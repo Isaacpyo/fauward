@@ -576,10 +576,14 @@ model PlatformImpersonationSession {
   expiresAt      DateTime
   revokedAt      DateTime?
   createdAt      DateTime     @default(now())
+  exchangedAt    DateTime? // one-time exchange code redeemed by the tenant portal
+  endedAt        DateTime? // revoked, expired (sweeper) or logged out
+  endedReason    String? // REVOKED | EXPIRED | LOGOUT
 
   @@index([platformUserId])
   @@index([targetTenantId])
   @@index([expiresAt])
+  @@index([targetTenantId, createdAt])
   @@map("platform_impersonation_sessions")
 }
 
@@ -630,6 +634,7 @@ model TenantSettings {
   updatedAt                    DateTime @updatedAt
 
   @@map("tenant_settings")
+  notifyOnStaffAccess Boolean @default(true)
 }
 
 model Subscription {

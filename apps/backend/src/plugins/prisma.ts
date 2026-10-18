@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
 import { tenantStorage } from '../context/tenant.context.js';
+import { currentRequestActor } from '../context/request-actor.context.js';
+import { stampImpersonatedAuditData } from '../services/impersonation-audit.js';
 
 // Prefer the session-pooler / direct URL (port 5432) because port 6543 can be
 // blocked in some hosting environments. Fall back to the transaction pooler.
@@ -57,6 +59,20 @@ prisma.$use(async (params, next) => {
     params.args.where = { ...params.args.where, tenantId: ctx.tenantId };
   }
 
+  return next(params);
+});
+
+// Tenant audit rows written during staff impersonation are attributed to the impersonator (D8).
+prisma.$use(async (params, next) => {
+  if (params.model !== 'AuditLog' || !['create', 'createMany'].includes(params.action)) return next(params);
+  const actor = currentRequestActor();
+  if (!actor?.impersonation) return next(params);
+  if (params.action === 'create') {
+    params.args.data = stampImpersonatedAuditData(params.args.data, actor);
+  } else {
+    const data = params.args.data;
+    params.args.data = Array.isArray(data) ? data.map((row: Record<string, unknown>) => stampImpersonatedAuditData(row, actor)) : stampImpersonatedAuditData(data, actor);
+  }
   return next(params);
 });
 

@@ -3,7 +3,6 @@ import { TenantPlan, TenantStatus } from '@prisma/client';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
-import { signAccessToken } from '../../shared/utils/jwt.js';
 import { dlqNotificationQueue } from '../notifications/notifications.worker.js';
 import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../queues/queues.js';
 import { dlqOutboxQueue } from '../../queues/outbox.worker.js';
@@ -193,47 +192,14 @@ export async function registerSuperAdminRoutes(app: FastifyInstance) {
     reply.send(updated);
   });
 
-  app.post('/api/v1/admin/tenants/:id/impersonate', { preHandler: preHandlers }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-
-    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
-    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-
-    const targetUser = await app.prisma.user.findFirst({
-      where: { tenantId: tenant.id, role: 'TENANT_ADMIN', isActive: true },
-      orderBy: { createdAt: 'asc' }
+  // S7: legacy impersonation issued unrevocable tokens. Gone; the console's Impersonation Center replaces it
+  // (the whole /api/v1/admin prefix is removed in WP-1.6).
+  app.post('/api/v1/admin/tenants/:id/impersonate', async (_request, reply) => {
+    reply.status(410).send({
+      error: 'GONE',
+      message: 'Legacy impersonation is retired. Use the console Impersonation Center (POST /api/v1/platform/tenants/:id/impersonation-sessions).',
+      console: '/platform/impersonation'
     });
-
-    if (!targetUser) return reply.status(404).send({ error: 'No tenant admin user found for impersonation' });
-
-    const token = signAccessToken({
-      sub: targetUser.id,
-      email: targetUser.email,
-      role: targetUser.role,
-      tenantId: tenant.id,
-      tenantSlug: tenant.slug,
-      plan: tenant.plan,
-      mfaVerified: true,
-      impersonator: request.user?.sub
-    });
-
-    await app.prisma.auditLog.create({
-      data: {
-        tenantId: tenant.id,
-        actorId: request.user?.sub,
-        actorType: 'SUPER_ADMIN',
-        action: 'TENANT_IMPERSONATION_START',
-        resourceType: 'TENANT',
-        resourceId: tenant.id,
-        metadata: {
-          impersonatedUserId: targetUser.id
-        }
-      }
-    });
-
-    await app.redis.set(`impersonation:${token}`, '1', 'EX', 30 * 60);
-
-    reply.send({ token, expiresInSeconds: 30 * 60 });
   });
 
   app.delete('/api/v1/admin/impersonate', { preHandler: preHandlers }, async (request, reply) => {

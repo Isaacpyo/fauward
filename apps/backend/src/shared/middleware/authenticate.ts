@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'crypto';
+import { currentRequestActor } from '../../context/request-actor.context.js';
 
 function monthKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -18,6 +19,8 @@ function hasWriteScope(scopes: string[], path: string) {
   if (path.includes('/webhooks') && scopes.includes('webhooks:write')) return true;
   return scopes.some((scope) => scope.endsWith(':write'));
 }
+
+const IMPERSONATION_EXIT_PATHS = new Set(['/api/v1/tenant/impersonation/exit', '/api/v1/tenants/me/impersonation/exit']);
 
 function isReadMethod(method: string) {
   return ['GET', 'HEAD', 'OPTIONS'].includes(method);
@@ -153,9 +156,23 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (request.user?.mode === 'IMPERSONATION') {
       const sessionId = request.user.impersonationSessionId;
       const active = sessionId ? await request.server.redis.get(`platform:impersonation:${sessionId}`) : null;
-      if (!active) {
+      if (!sessionId || !active) {
         return reply.status(401).send({ error: 'Impersonation session expired', code: 'IMPERSONATION_EXPIRED' });
       }
+      // The session row is authoritative: revoked or ended sessions stop working even before the Redis key expires.
+      const session = await request.server.prisma.platformImpersonationSession.findUnique({
+        where: { id: sessionId },
+        select: { platformUserId: true, targetTenantId: true, scopes: true, revokedAt: true, endedAt: true, expiresAt: true }
+      });
+      if (!session || session.revokedAt || session.endedAt || session.expiresAt <= new Date() || session.targetTenantId !== tenantId) {
+        return reply.status(401).send({ error: 'Impersonation session expired', code: 'IMPERSONATION_EXPIRED' });
+      }
+      // Read-only unless the session was started with the `write` scope (S6, D8).
+      if (!isReadMethod(request.method) && !IMPERSONATION_EXIT_PATHS.has(path) && !session.scopes.includes('write')) {
+        return reply.status(403).send({ error: 'IMPERSONATION_READ_ONLY', message: 'This staff session is read-only.' });
+      }
+      const actor = currentRequestActor();
+      if (actor) actor.impersonation = { sessionId, platformUserId: session.platformUserId };
     }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },

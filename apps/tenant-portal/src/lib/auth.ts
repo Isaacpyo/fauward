@@ -9,6 +9,10 @@ const ACCESS_TOKEN_KEY = 'fw_access_token';
 const REFRESH_TOKEN_KEY = 'fw_refresh_token';
 const TENANT_SLUG_KEY = 'fw_tenant_slug';
 const DEV_TEST_SESSION_KEY = 'fw_dev_test_session';
+// Staff impersonation sessions live in sessionStorage only: per tab, gone when the tab closes, never next to the
+// tenant user's own long-lived tokens (D8).
+const IMPERSONATION_TOKEN_KEY = 'fw_impersonation_token';
+const IMPERSONATION_SLUG_KEY = 'fw_impersonation_tenant_slug';
 
 const DEV_TEST_PASSWORD = 'dev-only-password';
 
@@ -32,10 +36,16 @@ function getDevTestAccount(email: string) {
 }
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return sessionStorage.getItem(IMPERSONATION_TOKEN_KEY) ?? localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function isImpersonationSession(): boolean {
+  return sessionStorage.getItem(IMPERSONATION_TOKEN_KEY) !== null;
 }
 
 export function getRefreshToken(): string | null {
+  // Impersonation sessions have no refresh token; they end when the access token or the staff session expires.
+  if (isImpersonationSession()) return null;
   return localStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
@@ -50,10 +60,8 @@ export function setTenantSlug(tenantSlug: string) {
 }
 
 export function setImpersonationToken(accessToken: string, tenantSlug: string) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.setItem(TENANT_SLUG_KEY, tenantSlug);
-  localStorage.removeItem(DEV_TEST_SESSION_KEY);
+  sessionStorage.setItem(IMPERSONATION_TOKEN_KEY, accessToken);
+  sessionStorage.setItem(IMPERSONATION_SLUG_KEY, tenantSlug);
 }
 
 export function decodeAccessToken<T extends Record<string, unknown> = Record<string, unknown>>(token: string): T | null {
@@ -69,6 +77,8 @@ export function decodeAccessToken<T extends Record<string, unknown> = Record<str
 }
 
 export function clearTokens() {
+  sessionStorage.removeItem(IMPERSONATION_TOKEN_KEY);
+  sessionStorage.removeItem(IMPERSONATION_SLUG_KEY);
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(TENANT_SLUG_KEY);
@@ -76,7 +86,7 @@ export function clearTokens() {
 }
 
 export function getTenantSlug(): string | null {
-  return localStorage.getItem(TENANT_SLUG_KEY);
+  return sessionStorage.getItem(IMPERSONATION_SLUG_KEY) ?? localStorage.getItem(TENANT_SLUG_KEY);
 }
 
 export function matchesDevTestLogin(email: string, password: string) {
@@ -128,7 +138,7 @@ export function createDevTestSession(email: string): DevTestSession {
 
 export function getDevTestSession(): DevTestSession | null {
   // Real JWT always takes priority — dev session is only a fallback
-  if (localStorage.getItem(ACCESS_TOKEN_KEY)) return null;
+  if (getAccessToken()) return null;
   const raw = localStorage.getItem(DEV_TEST_SESSION_KEY);
   if (!raw) {
     return null;

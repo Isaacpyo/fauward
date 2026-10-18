@@ -34,6 +34,10 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C22 | Catalogue: `POST /iam/users/:id/suspend · /offboard · /reactivate` | Code changed status through `PATCH /iam/users/:id` (no session revoke on suspend) and `DELETE` | Added the three dangerous POST routes (one transaction each); `PATCH` can no longer change status or MFA (400 `USE_LIFECYCLE_ACTION`); `DELETE` = offboard, dangerous |
 | C23 | S5: re-grant per request | Besides the per-request upsert, `staffPermissionContextForPlatformUser` fell back to the legacy role's permissions when a staff user had no roles | Fallback removed: a staff user with no roles has no permissions |
 | C24 | S2: ROOT grants need the hardware assertion | The deprecated `SUPER_ADMIN` staff role carries ROOT's permissions and could be assigned without the ROOT check | Deprecated roles cannot be assigned (400 `ROLE_DEPRECATED`); `SUPER_ADMIN` is also treated as ROOT-equivalent in the check |
+| C25 | WP-0.5: "find the shared audit writer(s) and pass `impersonationSessionId` through" | There is no shared tenant audit writer: ~30 direct `auditLog.create` call sites | One Prisma middleware stamps every `AuditLog` create/createMany from a per-request actor holder (`context/request-actor.context.ts`, filled by `authenticate`), so no call site can forget |
+| C26 | WP-0.5: read-only impersonation rejects every non-GET | The tenant portal's "end staff session" is `POST /api/v1/tenant(s/me)/impersonation/exit` | The two exit endpoints stay allowed for read-only tokens |
+| C27 | WP-0.5: `setImpersonationToken` "ensure it uses sessionStorage" | It overwrote the tenant user's own `localStorage` access token and deleted their refresh token | Impersonation token and slug live under separate `sessionStorage` keys; `getAccessToken`/`getTenantSlug` prefer them; the user's own session is untouched |
+| C28 | WP-0.5 S7: legacy route returns 410 | — | The 410 handler has no auth guard (it exposes nothing), so stale clients get the pointer instead of 401 |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 
