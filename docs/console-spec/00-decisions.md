@@ -42,6 +42,8 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C30 | WP-0.6 over-refund check `amount > amount - refundedAmount` | Two refunds awaiting approval could each pass that check | Refunds in `PENDING_APPROVAL`/`PROCESSING` also count against the refundable balance (checked under the payment row lock) |
 | C31 | D9 vendor-free: manual refunds without Stripe | A payment with a `gatewayRef` while `STRIPE_SECRET_KEY` is unset would 500 | Treated like a manual refund: approval path, `RECORDED_MANUAL` |
 | C32 | WP-0.6 approval path | — | An approved refund on a card payment (large refund approved by a second person) is then sent to Stripe (`PROCESSING` → `SUCCEEDED`/`FAILED`); manual ones become `RECORDED_MANUAL`. `POST /billing/refunds/:id/reject` added alongside approve |
+| C33 | WP-0.7 S8: fail closed "except in `NODE_ENV=development`" | `config.nodeEnv` defaults to `development` when `NODE_ENV` is unset | The guard reads `process.env.NODE_ENV` and only the literal `development` stays open, so a deploy without `NODE_ENV` fails closed; the bearer compare is constant-time |
+| C34 | WP-0.7 S9: hide the override action | The action lived in `WorkflowOpsPage`'s generic `/flags` presets | Preset removed; flags list/detail pages show `DegradedBanner('not-wired', 'WP-1.4')` through a new `OpsRoute` `notice` prop |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

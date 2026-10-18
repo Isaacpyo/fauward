@@ -355,25 +355,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
     ];
   }
 
-  if (endpoint.startsWith("/flags")) {
-    return [
-      {
-        id: "override",
-        label: "Set Tenant Override",
-        description: "Write a LaunchDarkly tenant override and Fauward audit entry.",
-        method: "post",
-        path: (values, resolved) => `/flags/${encodeURIComponent(values.flagKey || resolved.split("/")[2] || "")}/overrides`,
-        fields: [
-          { name: "flagKey", label: "Flag Key", required: true },
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "value", label: "Value", defaultValue: "true" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Tenant override" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, value: values.value === "true" ? true : values.value === "false" ? false : values.value, reason: values.reason })
-      }
-    ];
-  }
-
   if (endpoint.startsWith("/security")) {
     return [
       {

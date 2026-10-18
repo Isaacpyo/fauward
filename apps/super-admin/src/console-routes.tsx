@@ -4,6 +4,7 @@ import { type Permission } from "@fauward/internal-rbac";
 import { JITGate } from "@fauward/internal-ui";
 
 import { ComingSoonPage } from "@/components/service-kit/ComingSoonPage";
+import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { consoleApi } from "@/lib/console-api";
 import { findServiceByKey } from "@/pillars/_manifests";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
@@ -56,14 +57,21 @@ export function PermissionRoute({ permission, children }: { permission: Permissi
 }
 
 /** Generic Phase-0 page for preview services; deleted in Phase 4 (D1). */
-export function OpsRoute({ permission, title, description, endpoint, related, primaryAction }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; primaryAction?: string }) {
+export function OpsRoute({ permission, title, description, endpoint, related, primaryAction, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; primaryAction?: string; notice?: ReactNode }) {
   const Page = hasWorkflowSurface(endpoint) ? WorkflowOpsPage : InternalOpsPage;
   return (
     <PermissionRoute permission={permission}>
+      {notice ? <div className="mb-4">{notice}</div> : null}
       <Page title={title} description={description} endpoint={endpoint} related={related} primaryAction={primaryAction} />
     </PermissionRoute>
   );
 }
+
+const flagOverridesNotWired = (
+  <DegradedBanner variant="not-wired" fixedBy="WP-1.4">
+    Per-tenant flag overrides are switched off: the old action turned the flag on for every tenant. Native overrides arrive in WP-1.4.
+  </DegradedBanner>
+);
 
 export function ComingSoonRoute({ serviceKey }: { serviceKey: string }) {
   const service = findServiceByKey(serviceKey);
@@ -80,8 +88,8 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/queues", element: <PermissionRoute permission="platform.queues.read">
                 <QueuesListPage />
               </PermissionRoute> },
-  { path: "/platform/flags", element: <OpsRoute permission="platform.flags.read" title="Feature Flags" description="LaunchDarkly flags with Fauward per-tenant override audit." endpoint="/flags" related={[{ label: "Releases", to: "/platform/releases" }]} /> },
-  { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} /> },
+  { path: "/platform/flags", element: <OpsRoute permission="platform.flags.read" title="Feature Flags" description="LaunchDarkly flags with Fauward per-tenant override audit." endpoint="/flags" related={[{ label: "Releases", to: "/platform/releases" }]} notice={flagOverridesNotWired} /> },
+  { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key/audit", element: <OpsRoute permission="platform.flags.read" title="Flag Audit" description="Local audit of per-tenant LaunchDarkly override changes." endpoint="/flags/:key/audit" /> },
   { path: "/platform/releases", element: <OpsRoute permission="platform.flags.read" title="Releases" description="Current deployed versions and release workflow links." endpoint="/releases" /> },
   { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }]} /> },

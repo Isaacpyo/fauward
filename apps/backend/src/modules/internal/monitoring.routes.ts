@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getRelayAdminClient } from '@fauward/relay-api';
 import {
@@ -40,12 +41,31 @@ async function safeQueueStats(queue: Queue) {
   }
 }
 
-// Simple monitoring key guard — set MONITORING_API_KEY env var to protect in production
-function checkMonitoringKey(req: FastifyRequest, _reply: FastifyReply) {
-  const key = process.env.MONITORING_API_KEY;
-  if (!key) return true; // no key configured — allow (lock down in prod via env)
-  const auth = req.headers.authorization ?? '';
-  return auth === `Bearer ${key}`;
+let warnedMissingMonitoringKey = false;
+
+/**
+ * Monitoring endpoints expose tenant names and domain errors, so they fail closed (S8): without MONITORING_API_KEY they
+ * return 503 everywhere except NODE_ENV=development (an unset NODE_ENV is not development), where a warning is logged.
+ */
+export async function requireMonitoringKey(req: FastifyRequest, reply: FastifyReply) {
+  const key = process.env.MONITORING_API_KEY?.trim();
+  if (!key) {
+    if (process.env.NODE_ENV === 'development') {
+      if (!warnedMissingMonitoringKey) {
+        warnedMissingMonitoringKey = true;
+        req.log.warn('MONITORING_API_KEY is not set; monitoring endpoints are open in development only');
+      }
+      return undefined;
+    }
+    return reply.status(503).send({ error: 'MONITORING_NOT_CONFIGURED', message: 'Set MONITORING_API_KEY to enable monitoring endpoints.' });
+  }
+  const header = req.headers.authorization ?? '';
+  const expected = Buffer.from(`Bearer ${key}`);
+  const supplied = Buffer.from(header);
+  if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+    return reply.status(401).send({ error: 'Unauthorized' });
+  }
+  return undefined;
 }
 
 function statusCounts(rows: Array<{ customDomainStatus: string; _count: { _all: number } }>) {
@@ -115,11 +135,7 @@ async function fetchVercelProjectSnapshot() {
 }
 
 export async function registerMonitoringRoutes(app: FastifyInstance) {
-  app.get('/api/internal/metrics/queues', async (req, reply) => {
-    if (!checkMonitoringKey(req, reply)) {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
+  app.get('/api/internal/metrics/queues', { preHandler: [requireMonitoringKey] }, async (req, reply) => {
     const [notification, webhook, outbox, pdf, analytics, scheduled, routeOpt] = await Promise.all([
       safeQueueStats(notificationQueue),
       safeQueueStats(webhookQueue),
@@ -144,11 +160,7 @@ export async function registerMonitoringRoutes(app: FastifyInstance) {
     });
   });
 
-  app.get('/api/internal/metrics/business-health', async (req, reply) => {
-    if (!checkMonitoringKey(req, reply)) {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
+  app.get('/api/internal/metrics/business-health', { preHandler: [requireMonitoringKey] }, async (req, reply) => {
     const now        = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -182,11 +194,7 @@ export async function registerMonitoringRoutes(app: FastifyInstance) {
   });
 
   // Custom domain health: DB status counts plus Vercel project guardrails.
-  app.get('/api/internal/metrics/custom-domains', async (req, reply) => {
-    if (!checkMonitoringKey(req, reply)) {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
+  app.get('/api/internal/metrics/custom-domains', { preHandler: [requireMonitoringKey] }, async (req, reply) => {
     try {
       const [total, groupedStatuses, stalePending, recentRows, vercelResult] = await Promise.allSettled([
         app.prisma.tenant.count({ where: { customDomain: { not: null } } }),
@@ -268,11 +276,7 @@ export async function registerMonitoringRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get('/api/internal/metrics/relay-health', async (req, reply) => {
-    if (!checkMonitoringKey(req, reply)) {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-
+  app.get('/api/internal/metrics/relay-health', { preHandler: [requireMonitoringKey] }, async (req, reply) => {
     const fiveMinAgo     = new Date(Date.now() - 5  * 60 * 1000).toISOString();
     const twentyFourHAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 

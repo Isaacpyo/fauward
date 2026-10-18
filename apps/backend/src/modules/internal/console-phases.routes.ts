@@ -1005,25 +1005,14 @@ function registerFlags(app: FastifyInstance) {
     reply.send({ key, audits, vendor: vendorUnavailable('launchdarkly') });
   });
 
-  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (request, reply) => {
-    const vendor = vendorUnavailable('launchdarkly');
-    const { key } = request.params as { key: string };
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    if (vendor) return reply.status(503).send({ error: 'LAUNCHDARKLY_NOT_CONFIGURED', vendor });
-    const vendorResult = await vendorJson<unknown>('launchdarkly', `/flags/default/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        environmentKey: 'production',
-        instructions: [{ kind: 'turnFlagOn' }],
-        comment: stringValue(body.reason, `Tenant override for ${tenantId}`),
-        tenantId,
-        value: body.value ?? false
-      })
+  // S9: the old handler called LaunchDarkly `turnFlagOn`, switching the flag on for every tenant. Until native
+  // per-tenant overrides land (WP-1.4) this route makes no vendor call and reports that it is unavailable.
+  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (_request, reply) => {
+    reply.status(501).send({
+      error: 'FLAG_OVERRIDE_UNAVAILABLE',
+      message: 'Per-tenant flag overrides are not available yet; they arrive with native overrides in WP-1.4.',
+      notWired: 'WP-1.4'
     });
-    const audit = await createAndAudit(request, delegate(app, 'featureFlagOverrideAudit'), { flagKey: key, tenantId, value: body.value ?? false, actorId: actorId(request), vendorRef: 'launchdarkly' }, 'flags.override.set', 'feature_flag', stringValue(body.reason, 'Feature flag override'));
-    reply.status(201).send({ audit, vendor: vendorResult, vendorUnavailable: vendor });
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
