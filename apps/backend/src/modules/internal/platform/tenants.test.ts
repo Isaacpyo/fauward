@@ -102,3 +102,13 @@ describe('POST /api/internal/tenants/:id/unsuspend', () => {
     expect(liftSuspensionMock).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ suspensionId: null }));
   });
 });
+
+describe('GET /api/internal/tenants', () => {
+  it('ACC-TEN-2 an invalid plan or status filter is a 400 naming the field', async () => {
+    const app = await buildApp();
+    const lower = await app.inject({ method: 'GET', url: '/api/internal/tenants?plan=pro' });
+    expect(lower.statusCode).toBe(400);
+    expect(lower.json()).toMatchObject({ error: 'INVALID_QUERY', message: expect.stringContaining('plan') });
+    expect((await app.inject({ method: 'GET', url: '/api/internal/tenants?status=GONE' })).statusCode).toBe(400);
+  });
+});

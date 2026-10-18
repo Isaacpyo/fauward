@@ -6,7 +6,7 @@ function json(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-test("approving a region change from /admin/regions needs a reason and passes the MFA step-up (exit criterion, UI part)", async ({ context, page }) => {
+test("approving a region change (legacy /admin/regions → /platform/tenants/region-requests) needs a reason and passes the MFA step-up", async ({ context, page }) => {
   await addCsrfCookie(context);
   // Registered first so the specific routes below take precedence (Playwright runs the latest match first).
   await page.route("**/api/relay/**", (route) => json(route, 200, {}));
@@ -38,6 +38,7 @@ test("approving a region change from /admin/regions needs a reason and passes th
   });
 
   await page.goto("/admin/regions");
+  await expect(page).toHaveURL(/\/platform\/tenants\/region-requests$/);
   await page.getByRole("button", { name: "Region change requests" }).click();
   await page.getByRole("button", { name: "Approve" }).click();
 

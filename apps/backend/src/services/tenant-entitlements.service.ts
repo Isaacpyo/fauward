@@ -18,13 +18,29 @@ export type TenantEntitlements = {
   effectivePlan: string;
   planOverride: { id: string; plan: string; reason: string; expiresAt: string | null } | null;
   features: Record<string, FeatureEntitlement>;
+  /** -1 = unlimited. */
   limits: { maxStaff: number; maxShipmentsPm: number; maxOrganisations: number; apiRateLimit: number };
+  limitsSource: 'plan' | 'tenant';
   computedAt: string;
   /** When the next override expires (or null): the cache never outlives it. */
   changesAt: string | null;
 };
 
-export type EntitlementTenant = { id: string; plan: TenantPlan | string; maxStaff: number; maxShipmentsPm: number; maxOrganisations: number };
+export type EntitlementTenant = {
+  id: string;
+  plan: TenantPlan | string;
+  maxStaff: number;
+  maxShipmentsPm: number;
+  maxOrganisations: number;
+  /** Set when staff set the limit columns; until then the effective plan's limits apply (C42). */
+  limitsOverriddenAt?: Date | null;
+};
+
+/** -1 = unlimited. */
+function planLimit(plan: string, key: 'maxStaff' | 'maxShipmentsPm' | 'maxOrganisations' | 'apiRateLimit') {
+  const value = planService.getFeatures(plan)[key];
+  return typeof value === 'number' ? value : 0;
+}
 type EntitlementDb = Pick<PrismaClient, 'tenantPlanOverride' | 'tenantFeatureOverride'>;
 
 function earliest(dates: Array<Date | null | undefined>) {
@@ -74,12 +90,15 @@ export async function resolveTenantEntitlements(db: EntitlementDb, tenant: Entit
     effectivePlan,
     planOverride: planOverride ? { id: planOverride.id, plan: planOverride.plan, reason: planOverride.reason, expiresAt: planOverride.expiresAt?.toISOString() ?? null } : null,
     features,
-    limits: {
-      maxStaff: tenant.maxStaff,
-      maxShipmentsPm: tenant.maxShipmentsPm,
-      maxOrganisations: tenant.maxOrganisations,
-      apiRateLimit: planService.getLimit(effectivePlan, 'apiRateLimit')
-    },
+    limits: tenant.limitsOverriddenAt
+      ? { maxStaff: tenant.maxStaff, maxShipmentsPm: tenant.maxShipmentsPm, maxOrganisations: tenant.maxOrganisations, apiRateLimit: planLimit(effectivePlan, 'apiRateLimit') }
+      : {
+          maxStaff: planLimit(effectivePlan, 'maxStaff'),
+          maxShipmentsPm: planLimit(effectivePlan, 'maxShipmentsPm'),
+          maxOrganisations: planLimit(effectivePlan, 'maxOrganisations'),
+          apiRateLimit: planLimit(effectivePlan, 'apiRateLimit')
+        },
+    limitsSource: tenant.limitsOverriddenAt ? 'tenant' : 'plan',
     computedAt: now.toISOString(),
     changesAt: changesAt?.toISOString() ?? null
   };

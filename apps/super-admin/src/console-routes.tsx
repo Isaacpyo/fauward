@@ -20,6 +20,7 @@ import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
+import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
@@ -109,6 +110,9 @@ export const consoleRoutes: ConsoleRoute[] = [
               </PermissionRoute> },
   { path: "/platform/tenants", element: <PermissionRoute permission="platform.tenants.read">
                 <TenantsListPage />
+              </PermissionRoute> },
+  { path: "/platform/tenants/region-requests", element: <PermissionRoute permission="platform.tenants.read">
+                <RegionRequestsPage />
               </PermissionRoute> },
   { path: "/platform/tenants/:id", element: <PermissionRoute permission="platform.tenants.read">
                 <TenantDetailPage />

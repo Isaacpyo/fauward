@@ -42,6 +42,9 @@ const envSchema = z.object({
   SENDGRID_TEMPLATE_USAGE_WARNING_80: z.string().optional(),
   SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED: z.string().optional(),
   SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_SUSPENDED: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_UNSUSPENDED: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_CLOSED: z.string().optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM: z.string().optional(),
@@ -156,7 +159,10 @@ export const config = {
       trial_expiry: parsed.data.SENDGRID_TEMPLATE_TRIAL_EXPIRY,
       usage_warning_80: parsed.data.SENDGRID_TEMPLATE_USAGE_WARNING_80,
       usage_limit_reached: parsed.data.SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED,
-      ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT
+      ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT,
+      tenant_suspended: parsed.data.SENDGRID_TEMPLATE_TENANT_SUSPENDED,
+      tenant_unsuspended: parsed.data.SENDGRID_TEMPLATE_TENANT_UNSUSPENDED,
+      tenant_closed: parsed.data.SENDGRID_TEMPLATE_TENANT_CLOSED
     } as Record<string, string | undefined>
   },
   twilio: {

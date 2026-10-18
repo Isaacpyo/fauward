@@ -350,6 +350,13 @@ model Tenant {
   maxStaff           Int          @default(3)
   maxShipmentsPm     Int          @default(300)
   maxOrganisations   Int          @default(10)
+  /// Set when Fauward staff set the limit columns above (WP-1.2). Until then the effective plan's limits apply
+  /// (the columns were never kept in step with plan changes).
+  limitsOverriddenAt DateTime?
+  /// Tenant closure (WP-1.2): a closed tenant is never reactivated (D3); data is kept until purgeAfter.
+  closedAt           DateTime?
+  closedReason       String?
+  purgeAfter         DateTime?
   onboardingSteps    Json         @default("{}")
   onboardingCompletedAt DateTime?
   internalNotes      String?

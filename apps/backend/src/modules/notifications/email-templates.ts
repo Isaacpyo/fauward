@@ -30,5 +30,6 @@ export const EMAIL_TEMPLATES = {
   permission_request_approval: 'permission_request_approval',
   // Fauward → tenant (PlatformNotifier, D6). SendGrid template ids come from SENDGRID_TEMPLATE_<KEY>.
   tenant_suspended: 'tenant_suspended',
-  tenant_unsuspended: 'tenant_unsuspended'
+  tenant_unsuspended: 'tenant_unsuspended',
+  tenant_closed: 'tenant_closed'
 } as const;

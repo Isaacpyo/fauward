@@ -104,6 +104,13 @@ export const stripeService = {
     return { id: subscription.id, status: subscription.status };
   },
 
+  /** Tenant close (WP-1.2): stop renewing, keep the paid period. */
+  async cancelSubscriptionAtPeriodEnd(subscriptionId: string) {
+    const stripe = getStripeClient();
+    const subscription = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+    return { id: subscription.id, status: subscription.status, cancelAtPeriodEnd: subscription.cancel_at_period_end };
+  },
+
   isConfigured() {
     return Boolean(config.stripe.secretKey);
   },

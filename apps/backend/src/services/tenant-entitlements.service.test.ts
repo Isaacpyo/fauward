@@ -106,12 +106,14 @@ afterEach(async () => {
 });
 
 describe('resolveTenantEntitlements (architecture §9.5)', () => {
-  it('effective plan = active override ?? billing plan; features carry their source; limits come from the tenant', async () => {
+  it('effective plan = active override ?? billing plan; features carry their source; limits follow the effective plan until staff set them', async () => {
     const { db, tenant, planOverrides, featureOverrides } = createDb('STARTER');
     planOverrides.push({ id: 'tpo_a', tenantId: 't_1', plan: 'PRO', reason: 'Pilot', createdAt: new Date(), revokedAt: null, expiresAt: null });
     featureOverrides.push({ id: 'tfo_a', tenantId: 't_1', featureKey: 'webhooks', enabled: false, createdAt: new Date(), revokedAt: null, expiresAt: null });
     const entitlements = await resolveTenantEntitlements(db as never, tenant);
-    expect(entitlements).toMatchObject({ billingPlan: 'STARTER', effectivePlan: 'PRO', planOverride: { id: 'tpo_a', plan: 'PRO' }, limits: { maxStaff: 3, apiRateLimit: 500 } });
+    expect(entitlements).toMatchObject({ billingPlan: 'STARTER', effectivePlan: 'PRO', planOverride: { id: 'tpo_a', plan: 'PRO' }, limits: { maxStaff: 15, maxShipmentsPm: 2000, apiRateLimit: 500 }, limitsSource: 'plan' });
+    const staffSet = await resolveTenantEntitlements(db as never, { ...tenant, limitsOverriddenAt: new Date() });
+    expect(staffSet).toMatchObject({ limits: { maxStaff: 3, maxShipmentsPm: 300, apiRateLimit: 500 }, limitsSource: 'tenant' });
     expect(entitlements.features.apiAccess).toEqual({ enabled: true, source: 'plan' });
     expect(entitlements.features.webhooks).toEqual({ enabled: false, source: 'override', overrideId: 'tfo_a', expiresAt: null });
     expect(entitlements.features.sso).toEqual({ enabled: false, source: 'plan' });

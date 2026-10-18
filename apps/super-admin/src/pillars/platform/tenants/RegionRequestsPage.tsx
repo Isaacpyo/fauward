@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ActionDialog } from "@/components/service-kit/ActionDialog";
+import { TenantChip } from "@/components/service-kit/TenantChip";
 import { Check, Clock3, Globe2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -66,7 +67,8 @@ function dateLabel(value?: string) {
   }).format(new Date(value));
 }
 
-export function RegionsPage() {
+/** Tenant region change requests (WP-1.2 move from /admin/regions; the store stays in memory until WP-2.6). */
+export function RegionRequestsPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["admin-regions"], queryFn: fetchRegions });
@@ -164,7 +166,7 @@ export function RegionsPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-[var(--color-text-primary)]">{request.tenantName}</p>
+                        <TenantChip tenantId={request.tenantId} name={request.tenantName} slug={request.tenantSlug} />
                         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass(request.status)}`}>
                           {request.status}
                         </span>
@@ -242,7 +244,7 @@ export function RegionsPage() {
                   <Clock3 size={16} className="mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
                   <div>
                     <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                      {request.tenantName} requested {formatRegion(request.requestedRegion)}
+                      <TenantChip tenantId={request.tenantId} name={request.tenantName} slug={request.tenantSlug} /> requested {formatRegion(request.requestedRegion)}
                     </p>
                     <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                       Status: {request.status} - Created: {dateLabel(request.createdAt)}

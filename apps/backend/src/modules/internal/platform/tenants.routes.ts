@@ -1,11 +1,10 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { TenantPlan, TenantStatus } from '@prisma/client';
+import { TenantPlan } from '@prisma/client';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
-import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
+import { requireAnyConsolePermission, requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { dangerous } from '../../../middleware/dangerous.js';
 import { writePlatformAuditLog } from '../../../services/platform-audit.service.js';
-import { redactPlatformLogValue } from '../../../services/platform-redaction.service.js';
 import { resolveEffectiveTenantPlan } from '../../../services/platform-plan-override.service.js';
 import { recordAndPublishActivity, staffActor } from '../../../services/platform-activity.service.js';
 import { platformAuditActor, reasonOf } from '../request-meta.js';
@@ -13,6 +12,9 @@ import { SUSPENSION_CATEGORIES, SuspensionError, liftSuspension, staffSuspension
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../../services/feature-override.service.js';
 import { invalidateTenantEntitlements, resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
 import { planService } from '../../tenants/plan.service.js';
+import { getTenantDetail, listTenants, tenantListQuery } from '../../../services/tenant-directory.service.js';
+import { TenantCloseError, closeTenant } from '../../../services/tenant-close.service.js';
+import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.js';
 import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../../regions/region-change-requests.store.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
@@ -32,6 +34,21 @@ const featureOverrideBody = z.object({
   reason: z.string().min(8),
   expiresAt: z.string().datetime().nullable().optional()
 });
+const limitValue = z.number().int().min(-1).max(1000000);
+const limitsBody = z
+  .object({
+    maxStaff: limitValue.optional(),
+    maxShipmentsPm: limitValue.optional(),
+    maxOrganisations: limitValue.optional(),
+    resetToPlan: z.boolean().optional(),
+    reason: z.string().min(8)
+  })
+  .refine(
+    (body) => body.resetToPlan === true || body.maxStaff !== undefined || body.maxShipmentsPm !== undefined || body.maxOrganisations !== undefined,
+    'Set at least one limit, or resetToPlan: true'
+  );
+const notesBody = z.object({ internalNotes: z.string().max(20000) });
+const closeBody = z.object({ reason: z.string().min(8), confirmSlug: z.string().min(1) });
 const unsuspendBody = z.object({ suspensionId: z.string().min(1).optional(), all: z.boolean().optional(), reason: z.string().min(8) });
 
 export function sendFeatureOverrideError(reply: FastifyReply, error: unknown) {
@@ -50,37 +67,12 @@ function activityDeps(app: FastifyInstance) {
 
 export async function registerConsoleTenantRoutes(app: FastifyInstance) {
   app.get('/api/internal/tenants', { preHandler: readPre }, async (request, reply) => {
-    const query = request.query as { page?: string; limit?: string; search?: string; plan?: string; status?: string };
-    const page = Math.max(1, Number(query.page ?? 1));
-    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 20)));
-    const where = {
-      name: query.search ? { contains: query.search, mode: 'insensitive' as const } : undefined,
-      plan: query.plan ? (query.plan as TenantPlan) : undefined,
-      status: query.status ? (query.status as TenantStatus) : undefined
-    };
-    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-    const [tenants, total] = await Promise.all([
-      app.prisma.tenant.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-        include: { _count: { select: { shipments: { where: { createdAt: { gte: monthStart } } } } }, subscription: true }
-      }),
-      app.prisma.tenant.count({ where })
-    ]);
-    return reply.send({
-      data: tenants.map((tenant) => ({
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        plan: tenant.plan,
-        billingPlan: tenant.subscription?.plan ?? tenant.plan,
-        status: tenant.status,
-        shipmentCountThisMonth: tenant._count.shipments
-      })),
-      meta: { page, limit, total, totalPages: Math.ceil(total / limit) }
-    });
+    const parsed = tenantListQuery.safeParse(request.query);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      return reply.status(400).send({ error: 'INVALID_QUERY', message: `${issue?.path.join('.') || 'query'}: ${issue?.message}` });
+    }
+    return reply.send(await listTenants(app.prisma, parsed.data));
   });
 
   app.get('/api/internal/tenants/region-requests', { preHandler: readPre }, async (_request, reply) => {
@@ -127,31 +119,136 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
 
   app.get('/api/internal/tenants/:id', { preHandler: readPre }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const tenant = await app.prisma.tenant.findUnique({
-      where: { id },
-      include: {
-        settings: true,
-        usageRecords: { orderBy: { updatedAt: 'desc' }, take: 6 },
-        subscription: true,
-        _count: { select: { users: true } }
-      }
-    });
+    const detail = await getTenantDetail(app.prisma, id);
+    if (!detail) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    return reply.send(detail);
+  });
+
+  // Users of one tenant: the Users tab and the impersonation target picker (WP-1.10).
+  app.get('/api/internal/tenants/:id/users', { preHandler: readPre }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const query = request.query as { search?: string; active?: string };
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
     if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
-    const plan = await resolveEffectiveTenantPlan(app.prisma, tenant);
-    return reply.send({
-      id: tenant.id,
-      name: tenant.name,
-      slug: tenant.slug,
-      plan: plan.effectivePlan,
-      billingPlan: plan.billingPlan,
-      activePlanOverride: plan.override,
-      status: tenant.status,
-      branding: { logoUrl: tenant.logoUrl, primaryColor: tenant.primaryColor, accentColor: tenant.accentColor, brandName: tenant.brandName },
-      settings: redactPlatformLogValue(tenant.settings),
-      usage: tenant.usageRecords,
-      subscription: redactPlatformLogValue(tenant.subscription),
-      staffCount: tenant._count.users
+    const users = await app.prisma.user.findMany({
+      where: {
+        tenantId: id,
+        ...(query.active === 'true' ? { isActive: true } : {}),
+        ...(query.search
+          ? {
+              OR: [
+                { email: { contains: query.search, mode: 'insensitive' } },
+                { firstName: { contains: query.search, mode: 'insensitive' } },
+                { lastName: { contains: query.search, mode: 'insensitive' } }
+              ]
+            }
+          : {})
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, createdAt: true, invitedBy: true },
+      orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
+      take: 100
     });
+    return reply.send({ data: users });
+  });
+
+  app.patch('/api/internal/tenants/:id/limits', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = limitsBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    const body = parsed.data;
+    const tenant = await app.prisma.tenant.findUnique({ where: { id } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const before = { maxStaff: tenant.maxStaff, maxShipmentsPm: tenant.maxShipmentsPm, maxOrganisations: tenant.maxOrganisations, limitsOverriddenAt: tenant.limitsOverriddenAt?.toISOString() ?? null };
+    const updated = await app.prisma.tenant.update({
+      where: { id },
+      data: body.resetToPlan
+        ? { limitsOverriddenAt: null }
+        : {
+            maxStaff: body.maxStaff ?? tenant.maxStaff,
+            maxShipmentsPm: body.maxShipmentsPm ?? tenant.maxShipmentsPm,
+            maxOrganisations: body.maxOrganisations ?? tenant.maxOrganisations,
+            limitsOverriddenAt: new Date()
+          }
+    });
+    const after = { maxStaff: updated.maxStaff, maxShipmentsPm: updated.maxShipmentsPm, maxOrganisations: updated.maxOrganisations, limitsOverriddenAt: updated.limitsOverriddenAt?.toISOString() ?? null };
+    await writePlatformAuditLog(app.prisma, {
+      ...platformAuditActor(request),
+      actorType: 'PLATFORM_USER',
+      action: 'TENANT_LIMITS_UPDATED',
+      targetTenantId: id,
+      reason: body.reason.trim(),
+      metadata: { before, after }
+    });
+    await recordAndPublishActivity(activityDeps(app), {
+      service: 'platform.tenants',
+      type: 'tenant.limits_updated',
+      tenantId: id,
+      ...staffActor(request),
+      subjectType: 'tenant',
+      subjectId: id,
+      summary: body.resetToPlan
+        ? `${tenant.name}: limits reset to the plan`
+        : `${tenant.name}: staff ${after.maxStaff}, shipments/month ${after.maxShipmentsPm}, organisations ${after.maxOrganisations}`,
+      severity: 'ATTENTION',
+      consoleLink: `/platform/tenants/${id}`
+    });
+    await invalidateTenantEntitlements(app.redis, id);
+    return reply.send({ limits: after });
+  });
+
+  app.patch(
+    '/api/internal/tenants/:id/internal-notes',
+    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireAnyConsolePermission(['platform.tenants.write', 'customer.success.write'])] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const parsed = notesBody.safeParse(request.body);
+      if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+      const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true, name: true, internalNotes: true } });
+      if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+      const updated = await app.prisma.tenant.update({ where: { id }, data: { internalNotes: parsed.data.internalNotes } });
+      await writePlatformAuditLog(app.prisma, {
+        ...platformAuditActor(request),
+        actorType: 'PLATFORM_USER',
+        action: 'TENANT_INTERNAL_NOTES_UPDATED',
+        targetTenantId: id,
+        reason: null,
+        metadata: { previousLength: tenant.internalNotes?.length ?? 0, newLength: parsed.data.internalNotes.length }
+      });
+      await recordAndPublishActivity(activityDeps(app), {
+        service: 'platform.tenants',
+        type: 'staff.note',
+        tenantId: id,
+        ...staffActor(request),
+        subjectType: 'tenant',
+        subjectId: id,
+        summary: `${tenant.name}: internal notes updated`,
+        consoleLink: `/customer/360/${id}`
+      });
+      return reply.send({ internalNotes: updated.internalNotes });
+    }
+  );
+
+  app.post('/api/internal/tenants/:id/close', { preHandler: dangerous('platform.tenants.close') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = closeBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    const user = request.platform!.user;
+    try {
+      const result = await closeTenant(app, {
+        tenantId: id,
+        reason: parsed.data.reason.trim(),
+        confirmSlug: parsed.data.confirmSlug,
+        actor: { type: 'STAFF', platformUserId: user.id, email: user.email, label: user.name ?? user.email, ipAddress: platformAuditActor(request).ipAddress, userAgent: platformAuditActor(request).userAgent }
+      });
+      return reply.send({
+        tenant: { id: result.tenant.id, status: result.tenant.status, closedAt: result.tenant.closedAt, purgeAfter: result.tenant.purgeAfter },
+        suspension: result.suspension,
+        stripe: result.stripe
+      });
+    } catch (error) {
+      if (error instanceof TenantCloseError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      return sendSuspensionError(reply, error);
+    }
   });
 
   app.post('/api/internal/tenants/:id/plan-overrides', { preHandler: dangerous('revenue.subscriptions.override') }, async (request, reply) => {

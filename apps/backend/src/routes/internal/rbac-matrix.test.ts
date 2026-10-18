@@ -43,7 +43,8 @@ const SESSION_ONLY_ROUTES = new Set([
   'GET /api/internal/notifications/staff',
   'POST /api/internal/notifications/staff/read-all',
   'POST /api/internal/notifications/staff/:id/read',
-  'GET /api/internal/metrics/overview'
+  'GET /api/internal/metrics/overview',
+  'GET /api/internal/search'
 ]);
 /** Machine routes for the status dashboard / Python services, guarded by MONITORING_API_KEY (S8). */
 const MACHINE_ROUTES = new Set([

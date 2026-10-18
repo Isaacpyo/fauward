@@ -310,6 +310,10 @@ export const authService = {
     if (!tenant) {
       throw new Error('Tenant not found');
     }
+    // A closed workspace cannot sign in (WP-1.2); checked after the password so it reveals nothing to strangers.
+    if (tenant.closedAt) {
+      throw new Error('TENANT_CLOSED');
+    }
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },

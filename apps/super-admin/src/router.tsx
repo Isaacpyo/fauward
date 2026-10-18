@@ -4,7 +4,6 @@ import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, usePar
 import { LoginPage } from "@/auth/LoginPage";
 import { SuperAdminGuard } from "@/auth/SuperAdminGuard";
 
-import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { StatusPage } from "@/pages/StatusPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
@@ -154,7 +153,7 @@ export function AppRouter() {
           <Route path="/admin" element={<Navigate to="/" replace />} />
           <Route path="/admin/tenants" element={<Navigate to="/platform/tenants" replace />} />
           <Route path="/admin/tenants/:id" element={<NavigateToPlatformTenant />} />
-          <Route path="/admin/regions" element={<RegionsPage />} />
+          <Route path="/admin/regions" element={<Navigate to="/platform/tenants/region-requests" replace />} />
           <Route path="/admin/revenue" element={<Navigate to="/revenue/analytics" replace />} />
           <Route path="/admin/system" element={<Navigate to="/platform/health" replace />} />
           <Route path="/admin/queues" element={<Navigate to="/platform/queues" replace />} />

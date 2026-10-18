@@ -16,6 +16,8 @@ export const DANGEROUS_ROUTES = [
   { method: 'DELETE', url: '/api/internal/tenants/:id/plan-overrides/:overrideId' },
   { method: 'POST', url: '/api/internal/tenants/region-requests/:id/decision' },
   { method: 'POST', url: '/api/internal/tenants/:id/feature-overrides' },
+  { method: 'PATCH', url: '/api/internal/tenants/:id/limits' },
+  { method: 'POST', url: '/api/internal/tenants/:id/close' },
   { method: 'DELETE', url: '/api/internal/tenants/:id/feature-overrides/:overrideId' },
   // platform.flags (WP-1.4 native overrides)
   { method: 'POST', url: '/api/internal/flags/:key/overrides' },

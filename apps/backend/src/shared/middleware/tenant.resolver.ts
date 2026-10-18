@@ -229,6 +229,10 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return null;
   }
 
+  if (tenant.closedAt) {
+    reply.status(410).send({ error: 'Workspace closed', code: 'TENANT_CLOSED' });
+    return null;
+  }
   if (tenant.status === 'CANCELLED') {
     reply.status(410).send({ error: 'Account cancelled', code: 'TENANT_CANCELLED' });
     return null;
