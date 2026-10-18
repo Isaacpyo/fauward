@@ -133,7 +133,8 @@ describe('getTenantDetail (WP-1.2)', () => {
       usageRecord: { findMany: vi.fn(async () => [{ month: '2026-10', shipments: 12, apiCalls: 3, smsSent: 0, emailsSent: 4 }]) },
       user: { count: vi.fn(async () => 5), findMany: vi.fn(async () => [{ id: 'u_1', email: 'owner@t.test', firstName: 'Ada', lastName: null, lastLogin: new Date('2026-10-17T08:00:00Z') }]), aggregate: vi.fn(async () => ({ _max: { lastLogin: new Date('2026-10-18T07:00:00Z') } })) },
       platformImpersonationSession: { findMany: vi.fn(async () => []) },
-      tenantHealthScore: { findFirst: vi.fn(async () => null) }
+      tenantHealthScore: { findFirst: vi.fn(async () => null) },
+      regionChangeRequest: { findFirst: vi.fn(async () => null) }
     };
     const detail = await getTenantDetail(db as never, 't_1', NOW);
     expect(detail?.plan).toMatchObject({ billingPlan: 'STARTER', effectivePlan: 'PRO', planOverride: { id: 'tpo_now', plan: 'PRO' } });

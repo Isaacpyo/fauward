@@ -445,6 +445,7 @@ model Tenant {
   slaPolicies                   SlaPolicy[]
   slugHistory                   TenantSlugHistory[]
   widgetDomains                 TenantWidgetDomain[]
+  regionChangeRequests          RegionChangeRequest[]
 
   @@index([customDomainStatus])
   @@map("tenants")
@@ -2424,6 +2425,30 @@ model ComplianceExport {
   @@index([tenantId, createdAt])
   @@index([status])
   @@map("compliance_exports")
+}
+
+/// Tenant region change (L5, WP-2.6): requested in the tenant portal, decided in the console; APPROVED is applied to
+/// `Tenant.region` in the same transaction (status APPLIED). One PENDING request per tenant.
+model RegionChangeRequest {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  currentRegion           String
+  requestedRegion         String
+  requestedByUserId       String
+  /// PENDING | APPROVED | REJECTED | APPLIED | CANCELLED
+  status                  String    @default("PENDING")
+  decisionReason          String?
+  decidedByPlatformUserId String?
+  decidedAt               DateTime?
+  appliedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("region_change_requests")
 }
 
 /// Bundle bytes for the POSTGRES storage adapter (trust.compliance, WP-2.5).

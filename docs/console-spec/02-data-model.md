@@ -20,7 +20,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0046_notification_delivery (real number; not in the original plan, C62) | P2 / WP-2.2 | `NotificationLog.tenantId` optional; `platformUserId`, `template`, `recipient`, `jobId @unique`, `attempts`, `provider`, `updatedAt` |
 | 0045_support_audience (real: `0047_support_audience`, backfill `0047-ticket-messages.ts`, C11/C63; adds `slaBreachedAt`) | P2 / WP-2.3 | `TicketAudience`, `MessageAuthorType`, `MessageVisibility`; ticket/message columns; backfill |
 | 0048_trust_safety_appeals (real number; not in the original plan, C64) | P2 / WP-2.4 | `FraudSignal.category/decisionNote/decidedAt`; `TenantAppeal.infoRequest/infoRequestedAt/tenantReply/tenantRepliedAt/decidedAt` |
-| 0046_region_change_requests | P2 / WP-2.6 | `RegionChangeRequest` |
+| 0046_region_change_requests (real: `0050_region_change_requests`, C66; Tenant relation) | P2 / WP-2.6 | `RegionChangeRequest` |
 | 0047_plan_change | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
 | 0048_feedback | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
 | 0049_announcement_receipts | P2 / WP-2.14 | `AnnouncementReceipt`; `PlatformAnnouncement.updatedAt/archivedAt` |

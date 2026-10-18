@@ -15,11 +15,12 @@ import { planService } from '../../tenants/plan.service.js';
 import { getTenantDetail, listTenants, tenantListQuery } from '../../../services/tenant-directory.service.js';
 import { TenantCloseError, closeTenant } from '../../../services/tenant-close.service.js';
 import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.js';
-import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../../regions/region-change-requests.store.js';
+import { REGIONS } from '../../../config/regions.js';
+import { RegionChangeError, decideRegionChange, presentRegionRequest } from '../../../services/region-change.service.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
 
-const SUPPORTED_REGIONS = new Set(['africa', 'europe', 'northAmerica', 'global', 'uk_europe']);
+const regionListQuery = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'APPLIED', 'CANCELLED']).optional(), tenantId: z.string().min(1).optional() });
 const OVERRIDE_PLANS = new Set<TenantPlan>(['STARTER', 'PRO', 'ENTERPRISE']);
 const readPre = [authenticatePlatformSession, requireConsolePermission('platform.tenants.read')];
 
@@ -75,46 +76,37 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     return reply.send(await listTenants(app.prisma, parsed.data));
   });
 
-  app.get('/api/internal/tenants/region-requests', { preHandler: readPre }, async (_request, reply) => {
-    return reply.send({
-      requests: listRegionChangeRequests(),
-      regions: [
-        { key: 'africa', label: 'Africa', paymentProviders: ['Paystack', 'Flutterwave', 'Bank transfer', 'COD'] },
-        { key: 'europe', label: 'Europe', paymentProviders: ['Stripe', 'Bank transfer'] },
-        { key: 'northAmerica', label: 'North America', paymentProviders: ['Stripe', 'Bank transfer'] },
-        { key: 'global', label: 'Global', paymentProviders: ['Stripe', 'Paystack', 'Flutterwave', 'Bank transfer'] }
-      ]
+  app.get('/api/internal/tenants/region-requests', { preHandler: readPre }, async (request, reply) => {
+    const parsed = regionListQuery.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues.map((issue) => issue.message).join(' ') });
+    const rows = await app.prisma.regionChangeRequest.findMany({
+      where: { ...(parsed.data.status ? { status: parsed.data.status } : {}), ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) },
+      include: { tenant: { select: { id: true, name: true, slug: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200
     });
+    return reply.send({ requests: rows.map((row) => presentRegionRequest(row, row.tenant)), regions: REGIONS });
   });
 
   app.post('/api/internal/tenants/region-requests/:id/decision', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { status, reason } = request.body as { status?: 'APPROVED' | 'REJECTED'; reason: string };
     if (!status || !['APPROVED', 'REJECTED'].includes(status)) return reply.status(400).send({ error: 'INVALID_STATUS', message: 'status must be APPROVED or REJECTED' });
-    const existing = listRegionChangeRequests().find((item) => item.id === id);
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Region change request not found' });
-    if (!SUPPORTED_REGIONS.has(existing.requestedRegion)) return reply.status(400).send({ error: 'UNSUPPORTED_REGION', message: 'Unsupported requested region' });
-
-    const regionRequest = updateRegionChangeRequestStatus(id, status, request.platform!.user.email, request.platform!.user.id, reason);
-    await writePlatformAuditLog(app.prisma, {
-      ...platformAuditActor(request),
-      actorType: 'PLATFORM_USER',
-      action: status === 'APPROVED' ? 'REGION_CHANGE_APPROVED' : 'REGION_CHANGE_REJECTED',
-      targetTenantId: existing.tenantId,
-      reason,
-      metadata: { currentRegion: existing.currentRegion, requestedRegion: existing.requestedRegion }
-    });
-    await recordAndPublishActivity(activityDeps(app), {
-      service: 'platform.tenants',
-      type: status === 'APPROVED' ? 'region_request.approved' : 'region_request.rejected',
-      tenantId: existing.tenantId,
-      ...staffActor(request),
-      subjectType: 'region_change_request',
-      subjectId: id,
-      summary: `${existing.tenantName}: ${existing.currentRegion} → ${existing.requestedRegion} ${status.toLowerCase()}`,
-      consoleLink: '/platform/tenants/region-requests'
-    });
-    return reply.send({ request: regionRequest });
+    try {
+      const regionRequest = await decideRegionChange(app, request, { id, status, reason });
+      await writePlatformAuditLog(app.prisma, {
+        ...platformAuditActor(request),
+        actorType: 'PLATFORM_USER',
+        action: status === 'APPROVED' ? 'REGION_CHANGE_APPROVED' : 'REGION_CHANGE_REJECTED',
+        targetTenantId: regionRequest.tenantId,
+        reason,
+        metadata: { currentRegion: regionRequest.currentRegion, requestedRegion: regionRequest.requestedRegion }
+      });
+      return reply.send({ request: regionRequest });
+    } catch (error) {
+      if (error instanceof RegionChangeError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/tenants/:id', { preHandler: readPre }, async (request, reply) => {

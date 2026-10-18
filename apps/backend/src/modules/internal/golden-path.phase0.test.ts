@@ -40,6 +40,8 @@ function createWorld(passwordHash: string) {
   const sessions = new Map<string, Record<string, unknown>>();
   const impersonations = new Map<string, Record<string, unknown>>();
   const kv = new Map<string, { value: string; expiresAt: number }>();
+  const tenantRow: Record<string, unknown> = { id: 'tenant_1', name: 'Northwind', slug: 'northwind', plan: 'PRO', status: 'ACTIVE', region: 'africa' };
+  const regionRequests: Array<Record<string, unknown>> = [];
   let seq = 0;
   const id = (prefix: string) => `${prefix}_${(seq += 1)}`;
   const live = (key: string) => {
@@ -71,10 +73,25 @@ function createWorld(passwordHash: string) {
     staffLoginAttempt: { create: vi.fn(async () => ({})) },
     jitAccessRequest: { findMany: vi.fn(async () => []) },
     tenant: {
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => (where.id === 'tenant_1' ? { id: 'tenant_1', name: 'Northwind', slug: 'northwind', plan: 'PRO', status: 'ACTIVE' } : null))
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => (where.id === 'tenant_1' ? { ...tenantRow } : null)),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => Object.assign(tenantRow, data))
+    },
+    regionChangeRequest: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+        const row = regionRequests.find((item) => item.id === where.id);
+        return row ? { ...row, tenant: { ...tenantRow } } : null;
+      }),
+      updateMany: vi.fn(async ({ where, data }: { where: { id: string; status: string }; data: Record<string, unknown> }) => {
+        const row = regionRequests.find((item) => item.id === where.id && item.status === where.status);
+        if (!row) return { count: 0 };
+        Object.assign(row, data);
+        return { count: 1 };
+      }),
+      findFirstOrThrow: vi.fn(async ({ where }: { where: { id: string } }) => ({ ...regionRequests.find((item) => item.id === where.id)! }))
     },
     user: {
-      findFirst: vi.fn(async ({ where }: { where: { tenantId: string } }) => (where.tenantId === 'tenant_1' ? { id: 'user_admin', email: 'admin@northwind.test', role: 'TENANT_ADMIN', isActive: true } : null))
+      findFirst: vi.fn(async ({ where }: { where: { tenantId: string } }) => (where.tenantId === 'tenant_1' ? { id: 'user_admin', email: 'admin@northwind.test', role: 'TENANT_ADMIN', isActive: true } : null)),
+      findMany: vi.fn(async () => [])
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
     platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `act_${String(create.type)}`, ...create })) },
@@ -95,7 +112,9 @@ function createWorld(passwordHash: string) {
         return { count: 1 };
       })
     },
-    $transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations))
+    $transaction: vi.fn(async (operations: Array<Promise<unknown>> | ((tx: unknown) => Promise<unknown>)): Promise<unknown> =>
+      typeof operations === 'function' ? operations(prisma) : Promise.all(operations)
+    )
   };
   const redis = {
     set: vi.fn(async (key: string, value: string, _mode: 'EX', seconds: number) => {
@@ -113,7 +132,7 @@ function createWorld(passwordHash: string) {
     expire: vi.fn(async () => 1),
     publish: vi.fn(async () => 1)
   };
-  return { prisma, redis, users, impersonations };
+  return { prisma, redis, users, impersonations, tenantRow, regionRequests };
 }
 
 class CookieJar {
@@ -154,7 +173,6 @@ describe('Phase 0 golden path (chained API calls)', () => {
     const { registerConsoleTenantRoutes } = await import('./platform/tenants.routes.js');
     const { registerConsoleImpersonationRoutes } = await import('./platform/impersonation.routes.js');
     const { registerImpersonationExchangeRoutes } = await import('../auth/impersonation-exchange.routes.js');
-    const { createRegionChangeRequest } = await import('../regions/region-change-requests.store.js');
 
     const app = Fastify();
     openApps.push(app);
@@ -227,7 +245,8 @@ describe('Phase 0 golden path (chained API calls)', () => {
     ]);
 
     // 8. Eleven minutes later a region approval needs a step-up, then succeeds.
-    const request = createRegionChangeRequest({ tenantId: 'tenant_1', tenantName: 'Northwind', tenantSlug: 'northwind', currentRegion: 'africa', requestedRegion: 'europe', requestedBy: 'admin@northwind.test' });
+    const request = { id: 'rcr_1', tenantId: 'tenant_1', currentRegion: 'africa', requestedRegion: 'europe', requestedByUserId: 'user_admin', status: 'PENDING', decisionReason: null, decidedByPlatformUserId: null, decidedAt: null, appliedAt: null, createdAt: new Date() };
+    world.regionRequests.push(request);
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 11 * 60 * 1000);
     const stale = await app.inject({ method: 'POST', url: `/api/internal/tenants/region-requests/${request.id}/decision`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
@@ -238,7 +257,8 @@ describe('Phase 0 golden path (chained API calls)', () => {
     jar.absorb(verify);
     const approved = await app.inject({ method: 'POST', url: `/api/internal/tenants/region-requests/${request.id}/decision`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
     expect(approved.statusCode).toBe(200);
-    expect(approved.json()).toMatchObject({ request: { status: 'APPROVED' } });
+    expect(approved.json()).toMatchObject({ request: { status: 'APPLIED' } });
+    expect(world.tenantRow.region).toBe('europe');
     expect(audit.map((row) => row.action)).toContain('REGION_CHANGE_APPROVED');
   });
 });

@@ -165,26 +165,27 @@ export function useTenantUsers(id: string, options: { activeOnly?: boolean; sear
   });
 }
 
-export function useRegionRequests() {
+export function useRegionRequests(status?: string) {
   return useQuery({
-    queryKey: [...TENANTS_KEY, "region-requests"],
-    queryFn: async () => (await consoleApi.get<RegionRequestsResponse>("/tenants/region-requests")).data
+    queryKey: [...TENANTS_KEY, "region-requests", status ?? "all"],
+    queryFn: async () => (await consoleApi.get<RegionRequestsResponse>("/tenants/region-requests", { params: status ? { status } : {} })).data
   });
 }
 
+/** WP-2.6: persisted requests; APPROVED is applied immediately, so decided rows are APPLIED or REJECTED. */
 export type RegionRequest = {
   id: string;
   tenantId: string;
-  tenantName: string;
-  tenantSlug: string;
+  tenant: { id: string; name: string; slug: string } | null;
   currentRegion: string;
   requestedRegion: string;
-  requestedBy: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  requestedByUserId: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "APPLIED" | "CANCELLED";
+  decisionReason: string | null;
+  decidedByPlatformUserId: string | null;
+  decidedAt: string | null;
+  appliedAt: string | null;
   createdAt: string;
-  reviewedAt?: string;
-  reviewedBy?: string;
-  decisionReason?: string;
 };
 export type RegionRequestsResponse = { requests: RegionRequest[]; regions: Array<{ key: string; label: string; paymentProviders: string[] }> };
 

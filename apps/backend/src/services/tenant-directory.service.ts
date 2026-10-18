@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { Prisma, TenantPlan, TenantStatus, type PrismaClient } from '@prisma/client';
 import { mrrForSubscription } from './revenue/mrr.service.js';
 import { resolveTenantEntitlements } from './tenant-entitlements.service.js';
-import { listRegionChangeRequests } from '../modules/regions/region-change-requests.store.js';
 
 // Console tenant directory (platform.tenants, WP-1.2): list with search/filters/cursor and the detail aggregate. All
 // queries name the tenant explicitly (console requests run in system context, architecture §7).
@@ -155,7 +154,10 @@ export async function getTenantDetail(db: DetailDb, tenantId: string, now = new 
     db.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' }, select: { score: true, trend: true, computedAt: true } })
   ]);
 
-  const pendingRegionRequest = listRegionChangeRequests().find((request) => request.tenantId === tenantId && request.status === 'PENDING') ?? null;
+  const pendingRow = await db.regionChangeRequest.findFirst({ where: { tenantId, status: 'PENDING' }, orderBy: { createdAt: 'desc' } });
+  const pendingRegionRequest = pendingRow
+    ? { id: pendingRow.id, requestedRegion: pendingRow.requestedRegion, requestedBy: pendingRow.requestedByUserId, createdAt: pendingRow.createdAt.toISOString() }
+    : null;
   const usageByMonth = new Map(usage.map((row) => [row.month, row]));
 
   return {
