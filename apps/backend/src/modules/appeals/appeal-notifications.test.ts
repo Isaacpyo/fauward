@@ -53,7 +53,8 @@ function createPrisma() {
         return row;
       })
     },
-    suspensionRecord: { findFirst: vi.fn(async () => ({ id: 'sus_1', tenantId: 'tenant_a', status: 'ACTIVE' })) },
+    suspensionRecord: { findFirst: vi.fn(async () => ({ id: 'sus_1', tenantId: 'tenant_a', status: 'ACTIVE', source: 'FRAUD', category: 'FRAUD', reason: 'r', publicReason: null, createdAt: new Date() })) },
+    tenant: { findMany: vi.fn(async () => [{ id: 'tenant_a', name: 'Northwind', slug: 'northwind', status: 'SUSPENDED' }]) },
     staffUser: { findMany: vi.fn(async () => [{ platformUserId: 'pu_safety' }, { platformUserId: 'pu_lead' }]) },
     staffNotification: { createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => staffNotifications.push(...data)) },
     platformUser: { findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.map((id) => ({ id, email: `${id}@fauward.com` }))) },
@@ -85,9 +86,9 @@ beforeEach(async () => {
   app.decorate('prisma', store.prisma as never);
   app.decorate('redis', { publish: vi.fn(async () => 1) } as never);
   const { registerAppealRoutes } = await import('./appeals.routes.js');
-  const { registerInternalConsolePhaseRoutes } = await import('../internal/console-phases.routes.js');
+  const { registerConsoleSafetyRoutes } = await import('../internal/trust/safety.routes.js');
   await registerAppealRoutes(app);
-  await registerInternalConsolePhaseRoutes(app);
+  await registerConsoleSafetyRoutes(app);
   await app.ready();
 });
 
@@ -116,8 +117,8 @@ describe('appeal notifications (D6, WP-2.2)', () => {
     await app.inject({ method: 'POST', url: '/api/v1/tenants/me/suspension-appeal', payload: { reason: APPEAL_TEXT, contactEmail: 'admin@northwind.test' } });
     queueAdd.mockClear();
     const id = String(store.appeals[0].id);
-    const response = await app.inject({ method: 'PATCH', url: `/api/internal/safety/appeals/${id}`, payload: { status: 'APPROVED', reason: 'Payments confirmed legitimate with the card issuer' } });
-    expect(response.statusCode).toBe(200);
+    const response = await app.inject({ method: 'POST', url: `/api/internal/safety/appeals/${id}/decision`, payload: { decision: 'APPROVE', reason: 'Payments confirmed legitimate with the card issuer' } });
+    expect(response.statusCode, response.body).toBe(200);
     expect(liftSuspensionMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_a', suspensionId: 'sus_1', via: 'APPEAL' }));
     expect(store.inApp.map((row) => row.userId)).toEqual(['u_admin', 'u_owner']);
     expect(store.inApp.every((row) => row.type === 'appeal.decided' && row.tenantId === 'tenant_a')).toBe(true);

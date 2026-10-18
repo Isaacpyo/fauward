@@ -10,6 +10,9 @@ import { stripeService } from './stripe.service.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
 import { notifyCustomer } from '../../services/customer-notifier.service.js';
+import { STRIPE_RADAR_RULE } from '../../config/safety-rules.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../../services/platform-activity.service.js';
+import { notifyStaff } from '../../services/platform-notifier.service.js';
 
 async function handleReturnPayment(app: FastifyInstance, tenantId: string, returnId: string) {
   const returnReq = await app.prisma.returnRequest.findFirst({
@@ -438,19 +441,37 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       });
     }
 
-    if (eventType === 'radar.early_fraud_warning.created' || eventType === 'review.opened') {
+    if ((STRIPE_RADAR_RULE.events as readonly string[]).includes(eventType)) {
       const object = eventAny.data?.object ?? {};
       const tenantId = String(object.metadata?.tenantId ?? object.payment_intent?.metadata?.tenantId ?? '');
       if (tenantId) {
-        await app.prisma.fraudSignal.create({
+        const signal = await app.prisma.fraudSignal.create({
           data: {
             tenantId,
             source: 'stripe_radar',
             signalType: eventType,
-            severity: 'HIGH',
+            category: 'FRAUD',
+            severity: STRIPE_RADAR_RULE.severity,
             payload: event as never
           }
         });
+        await recordAndPublishActivity(
+          { prisma: app.prisma, redis: app.redis, log: app.log },
+          {
+            service: 'trust.safety',
+            type: 'fraud.signal_received',
+            tenantId,
+            ...SYSTEM_ACTOR,
+            actorLabel: 'Stripe Radar',
+            subjectType: 'fraud_signal',
+            subjectId: signal.id,
+            summary: `Stripe Radar flagged a payment (${eventType})`,
+            severity: 'ATTENTION',
+            consoleLink: `/trust/safety/signals?signal=${signal.id}`,
+            dedupeKey: `fraud.signal_received:${signal.id}`
+          }
+        );
+        await notifyStaff(app, { permission: 'trust.safety.read', event: 'fraud.signal_received', title: 'Stripe Radar fraud warning', body: eventType, link: `/trust/safety/signals?signal=${signal.id}`, severity: 'ATTENTION', tenantId });
       }
     }
 

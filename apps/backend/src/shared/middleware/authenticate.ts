@@ -33,6 +33,7 @@ function isSuspendedTenantAllowedPath(method: string, path: string) {
   if (method === 'GET' && (path === '/api/v1/tenant/announcements' || path === '/api/v1/tenants/me/announcements' || path === '/api/v1/tenants/me/health')) {
     return true;
   }
+  if (method === 'POST' && /^\/api\/v1\/tenants\/me\/suspension-appeal\/[^/]+\/reply$/.test(path)) return true;
   return method === 'POST' && [
     '/api/v1/tenant/impersonation/exit',
     '/api/v1/tenants/me/impersonation/exit',

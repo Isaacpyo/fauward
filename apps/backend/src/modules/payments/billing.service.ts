@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { domainService } from '../tenants/domain.service.js';
 import { getActiveSuspensions, liftDunningSuspensionForInvoice, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { notifyTenantAdmins } from '../../services/platform-notifier.service.js';
+import { DUNNING_SUSPEND_RULE } from '../../config/safety-rules.js';
 
 const STRIPE_ACTOR = { type: 'SYSTEM' as const, label: 'Stripe billing' };
 
@@ -19,7 +20,7 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
   const { tenantId, attempt } = event;
   const prisma = app.prisma;
 
-  if (attempt === 1) {
+  if (attempt < DUNNING_SUSPEND_RULE.suspendOnAttempt) {
     await notifyTenantAdmins(app, {
       tenantId,
       event: 'billing.payment_failed',
@@ -31,7 +32,7 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
     return { tenantStatus: 'ACTIVE', retryInDays: 3 };
   }
 
-  if (attempt === 2) {
+  if (attempt === DUNNING_SUSPEND_RULE.suspendOnAttempt) {
     const result = await suspendTenant(app, {
       tenantId,
       source: 'DUNNING',
@@ -43,7 +44,7 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
     return { tenantStatus: result.tenant.status, retryInDays: 4 };
   }
 
-  if (attempt >= 3) {
+  if (attempt > DUNNING_SUSPEND_RULE.suspendOnAttempt) {
     await notifyTenantAdmins(app, {
       tenantId,
       event: 'billing.final_warning',
@@ -57,7 +58,7 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
     // 30 days after the DUNNING cause opened (not since the tenant row last changed).
     const dunning = (await getActiveSuspensions(prisma, tenantId)).filter((record) => record.source === 'DUNNING');
     const since = dunning.length > 0 ? dunning[dunning.length - 1].createdAt : tenant?.suspendedAt ?? tenant?.updatedAt;
-    if (tenant?.status === 'SUSPENDED' && since && since < new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) {
+    if (tenant?.status === 'SUSPENDED' && since && since < new Date(Date.now() - DUNNING_SUSPEND_RULE.cancelAfterDays * 24 * 60 * 60 * 1000)) {
       await domainService.removeCustomDomain(prisma, {
         tenantId,
         actorUserId: null,

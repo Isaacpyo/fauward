@@ -42,7 +42,6 @@ const WORKFLOW_PREFIXES = [
   "/announcements",
   "/success",
   "/compliance",
-  "/safety",
   "/flags",
   "/security",
   "/kyc",
@@ -243,50 +242,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", required: true }
         ],
         payload: (values) => ({ tenantId: values.tenantId || null, reason: values.reason, scope: { source: "console" } })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/safety")) {
-    return [
-      {
-        id: "flag",
-        label: "Flag Tenant",
-        description: "Create a manual trust and safety fraud signal.",
-        method: "post",
-        path: () => "/safety/fraud",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "severity", label: "Severity", type: "select", options: ["LOW", "MEDIUM", "HIGH"], defaultValue: "MEDIUM" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, severity: values.severity, reason: values.reason, signalType: "manual_flag" })
-      },
-      {
-        id: "decision",
-        label: "Resolve Signal",
-        description: "Suspend, dismiss, or escalate a fraud signal.",
-        method: "post",
-        path: (values) => `/safety/fraud/${encodeURIComponent(values.signalId)}/decision`,
-        fields: [
-          { name: "signalId", label: "Signal ID", required: true },
-          { name: "decision", label: "Decision", type: "select", options: ["suspend", "dismiss", "escalate"], defaultValue: "dismiss" },
-          { name: "reason", label: "Reason", type: "textarea" }
-        ],
-        payload: (values) => ({ decision: values.decision, reason: values.reason })
-      },
-      {
-        id: "appeal",
-        label: "Review Appeal",
-        description: "Approve or reject a tenant suspension appeal.",
-        method: "patch",
-        path: (values) => `/safety/appeals/${encodeURIComponent(values.appealId)}`,
-        fields: [
-          { name: "appealId", label: "Appeal ID", required: true },
-          { name: "status", label: "Decision", type: "select", options: ["APPROVED", "REJECTED"], defaultValue: "APPROVED" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ status: values.status, reason: values.reason, reviewNote: values.reason })
       }
     ];
   }

@@ -10,9 +10,8 @@ import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
 import { dangerous } from '../../middleware/dangerous.js';
-import { liftSuspension, staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
+import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
-import { notifyTenantAdmins } from '../../services/platform-notifier.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -63,10 +62,6 @@ function bodyObject(request: FastifyRequest): Record<string, unknown> {
   return request.body && typeof request.body === 'object' && !Array.isArray(request.body)
     ? (request.body as Record<string, unknown>)
     : {};
-}
-
-function queryObject(request: FastifyRequest): Record<string, string | undefined> {
-  return request.query && typeof request.query === 'object' ? (request.query as Record<string, string | undefined>) : {};
 }
 
 function delegate(app: FastifyInstance, name: string): Delegate {
@@ -327,7 +322,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerIncidents(app);
   registerSuccess(app);
   registerCompliance(app);
-  registerSafety(app);
   registerFlags(app);
   registerSecrets(app);
   registerSecurity(app);
@@ -669,127 +663,6 @@ function registerCompliance(app: FastifyInstance) {
     const body = bodyObject(request);
     const hold = await createAndAudit(request, delegate(app, 'legalHold'), { tenantId: stringValue(body.tenantId) || null, scope: body.scope ?? {}, reason: stringValue(body.reason, 'Legal hold'), createdBy: actorId(request) }, 'compliance.legal_hold.create', 'legal_hold', stringValue(body.reason, 'Legal hold'));
     reply.status(201).send(hold);
-  });
-}
-
-function registerSafety(app: FastifyInstance) {
-  app.get('/api/internal/safety/fraud', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'fraudSignal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/safety/fraud', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const signal = await createAndAudit(request, delegate(app, 'fraudSignal'), { tenantId, source: stringValue(body.source, 'manual'), signalType: stringValue(body.signalType, 'manual_flag'), severity: stringValue(body.severity, 'MEDIUM'), payload: body.payload ?? body }, 'safety.fraud.flag', 'fraud_signal', stringValue(body.reason, 'Fraud flag'));
-    reply.status(201).send(signal);
-  });
-
-  app.post('/api/internal/safety/fraud/:id/decision', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const decision = stringValue(body.decision);
-    const model = delegate(app, 'fraudSignal');
-    const signal = await model.findUnique({ where: { id } }) as { tenantId?: string } | null;
-    if (!signal) return reply.status(404).send({ error: 'Fraud signal not found' });
-    const updated = await updateAndAudit(request, model, id, { status: 'CLOSED', reviewedBy: actorId(request), decision }, 'safety.fraud.decision', 'fraud_signal', stringValue(body.reason, decision));
-    if (decision === 'suspend' && signal.tenantId) {
-      // D3 caller 4: FRAUD cause linked to the signal (sourceRef); the service writes the record, status, audit,
-      // activity and notifies tenant admins.
-      await suspendTenant(app, {
-        tenantId: signal.tenantId,
-        source: 'FRAUD',
-        category: 'FRAUD',
-        reason: stringValue(body.reason, 'Trust and safety suspension'),
-        publicReason: stringValue(body.publicReason) || null,
-        actor: staffSuspensionActor(request),
-        sourceRef: id,
-        sourceSignalId: id
-      });
-    }
-    reply.send(updated);
-  });
-
-  // Every SuspensionRecord from every source (D3), with filters and the tenant for each row.
-  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
-    const query = request.query as { source?: string; status?: string; tenantId?: string; category?: string; cursor?: string; limit?: string };
-    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
-    const rows = await app.prisma.suspensionRecord.findMany({
-      where: {
-        ...(query.source ? { source: query.source.toUpperCase() } : {}),
-        ...(query.status ? { status: query.status.toUpperCase() } : {}),
-        ...(query.category ? { category: query.category.toUpperCase() } : {}),
-        ...(query.tenantId ? { tenantId: query.tenantId } : {})
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
-    });
-    const page = rows.slice(0, limit);
-    const tenants = await app.prisma.tenant.findMany({ where: { id: { in: [...new Set(page.map((row) => row.tenantId))] } }, select: { id: true, name: true, slug: true, status: true } });
-    const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
-    reply.send({ data: page.map((row) => ({ ...row, tenant: byId.get(row.tenantId) ?? null })), nextCursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null });
-  });
-
-  app.get('/api/internal/safety/appeals', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'tenantAppeal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/safety/appeals/:id', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const appeal = await delegate(app, 'tenantAppeal').findUnique({ where: { id } });
-    if (!appeal) return reply.status(404).send({ error: 'Appeal not found' });
-    reply.send(appeal);
-  });
-
-  app.patch('/api/internal/safety/appeals/:id', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const status = stringValue(body.status).toUpperCase();
-    if (!['APPROVED', 'REJECTED', 'PENDING', 'OPEN'].includes(status)) {
-      return reply.status(400).send({ error: 'Invalid appeal status' });
-    }
-    const model = delegate(app, 'tenantAppeal');
-    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string; suspensionId?: string | null } | null;
-    if (!before) return reply.status(404).send({ error: 'Appeal not found' });
-
-    const after = await model.update({
-      where: { id },
-      data: {
-        status,
-        resolvedBy: ['APPROVED', 'REJECTED'].includes(status) ? actorId(request) : undefined,
-        resolution: status,
-        reviewNote: stringValue(body.reviewNote, stringValue(body.reason)) || undefined
-      }
-    });
-    if (status === 'APPROVED' && before.tenantId) {
-      // The suspension comes from the appeal (set server-side at creation), never from the client (D3).
-      const active = await app.prisma.suspensionRecord.findFirst({ where: { tenantId: before.tenantId, status: 'ACTIVE', ...(before.suspensionId ? { id: before.suspensionId } : {}) }, orderBy: { createdAt: 'desc' } });
-      if (active) {
-        await liftSuspension(app, { tenantId: before.tenantId, suspensionId: active.id, via: 'APPEAL', reason: stringValue(body.reason, 'Appeal approved'), actor: staffSuspensionActor(request) });
-      }
-    }
-    await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
-    if (before.tenantId && ['APPROVED', 'REJECTED'].includes(status)) {
-      const resolution = stringValue(body.reviewNote, stringValue(body.reason)) || undefined;
-      await notifyTenantAdmins(app, {
-        tenantId: before.tenantId,
-        event: 'appeal.decided',
-        title: status === 'APPROVED' ? 'Your appeal was approved' : 'Your appeal was rejected',
-        body: resolution,
-        link: '/',
-        email: { template: 'appeal_decided', data: { decision: status, resolution } }
-      });
-    }
-    reply.send(after);
-  });
-
-  app.get('/api/internal/safety/aup', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send({ data: [] });
-  });
-
-  app.get('/api/internal/safety/rules', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send({ data: [], phase: 4, enabled: false });
   });
 }
 

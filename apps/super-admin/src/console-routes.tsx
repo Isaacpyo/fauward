@@ -14,6 +14,9 @@ import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
 import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
 import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
 import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
+import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
+import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
+import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
@@ -256,12 +259,24 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/compliance/exports", element: <OpsRoute permission="trust.compliance.dsar.read" title="Compliance Exports" description="Bulk export jobs and signed delivery links." endpoint="/audit/entries?action=compliance" /> },
   { path: "/trust/compliance/dpa", element: <OpsRoute permission="trust.compliance.dsar.read" title="DPA Tracking" description="Data processing agreement tracking surface." endpoint="/compliance/dsar" /> },
   { path: "/trust/compliance/subpoenas", element: <OpsRoute permission="trust.compliance.dsar.read" title="Subpoenas" description="Subpoena response queue and audit trail." endpoint="/compliance/dsar" /> },
-  { path: "/trust/safety", element: <Navigate to="/trust/safety/fraud" replace /> },
-  { path: "/trust/safety/fraud", element: <OpsRoute permission="trust.safety.read" title="Fraud Queue" description="Manual, Stripe Radar and velocity fraud signals." endpoint="/safety/fraud" /> },
-  { path: "/trust/safety/aup", element: <OpsRoute permission="trust.safety.read" title="AUP Violations" description="Acceptable use policy review queue." endpoint="/safety/aup" /> },
-  { path: "/trust/safety/suspensions", element: <OpsRoute permission="trust.safety.read" title="Suspensions" description="Suspended tenants and enforcement state." endpoint="/safety/suspensions" /> },
-  { path: "/trust/safety/appeals", element: <OpsRoute permission="trust.safety.read" title="Appeals" description="Tenant suspension appeals and resolution status." endpoint="/safety/appeals" /> },
-  { path: "/trust/safety/rules", element: <OpsRoute permission="trust.safety.read" title="Safety Rules" description="Phase 4 placeholder for automated trust and safety rules." endpoint="/safety/rules" /> },
+  { path: "/trust/safety", element: <Navigate to="/trust/safety/appeals" replace /> },
+  { path: "/trust/safety/fraud", element: <Navigate to="/trust/safety/signals?category=FRAUD" replace /> },
+  { path: "/trust/safety/aup", element: <Navigate to="/trust/safety/signals?category=AUP" replace /> },
+  { path: "/trust/safety/signals", element: <PermissionRoute permission="trust.safety.read">
+                <SignalsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/suspensions", element: <PermissionRoute permission="trust.safety.read">
+                <SuspensionsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/appeals", element: <PermissionRoute permission="trust.safety.read">
+                <AppealsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/appeals/:id", element: <PermissionRoute permission="trust.safety.read">
+                <AppealDetailPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/rules", element: <PermissionRoute permission="trust.safety.read">
+                <RulesPage />
+              </PermissionRoute> },
   { path: "/trust/secrets", element: <OpsRoute permission="trust.secrets.read" title="Secret Management" description="Doppler metadata inventory, expiry tracking and access audit." endpoint="/secrets" related={[{ label: "Expiring", to: "/trust/secrets/expiring" }, { label: "Audit", to: "/trust/secrets/audit" }]} /> },
   { path: "/trust/secrets/expiring", element: <OpsRoute permission="trust.secrets.read" title="Expiring Secrets" description="Credentials expiring within 30 days." endpoint="/secrets/expiring" /> },
   { path: "/trust/secrets/audit", element: <OpsRoute permission="trust.secrets.read" title="Secret Access Audit" description="Metadata-only secret access audit log." endpoint="/secrets/audit" /> },

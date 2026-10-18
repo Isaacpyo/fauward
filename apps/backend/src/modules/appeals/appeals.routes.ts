@@ -26,7 +26,7 @@ export async function registerAppealRoutes(app: FastifyInstance) {
       app.prisma.tenantAppeal.findFirst({ where: { tenantId: tenant.id }, orderBy: { createdAt: 'desc' } })
     ]);
     const relevantAppeal = appeal && (!active || !appeal.suspensionId || appeal.suspensionId === active.id) ? appeal : null;
-    const pending = relevantAppeal ? ['OPEN', 'PENDING'].includes(relevantAppeal.status) : false;
+    const pending = relevantAppeal ? ['OPEN', 'PENDING', 'INFO_REQUESTED'].includes(relevantAppeal.status) : false;
     return reply.send({
       suspended,
       closed,
@@ -37,10 +37,14 @@ export async function registerAppealRoutes(app: FastifyInstance) {
       appeal: relevantAppeal
         ? {
             id: relevantAppeal.id,
-            status: relevantAppeal.status,
+            status: relevantAppeal.status === 'OPEN' ? 'PENDING' : relevantAppeal.status,
             createdAt: relevantAppeal.createdAt.toISOString(),
-            decidedAt: ['APPROVED', 'REJECTED'].includes(relevantAppeal.status) ? relevantAppeal.updatedAt.toISOString() : null,
-            resolution: relevantAppeal.reviewNote ?? null
+            decidedAt: ['APPROVED', 'REJECTED'].includes(relevantAppeal.status) ? (relevantAppeal.decidedAt ?? relevantAppeal.updatedAt).toISOString() : null,
+            resolution: relevantAppeal.reviewNote ?? null,
+            // REQUEST_INFO (L3): the question Fauward asked; the tenant answers once from the overlay.
+            question: relevantAppeal.status === 'INFO_REQUESTED' ? relevantAppeal.infoRequest : null,
+            canReply: relevantAppeal.status === 'INFO_REQUESTED' && !relevantAppeal.tenantRepliedAt,
+            reply: relevantAppeal.tenantReply ?? null
           }
         : null
     });
@@ -101,7 +105,7 @@ export async function registerAppealRoutes(app: FastifyInstance) {
         subjectId: appeal.id,
         summary: `${tenant.name ?? tenant.slug} appealed its suspension`,
         severity: 'ATTENTION',
-        consoleLink: `/trust/safety/appeals?appeal=${appeal.id}`,
+        consoleLink: `/trust/safety/appeals/${appeal.id}`,
         dedupeKey: `appeal.submitted:${appeal.id}`
       }
     );
@@ -110,12 +114,58 @@ export async function registerAppealRoutes(app: FastifyInstance) {
       event: 'appeal.submitted',
       title: `Suspension appeal from ${tenant.name ?? tenant.slug}`,
       body: reason.length > 200 ? `${reason.slice(0, 200)}…` : reason,
-      link: `/trust/safety/appeals?appeal=${appeal.id}`,
+      link: `/trust/safety/appeals/${appeal.id}`,
       severity: 'ATTENTION',
       tenantId: tenant.id,
       email: true
     });
 
     reply.status(201).send({ appeal });
+  });
+
+  // L3: the tenant answers Fauward's REQUEST_INFO question; the appeal goes back to PENDING for a decision.
+  app.post('/api/v1/tenants/me/suspension-appeal/:id/reply', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenant = tenantFrom(request, reply);
+    if (!tenant) return;
+    const { id } = request.params as { id: string };
+    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? (request.body as Record<string, unknown>) : {};
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    if (message.length < 10) return reply.status(400).send({ error: 'VALIDATION', message: "Answer Fauward's question (at least 10 characters)." });
+    const appeal = await app.prisma.tenantAppeal.findFirst({ where: { id, tenantId: tenant.id } });
+    if (!appeal) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Appeal not found' });
+    if (appeal.status !== 'INFO_REQUESTED') return reply.status(409).send({ error: 'NO_QUESTION_PENDING', message: 'Fauward has not asked for more information on this appeal.' });
+
+    const updated = await app.prisma.tenantAppeal.update({
+      where: { id: appeal.id },
+      data: { tenantReply: message, tenantRepliedAt: new Date(), status: 'PENDING' }
+    });
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: request.log },
+      {
+        service: 'trust.safety',
+        type: 'appeal.replied',
+        tenantId: tenant.id,
+        actorType: 'TENANT_USER',
+        actorId: request.user?.sub ?? null,
+        actorLabel: request.user?.email ?? appeal.contactEmail ?? 'Tenant',
+        subjectType: 'appeal',
+        subjectId: appeal.id,
+        summary: `${tenant.name ?? tenant.slug} answered the appeal question`,
+        severity: 'ATTENTION',
+        consoleLink: `/trust/safety/appeals/${appeal.id}`,
+        dedupeKey: `appeal.replied:${appeal.id}:${updated.tenantRepliedAt?.getTime() ?? 0}`
+      }
+    );
+    await notifyStaff(app, {
+      permission: 'trust.safety.read',
+      event: 'appeal.replied',
+      title: `${tenant.name ?? tenant.slug} answered your appeal question`,
+      body: message.length > 200 ? `${message.slice(0, 200)}…` : message,
+      link: `/trust/safety/appeals/${appeal.id}`,
+      severity: 'ATTENTION',
+      tenantId: tenant.id,
+      email: true
+    });
+    return reply.send({ appeal: { id: updated.id, status: updated.status } });
   });
 }

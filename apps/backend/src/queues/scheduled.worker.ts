@@ -9,6 +9,7 @@ import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-
 import { pruneOldActivity } from '../jobs/activity-prune.js';
 import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
 import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
+import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
 type ScheduledJobData = Record<string, unknown>;
@@ -248,13 +249,13 @@ export async function startScheduledWorker(app: FastifyInstance) {
       }
 
       if (job.name === 'trust.security-anomaly-scan') {
-        const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+        const cutoff = new Date(Date.now() - FAILED_LOGIN_SPIKE_RULE.windowMinutes * 60 * 1000);
         const failedAttempts = await app.prisma.staffLoginAttempt.groupBy({
           by: ['staffEmail'],
           where: { success: false, createdAt: { gte: cutoff } },
           _count: { id: true }
         });
-        for (const attempt of failedAttempts.filter((row) => row._count.id > 5)) {
+        for (const attempt of failedAttempts.filter((row) => row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerAccount)) {
           await app.prisma.securityAnomaly.create({
             data: { anomalyType: 'failed_login_spike', severity: 'HIGH', status: 'OPEN', payload: { staffEmail: attempt.staffEmail, count: attempt._count.id } }
           });
@@ -264,11 +265,11 @@ export async function startScheduledWorker(app: FastifyInstance) {
           where: { success: false, createdAt: { gte: cutoff }, ipAddress: { not: null } },
           _count: { id: true }
         });
-        for (const attempt of failedIpAttempts.filter((row) => row.ipAddress && row._count.id > 5)) {
+        for (const attempt of failedIpAttempts.filter((row) => row.ipAddress && row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerIp)) {
           await app.prisma.ipBlock.upsert({
             where: { ipAddress: attempt.ipAddress! },
-            create: { ipAddress: attempt.ipAddress!, reason: 'Failed login spike', expiresAt: new Date(Date.now() + 60 * 60 * 1000), createdBy: 'trust.security-anomaly-scan' },
-            update: { reason: 'Failed login spike', expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
+            create: { ipAddress: attempt.ipAddress!, reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000), createdBy: 'trust.security-anomaly-scan' },
+            update: { reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000) }
           });
         }
         app.log.info({ count: failedAttempts.length }, 'Scheduled security anomaly scan finished');

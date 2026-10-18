@@ -2416,11 +2416,16 @@ model FraudSignal {
   tenantId   String
   source     String
   signalType String
+  /// FRAUD | AUP — AUP reports are signals with category AUP (trust.safety, WP-2.4).
+  category   String   @default("FRAUD")
   severity   String   @default("MEDIUM")
   status     String   @default("OPEN")
   payload    Json?
   reviewedBy String?
+  /// DISMISS | WARN | SUSPEND
   decision   String?
+  decisionNote String?
+  decidedAt  DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -2465,10 +2470,17 @@ model TenantAppeal {
   suspensionId String?
   message      String
   contactEmail String?
+  /// PENDING | INFO_REQUESTED | APPROVED | REJECTED (legacy rows may say OPEN)
   status       String   @default("OPEN")
   resolvedBy   String?
   resolution   String?
   reviewNote   String?
+  /// REQUEST_INFO: the question staff asked, and the tenant's answer (WP-2.4).
+  infoRequest     String?
+  infoRequestedAt DateTime?
+  tenantReply     String?
+  tenantRepliedAt DateTime?
+  decidedAt       DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

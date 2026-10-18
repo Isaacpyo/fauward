@@ -47,7 +47,7 @@ describe('tenant suspension state (D3)', () => {
       publicReason: 'Your workspace sent bulk unsolicited messages.',
       since: since.toISOString(),
       appealable: true,
-      appeal: { id: 'appeal_1', status: 'REJECTED', createdAt: since.toISOString(), decidedAt: '2026-10-18T11:00:00.000Z', resolution: 'Evidence did not show consent' }
+      appeal: { id: 'appeal_1', status: 'REJECTED', createdAt: since.toISOString(), decidedAt: '2026-10-18T11:00:00.000Z', resolution: 'Evidence did not show consent', question: null, canReply: false, reply: null }
     });
     expect(response.body).not.toContain('INTERNAL');
   });
