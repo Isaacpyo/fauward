@@ -1,4 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { ActionDialog } from "@/components/service-kit/ActionDialog";
 import { Check, Clock3, Globe2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -69,11 +71,9 @@ export function RegionsPage() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["admin-regions"], queryFn: fetchRegions });
 
-  const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "APPROVED" | "REJECTED" }) =>
-      api.patch(`/region-change-requests/${id}`, { status, reason: `Platform ${status.toLowerCase()} from region queue` }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-regions"] })
-  });
+  // Decisions are dangerous (fresh MFA + a free-text reason); the console client opens the step-up modal on demand.
+  const [decision, setDecision] = useState<{ id: string; status: "APPROVED" | "REJECTED"; tenant: string } | null>(null);
+  const [decided, setDecided] = useState<string | null>(null);
 
   const requests = query.data?.requests ?? [];
   const pendingRequests = requests.filter((request) => request.status === "PENDING");
@@ -186,8 +186,7 @@ export function RegionsPage() {
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          disabled={updateStatus.isPending}
-                          onClick={() => updateStatus.mutate({ id: request.id, status: "APPROVED" })}
+                          onClick={() => setDecision({ id: request.id, status: "APPROVED", tenant: request.tenantName ?? request.tenantId })}
                           className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
                         >
                           <Check size={14} />
@@ -195,8 +194,7 @@ export function RegionsPage() {
                         </button>
                         <button
                           type="button"
-                          disabled={updateStatus.isPending}
-                          onClick={() => updateStatus.mutate({ id: request.id, status: "REJECTED" })}
+                          onClick={() => setDecision({ id: request.id, status: "REJECTED", tenant: request.tenantName ?? request.tenantId })}
                           className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
                         >
                           <X size={14} />
@@ -256,6 +254,24 @@ export function RegionsPage() {
           ) : null}
         </div>
       </div>
+      {decided ? (
+        <p role="status" className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+          {decided}
+        </p>
+      ) : null}
+      <ActionDialog
+        open={decision !== null}
+        title={decision ? `${decision.status === "APPROVED" ? "Approve" : "Reject"} the region change for ${decision.tenant}?` : ""}
+        confirmLabel={decision?.status === "APPROVED" ? "Approve change" : "Reject change"}
+        dangerous
+        onClose={() => setDecision(null)}
+        onSubmit={async (reason) => {
+          if (!decision) return;
+          await api.patch(`/region-change-requests/${decision.id}`, { status: decision.status, reason }, { idempotent: true });
+          setDecided(`Region change ${decision.status === "APPROVED" ? "approved" : "rejected"} for ${decision.tenant}.`);
+          await queryClient.invalidateQueries({ queryKey: ["admin-regions"] });
+        }}
+      />
     </div>
   );
 }
