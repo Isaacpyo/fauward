@@ -1,13 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 const PILLAR_ROUTES = ["/platform", "/revenue", "/customer", "/trust", "/gtm"];
 
 async function mockBackend(page: Page) {
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route("**/api/internal/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/platform/tenants") {
+    if (url.pathname === "/api/internal/tenants") {
       const search = url.searchParams.get("search") ?? "";
       const tenants = [
         { id: "tenant_northwind", name: "Northwind Couriers", slug: "northwind", status: "ACTIVE", plan: "PRO" },
@@ -15,11 +15,9 @@ async function mockBackend(page: Page) {
       ].filter((tenant) => tenant.name.toLowerCase().includes(search.toLowerCase()));
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: tenants, meta: { page: 1, limit: 20, total: tenants.length, totalPages: 1 } }) });
     }
-    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
   });
-  await page.route("**/api/internal/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) }));
-  // SUPER_ADMIN maps to ROOT, which holds every console permission.
-  await page.route("**/api/internal/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody([])) }));
+  await page.route("**/api/internal/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(ROOT_PERMISSIONS)) }));
 }
 
 test.beforeEach(async ({ context, page }) => {

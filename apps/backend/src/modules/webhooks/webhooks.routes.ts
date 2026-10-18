@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
-import { requireRole } from '../../shared/middleware/requireRole.js';
 import { webhooksService } from './webhooks.service.js';
 
 export async function registerWebhookRoutes(app: FastifyInstance) {
@@ -91,9 +90,4 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       reply.send(result);
     });
 
-  app.get('/api/v1/platform/webhooks/failures', { preHandler: [authenticate, requireRole(['SUPER_ADMIN'])] },
-    async (_req: FastifyRequest, reply: FastifyReply) => {
-      const failures = await webhooksService.platformFailures(app.prisma);
-      reply.send({ failures });
-    });
 }

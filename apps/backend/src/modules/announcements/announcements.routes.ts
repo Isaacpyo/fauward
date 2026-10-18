@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 
 const ANNOUNCEMENT_TYPES = new Set(['INFO', 'WARNING', 'MAINTENANCE']);
@@ -76,7 +76,7 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
 
   app.get(
     '/api/internal/announcements',
-    { preHandler: [authenticatePlatformSession, requireInternalPermission('customer.comms.read')] },
+    { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.comms.read')] },
     async (request, reply) => {
       const query = request.query as { status?: string };
       const now = new Date();
@@ -98,7 +98,7 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
 
   app.post(
     '/api/internal/announcements',
-    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('customer.comms.send')] },
+    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('customer.comms.send')] },
     async (request, reply) => {
       const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
         ? (request.body as Record<string, unknown>)
@@ -113,7 +113,7 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
 
   app.patch(
     '/api/internal/announcements/:id',
-    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('customer.comms.send')] },
+    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('customer.comms.send')] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
@@ -141,7 +141,7 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
 
   app.delete(
     '/api/internal/announcements/:id',
-    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('customer.comms.send')] },
+    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('customer.comms.send')] },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       await app.prisma.platformAnnouncement.delete({ where: { id } });

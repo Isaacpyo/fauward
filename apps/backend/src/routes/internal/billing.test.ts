@@ -21,15 +21,21 @@ vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   }
 }));
 vi.mock('../../middleware/require-platform-csrf.js', () => ({ requirePlatformCsrf: async () => undefined }));
-vi.mock('../../middleware/require-internal-permission.js', () => ({
-  requireInternalPermission: (permission: Permission) => async (_request: unknown, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => {
-    if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
-    return undefined;
-  }
-}));
-vi.mock('../../services/staff-iam.service.js', () => ({
-  platformUserHasConsolePermission: async (_db: unknown, _user: unknown, permission: Permission) => currentPermissions.includes(permission)
-}));
+vi.mock('../../middleware/require-console-permission.js', () => {
+  type ReplyLike = { status: (code: number) => { send: (body: unknown) => unknown } };
+  return {
+    requireConsolePermission: (permission: Permission) => async (_request: unknown, reply: ReplyLike) => {
+      if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
+      return undefined;
+    },
+    requireAnyConsolePermission: (permissions: Permission[]) => async (_request: unknown, reply: ReplyLike) => {
+      if (!permissions.some((permission) => currentPermissions.includes(permission))) return reply.status(403).send({ error: 'Forbidden', permission: permissions[0] });
+      return undefined;
+    },
+    consoleUserHas: async (_request: unknown, permission: Permission) => currentPermissions.includes(permission),
+    loadConsoleContext: async () => ({ permissions: currentPermissions, jit: new Map() })
+  };
+});
 vi.mock('../../modules/payments/stripe.service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../modules/payments/stripe.service.js')>();
   return { ...actual, stripeService: { isConfigured: () => stripeConfigured, createRefund: createRefundMock } };

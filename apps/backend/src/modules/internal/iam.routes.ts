@@ -4,7 +4,7 @@ import { writeAudit } from '@fauward/internal-audit';
 import { PlatformRole, type StaffStatus } from '@prisma/client';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { hashPassword } from '../../shared/utils/hash.js';
 import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
@@ -159,7 +159,7 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
   // Seeded once at boot (and by `npm run staff:roles:seed`), never per request (S5).
   await seedStaffRoles(app.prisma);
 
-  app.get('/api/internal/iam/users', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (request, reply) => {
+  app.get('/api/internal/iam/users', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (request, reply) => {
     const query = request.query as { search?: string; status?: 'ACTIVE' | 'SUSPENDED' | 'OFFBOARDED' };
     const users = await app.prisma.staffUser.findMany({
       where: {
@@ -178,14 +178,14 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     reply.send({ data: users });
   });
 
-  app.get('/api/internal/iam/users/:id', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (request, reply) => {
+  app.get('/api/internal/iam/users/:id', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const user = await app.prisma.staffUser.findUnique({ where: { id }, include: staffSelect() });
     if (!user) return reply.status(404).send({ error: 'Staff user not found' });
     reply.send(user);
   });
 
-  app.post('/api/internal/iam/users', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
+  app.post('/api/internal/iam/users', { preHandler: [...mutationPre, requireConsolePermission('trust.iam.write')] }, async (request, reply) => {
     const body = request.body as { email?: string; name?: string; password?: string; roleIds?: string[]; ssoProvider?: string; reason?: string; hardwareKeyAssertion?: string };
     if (!body.email || !body.name || !body.password) return reply.status(400).send({ error: 'email, name, and password are required' });
     const normalizedEmail = body.email.toLowerCase().trim();
@@ -243,7 +243,7 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     reply.status(201).send(created);
   });
 
-  app.patch('/api/internal/iam/users/:id', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
+  app.patch('/api/internal/iam/users/:id', { preHandler: [...mutationPre, requireConsolePermission('trust.iam.write')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as { name?: string; status?: unknown; mfaEnabled?: unknown; reason?: string };
     if (body.status !== undefined || body.mfaEnabled !== undefined) {
@@ -269,12 +269,12 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
   // Kept for existing clients: DELETE offboards (soft delete).
   app.delete('/api/internal/iam/users/:id', { preHandler: dangerous('trust.iam.write') }, (request, reply) => changeStaffStatus(app, request, reply, 'offboard'));
 
-  app.get('/api/internal/iam/roles', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (_request, reply) => {
+  app.get('/api/internal/iam/roles', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (_request, reply) => {
     const roles = await app.prisma.staffRole.findMany({ include: { _count: { select: { assignments: true } } }, orderBy: { id: 'asc' } });
     reply.send({ data: roles });
   });
 
-  app.get('/api/internal/iam/roles/:id', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (request, reply) => {
+  app.get('/api/internal/iam/roles/:id', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const role = await app.prisma.staffRole.findUnique({ where: { id }, include: { assignments: { include: { staff: true } } } });
     if (!role) return reply.status(404).send({ error: 'Staff role not found' });
@@ -347,7 +347,7 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     reply.status(204).send();
   });
 
-  app.get('/api/internal/iam/permissions', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (_request, reply) => {
+  app.get('/api/internal/iam/permissions', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (_request, reply) => {
     reply.send({ data: PERMISSIONS });
   });
 
@@ -380,7 +380,7 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     reply.send({ id, mfaEnabled: false, sessionsRevokedAt: now.toISOString() });
   });
 
-  app.get('/api/internal/iam/role-catalog', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.iam.read')] }, async (_request, reply) => {
+  app.get('/api/internal/iam/role-catalog', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.iam.read')] }, async (_request, reply) => {
     reply.send({ data: STAFF_ROLE_DEFINITIONS });
   });
 }

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 
 const ONBOARDING_STEPS = ['BRANDING', 'TEAM', 'PAYMENT', 'FIRST_SHIPMENT', 'GO_LIVE'] as const;
 
@@ -73,7 +73,7 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
 
   app.get(
     '/api/internal/onboarding/funnel',
-    { preHandler: [authenticatePlatformSession, requireInternalPermission('customer.onboarding.read')] },
+    { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.onboarding.read')] },
     async (_request, reply) => {
       const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const tenants = await app.prisma.tenant.findMany({

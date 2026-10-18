@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const staffPermissions = new Set<string>();
 const auditCalls: Array<{ action: string; reason?: string | null; metadata?: unknown }> = [];
 
-vi.mock('../../queues/queues.js', () => ({ analyticsQueue: {}, notificationQueue: {}, outboxQueue: {}, scheduledJobsQueue: {}, webhookQueue: {} }));
-vi.mock('../notifications/notifications.worker.js', () => ({ dlqNotificationQueue: {} }));
-vi.mock('../../queues/outbox.worker.js', () => ({ dlqOutboxQueue: {} }));
-vi.mock('../../queues/webhook.worker.js', () => ({ dlqWebhookQueue: {} }));
+vi.mock('../../../queues/queues.js', () => ({ analyticsQueue: {}, notificationQueue: {}, outboxQueue: {}, scheduledJobsQueue: {}, webhookQueue: {} }));
+vi.mock('../../notifications/notifications.worker.js', () => ({ dlqNotificationQueue: {} }));
+vi.mock('../../../queues/outbox.worker.js', () => ({ dlqOutboxQueue: {} }));
+vi.mock('../../../queues/webhook.worker.js', () => ({ dlqWebhookQueue: {} }));
 
-vi.mock('../../middleware/authenticate-platform-session.js', () => ({
+vi.mock('../../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
     request.platform = {
       user: { id: 'pu_staff', email: 'support@fauward.com', role: 'SUPER_ADMIN', mfaEnabled: true },
@@ -19,15 +19,17 @@ vi.mock('../../middleware/authenticate-platform-session.js', () => ({
     };
   }
 }));
-vi.mock('../../middleware/require-platform-csrf.js', () => ({ requirePlatformCsrf: async () => undefined }));
-vi.mock('../../services/platform-audit.service.js', () => ({
+vi.mock('../../../middleware/require-platform-csrf.js', () => ({ requirePlatformCsrf: async () => undefined }));
+vi.mock('../../../services/platform-audit.service.js', () => ({
   writePlatformAuditLog: vi.fn(async (_db: unknown, input: { action: string; reason?: string | null; metadata?: unknown }) => {
     auditCalls.push(input);
   }),
   verifyPlatformAuditChain: vi.fn()
 }));
-vi.mock('../../services/staff-iam.service.js', () => ({
-  platformUserHasConsolePermission: vi.fn(async (_db: unknown, _user: unknown, permission: string) => staffPermissions.has(permission))
+vi.mock('../../../middleware/require-console-permission.js', () => ({
+  requireConsolePermission: () => async () => undefined,
+  requireAnyConsolePermission: () => async () => undefined,
+  consoleUserHas: vi.fn(async (_request: unknown, permission: string) => staffPermissions.has(permission))
 }));
 
 type SessionRow = {
@@ -89,6 +91,7 @@ function createPrisma() {
       )
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `act_${String(create.type)}`, ...create })) },
     platformImpersonationSession: {
       create: vi.fn(async ({ data }: { data: Omit<SessionRow, 'id' | 'revokedAt' | 'endedAt' | 'endedReason' | 'exchangedAt' | 'createdAt'> }) => {
         seq += 1;
@@ -124,15 +127,15 @@ async function buildConsoleApp(prisma = createPrisma(), redis = createRedis()) {
   openApps.push(app);
   app.decorate('prisma', prisma as never);
   app.decorate('redis', redis as never);
-  const { registerPlatformRoutes } = await import('./platform.routes.js');
-  const { registerImpersonationExchangeRoutes } = await import('../auth/impersonation-exchange.routes.js');
-  await registerPlatformRoutes(app);
+  const { registerConsoleImpersonationRoutes } = await import('./impersonation.routes.js');
+  const { registerImpersonationExchangeRoutes } = await import('../../auth/impersonation-exchange.routes.js');
+  await registerConsoleImpersonationRoutes(app);
   await registerImpersonationExchangeRoutes(app);
   return { app, prisma, redis };
 }
 
 function start(app: FastifyInstance, payload: Record<string, unknown>) {
-  return app.inject({ method: 'POST', url: '/api/v1/platform/tenants/tenant_1/impersonation-sessions', payload });
+  return app.inject({ method: 'POST', url: '/api/internal/impersonation/sessions', payload: { tenantId: 'tenant_1', ...payload } });
 }
 
 beforeEach(() => {
@@ -205,7 +208,7 @@ describe('impersonation start (S6, S18)', () => {
   it('ending a session records END with the reason and sets endedAt', async () => {
     const { app, prisma, redis } = await buildConsoleApp();
     const body = (await start(app, { reason: 'Investigating a failed label print' })).json() as { impersonationSessionId: string };
-    const end = await app.inject({ method: 'DELETE', url: `/api/v1/platform/impersonation-sessions/${body.impersonationSessionId}`, payload: { reason: 'Investigation finished' } });
+    const end = await app.inject({ method: 'DELETE', url: `/api/internal/impersonation/sessions/${body.impersonationSessionId}`, payload: { reason: 'Investigation finished' } });
     expect(end.statusCode).toBe(204);
     const row = prisma.sessions.get(body.impersonationSessionId)!;
     expect(row.endedReason).toBe('REVOKED');
@@ -220,10 +223,10 @@ describe('impersonation start (S6, S18)', () => {
 
 describe('impersonation token enforcement (authenticate.ts)', () => {
   async function buildTenantApp(scopes: string[], overrides: Partial<SessionRow> = {}) {
-    const { config } = await import('../../config/index.js');
-    const { authenticate } = await import('../../shared/middleware/authenticate.js');
-    const { requestActorStorage, currentRequestActor } = await import('../../context/request-actor.context.js');
-    const { signAccessToken } = await import('../../shared/utils/jwt.js');
+    const { config } = await import('../../../config/index.js');
+    const { authenticate } = await import('../../../shared/middleware/authenticate.js');
+    const { requestActorStorage, currentRequestActor } = await import('../../../context/request-actor.context.js');
+    const { signAccessToken } = await import('../../../shared/utils/jwt.js');
     const app = Fastify();
     openApps.push(app);
     await app.register(fastifyJwt, { secret: config.jwt.accessSecret });
@@ -285,7 +288,7 @@ describe('impersonation token enforcement (authenticate.ts)', () => {
 
 describe('tenant audit attribution (D8)', () => {
   it('ACC-IMP-4 AuditLog data written during impersonation gets actorType IMPERSONATOR and the session id', async () => {
-    const { stampImpersonatedAuditData } = await import('../../services/impersonation-audit.js');
+    const { stampImpersonatedAuditData } = await import('../../../services/impersonation-audit.js');
     const stamped = stampImpersonatedAuditData(
       { tenantId: 'tenant_1', actorId: 'user_admin', actorType: 'USER', action: 'SHIPMENT_STATUS_CHANGED', metadata: { from: 'PENDING' } },
       { impersonation: { sessionId: 'imp_1', platformUserId: 'pu_staff' } }
@@ -305,7 +308,7 @@ describe('legacy admin impersonation (S7)', () => {
     openApps.push(app);
     app.decorate('prisma', {} as never);
     app.decorate('redis', {} as never);
-    const { registerSuperAdminRoutes } = await import('../super-admin/super-admin.routes.js');
+    const { registerSuperAdminRoutes } = await import('../../super-admin/super-admin.routes.js');
     await registerSuperAdminRoutes(app);
     const response = await app.inject({ method: 'POST', url: '/api/v1/admin/tenants/tenant_1/impersonate' });
     expect(response.statusCode).toBe(410);
@@ -315,7 +318,7 @@ describe('legacy admin impersonation (S7)', () => {
 
 describe('platform.impersonation-expiry-sweep', () => {
   it('closes expired sessions with endedReason EXPIRED', async () => {
-    const { sweepExpiredImpersonationSessions } = await import('../../jobs/impersonation-expiry-sweep.js');
+    const { sweepExpiredImpersonationSessions } = await import('../../../jobs/impersonation-expiry-sweep.js');
     const updateMany = vi.fn(async () => ({ count: 3 }));
     const now = new Date('2026-10-18T12:00:00.000Z');
     const count = await sweepExpiredImpersonationSessions({ platformImpersonationSession: { updateMany } } as never, now);

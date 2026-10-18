@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 function json(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -45,7 +45,7 @@ async function mockIam(page: Page, permissions: string[], role: string | null, c
 test("ACC-IAM-6 role assignment needs confirm + reason; choosing a role never assigns on its own", async ({ context, page }) => {
   await addCsrfCookie(context);
   const calls: Array<{ method: string; path: string; body: unknown; key: string | null }> = [];
-  await mockIam(page, [], "SUPER_ADMIN", calls);
+  await mockIam(page, ROOT_PERMISSIONS, "SUPER_ADMIN", calls);
 
   await page.goto("/trust/iam/users/staff_002");
   await expect(page.getByRole("heading", { name: "Role assignments" })).toBeVisible();

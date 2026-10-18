@@ -1,10 +1,11 @@
+import { useMemo } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { PermissionProvider } from "@fauward/internal-rbac";
 
 import { ConsoleErrorScreen } from "@/components/service-kit/ConsoleErrorScreen";
 import { hasPlatformSessionHint } from "@/lib/auth";
 import { toConsoleApiError } from "@/lib/console-api-error";
-import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
+import { permissionContextFromMe, type PlatformSessionUser } from "@/lib/platform-session";
 import { useMe } from "@/lib/use-me";
 import { MfaStepUpModal } from "./MfaStepUpModal";
 
@@ -18,6 +19,8 @@ export function SuperAdminGuard() {
   const location = useLocation();
   const hasSession = hasPlatformSessionHint();
   const me = useMe(hasSession);
+  // Re-derived on every /auth/me refetch (focus, 60 s, after IAM/JIT mutations) so grants and expiries show up live.
+  const permissionContext = useMemo(() => (me.data ? permissionContextFromMe(me.data) : null), [me.data]);
 
   if (!hasSession) return <Navigate to={loginPath(location.pathname, location.search)} replace />;
 
@@ -45,10 +48,9 @@ export function SuperAdminGuard() {
     role: me.data.user.role,
     permissions: me.data.permissions
   };
-  const permissionContext = buildPermissionContext(user);
 
   return (
-    <PermissionProvider roles={permissionContext.roles} permissions={permissionContext.permissions}>
+    <PermissionProvider roles={permissionContext?.roles ?? []} permissions={permissionContext?.permissions ?? []}>
       <Outlet context={{ user }} />
       <MfaStepUpModal />
     </PermissionProvider>

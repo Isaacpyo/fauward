@@ -1,6 +1,6 @@
 import { expect, test, type Route } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 function json(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -9,21 +9,20 @@ function json(route: Route, status: number, body: unknown) {
 test("approving a region change from /admin/regions needs a reason and passes the MFA step-up (exit criterion, UI part)", async ({ context, page }) => {
   await addCsrfCookie(context);
   // Registered first so the specific routes below take precedence (Playwright runs the latest match first).
-  await page.route("**/api/v1/**", (route) => json(route, 200, {}));
   await page.route("**/api/relay/**", (route) => json(route, 200, {}));
   let fresh = false;
   const decisions: Array<{ body: unknown; key: string | null }> = [];
 
   await page.route("**/api/internal/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
-    if (path === "/auth/me") return json(route, 200, meBody([]));
+    if (path === "/auth/me") return json(route, 200, meBody(ROOT_PERMISSIONS));
     if (path === "/auth/mfa/verify") {
       fresh = true;
       return json(route, 200, { success: true });
     }
     return json(route, 200, { data: [] });
   });
-  await page.route("**/api/v1/platform/region-change-requests**", async (route) => {
+  await page.route("**/api/internal/tenants/region-requests**", async (route) => {
     const request = route.request();
     if (request.method() === "GET") {
       return json(route, 200, {

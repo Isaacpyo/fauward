@@ -9,6 +9,14 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/iam/users/:id/mfa/reset' },
   { method: 'POST', url: '/api/internal/iam/role-assignments' },
   { method: 'DELETE', url: '/api/internal/iam/role-assignments/:id' },
+  // platform.tenants (WP-1.1 move; WP-1.2 adds close and feature overrides)
+  { method: 'POST', url: '/api/internal/tenants/:id/suspend' },
+  { method: 'POST', url: '/api/internal/tenants/:id/unsuspend' },
+  { method: 'POST', url: '/api/internal/tenants/:id/plan-overrides' },
+  { method: 'DELETE', url: '/api/internal/tenants/:id/plan-overrides/:overrideId' },
+  { method: 'POST', url: '/api/internal/tenants/region-requests/:id/decision' },
+  // platform.impersonation (WP-1.1 move)
+  { method: 'POST', url: '/api/internal/impersonation/sessions' },
   // revenue.billing (WP-0.6)
   { method: 'POST', url: '/api/internal/billing/refunds' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },

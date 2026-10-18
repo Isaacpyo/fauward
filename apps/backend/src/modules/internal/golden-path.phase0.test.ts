@@ -23,14 +23,13 @@ vi.mock('../../services/platform-audit.service.js', () => ({
   }),
   verifyPlatformAuditChain: vi.fn()
 }));
-vi.mock('../../services/staff-iam.service.js', () => ({
-  staffPermissionContextForPlatformUser: vi.fn(async () => ({
-    staff: { id: 'staff_1', status: 'ACTIVE' },
-    roles: ['ROOT'],
-    permissions: ['platform.impersonation.start', 'platform.tenants.read', 'platform.tenants.write']
-  })),
-  platformUserHasConsolePermission: vi.fn(async () => false)
-}));
+vi.mock('../../services/staff-iam.service.js', () => {
+  const permissions = ['platform.impersonation.start', 'platform.tenants.read', 'platform.tenants.write'];
+  return {
+    staffPermissionContextForPlatformUser: vi.fn(async () => ({ staff: { id: 'staff_1', status: 'ACTIVE' }, roles: ['ROOT'], permissions })),
+    consolePermissionContext: vi.fn(async () => ({ staff: { id: 'staff_1', status: 'ACTIVE' }, roles: ['ROOT'], rolePermissions: new Set(permissions), jit: new Map(), permissions }))
+  };
+});
 
 const PASSWORD = 'correct-horse-battery-staple';
 
@@ -78,6 +77,7 @@ function createWorld(passwordHash: string) {
       findFirst: vi.fn(async ({ where }: { where: { tenantId: string } }) => (where.tenantId === 'tenant_1' ? { id: 'user_admin', email: 'admin@northwind.test', role: 'TENANT_ADMIN', isActive: true } : null))
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `act_${String(create.type)}`, ...create })) },
     platformImpersonationSession: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: id('imp'), revokedAt: null, endedAt: null, endedReason: null, exchangedAt: null, createdAt: new Date(), ...data };
@@ -151,7 +151,8 @@ describe('Phase 0 golden path (chained API calls)', () => {
     const { config } = await import('../../config/index.js');
     const { authenticate } = await import('../../shared/middleware/authenticate.js');
     const { registerConsoleAuthRoutes } = await import('./auth/console-auth.routes.js');
-    const { registerPlatformRoutes } = await import('../platform/platform.routes.js');
+    const { registerConsoleTenantRoutes } = await import('./platform/tenants.routes.js');
+    const { registerConsoleImpersonationRoutes } = await import('./platform/impersonation.routes.js');
     const { registerImpersonationExchangeRoutes } = await import('../auth/impersonation-exchange.routes.js');
     const { createRegionChangeRequest } = await import('../regions/region-change-requests.store.js');
 
@@ -163,7 +164,8 @@ describe('Phase 0 golden path (chained API calls)', () => {
     app.decorate('prisma', world.prisma as never);
     app.decorate('redis', world.redis as never);
     await registerConsoleAuthRoutes(app);
-    await registerPlatformRoutes(app);
+    await registerConsoleTenantRoutes(app);
+    await registerConsoleImpersonationRoutes(app);
     await registerImpersonationExchangeRoutes(app);
     app.get('/api/v1/shipments', { preHandler: [authenticate] }, async () => ({ data: [] }));
     app.post('/api/v1/shipments', { preHandler: [authenticate] }, async () => ({ created: true }));
@@ -174,7 +176,7 @@ describe('Phase 0 golden path (chained API calls)', () => {
     const login = await app.inject({ method: 'POST', url: '/api/internal/auth/login', payload: { email: 'ops@fauward.com', password: PASSWORD } });
     jar.absorb(login);
     expect(login.json()).toMatchObject({ mfa: 'ENROLL' });
-    const blocked = await app.inject({ method: 'GET', url: '/api/v1/platform/impersonation-sessions/active', headers: jar.headers() });
+    const blocked = await app.inject({ method: 'GET', url: '/api/internal/impersonation/sessions?status=active', headers: jar.headers() });
     expect(blocked.json()).toMatchObject({ error: 'MFA_PENDING' });
 
     // 2. Enrol MFA.
@@ -187,9 +189,9 @@ describe('Phase 0 golden path (chained API calls)', () => {
     // 3. Start a read-only impersonation: the console gets an exchange code, never a token.
     const impersonate = await app.inject({
       method: 'POST',
-      url: '/api/v1/platform/tenants/tenant_1/impersonation-sessions',
+      url: '/api/internal/impersonation/sessions',
       headers: jar.headers(true),
-      payload: { reason: 'Investigating a failed label print' }
+      payload: { tenantId: 'tenant_1', reason: 'Investigating a failed label print' }
     });
     expect(impersonate.statusCode).toBe(200);
     const started = impersonate.json() as { exchangeCode: string; portalUrl: string; impersonationSessionId: string };
@@ -210,7 +212,7 @@ describe('Phase 0 golden path (chained API calls)', () => {
     // 6. End the session; the tenant token stops working.
     const end = await app.inject({
       method: 'DELETE',
-      url: `/api/v1/platform/impersonation-sessions/${started.impersonationSessionId}`,
+      url: `/api/internal/impersonation/sessions/${started.impersonationSessionId}`,
       headers: jar.headers(true),
       payload: { reason: 'Investigation finished' }
     });
@@ -228,13 +230,13 @@ describe('Phase 0 golden path (chained API calls)', () => {
     const request = createRegionChangeRequest({ tenantId: 'tenant_1', tenantName: 'Northwind', tenantSlug: 'northwind', currentRegion: 'africa', requestedRegion: 'europe', requestedBy: 'admin@northwind.test' });
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(Date.now() + 11 * 60 * 1000);
-    const stale = await app.inject({ method: 'PATCH', url: `/api/v1/platform/region-change-requests/${request.id}`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
+    const stale = await app.inject({ method: 'POST', url: `/api/internal/tenants/region-requests/${request.id}/decision`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
     expect(stale.statusCode).toBe(403);
     expect(stale.json()).toMatchObject({ error: 'MFA_REQUIRED', stepUp: true });
     const verify = await app.inject({ method: 'POST', url: '/api/internal/auth/mfa/verify', headers: jar.headers(true), payload: { code: authenticator.generate(secret) } });
     expect(verify.statusCode).toBe(200);
     jar.absorb(verify);
-    const approved = await app.inject({ method: 'PATCH', url: `/api/v1/platform/region-change-requests/${request.id}`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
+    const approved = await app.inject({ method: 'POST', url: `/api/internal/tenants/region-requests/${request.id}/decision`, headers: jar.headers(true), payload: { status: 'APPROVED', reason: 'Tenant moved operations to the EU' } });
     expect(approved.statusCode).toBe(200);
     expect(approved.json()).toMatchObject({ request: { status: 'APPROVED' } });
     expect(audit.map((row) => row.action)).toContain('REGION_CHANGE_APPROVED');

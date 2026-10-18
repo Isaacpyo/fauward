@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
 import { writeAudit } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
@@ -13,7 +13,7 @@ function jsonToCsv(rows: Array<Record<string, unknown>>) {
 }
 
 export async function registerInternalAuditRoutes(app: FastifyInstance) {
-  app.get('/api/internal/audit/entries', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.audit.read')] }, async (request, reply) => {
+  app.get('/api/internal/audit/entries', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
     const query = request.query as { actor?: string; action?: string; targetType?: string; targetId?: string; from?: string; to?: string; q?: string; page?: string; limit?: string };
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50)));
     const page = Math.max(1, Number(query.page ?? 1));
@@ -39,14 +39,14 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     reply.send({ data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });
   });
 
-  app.get('/api/internal/audit/entries/:id', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.audit.read')] }, async (request, reply) => {
+  app.get('/api/internal/audit/entries/:id', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const entry = await app.prisma.platformAuditLog.findUnique({ where: { id } });
     if (!entry) return reply.status(404).send({ error: 'Audit entry not found' });
     reply.send(entry);
   });
 
-  app.post('/api/internal/audit/export', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.export')] }, async (request, reply) => {
+  app.post('/api/internal/audit/export', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('trust.audit.export')] }, async (request, reply) => {
     const body = request.body as { from?: string; to?: string; format?: 'csv' | 'json'; reason?: string };
     const rows = await app.prisma.platformAuditLog.findMany({
       where: { createdAt: body.from || body.to ? { gte: body.from ? new Date(body.from) : undefined, lte: body.to ? new Date(body.to) : undefined } : undefined },
@@ -72,7 +72,7 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     reply.send({ url: `data:${body.format === 'csv' ? 'text/csv' : 'application/json'};base64,${Buffer.from(content).toString('base64')}`, format: body.format ?? 'json', rows: rows.length });
   });
 
-  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.export')] }, async (_request, reply) => {
+  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('trust.audit.export')] }, async (_request, reply) => {
     const result = await verifyPlatformAuditChain(app.prisma);
     reply.send({ ...result, verifiedAt: new Date().toISOString() });
   });

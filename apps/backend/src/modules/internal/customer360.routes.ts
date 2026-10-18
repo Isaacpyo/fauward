@@ -3,7 +3,7 @@ import { writeAudit } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 
 async function auditCustomer(request: FastifyRequest, action: string, tenantId: string, before: unknown, after: unknown, reason?: string | null) {
   await writeAudit(request.server.prisma as unknown as PlatformAuditClient, {
@@ -24,7 +24,7 @@ async function auditCustomer(request: FastifyRequest, action: string, tenantId: 
 }
 
 export async function registerInternalCustomer360Routes(app: FastifyInstance) {
-  app.get('/api/internal/customer/360/:tenantId', { preHandler: [authenticatePlatformSession, requireInternalPermission('customer.360.read')] }, async (request, reply) => {
+  app.get('/api/internal/customer/360/:tenantId', { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.360.read')] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const tenant = await app.prisma.tenant.findUnique({
       where: { id: tenantId },
@@ -93,7 +93,7 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
     });
   });
 
-  app.patch('/api/internal/customer/360/:tenantId/notes', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('customer.success.write')] }, async (request, reply) => {
+  app.patch('/api/internal/customer/360/:tenantId/notes', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('customer.success.write')] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const body = request.body as { internalNotes?: string; reason?: string };
     const before = await app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { internalNotes: true } });
@@ -103,7 +103,7 @@ export async function registerInternalCustomer360Routes(app: FastifyInstance) {
     reply.send(after);
   });
 
-  app.get('/api/internal/customer/360/:tenantId/api-usage', { preHandler: [authenticatePlatformSession, requireInternalPermission('customer.360.read')] }, async (request, reply) => {
+  app.get('/api/internal/customer/360/:tenantId/api-usage', { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.360.read')] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const keys = await app.prisma.apiKey.findMany({
       where: { tenantId },

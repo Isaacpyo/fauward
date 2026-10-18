@@ -74,7 +74,11 @@ const envSchema = z.object({
   FIELD_ENCRYPTION_ACTIVE_KEY_ID: z.string().optional(),
   CONSOLE_MFA_REQUIRED: z.string().default('true'),
   // Refunds at or above this amount (major units, payment currency) need revenue.invoices.refund.large or a second approver.
-  BILLING_LARGE_REFUND_THRESHOLD: z.string().regex(/^\d+(\.\d{1,2})?$/).default('500.00')
+  BILLING_LARGE_REFUND_THRESHOLD: z.string().regex(/^\d+(\.\d{1,2})?$/).default('500.00'),
+  // Currency Fauward reports platform revenue (MRR) in; other currencies convert through CurrencyRate.
+  PLATFORM_BASE_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('GBP'),
+  // Days a closed tenant's data is kept before it becomes eligible for purge (purgeAfter = closedAt + this).
+  TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90)
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -198,7 +202,11 @@ export const config = {
     phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
   },
   billing: {
-    largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD
+    largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD,
+    baseCurrency: parsed.data.PLATFORM_BASE_CURRENCY
+  },
+  tenants: {
+    closeRetentionDays: parsed.data.TENANT_CLOSE_RETENTION_DAYS
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
   tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,

@@ -1,4 +1,8 @@
 import type { BrowserContext, Page } from "@playwright/test";
+import { PERMISSIONS } from "@fauward/internal-rbac";
+
+/** Every console permission (a ROOT staff member). The console never derives permissions from a role (D2). */
+export const ROOT_PERMISSIONS: string[] = [...PERMISSIONS];
 
 export function meBody(permissions: string[], options: { pending?: boolean; mfaEnabled?: boolean; role?: string | null } = {}) {
   const pending = options.pending ?? false;

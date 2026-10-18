@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
@@ -49,11 +49,11 @@ const DSAR_STATES = [
 ];
 
 function readPre(permission: Permission) {
-  return [authenticatePlatformSession, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requireConsolePermission(permission)];
 }
 
 function writePre(permission: Permission) {
-  return [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission(permission)];
 }
 
 function bodyObject(request: FastifyRequest): Record<string, unknown> {

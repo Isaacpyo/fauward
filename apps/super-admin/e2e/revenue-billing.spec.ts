@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 function json(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -27,7 +27,7 @@ async function mockBilling(page: Page, onPost: (path: string, body: unknown, key
   await page.route("**/api/internal/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api/internal", "");
-    if (path === "/auth/me") return json(route, 200, meBody([]));
+    if (path === "/auth/me") return json(route, 200, meBody(ROOT_PERMISSIONS));
     if (path === "/billing/refunds" && request.method() === "GET") return json(route, 200, { data: [pendingRefund] });
     if (request.method() === "POST") {
       const result = onPost(path, request.postDataJSON(), request.headers()["idempotency-key"] ?? null);

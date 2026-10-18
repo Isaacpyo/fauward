@@ -4,7 +4,7 @@ import { ActionDialog } from "@/components/service-kit/ActionDialog";
 import { Check, Clock3, Globe2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { platformApi as api } from "@/lib/console-api";
+import { consoleApi as api } from "@/lib/console-api";
 
 type RegionChangeStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -43,7 +43,7 @@ const tabs = [
 type TabId = (typeof tabs)[number]["id"];
 
 async function fetchRegions() {
-  const response = await api.get<RegionsResponse>("/region-change-requests");
+  const response = await api.get<RegionsResponse>("/tenants/region-requests");
   return response.data;
 }
 
@@ -267,7 +267,7 @@ export function RegionsPage() {
         onClose={() => setDecision(null)}
         onSubmit={async (reason) => {
           if (!decision) return;
-          await api.patch(`/region-change-requests/${decision.id}`, { status: decision.status, reason }, { idempotent: true });
+          await api.post(`/tenants/region-requests/${decision.id}/decision`, { status: decision.status, reason }, { idempotent: true });
           setDecided(`Region change ${decision.status === "APPROVED" ? "approved" : "rejected"} for ${decision.tenant}.`);
           await queryClient.invalidateQueries({ queryKey: ["admin-regions"] });
         }}

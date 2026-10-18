@@ -6,7 +6,7 @@ import { ActionDialog } from "@/components/service-kit/ActionDialog";
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantPicker, type TenantOption } from "@/components/service-kit/TenantPicker";
-import { platformApi as api } from "@/lib/console-api";
+import { consoleApi as api } from "@/lib/console-api";
 
 type SessionRow = {
   id: string;
@@ -41,14 +41,15 @@ export function ImpersonationStartPage() {
 
   const sessionsQuery = useQuery({
     queryKey: ["platform-impersonation-sessions"],
-    queryFn: async () => (await api.get<{ sessions: SessionRow[] }>("/impersonation-sessions/active")).data.sessions,
+    queryFn: async () => (await api.get<{ sessions: SessionRow[] }>("/impersonation/sessions", { params: { status: "active" } })).data.sessions,
     refetchInterval: 30_000
   });
 
   const startMutation = useMutation({
     mutationFn: async () =>
       (
-        await api.post<StartResponse>(`/tenants/${encodeURIComponent(tenant!.id)}/impersonation-sessions`, {
+        await api.post<StartResponse>("/impersonation/sessions", {
+          tenantId: tenant!.id,
           reason: reason.trim(),
           scopes: scope === "write" ? ["read", "write"] : ["read"]
         })
@@ -155,7 +156,7 @@ export function ImpersonationStartPage() {
         onClose={() => setEnding(null)}
         onSubmit={async (endReason) => {
           if (!ending) return;
-          await api.delete(`/impersonation-sessions/${encodeURIComponent(ending.id)}`, { data: { reason: endReason } });
+          await api.delete(`/impersonation/sessions/${encodeURIComponent(ending.id)}`, { data: { reason: endReason } });
           await queryClient.invalidateQueries({ queryKey: ["platform-impersonation-sessions"] });
         }}
       />

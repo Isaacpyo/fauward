@@ -4,16 +4,15 @@ import { Prisma } from '@prisma/client';
 import { writeAudit } from '@fauward/internal-audit';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { config } from '../../config/index.js';
 import { platformAuditClient } from '../../services/platform-audit-client.js';
-import { platformUserHasConsolePermission } from '../../services/staff-iam.service.js';
 import { RefundError, decideRefund, requestRefund } from '../../services/refund.service.js';
 import { stripeService } from '../payments/stripe.service.js';
 
-const readPre = [authenticatePlatformSession, requireInternalPermission('revenue.invoices.read')];
-const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.write')];
+const readPre = [authenticatePlatformSession, requireConsolePermission('revenue.invoices.read')];
+const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('revenue.invoices.write')];
 
 function money(value: unknown) {
   return new Prisma.Decimal(String(value ?? '0'));
@@ -142,7 +141,7 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
     }
     const reason = body.reason.trim();
     const idempotencyKey = refundIdempotencyKey(request, body.paymentId, body.amount, reason, body.idempotencyKey);
-    const canRefundLarge = await platformUserHasConsolePermission(app.prisma, request.platform!.user, 'revenue.invoices.refund.large');
+    const canRefundLarge = await consoleUserHas(request, 'revenue.invoices.refund.large');
     try {
       const result = await requestRefund(app.prisma, { stripe: stripeService, largeRefundThreshold: config.billing.largeRefundThreshold }, {
         paymentId: body.paymentId,

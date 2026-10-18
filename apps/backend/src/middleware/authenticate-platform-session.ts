@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { config } from '../config/index.js';
 import { PLATFORM_ACCESS_COOKIE, verifyPlatformAccessToken } from '../services/platform-session.service.js';
 
-const CONSOLE_AUTH_PREFIXES = ['/api/v1/platform/auth', '/api/internal/auth'] as const;
+const CONSOLE_AUTH_PREFIXES = ['/api/internal/auth'] as const;
 // Routes an MFA-pending session may call (architecture §2.1).
 const MFA_PENDING_ALLOWED_SUFFIXES = ['/me', '/mfa/enroll/start', '/mfa/enroll/confirm', '/mfa/verify', '/logout'] as const;
 

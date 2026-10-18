@@ -7,7 +7,6 @@ import jwt from 'jsonwebtoken';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireFreshPlatformMfa } from '../../middleware/require-fresh-platform-mfa.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { permissionsForPlatformRole } from '../../services/platform-permission.service.js';
 import { computePlatformAuditHash } from '../../services/platform-audit.service.js';
 import { redactPlatformLogValue } from '../../services/platform-redaction.service.js';
 import { setPlatformCsrfCookies } from '../../services/platform-session.service.js';
@@ -19,7 +18,7 @@ function makeReply() {
   return { status, send, setCookie };
 }
 
-describe('platform control plane security primitives', () => {
+describe('console security primitives', () => {
   it('does not contain the burned platform default credentials or old superadmin token keys', () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
     const burned = [
@@ -50,7 +49,7 @@ describe('platform control plane security primitives', () => {
           scan(full);
           continue;
         }
-        if (full.endsWith('platform-control-plane.test.ts')) continue;
+        if (full.endsWith('console-security.test.ts')) continue;
         let text = '';
         try {
           text = fs.readFileSync(full, 'utf8');
@@ -65,11 +64,11 @@ describe('platform control plane security primitives', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('maps SUPER_ADMIN to all platform permissions and readonly to read-only capabilities', () => {
-    expect(permissionsForPlatformRole('SUPER_ADMIN')).toContain('tenant:suspend');
-    expect(permissionsForPlatformRole('SUPER_ADMIN')).toContain('logs:view_sensitive');
-    expect(permissionsForPlatformRole('PLATFORM_READONLY')).toContain('tenant:read');
-    expect(permissionsForPlatformRole('PLATFORM_READONLY')).not.toContain('tenant:suspend');
+  it('the legacy PlatformRole permission map and its middleware are gone (D2)', () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    expect(fs.existsSync(path.resolve(here, '../../services/platform-permission.service.ts'))).toBe(false);
+    expect(fs.existsSync(path.resolve(here, '../../middleware/require-platform-permission.ts'))).toBe(false);
+    expect(fs.existsSync(path.resolve(here, '../platform/platform.routes.ts'))).toBe(false);
   });
 
   it('rejects tenant user bearer tokens on platform middleware', async () => {

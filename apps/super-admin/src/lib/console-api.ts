@@ -4,8 +4,7 @@ import { getCsrfToken } from "./auth";
 import { ConsoleApiError, toConsoleApiError } from "./console-api-error";
 import { requestStepUp } from "./mfa-step-up";
 
-// One console API client (architecture §5). Phase 0 keeps a second instance on /api/v1/platform that shares the
-// same interceptors; WP-1.1 deletes it.
+// One console API client (architecture §5): every console endpoint is under /api/internal (D2).
 
 declare module "axios" {
   interface AxiosRequestConfig {
@@ -117,7 +116,5 @@ function installInterceptors(instance: AxiosInstance) {
 }
 
 export const consoleApi = installInterceptors(axios.create({ baseURL: "/api/internal", withCredentials: true }));
-/** @deprecated Phase 0 only: legacy /api/v1/platform endpoints. Removed in WP-1.1. */
-export const platformApi = installInterceptors(axios.create({ baseURL: "/api/v1/platform", withCredentials: true }));
 
 export { ConsoleApiError };

@@ -1,6 +1,6 @@
 import { expect, test, type Route } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 function json(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -14,22 +14,16 @@ test("ACC-IMP-6 start impersonation with a reason, pass the MFA step-up, and the
   // The tenant portal is not running in this test; answer the new tab with a blank page.
   await context.route("http://localhost:3000/**", (route) => route.fulfill({ status: 200, contentType: "text/html", body: "<html><body>tenant portal</body></html>" }));
   await page.route("**/api/internal/**", async (route) => {
-    const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
-    if (path === "/auth/me") return json(route, 200, meBody([]));
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/api/internal", "");
+    if (path === "/auth/me") return json(route, 200, meBody(ROOT_PERMISSIONS));
     if (path === "/auth/mfa/verify") {
       fresh = true;
       return json(route, 200, { success: true });
     }
-    return json(route, 200, { data: [] });
-  });
-  await page.route("**/api/v1/platform/**", async (route) => {
-    const request = route.request();
-    const url = new URL(request.url());
-    if (url.pathname === "/api/v1/platform/tenants") {
-      return json(route, 200, { data: [{ id: "tenant_1", name: "Northwind Couriers", slug: "northwind", status: "ACTIVE", plan: "PRO" }] });
-    }
-    if (url.pathname === "/api/v1/platform/impersonation-sessions/active") return json(route, 200, { sessions: [] });
-    if (url.pathname === "/api/v1/platform/tenants/tenant_1/impersonation-sessions" && request.method() === "POST") {
+    if (path === "/tenants") return json(route, 200, { data: [{ id: "tenant_1", name: "Northwind Couriers", slug: "northwind", status: "ACTIVE", plan: "PRO" }] });
+    if (path === "/impersonation/sessions" && request.method() === "GET") return json(route, 200, { sessions: [] });
+    if (path === "/impersonation/sessions" && request.method() === "POST") {
       starts.push(request.postDataJSON());
       if (!fresh) return json(route, 403, { error: "MFA_REQUIRED", stepUp: true, message: "Fresh MFA verification is required for this action." });
       return json(route, 200, {
@@ -40,7 +34,7 @@ test("ACC-IMP-6 start impersonation with a reason, pass the MFA step-up, and the
         tenant: { id: "tenant_1", name: "Northwind Couriers", slug: "northwind" }
       });
     }
-    return json(route, 200, {});
+    return json(route, 200, { data: [] });
   });
 
   await page.goto("/platform/impersonation");
@@ -61,8 +55,8 @@ test("ACC-IMP-6 start impersonation with a reason, pass the MFA step-up, and the
   expect(tab.url()).toContain("#code=");
   expect(tab.url()).not.toContain("token=");
   expect(starts).toEqual([
-    { reason: "Investigating a failed label print", scopes: ["read"] },
-    { reason: "Investigating a failed label print", scopes: ["read"] }
+    { tenantId: "tenant_1", reason: "Investigating a failed label print", scopes: ["read"] },
+    { tenantId: "tenant_1", reason: "Investigating a failed label print", scopes: ["read"] }
   ]);
   await expect(page.getByRole("status")).toContainText("Session started for Northwind Couriers");
 });

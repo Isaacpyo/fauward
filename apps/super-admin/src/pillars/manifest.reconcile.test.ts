@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
 
-// D1 reconciliation gate. Check (d) — deferred services have no backend route — lands with route-index.ts in WP-1.1.
+// D1 reconciliation gate. Check (d) reads the backend's registered console routes from route-index.ts (kept equal to
+// the real registrations by the backend rbac-matrix test).
 
 const PILLAR_PREFIXES = ["/platform", "/revenue", "/customer", "/trust", "/gtm"];
 const routeObjects = [...consoleRoutes.map((route) => ({ path: route.path })), { path: "*" }];
@@ -21,6 +22,11 @@ function resolve(pathname: string) {
 }
 
 const routeByPath = new Map(consoleRoutes.map((route) => [route.path, route]));
+
+function backendConsoleRoutes() {
+  const file = path.resolve(__dirname, "../../../backend/src/modules/internal/route-index.ts");
+  return [...fs.readFileSync(file, "utf8").matchAll(/'(GET|POST|PUT|PATCH|DELETE) (\/api\/internal\/[^']*)'/g)].map((match) => match[2]);
+}
 
 describe("manifest reconciliation (D1)", () => {
   it("ACC-MAN-1 every manifest route and routes[] entry resolves to a registered, non-catch-all route", () => {
@@ -67,6 +73,15 @@ describe("manifest reconciliation (D1)", () => {
       expect(service.note, `${service.key} names what is not wired`).toBeTruthy();
     }
     expect(SERVICES.find((service) => service.key === "trust.jit")?.requiredPermission).toBe("trust.jit.request");
+  });
+
+  it("ACC-MAN-1 (d) every deferred service has no backend route under /api/internal/<service>", () => {
+    const backend = backendConsoleRoutes();
+    expect(backend.length).toBeGreaterThan(100);
+    for (const service of SERVICES.filter((item) => item.status === "deferred")) {
+      const prefix = `/api/internal/${service.id}`;
+      expect(backend.filter((url) => url === prefix || url.startsWith(`${prefix}/`)), `${service.key} backend routes`).toEqual([]);
+    }
   });
 
   it("ACC-MAN-4 deferred services render ComingSoonPage and are absent from navigation", () => {

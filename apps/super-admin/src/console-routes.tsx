@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { type Permission } from "@fauward/internal-rbac";
 import { JITGate } from "@fauward/internal-ui";
 
+import { AccessDenied } from "@/components/service-kit/AccessDenied";
 import { ComingSoonPage } from "@/components/service-kit/ComingSoonPage";
 import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { consoleApi } from "@/lib/console-api";
@@ -48,9 +49,10 @@ async function requestJitAccess(permission: Permission, reason: string) {
   await consoleApi.post("/jit/requests", { permission, reason, durationMinutes: 60 });
 }
 
+/** Without the read permission a page renders the access-denied state with "Request access" (ACC-RBAC-1). */
 export function PermissionRoute({ permission, children }: { permission: Permission; children: ReactNode }) {
   return (
-    <JITGate permission={permission} requestTitle="Request elevated access" onRequest={requestJitAccess}>
+    <JITGate permission={permission} requestTitle="Request elevated access" onRequest={requestJitAccess} fallback={<AccessDenied permission={permission} />}>
       {children}
     </JITGate>
   );

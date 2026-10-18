@@ -16,12 +16,12 @@ import {
   verifyPlatformAccessToken,
   verifyPlatformRefreshToken
 } from '../../../services/platform-session.service.js';
-import { staffPermissionContextForPlatformUser } from '../../../services/staff-iam.service.js';
+import { consolePermissionContext } from '../../../services/staff-iam.service.js';
 import { writePlatformAuditLog } from '../../../services/platform-audit.service.js';
 import { FieldEncryptionError, decryptField, encryptField, isEncryptedField } from '../../../services/crypto/field-encryption.js';
 
-// Console auth is mounted under both prefixes during Phase 0 (spec WP-0.1); WP-1.1 drops the /api/v1/platform one.
-export const CONSOLE_AUTH_PREFIXES = ['/api/v1/platform/auth', '/api/internal/auth'] as const;
+// Console auth lives only under /api/internal/auth (D2; the Phase 0 /api/v1/platform/auth mount was dropped in WP-1.1).
+export const CONSOLE_AUTH_PREFIXES = ['/api/internal/auth'] as const;
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MFA_FAILURE_WINDOW_SECONDS = 15 * 60;
@@ -69,16 +69,11 @@ function encryptionUnavailable(reply: FastifyReply, error: unknown) {
   throw error;
 }
 
+/** Effective permissions (roles ∪ active JIT) with each JIT grant's expiry — the same rule requireConsolePermission uses. */
 async function permissionsWithJit(app: FastifyInstance, user: PlatformUser) {
-  const context = await staffPermissionContextForPlatformUser(app.prisma, user);
-  const jitGrants = await app.prisma.jitAccessRequest.findMany({
-    where: { requesterPlatformUserId: user.id, status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { permission: true, expiresAt: true },
-    orderBy: { expiresAt: 'desc' }
-  });
-  const jit = jitGrants.map((grant) => ({ permission: grant.permission, expiresAt: grant.expiresAt?.toISOString() ?? null }));
-  const permissions = Array.from(new Set<string>([...context.permissions, ...jit.map((grant) => grant.permission)]));
-  return { staff: context.staff, roles: context.roles, permissions, jit };
+  const context = await consolePermissionContext(app.prisma, user);
+  const jit = [...context.jit.values()].map((grant) => ({ permission: grant.permission, expiresAt: grant.expiresAt?.toISOString() ?? null }));
+  return { staff: context.staff, roles: context.roles, permissions: context.permissions, jit };
 }
 
 function issueAccessToken(user: PlatformUser, sessionId: string, permissions: string[], mfaVerifiedAt: Date | null) {
