@@ -72,7 +72,9 @@ const envSchema = z.object({
   FAUWARD_GO_URL: z.string().url().default('https://fauward.com/go'),
   FIELD_ENCRYPTION_KEYS: z.string().optional(),
   FIELD_ENCRYPTION_ACTIVE_KEY_ID: z.string().optional(),
-  CONSOLE_MFA_REQUIRED: z.string().default('true')
+  CONSOLE_MFA_REQUIRED: z.string().default('true'),
+  // Refunds at or above this amount (major units, payment currency) need revenue.invoices.refund.large or a second approver.
+  BILLING_LARGE_REFUND_THRESHOLD: z.string().regex(/^\d+(\.\d{1,2})?$/).default('500.00')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -194,6 +196,9 @@ export const config = {
     phase4: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_4),
     phase5: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_5),
     phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
+  },
+  billing: {
+    largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
   tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,

@@ -38,6 +38,10 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C26 | WP-0.5: read-only impersonation rejects every non-GET | The tenant portal's "end staff session" is `POST /api/v1/tenant(s/me)/impersonation/exit` | The two exit endpoints stay allowed for read-only tokens |
 | C27 | WP-0.5: `setImpersonationToken` "ensure it uses sessionStorage" | It overwrote the tenant user's own `localStorage` access token and deleted their refresh token | Impersonation token and slug live under separate `sessionStorage` keys; `getAccessToken`/`getTenantSlug` prefer them; the user's own session is untouched |
 | C28 | WP-0.5 S7: legacy route returns 410 | — | The 410 handler has no auth guard (it exposes nothing), so stale clients get the pointer instead of 401 |
+| C29 | WP-0.6: large refunds need `.large` "or the approval path" | Code returned 403 for refunds ≥ `LARGE_REFUND_PENCE` (50 000, compared with a major-unit amount) | Threshold is `config.billing.largeRefundThreshold` (`BILLING_LARGE_REFUND_THRESHOLD`, default 500.00, payment currency); without `.large` the refund goes to the approval path instead of 403; `config/billing.ts` removed |
+| C30 | WP-0.6 over-refund check `amount > amount - refundedAmount` | Two refunds awaiting approval could each pass that check | Refunds in `PENDING_APPROVAL`/`PROCESSING` also count against the refundable balance (checked under the payment row lock) |
+| C31 | D9 vendor-free: manual refunds without Stripe | A payment with a `gatewayRef` while `STRIPE_SECRET_KEY` is unset would 500 | Treated like a manual refund: approval path, `RECORDED_MANUAL` |
+| C32 | WP-0.6 approval path | — | An approved refund on a card payment (large refund approved by a second person) is then sent to Stripe (`PROCESSING` → `SUCCEEDED`/`FAILED`); manual ones become `RECORDED_MANUAL`. `POST /billing/refunds/:id/reject` added alongside approve |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

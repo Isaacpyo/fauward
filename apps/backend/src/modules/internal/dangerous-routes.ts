@@ -8,7 +8,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'DELETE', url: '/api/internal/iam/users/:id' },
   { method: 'POST', url: '/api/internal/iam/users/:id/mfa/reset' },
   { method: 'POST', url: '/api/internal/iam/role-assignments' },
-  { method: 'DELETE', url: '/api/internal/iam/role-assignments/:id' }
+  { method: 'DELETE', url: '/api/internal/iam/role-assignments/:id' },
+  // revenue.billing (WP-0.6)
+  { method: 'POST', url: '/api/internal/billing/refunds' },
+  { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },
+  { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' }
 ] as const;
 
 export type DangerousRoute = (typeof DANGEROUS_ROUTES)[number];

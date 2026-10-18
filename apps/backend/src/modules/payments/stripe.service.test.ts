@@ -38,4 +38,23 @@ describe('stripeService', () => {
 
     expect(config.stripe.secretKey).toBe('sk_test_alias');
   });
+
+  it('ACC-BIL-1 createRefund sends minor units to Stripe (12.34 GBP -> 1234)', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_refund';
+    vi.doMock('dotenv', () => ({ default: { config: vi.fn() } }));
+    const create = vi.fn(async () => ({ id: 're_1', status: 'succeeded' }));
+    vi.doMock('stripe', () => ({
+      default: class {
+        refunds = { create };
+      }
+    }));
+
+    const { stripeService } = await import('./stripe.service.js');
+    await stripeService.createRefund({ paymentIntentOrCharge: 'pi_123', amountMajor: '12.34', currency: 'GBP', reason: 'dup', idempotencyKey: 'refund:key' });
+    await stripeService.createRefund({ paymentIntentOrCharge: 'ch_456', amountMajor: '1500.00', currency: 'JPY', idempotencyKey: 'refund:key2' });
+
+    expect(create).toHaveBeenNthCalledWith(1, expect.objectContaining({ payment_intent: 'pi_123', amount: 1234 }), { idempotencyKey: 'refund:key' });
+    expect(create).toHaveBeenNthCalledWith(2, expect.objectContaining({ charge: 'ch_456', amount: 1500 }), { idempotencyKey: 'refund:key2' });
+    vi.doUnmock('stripe');
+  });
 });

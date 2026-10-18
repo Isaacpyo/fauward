@@ -1463,9 +1463,12 @@ model Refund {
   reason      String?
   gatewayRef  String?
   idempotencyKey String? @unique
+  // PENDING_APPROVAL | PROCESSING | SUCCEEDED | FAILED | RECORDED_MANUAL | REJECTED (WP-0.6)
   status      String   @default("PENDING")
   initiatedBy String?
   createdAt   DateTime @default(now())
+  currency      String?
+  failureReason String?
 
   approvals RefundApproval[]
 

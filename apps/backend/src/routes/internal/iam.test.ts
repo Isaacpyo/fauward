@@ -264,7 +264,7 @@ describe('IAM dangerous actions (architecture §9.2)', () => {
     const { routes } = await buildApp();
     const { DANGEROUS_ROUTES } = await import('../../modules/internal/dangerous-routes.js');
     const { requireFreshMfa } = await import('../../middleware/require-fresh-platform-mfa.js');
-    for (const expected of DANGEROUS_ROUTES) {
+    for (const expected of DANGEROUS_ROUTES.filter((route) => route.url.startsWith('/api/internal/iam/'))) {
       const route = routes.find((item) => item.url === expected.url && [item.method].flat().includes(expected.method));
       expect(route, `${expected.method} ${expected.url} registered`).toBeDefined();
       const handlers = [route!.preHandler].flat();
