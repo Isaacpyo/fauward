@@ -10,7 +10,12 @@ let stripeConfigured = true;
 const writeAuditMock = vi.fn(async () => undefined);
 const createRefundMock = vi.fn(async (_input: { paymentIntentOrCharge: string; amountMajor: string; currency: string; idempotencyKey: string }) => ({ id: 're_stripe_001', status: 'succeeded' }));
 
+const refundActivityMock = vi.hoisted(() => vi.fn(async (_deps: unknown, _input: { type: string; subjectId: string }) => ({ id: 'act_refund' })));
 vi.mock('@fauward/internal-audit', () => ({ writeAudit: writeAuditMock }));
+vi.mock('../../services/platform-activity.service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/platform-activity.service.js')>()),
+  recordAndPublishActivity: refundActivityMock
+}));
 
 vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
@@ -157,6 +162,7 @@ function refund(app: FastifyInstance, payload: Record<string, unknown>, key?: st
 }
 
 beforeEach(() => {
+  refundActivityMock.mockClear();
   currentPermissions = ['revenue.invoices.read', 'revenue.invoices.refund'];
   actorId = 'pu_requester';
   stripeConfigured = true;
@@ -196,6 +202,8 @@ describe('refund integrity (WP-0.6)', () => {
     expect(prisma.payments.get('pay_001')!.refundedAmount.toFixed(2)).toBe('12.34');
     expect(prisma.locks[0]).toContain('FOR UPDATE');
     expect(response.json()).toMatchObject({ refund: { amount: '12.34', status: 'SUCCEEDED' }, path: 'stripe' });
+    expect(refundActivityMock).toHaveBeenCalledTimes(1);
+    expect(refundActivityMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ service: 'revenue.billing', type: 'refund.issued', subjectId: row.id }));
   });
 
   it('ACC-BIL-2 two refunds totalling more than the payment: the second returns 409 and nothing is sent to Stripe', async () => {
@@ -238,6 +246,8 @@ describe('refund integrity (WP-0.6)', () => {
     expect([...prisma.approvals.values()][0]).toMatchObject({ status: 'APPROVED', approvedBy: 'pu_approver' });
     expect(prisma.payments.get('pay_001')!.refundedAmount.toFixed(2)).toBe('25.00');
     expect(createRefundMock).not.toHaveBeenCalled();
+    // One activity row per mutation: the request, then the approval (the self-approval attempt failed and wrote none).
+    expect(refundActivityMock.mock.calls.map((call) => call[1].type)).toEqual(['refund.requested', 'refund.approved']);
   });
 
   it('ACC-BIL-3 rejecting leaves refundedAmount unchanged', async () => {
@@ -248,6 +258,7 @@ describe('refund integrity (WP-0.6)', () => {
     expect(rejected.statusCode).toBe(200);
     expect(prisma.refunds.get(refundId)!.status).toBe('REJECTED');
     expect(prisma.payments.get('pay_001')!.refundedAmount.toFixed(2)).toBe('0.00');
+    expect(refundActivityMock.mock.calls.map((call) => call[1].type)).toEqual(['refund.requested', 'refund.rejected']);
   });
 
   it('large refunds (>= 500.00) without revenue.invoices.refund.large go to the approval path; with it they go to Stripe', async () => {

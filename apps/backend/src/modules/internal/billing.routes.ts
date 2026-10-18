@@ -10,6 +10,7 @@ import { dangerous } from '../../middleware/dangerous.js';
 import { config } from '../../config/index.js';
 import { platformAuditClient } from '../../services/platform-audit-client.js';
 import { RefundError, decideRefund, requestRefund } from '../../services/refund.service.js';
+import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
 import {
   BillingError,
   PLATFORM,
@@ -109,6 +110,27 @@ function page<T extends { id: string }>(rows: T[], limit: number) {
 }
 
 const tenantSelect = { select: { id: true, name: true, slug: true } } as const;
+
+type RefundActivityRow = { id: string; tenantId: string; amount: Prisma.Decimal | string | number; currency: string | null; status: string };
+
+/** One PlatformActivity row per refund mutation (architecture §12.4). */
+async function refundActivity(app: FastifyInstance, request: FastifyRequest, type: string, refund: RefundActivityRow, reason: string) {
+  await recordAndPublishActivity(
+    { prisma: app.prisma, redis: app.redis, log: app.log },
+    {
+      service: 'revenue.billing',
+      type,
+      tenantId: refund.tenantId,
+      ...staffActor(request),
+      subjectType: 'refund',
+      subjectId: refund.id,
+      summary: `Refund ${String(refund.amount)} ${refund.currency ?? ''} ${refund.status.toLowerCase().replaceAll('_', ' ')} — ${reason}`.replace(/\s+/g, ' '),
+      severity: type === 'refund.requested' ? 'ATTENTION' : 'INFO',
+      consoleLink: '/revenue/billing/refunds',
+      dedupeKey: `${type}:${refund.id}`
+    }
+  );
+}
 
 export async function registerInternalBillingRoutes(app: FastifyInstance) {
   app.get('/api/internal/billing/invoices', { preHandler: readPre }, async (request, reply) => {
@@ -262,6 +284,7 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
       });
       if (!result.created) return reply.send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval', replayed: true });
       await auditBilling(request, result.path === 'approval' ? 'refund.request' : 'invoice.refund', 'refund', result.refund.id, null, { refund: result.refund, path: result.path }, reason);
+      await refundActivity(app, request, result.path === 'approval' ? 'refund.requested' : 'refund.issued', result.refund, reason);
       return reply.status(201).send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval' });
     } catch (error) {
       if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {
@@ -278,6 +301,7 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
       try {
         const refund = await decideRefund(app.prisma, { stripe: stripeService }, { kind: PLATFORM, refundId: id, decision: decision === 'approve' ? 'APPROVE' : 'REJECT', actorId: request.platform!.user.id, reason });
         await auditBilling(request, `refund.${decision}`, 'refund', id, null, { status: refund.status }, reason);
+        await refundActivity(app, request, decision === 'approve' ? 'refund.approved' : 'refund.rejected', refund, reason);
         return reply.send({ refund });
       } catch (error) {
         if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {
