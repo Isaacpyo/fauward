@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { FailedPaymentBanner } from "@/components/billing/FailedPaymentBanner";
 import { LimitReachedBanner } from "@/components/billing/LimitReachedBanner";
 import { SaveOfferBanner } from "@/components/billing/SaveOfferBanner";
+import { NpsPrompt } from "@/components/feedback/NpsPrompt";
 import { SuspendedOverlay } from "@/components/billing/SuspendedOverlay";
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { UsageWarningBanner } from "@/components/billing/UsageWarningBanner";
@@ -62,6 +63,7 @@ export function AppShell() {
         ) : null}
         <ImpersonationBanner />
         <AnnouncementBanner />
+        <NpsPrompt enabled={Boolean(summary) && !suspended} />
 
         <TopBar />
 

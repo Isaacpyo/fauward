@@ -18,7 +18,8 @@ import {
   ShieldCheck,
   Settings,
   Users,
-  Wallet
+  Wallet,
+  Lightbulb
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -192,6 +193,13 @@ export const navItems: NavItem[] = [
     to: "/help/tickets",
     label: "Contact Fauward",
     icon: MessageSquare,
+    feature: "support",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF"]
+  },
+  {
+    to: "/help/feedback",
+    label: "Feedback & ideas",
+    icon: Lightbulb,
     feature: "support",
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF"]
   },

@@ -31,6 +31,7 @@ import { registerNotificationsRoutes } from './modules/notifications/notificatio
 import { registerReturnsRoutes } from './modules/returns/returns.routes.js';
 import { registerSupportRoutes } from './modules/support/support.routes.js';
 import { registerFauwardTicketRoutes } from './modules/support/fauward-tickets.routes.js';
+import { registerFeedbackRoutes } from './modules/feedback/feedback.routes.js';
 import { registerPricingRoutes } from './modules/pricing/pricing.routes.js';
 import { registerRatingRoutes } from './modules/rating/rating.routes.js';
 import { registerShippingRulesRoutes } from './modules/shipping-rules/shipping-rules.routes.js';
@@ -264,6 +265,7 @@ export async function buildApp() {
   await registerReturnsRoutes(app);
   await registerSupportRoutes(app);
   await registerFauwardTicketRoutes(app);
+  await registerFeedbackRoutes(app);
   await registerRelayRoutes(app);
   await registerPricingRoutes(app);
   await registerRatingRoutes(app);

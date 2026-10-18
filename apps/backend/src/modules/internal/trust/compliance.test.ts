@@ -139,6 +139,7 @@ function createStore() {
     returnRequest: table([], 'ret'),
     notificationLog: table([], 'log'),
     refreshToken: table([], 'rt'),
+    feedbackItem: table([], 'fb'),
     inAppNotification: table(data.inApp, 'ian'),
     dSARRequest: table(data.dsars, 'dsar', { receivedAt: new Date(), identityVerifiedAt: null, erasureCompletedAt: null, overdueAt: null, closedAt: null, subjectUserId: null }),
     dSARTransition: table(data.transitions, 'tr'),

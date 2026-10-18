@@ -18,6 +18,7 @@ import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
 import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
 import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
 import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
+import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/customer/feedback/FeedbackPages";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
@@ -190,7 +191,15 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/360", element: <PermissionRoute permission="customer.360.read">
                 <Customer360IndexPage />
               </PermissionRoute> },
-  { path: "/customer/feedback", element: <ComingSoonRoute serviceKey="customer.feedback" /> },
+  { path: "/customer/feedback", element: <PermissionRoute permission="customer.feedback.read">
+                <FeedbackBoardPage />
+              </PermissionRoute> },
+  { path: "/customer/feedback/nps", element: <PermissionRoute permission="customer.feedback.read">
+                <NpsPage />
+              </PermissionRoute> },
+  { path: "/customer/feedback/:id", element: <PermissionRoute permission="customer.feedback.read">
+                <FeedbackDetailPage />
+              </PermissionRoute> },
   { path: "/customer/kb", element: <ComingSoonRoute serviceKey="customer.kb" /> },
   { path: "/customer/360/:tenantId", element: <PermissionRoute permission="customer.360.read">
                 <Customer360Page />

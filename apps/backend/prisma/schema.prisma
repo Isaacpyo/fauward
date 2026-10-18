@@ -448,6 +448,7 @@ model Tenant {
   regionChangeRequests          RegionChangeRequest[]
   planChangeRequests            PlanChangeRequest[]
   subscriptionEvents            SubscriptionEvent[]
+  feedbackItems                 FeedbackItem[]
 
   @@index([customDomainStatus])
   @@map("tenants")
@@ -2432,6 +2433,66 @@ model ComplianceExport {
   @@index([tenantId, createdAt])
   @@index([status])
   @@map("compliance_exports")
+}
+
+/// Tenant feedback (customer.feedback, WP-2.8): NPS answers, feature requests (from the help page or a PlanGate),
+/// bugs and general feedback. Staff triage by status; status changes notify the requester.
+model FeedbackItem {
+  id                     String    @id @default(uuid())
+  tenantId               String
+  userId                 String
+  /// NPS | FEATURE_REQUEST | BUG | GENERAL
+  type                   String
+  /// NPS 0-10
+  score                  Int?
+  title                  String?
+  body                   String?
+  /// Set when raised from a PlanGate
+  featureKey             String?
+  /// IN_APP_SURVEY | HELP_MENU | PLAN_GATE | SUPPORT
+  source                 String
+  /// NEW | UNDER_REVIEW | PLANNED | SHIPPED | DECLINED | CLOSED
+  status                 String    @default("NEW")
+  assignedPlatformUserId String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comments FeedbackComment[]
+
+  @@index([type, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("feedback_items")
+}
+
+model FeedbackComment {
+  id              String   @id @default(uuid())
+  feedbackId      String
+  /// STAFF | TENANT_USER
+  authorType      String
+  authorId        String
+  body            String
+  visibleToTenant Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  feedback FeedbackItem @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
+  @@map("feedback_comments")
+}
+
+/// In-app NPS prompt per user: `customer.nps-survey-dispatch` sets eligibleAt; answering or dismissing clears it and
+/// keeps the user out of the survey for 90 days.
+model NpsPromptState {
+  userId          String    @id
+  tenantId        String
+  eligibleAt      DateTime?
+  lastPromptedAt  DateTime?
+  dismissedAt     DateTime?
+  lastRespondedAt DateTime?
+
+  @@index([tenantId])
+  @@map("nps_prompt_states")
 }
 
 /// Plan change (L6, WP-2.7): MANUAL_APPROVAL requests wait for staff; STRIPE_CHECKOUT requests complete through the

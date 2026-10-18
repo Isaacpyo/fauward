@@ -12,7 +12,7 @@ export type DataSubject = { tenantId: string; userId: string | null; email: stri
 export type ErasureStrategy = 'ANONYMISE' | 'REDACT' | 'DELETE' | 'RETAIN';
 export type RegistryDb = Pick<
   PrismaClient,
-  'user' | 'lead' | 'shipment' | 'supportTicket' | 'ticketMessage' | 'invoice' | 'returnRequest' | 'notificationLog' | 'inAppNotification' | 'refreshToken'
+  'user' | 'lead' | 'shipment' | 'supportTicket' | 'ticketMessage' | 'invoice' | 'returnRequest' | 'notificationLog' | 'inAppNotification' | 'refreshToken' | 'feedbackItem'
 >;
 
 export type RegistryEntry = {
@@ -53,6 +53,7 @@ const invoiceSelect = pick({ id: true, invoiceNumber: true, status: true, total:
 const returnSelect = pick({ id: true, shipmentId: true, status: true, reason: true, notes: true, createdAt: true });
 const notificationLogSelect = pick({ id: true, channel: true, event: true, template: true, status: true, recipient: true, createdAt: true });
 const inAppSelect = pick({ id: true, type: true, title: true, body: true, createdAt: true });
+const feedbackSelect = pick({ id: true, type: true, score: true, title: true, body: true, status: true, createdAt: true });
 
 const fieldsOf = (select: Record<string, boolean>) => Object.keys(select);
 
@@ -154,6 +155,18 @@ export const PERSONAL_DATA_REGISTRY: RegistryEntry[] = [
     find: (db, s) => db.notificationLog.findMany({ where: { tenantId: s.tenantId, OR: [{ recipient: s.email }, ...(s.userId ? [{ userId: s.userId }] : [])] }, select: notificationLogSelect }),
     async erase(db, s) {
       const result = await db.notificationLog.updateMany({ where: { tenantId: s.tenantId, OR: [{ recipient: s.email }, ...(s.userId ? [{ userId: s.userId }] : [])] }, data: { recipient: null } });
+      return result.count;
+    }
+  },
+  {
+    model: 'FeedbackItem',
+    matchFields: ['tenantId', 'userId'],
+    exportFields: fieldsOf(feedbackSelect),
+    strategy: 'REDACT',
+    find: (db, s) => (s.userId ? db.feedbackItem.findMany({ where: { tenantId: s.tenantId, userId: s.userId }, select: feedbackSelect }) : Promise.resolve([])),
+    async erase(db, s) {
+      if (!s.userId) return 0;
+      const result = await db.feedbackItem.updateMany({ where: { tenantId: s.tenantId, userId: s.userId }, data: { body: null, title: ERASED_TEXT } });
       return result.count;
     }
   },

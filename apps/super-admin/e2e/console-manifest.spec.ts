@@ -99,8 +99,8 @@ test("ACC-MAN-4 planned services without a page show their target phase and keep
   await expect(entry).toContainText("Background Jobs");
   await expect(entry).toContainText("Preview");
 
-  await page.goto("/customer/feedback");
-  await expect(page.getByTestId("coming-soon")).toContainText("Coming in Phase 2");
+  await page.goto("/revenue/disputes");
+  await expect(page.getByTestId("coming-soon")).toContainText("Coming in Phase 4");
 });
 
 test("preview service pages carry the PreviewBanner; the live IAM service does not", async ({ page }) => {

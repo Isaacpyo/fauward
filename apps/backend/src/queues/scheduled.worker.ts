@@ -9,6 +9,7 @@ import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-
 import { pruneOldActivity } from '../jobs/activity-prune.js';
 import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
 import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
+import { dispatchNpsSurveys, npsHealthComponent } from '../services/feedback.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -39,7 +40,8 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     negativeTickets,
     apiKeys,
     webhooks,
-    previous
+    previous,
+    nps
   ] = await Promise.all([
     app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, customDomain: true } }),
     app.prisma.user.findMany({ where: { tenantId, isActive: true }, select: { lastLogin: true } }),
@@ -51,7 +53,8 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     app.prisma.supportVendorTicket.count({ where: { tenantId, sentiment: { in: ['negative', 'angry', 'frustrated'] } } }),
     app.prisma.apiKey.count({ where: { tenantId, isActive: true } }),
     app.prisma.webhookEndpoint.count({ where: { tenantId, isActive: true } }),
-    app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } })
+    app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
+    npsHealthComponent(app.prisma, tenantId, now)
   ]);
 
   const recentLogins = users.filter((user) => user.lastLogin && user.lastLogin >= daysAgo(30)).length;
@@ -72,7 +75,7 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     (tenant?.customDomain ? 3 : 0);
   const paymentScore = clamp(15 - failedPayments * 5, 0, 15);
   const ticketScore = clamp(15 - openTickets * 2 - negativeTickets * 4, 0, 15);
-  const npsScore = 10;
+  const npsScore = nps.score;
   const score = clamp(loginScore + shipmentScore + featureScore + paymentScore + ticketScore + npsScore, 0, 100);
   const trend = !previous ? 'flat' : score > previous.score ? 'up' : score < previous.score ? 'down' : 'flat';
 
@@ -87,7 +90,7 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
         featureBreadth: { score: featureScore, apiKeys, webhooks, customDomain: Boolean(tenant?.customDomain) },
         paymentHealth: { score: paymentScore, failedPayments },
         ticketSentimentVolume: { score: ticketScore, openTickets, negativeTickets },
-        nps: { score: npsScore, source: 'neutral_default' }
+        nps: { score: npsScore, source: nps.source, responses: nps.responses, value: nps.nps }
       }
     }
   });
@@ -185,6 +188,11 @@ export async function registerScheduledJobs() {
   await scheduledJobsQueue.add('customer.support-sla-sweep', {}, {
     jobId: 'customer.support-sla-sweep',
     repeat: { pattern: '*/15 * * * *', tz: 'UTC' }
+  });
+
+  await scheduledJobsQueue.add('customer.nps-survey-dispatch', {}, {
+    jobId: 'customer.nps-survey-dispatch',
+    repeat: { pattern: '10 7 * * *', tz: 'UTC' }
   });
 
   await scheduledJobsQueue.add('trust.dsar-overdue-sweep', {}, {
@@ -367,6 +375,12 @@ export async function startScheduledWorker(app: FastifyInstance) {
       if (job.name === DSAR_ERASE_JOB) {
         const result = await eraseDsar(app, { dsarId: String(job.data.dsarId ?? ''), tenantId: String(job.data.tenantId ?? '') });
         app.log.info({ status: result.status, dsarId: job.data.dsarId }, 'DSAR erasure finished');
+        return;
+      }
+
+      if (job.name === 'customer.nps-survey-dispatch') {
+        const result = await dispatchNpsSurveys(app);
+        app.log.info(result, 'Scheduled NPS survey dispatch finished');
         return;
       }
 

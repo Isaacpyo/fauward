@@ -22,7 +22,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0048_trust_safety_appeals (real number; not in the original plan, C64) | P2 / WP-2.4 | `FraudSignal.category/decisionNote/decidedAt`; `TenantAppeal.infoRequest/infoRequestedAt/tenantReply/tenantRepliedAt/decidedAt` |
 | 0046_region_change_requests (real: `0050_region_change_requests`, C66; Tenant relation) | P2 / WP-2.6 | `RegionChangeRequest` |
 | 0047_plan_change (real: `0051_plan_change`, backfill `0051-subscription-events.ts`, C67; adds `SubscriptionEvent.stripeEventId/planChangeRequestId`, `SaveOffer.redeemedCreditNoteId`) | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
-| 0048_feedback | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
+| 0048_feedback (real: `0052_feedback`, C68; Tenant/FeedbackItem relations) | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
 | 0049_announcement_receipts | P2 / WP-2.14 | `AnnouncementReceipt`; `PlatformAnnouncement.updatedAt/archivedAt` |
 | 0050_dsar_exports (real: `0049_dsar_exports`, C65; adds `DSARRequest.overdueAt`, `ExportBlob.tenantId`) | P2 / WP-2.5 | `DSARRequest` fields; `ComplianceExport` fields; `ExportBlob`; `LegalHold.releaseReason` |
 | 0051_tenant_payment_gateways | P2 / WP-2.12 | `TenantPaymentGateway` (encrypted); `TenantSettings.webhookSecret` encrypted in place |
