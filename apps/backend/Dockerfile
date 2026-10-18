@@ -1,73 +1,59 @@
-# ── Stage 1: Build ────────────────────────────────────────────────────────────
+# Backend image. Build context: repository root.
+#   docker build -f apps/backend/Dockerfile .
+#
+# Workspace packages (@fauward/*) come only from this repository, never from the npm registry:
+# the @fauward scope is not registered on npm, so a registry install would 404 or, worse,
+# pull a package someone else published under that name.
+
+# ── Stage 1: workspace manifests only, so `npm ci` stays cached until a package.json changes ──
+FROM node:20-alpine AS manifests
+WORKDIR /src
+COPY . .
+RUN mkdir -p /out && for f in package.json package-lock.json apps/*/package.json packages/*/package.json; do \
+      mkdir -p "/out/$(dirname "$f")" && cp "$f" "/out/$f"; \
+    done
+
+# ── Stage 2: install, generate, build ──
 FROM node:20-alpine AS builder
-WORKDIR /app
-
-# Copy root workspace manifest + every workspace's package.json
-# (npm workspaces requires all package.json files present before `npm ci`)
-COPY package*.json ./
-COPY apps/backend/package*.json       apps/backend/
-COPY apps/frontend/package*.json      apps/frontend/
-COPY apps/tenant-portal/package*.json apps/tenant-portal/
-COPY apps/super-admin/package*.json   apps/super-admin/
-COPY apps/agents/package*.json        apps/agents/
-COPY packages/brand/package*.json           packages/brand/
-COPY packages/design-tokens/package*.json   packages/design-tokens/
-COPY packages/domain-types/package*.json    packages/domain-types/
-COPY packages/formatting/package*.json      packages/formatting/
-COPY packages/shared-types/package*.json    packages/shared-types/
-COPY packages/theme-engine/package*.json    packages/theme-engine/
-COPY packages/tracking-core/package*.json   packages/tracking-core/
-COPY packages/pricing-core/package*.json    packages/pricing-core/
-COPY packages/relay-api/package*.json       packages/relay-api/
-COPY packages/internal-audit/package*.json  packages/internal-audit/
-COPY packages/internal-rbac/package*.json   packages/internal-rbac/
-
-RUN npm ci
-
-# ── Backend source ─────────────────────────────────────────────────────────────
-COPY apps/backend/src         apps/backend/src
-COPY apps/backend/tsconfig.json apps/backend/tsconfig.json
-COPY apps/backend/prisma      apps/backend/prisma
-
-# ── Workspace package sources ──────────────────────────────────────────────────
-# Packages whose `main` points to src/index.ts — TypeScript resolves them directly
-COPY packages/shared-types/src    packages/shared-types/src
-COPY packages/domain-types/src    packages/domain-types/src
-COPY packages/formatting/src      packages/formatting/src
-COPY packages/theme-engine/src    packages/theme-engine/src
-COPY packages/tracking-core/src   packages/tracking-core/src
-COPY packages/pricing-core/src    packages/pricing-core/src
-COPY packages/relay-api/src       packages/relay-api/src
-
-# Packages whose `main` points to dist/ — copy pre-built output
-COPY packages/internal-audit/dist  packages/internal-audit/dist
-COPY packages/internal-rbac/dist   packages/internal-rbac/dist
-
-# Generate Prisma client then compile TypeScript
-RUN cd apps/backend && npx prisma generate && npm run build
-
-# Install backend production deps in an isolated directory (no workspace hoisting issues)
-RUN mkdir /prod && cp apps/backend/package.json /prod/ && \
-    cd /prod && npm install --omit=dev
-
-# ── Stage 2: Production image ─────────────────────────────────────────────────
-FROM node:20-alpine
+# Prisma picks its query engine from the OpenSSL it finds; match the runtime stage (openssl 3).
 RUN apk add --no-cache openssl
 WORKDIR /app
+ENV PUPPETEER_SKIP_DOWNLOAD=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    CYPRESS_INSTALL_BINARY=0 \
+    HUSKY=0
+COPY --from=manifests /out/ ./
+RUN npm ci --no-audit --no-fund
+
+COPY packages/ packages/
+COPY apps/backend/ apps/backend/
+
+# internal-audit and internal-rbac resolve to dist/, which is not committed: build them here.
+RUN cd apps/backend && npx prisma generate
+RUN npm run build --workspace=@fauward/internal-rbac --workspace=@fauward/internal-audit
+RUN npm run build --workspace=@fauward/backend
+
+# ── Stage 3: runtime ──
+FROM node:20-alpine
+RUN apk add --no-cache openssl wget
 ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/backend/package.json ./apps/backend/package.json
+# npm leaves deps whose versions clash with other workspaces (e.g. @fastify/jwt) un-hoisted here
+COPY --from=builder /app/apps/backend/node_modules ./apps/backend/node_modules
+COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
+COPY --from=builder /app/apps/backend/prisma ./apps/backend/prisma
+# documents.service.ts reads HTML templates from <cwd>/src/modules/documents/templates
+COPY --from=builder /app/apps/backend/src ./apps/backend/src
 
-# Backend package.json declares "type":"module" — required for ESM
-COPY --from=builder /app/apps/backend/package.json ./package.json
-
-# Production node_modules from isolated install (all deps guaranteed present)
-COPY --from=builder /prod/node_modules ./node_modules
-
-# Compiled output and Prisma schema
-COPY --from=builder /app/apps/backend/dist/   ./dist/
-COPY --from=builder /app/apps/backend/prisma/ ./prisma/
-
-# Re-generate Prisma client against the production node_modules
-RUN npx prisma generate
-
+WORKDIR /app/apps/backend
+USER node
 EXPOSE 3001
-CMD ["node", "dist/server.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${PORT:-3001}/health" >/dev/null || exit 1
+# tracking-core, pricing-core, relay-api and theme-engine ship TypeScript sources (main: src/index.ts),
+# so the compiled backend loads them through the tsx loader.
+CMD ["node", "--import", "tsx", "dist/server.js"]

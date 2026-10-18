@@ -1,0 +1,133 @@
+# Fauward production on the Oracle VM. Deployed and operated by scripts/prod-vm.sh;
+# see docs/deploy-oracle-prod.md. Never run this against a dev slot.
+#
+# - No host ports: the only way in is the Cloudflare Tunnel (cloudflared -> backend:3001).
+# - Secrets live on the VM in ${FAUWARD_PROD_ENV_DIR}/*.env (chmod 600), never in git.
+# - Images are tagged with the release commit, so a rollback is `up -d --no-build` with an older RELEASE.
+# - The database is Supabase (SUPABASE_DB_URL in backend.env); Redis here holds queues only.
+name: fauward-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-python: &python
+  build:
+    context: ../../services/python-services
+  image: fauward-prod/python-services:${RELEASE:?set RELEASE}
+  env_file: ${FAUWARD_PROD_ENV_DIR:-/data/fauward-prod/env}/python.env
+  restart: unless-stopped
+  logging: *logging
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:7.4.11-alpine
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 384mb
+      - --maxmemory-policy
+      - noeviction # BullMQ and Celery must never lose queued jobs
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD in compose.env}
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    mem_limit: 512m
+    restart: unless-stopped
+    logging: *logging
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: fauward-prod/backend:${RELEASE:?set RELEASE}
+    env_file: ${FAUWARD_PROD_ENV_DIR:-/data/fauward-prod/env}/backend.env
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      ROUTE_OPTIMIZER_URL: http://route-optimizer:8000
+      PYTHON_SERVICES_URL: http://python-api:8000
+      GIT_COMMIT: ${RELEASE}
+      GIT_BRANCH: ${RELEASE_REF:-}
+      BUILD_TIME: ${RELEASE_TIME:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 1536m
+    restart: unless-stopped
+    logging: *logging
+
+  python-api:
+    <<: *python
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      BACKEND_URL: http://backend:3001
+      PYTHON_QUEUE_LISTENERS_ENABLED: "false"
+      PYTHON_LOCAL_STORAGE_DIR: /storage
+    volumes:
+      - python-storage:/storage
+    mem_limit: 768m
+
+  python-worker:
+    <<: *python
+    command: celery -A celery_app worker --loglevel=info -Q pdf,routes,analytics,ocr,notifications,pricing,customs,ml --pool=solo
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      BACKEND_URL: http://backend:3001
+      PYTHON_QUEUE_LISTENERS_ENABLED: "true"
+      PYTHON_LOCAL_STORAGE_DIR: /storage
+    volumes:
+      - python-storage:/storage
+    mem_limit: 1g
+
+  python-beat:
+    <<: *python
+    command: celery -A celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      BACKEND_URL: http://backend:3001
+      PYTHON_QUEUE_LISTENERS_ENABLED: "false"
+    mem_limit: 256m
+
+  route-optimizer:
+    build:
+      context: ../../services/route-optimizer
+    image: fauward-prod/route-optimizer:${RELEASE:?set RELEASE}
+    environment:
+      PORT: "8000"
+    volumes:
+      - route-optimizer-data:/app/data
+    mem_limit: 768m
+    restart: unless-stopped
+    logging: *logging
+
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    command: tunnel --no-autoupdate run
+    env_file: ${FAUWARD_PROD_ENV_DIR:-/data/fauward-prod/env}/cloudflared.env
+    depends_on:
+      - backend
+    mem_limit: 128m
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  redis-data:
+  python-storage:
+  route-optimizer-data:

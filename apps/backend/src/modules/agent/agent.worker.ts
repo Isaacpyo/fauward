@@ -1,6 +1,7 @@
 import { Worker, type Job } from 'bullmq';
 import type { FastifyInstance } from 'fastify';
 
+import { bullmqConnection } from '../../queues/queues.js';
 import { runWithTenantContext } from '../../context/tenant.context.js';
 import { AgentEventSchema } from './agent.schemas.js';
 import { runAgent } from './agent.service.js';
@@ -66,7 +67,7 @@ export function startAgentWorker(app: FastifyInstance) {
       app.log.info({ jobId: job.id, runStatus: result.status }, 'agent job complete');
     },
     {
-      connection: { host: process.env.REDIS_HOST ?? 'localhost', port: 6379 },
+      connection: bullmqConnection,
       concurrency: 5
     }
   );

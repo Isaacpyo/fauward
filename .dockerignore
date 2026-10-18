@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+.git
+docs
+console-run
+Claude outputs
+**/playwright-report
+**/test-results
