@@ -5,6 +5,7 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
 import { planService } from '../tenants/plan.service.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -61,22 +62,17 @@ export async function runOverdueInvoiceSweep(app: FastifyInstance) {
   });
 
   for (const invoice of overdueInvoices) {
-    await app.prisma.$transaction([
-      app.prisma.invoice.update({
-        where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
-        data: { status: 'OVERDUE' }
-      }),
-      app.prisma.notificationLog.createMany({
-        data: [
-          {
-            tenantId: invoice.tenantId,
-            channel: 'EMAIL',
-            event: 'invoice_overdue',
-            status: 'QUEUED'
-          }
-        ]
-      })
-    ]);
+    await app.prisma.invoice.update({
+      where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
+      data: { status: 'OVERDUE' }
+    });
+    await notifyCustomer(app, {
+      tenantId: invoice.tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'invoice_overdue',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: invoice.total.toFixed(2), currency: invoice.currency }
+    });
   }
 
   return overdueInvoices.length;
@@ -282,16 +278,6 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
         data: { status: 'SENT', sentAt: new Date() }
       });
 
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          channel: 'EMAIL',
-          event: 'invoice_sent',
-          status: 'QUEUED',
-          userId: invoice.customerId ?? undefined
-        }
-      });
-
       await tx.auditLog.create({
         data: {
           tenantId,
@@ -304,6 +290,14 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       });
 
       return next;
+    });
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'invoice_sent',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: invoice.total.toFixed(2), currency: invoice.currency, dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? '' }
     });
 
     reply.send(updated);
@@ -361,16 +355,6 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          channel: 'EMAIL',
-          event: 'payment_received',
-          status: 'QUEUED',
-          userId: invoice.customerId ?? undefined
-        }
-      });
-
       await tx.auditLog.create({
         data: {
           tenantId,
@@ -389,6 +373,14 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       });
 
       return { payment, invoice: updatedInvoice };
+    });
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'payment_received',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: result.payment.amount.toFixed(2), currency: result.payment.currency }
     });
 
     reply.send(result);

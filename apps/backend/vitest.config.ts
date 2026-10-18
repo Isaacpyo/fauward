@@ -32,7 +32,10 @@ export default defineConfig({
       VERCEL_API_TOKEN: 'test-vercel-token',
       VERCEL_PORTAL_PROJECT_ID: 'prj_test_portal',
       VERCEL_API_BASE: 'https://api.vercel.test',
-      RESERVED_DOMAINS: 'fauward.com,www.fauward.com,api.fauward.com,app.fauward.com'
+      RESERVED_DOMAINS: 'fauward.com,www.fauward.com,api.fauward.com,app.fauward.com',
+      // No email transport unless a test stubs one (a developer .env may point SMTP_URL at Mailpit).
+      SMTP_URL: '',
+      SENDGRID_API_KEY: ''
     }
   },
   css: {

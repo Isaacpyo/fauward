@@ -12,6 +12,7 @@ import { writeInternalAudit } from './internal-audit.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { liftSuspension, staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
+import { notifyTenantAdmins } from '../../services/platform-notifier.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -639,7 +640,16 @@ function registerSupport(app: FastifyInstance) {
         platformAuthorId: actorId(request)
       }
     });
-    await app.prisma.notificationLog.create({ data: { tenantId: ticket.tenantId, channel: 'EMAIL', event: 'support_ticket_reply_from_sa', status: 'QUEUED' } });
+    if (body.isInternal !== true) {
+      await notifyTenantAdmins(app, {
+        tenantId: ticket.tenantId,
+        event: 'support.reply_from_fauward',
+        title: `Fauward Support replied to ${ticket.ticketNumber}`,
+        body: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+        link: `/support/${ticket.id}`,
+        email: { template: 'support_reply_from_fauward', data: { ticketNumber: ticket.ticketNumber, excerpt: text.slice(0, 500) } }
+      });
+    }
     await writeInternalAudit(request, 'support.ticket.reply', 'support_ticket', id, ticket, message, stringValue(body.reason, 'Support ticket reply'));
     reply.status(201).send(message);
   });
@@ -903,6 +913,17 @@ function registerSafety(app: FastifyInstance) {
       }
     }
     await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
+    if (before.tenantId && ['APPROVED', 'REJECTED'].includes(status)) {
+      const resolution = stringValue(body.reviewNote, stringValue(body.reason)) || undefined;
+      await notifyTenantAdmins(app, {
+        tenantId: before.tenantId,
+        event: 'appeal.decided',
+        title: status === 'APPROVED' ? 'Your appeal was approved' : 'Your appeal was rejected',
+        body: resolution,
+        link: '/',
+        email: { template: 'appeal_decided', data: { decision: status, resolution } }
+      });
+    }
     reply.send(after);
   });
 

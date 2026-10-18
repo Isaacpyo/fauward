@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const sendEmailMock = vi.fn(async () => undefined);
-vi.mock('../modules/notifications/notifications.service.js', () => ({ sendEmail: sendEmailMock }));
+const sendStaffEmailMock = vi.fn(async () => undefined);
+vi.mock('../modules/notifications/notifications.service.js', () => ({ sendEmail: sendEmailMock, sendStaffEmail: sendStaffEmailMock }));
 
 const { notifyStaff, notifyTenantAdmins } = await import('./platform-notifier.service.js');
 const { recordActivity, publishActivity } = await import('./platform-activity.service.js');

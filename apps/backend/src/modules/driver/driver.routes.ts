@@ -9,6 +9,7 @@ import {
 } from '../shipments/shipment-events.const.js';
 import { enqueueAgentEvent } from '../agent/agent.queue.js';
 import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -320,17 +321,15 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          userId: shipment.customerId ?? undefined,
-          channel: 'EMAIL',
-          event: 'failed_delivery',
-          status: 'QUEUED'
-        }
-      });
-
       return shipmentEvent;
+    });
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: shipment.customerId,
+      organisationId: shipment.organisationId,
+      template: 'failed_delivery',
+      data: { trackingNumber: shipment.trackingNumber, reason: payload.reason }
     });
 
     fireAndForget(

@@ -9,6 +9,7 @@ import { handleDunningEvent, handleDunningPaid } from './billing.service.js';
 import { stripeService } from './stripe.service.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 async function handleReturnPayment(app: FastifyInstance, tenantId: string, returnId: string) {
   const returnReq = await app.prisma.returnRequest.findFirst({
@@ -370,15 +371,12 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
             });
           }
 
-          await tx.notificationLog.create({
-            data: {
-              tenantId: payment.tenantId,
-              userId: payment.customerId ?? undefined,
-              channel: 'EMAIL',
-              event: 'payment_received',
-              status: 'QUEUED'
-            }
-          });
+        });
+        await notifyCustomer(app, {
+          tenantId: payment.tenantId,
+          userId: payment.customerId,
+          template: 'payment_received',
+          data: { amount: payment.amount.toFixed(2), currency: payment.currency }
         });
       }
     }
@@ -396,15 +394,12 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
             }
           });
 
-          await tx.notificationLog.create({
-            data: {
-              tenantId: payment.tenantId,
-              userId: payment.customerId ?? undefined,
-              channel: 'EMAIL',
-              event: 'payment_failed',
-              status: 'QUEUED'
-            }
-          });
+        });
+        await notifyCustomer(app, {
+          tenantId: payment.tenantId,
+          userId: payment.customerId,
+          template: 'payment_failed',
+          data: { amount: payment.amount.toFixed(2), currency: payment.currency }
         });
       }
     }

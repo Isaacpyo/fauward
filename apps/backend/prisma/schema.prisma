@@ -1751,20 +1751,33 @@ model CustomsDeclaration {
 // ─── PLATFORM: NOTIFICATIONS ──────────────────────────────────────────────────
 
 model NotificationLog {
-  id          String              @id @default(uuid())
-  tenantId    String
-  tenant      Tenant              @relation(fields: [tenantId], references: [id])
-  userId      String?
-  shipmentId  String?
-  channel     NotificationChannel
-  event       String
-  status      String              @default("QUEUED")
-  providerRef String?
-  error       String?
-  sentAt      DateTime?
-  createdAt   DateTime            @default(now())
+  id             String              @id @default(uuid())
+  // Null for Fauward staff notifications (PlatformNotifier.notifyStaff email, D6).
+  tenantId       String?
+  tenant         Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userId         String?
+  platformUserId String?
+  shipmentId     String?
+  channel        NotificationChannel
+  event          String
+  template       String?
+  // Email address or phone number; shown only in the console's sensitive delivery-log view.
+  recipient      String?
+  // BullMQ job id: one row per job however many attempts it takes (WP-2.2).
+  jobId          String?             @unique
+  attempts       Int                 @default(0)
+  // QUEUED | SENT | FAILED | SKIPPED | QUOTA_EXCEEDED
+  status         String              @default("QUEUED")
+  // SENDGRID | SMTP | TWILIO
+  provider       String?
+  providerRef    String?
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @default(now()) @updatedAt
 
   @@index([tenantId])
+  @@index([status, createdAt])
   @@map("notification_logs")
 }
 

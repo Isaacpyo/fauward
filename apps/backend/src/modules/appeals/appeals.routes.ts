@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { getActiveSuspension } from '../../services/tenant-suspension.service.js';
+import { notifyStaff } from '../../services/platform-notifier.service.js';
+import { recordAndPublishActivity } from '../../services/platform-activity.service.js';
 
 function tenantFrom(request: FastifyRequest, reply: FastifyReply) {
   const tenant = request.tenant;
@@ -85,13 +87,33 @@ export async function registerAppealRoutes(app: FastifyInstance) {
       }
     });
 
-    await app.prisma.notificationLog.create({
-      data: {
+    // Trust & Safety hears about it (D6, ACC-NOT-4) and it shows in the console feed (L3).
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: request.log },
+      {
+        service: 'trust.safety',
+        type: 'appeal.submitted',
         tenantId: tenant.id,
-        channel: 'EMAIL',
-        event: 'trust_safety_appeal_submitted',
-        status: 'QUEUED'
+        actorType: 'TENANT_USER',
+        actorId: request.user?.sub ?? null,
+        actorLabel: contactEmail,
+        subjectType: 'appeal',
+        subjectId: appeal.id,
+        summary: `${tenant.name ?? tenant.slug} appealed its suspension`,
+        severity: 'ATTENTION',
+        consoleLink: `/trust/safety/appeals?appeal=${appeal.id}`,
+        dedupeKey: `appeal.submitted:${appeal.id}`
       }
+    );
+    await notifyStaff(app, {
+      permission: 'trust.safety.read',
+      event: 'appeal.submitted',
+      title: `Suspension appeal from ${tenant.name ?? tenant.slug}`,
+      body: reason.length > 200 ? `${reason.slice(0, 200)}…` : reason,
+      link: `/trust/safety/appeals?appeal=${appeal.id}`,
+      severity: 'ATTENTION',
+      tenantId: tenant.id,
+      email: true
     });
 
     reply.status(201).send({ appeal });

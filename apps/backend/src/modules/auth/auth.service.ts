@@ -5,6 +5,8 @@ import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload,
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
 import { verifyFirebaseIdToken } from './firebase-token.js';
+import { enqueueEmail } from '../notifications/notifications.service.js';
+import { config } from '../../config/index.js';
 import { isReservedSlug } from '../tenants/reserved-slugs.js';
 import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
 
@@ -506,17 +508,6 @@ export const authService = {
       )
     );
 
-    await prisma.notificationLog.create({
-      data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        channel: 'EMAIL',
-        event: 'field_email_link',
-        status: 'QUEUED',
-        providerRef: linkToken
-      }
-    });
-
     return {
       success: true,
       linkToken,
@@ -586,18 +577,16 @@ export const authService = {
       }
     });
 
-    await prisma.notificationLog.create({
-      data: {
-        tenantId,
-        userId: user.id,
-        channel: 'EMAIL',
-        event: 'password_reset',
-        status: 'QUEUED',
-        providerRef: rawToken
-      }
+    // The token only ever travels in the email; the API answers the same whether or not the account exists (C61).
+    await enqueueEmail({
+      tenantId,
+      userId: user.id,
+      to: user.email,
+      template: 'password_reset',
+      data: { resetUrl: `${config.publicSiteUrl}/reset-password?token=${rawToken}`, expiresInMinutes: 60 }
     });
 
-    return { success: true, token: rawToken };
+    return { success: true };
   },
   resetPassword: async (
     payload: { token: string; newPassword: string },

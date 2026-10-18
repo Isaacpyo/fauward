@@ -10,6 +10,7 @@ import { findServiceByKey } from "@/pillars/_manifests";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
+import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
@@ -182,7 +183,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/success/playbooks", element: <OpsRoute permission="customer.success.read" title="CS Playbooks" description="Health-triggered customer success playbooks." endpoint="/success/playbooks" /> },
   { path: "/customer/success/playbooks/:id/runs", element: <OpsRoute permission="customer.success.read" title="Playbook Runs" description="Sequential playbook execution status for tenant workflows." endpoint="/success/playbooks/:id/runs" /> },
   { path: "/customer/success/health-scoring", element: <OpsRoute permission="customer.success.read" title="Health Scoring" description="Weighted model configuration for nightly health scoring." endpoint="/success/health-scoring" /> },
-  { path: "/customer/comms", element: <OpsRoute permission="customer.comms.read" title="Communications Hub" description="Tenant-facing announcements and incident notices." endpoint="/announcements" primaryAction="New announcement" /> },
+  { path: "/customer/comms", element: <OpsRoute permission="customer.comms.read" title="Communications Hub" description="Tenant-facing announcements and incident notices." endpoint="/announcements" primaryAction="New announcement" related={[{ label: "Delivery log", to: "/customer/comms/delivery-log" }]} /> },
+  { path: "/customer/comms/delivery-log", element: <PermissionRoute permission="customer.comms.read">
+                <DeliveryLogPage />
+              </PermissionRoute> },
   { path: "/customer/onboarding", element: <OpsRoute permission="customer.onboarding.read" title="Onboarding Tracker" description="Activation funnel for recently created tenants." endpoint="/onboarding/funnel" /> },
   { path: "/customer/qbr", element: <OpsRoute permission="customer.qbr.read" title="QBR Center" description="Quarterly business review calendar and generated decks." endpoint="/qbr" related={[{ label: "Templates", to: "/customer/qbr/templates" }]} /> },
   { path: "/customer/qbr/templates", element: <OpsRoute permission="customer.qbr.read" title="QBR Templates" description="HTML/CSS deck templates by customer segment." endpoint="/qbr/templates" /> },

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { domainService } from '../tenants/domain.service.js';
 import { getActiveSuspensions, liftDunningSuspensionForInvoice, suspendTenant } from '../../services/tenant-suspension.service.js';
+import { notifyTenantAdmins } from '../../services/platform-notifier.service.js';
 
 const STRIPE_ACTOR = { type: 'SYSTEM' as const, label: 'Stripe billing' };
 
@@ -19,13 +20,13 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
   const prisma = app.prisma;
 
   if (attempt === 1) {
-    await prisma.notificationLog.create({
-      data: {
-        tenantId,
-        channel: 'EMAIL',
-        event: 'billing_payment_failed_attempt_1',
-        status: 'QUEUED'
-      }
+    await notifyTenantAdmins(app, {
+      tenantId,
+      event: 'billing.payment_failed',
+      title: 'Your Fauward payment failed',
+      body: 'Update your payment details in Settings → Billing. We will retry in 3 days.',
+      link: '/settings?tab=billing',
+      email: { template: 'billing_payment_failed', data: { invoiceRef: event.invoiceRef } }
     });
     return { tenantStatus: 'ACTIVE', retryInDays: 3 };
   }
@@ -43,13 +44,13 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
   }
 
   if (attempt >= 3) {
-    await prisma.notificationLog.create({
-      data: {
-        tenantId,
-        channel: 'EMAIL',
-        event: 'billing_payment_failed_final_warning',
-        status: 'QUEUED'
-      }
+    await notifyTenantAdmins(app, {
+      tenantId,
+      event: 'billing.final_warning',
+      title: 'Final notice: payment failed again',
+      body: 'Your workspace stays suspended until the outstanding invoice is paid.',
+      link: '/settings?tab=billing',
+      email: { template: 'billing_final_warning', data: { invoiceRef: event.invoiceRef } }
     });
 
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -64,13 +65,12 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
         actorType: 'SYSTEM'
       });
       await prisma.tenant.update({ where: { id: tenantId }, data: { status: 'CANCELLED' } });
-      await prisma.notificationLog.create({
-        data: {
-          tenantId,
-          channel: 'EMAIL',
-          event: 'billing_account_cancelled_after_dunning',
-          status: 'QUEUED'
-        }
+      await notifyTenantAdmins(app, {
+        tenantId,
+        event: 'billing.account_cancelled',
+        title: 'Your Fauward subscription was cancelled',
+        body: 'The subscription was cancelled after repeated failed payments.',
+        email: { template: 'billing_account_cancelled', data: { invoiceRef: event.invoiceRef } }
       });
       return { tenantStatus: 'CANCELLED', retryInDays: 0 };
     }

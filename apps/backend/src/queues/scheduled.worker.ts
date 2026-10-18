@@ -7,6 +7,7 @@ import { domainService } from '../modules/tenants/domain.service.js';
 import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
 import { pruneOldActivity } from '../jobs/activity-prune.js';
+import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
 type ScheduledJobData = Record<string, unknown>;
@@ -220,54 +221,14 @@ export async function startScheduledWorker(app: FastifyInstance) {
       }
 
       if (job.name === 'tenant.trial-expiry-warning') {
-        const now = new Date();
-        const inThreeDays = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-        const subs = await app.prisma.subscription.findMany({
-          where: {
-            status: 'TRIALING',
-            trialEnd: {
-              gte: now,
-              lte: inThreeDays
-            }
-          },
-          select: { tenantId: true }
-        });
-
-        if (subs.length > 0) {
-          await app.prisma.notificationLog.createMany({
-            data: subs.map((sub) => ({
-              tenantId: sub.tenantId,
-              channel: 'EMAIL',
-              event: 'trial_expiring',
-              status: 'QUEUED'
-            }))
-          });
-        }
-
-        app.log.info({ count: subs.length }, 'Scheduled trial expiry warning job finished');
+        const result = await sendTrialExpiryWarnings(app);
+        app.log.info(result, 'Scheduled trial expiry warning job finished');
         return;
       }
 
       if (job.name === 'tenant.usage-report') {
-        const month = new Date().toISOString().slice(0, 7);
-        const usageRecords = await app.prisma.usageRecord.findMany({
-          where: { month },
-          select: { tenantId: true }
-        });
-
-        if (usageRecords.length > 0) {
-          await app.prisma.notificationLog.createMany({
-            data: usageRecords.map((usage) => ({
-              tenantId: usage.tenantId,
-              channel: 'EMAIL',
-              event: 'daily_usage_report',
-              status: 'QUEUED'
-            }))
-          });
-        }
-
-        app.log.info({ count: usageRecords.length }, 'Scheduled usage report job finished');
+        const result = await sendUsageThresholdNotices(app);
+        app.log.info(result, 'Scheduled usage threshold notices finished');
         return;
       }
 
