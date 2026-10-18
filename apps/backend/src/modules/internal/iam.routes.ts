@@ -10,6 +10,7 @@ import { hashPassword } from '../../shared/utils/hash.js';
 import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
 import { platformAuditClient } from '../../services/platform-audit-client.js';
 import { seedStaffRoles, STAFF_ROLE_DEFINITIONS, staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
+import { publishActivity, recordActivity, recordAndPublishActivity, staffActor, type ActivityInput } from '../../services/platform-activity.service.js';
 
 const mutationPre = [authenticatePlatformSession, requirePlatformCsrf];
 const ROOT_EQUIVALENT_ROLES = new Set(['ROOT', 'SUPER_ADMIN']);
@@ -79,6 +80,24 @@ async function auditIam(request: FastifyRequest, action: string, targetType: str
   });
 }
 
+/** PlatformActivity for an IAM mutation (D7): service `trust.iam`, subject = the staff user or assignment. */
+function iamActivity(request: FastifyRequest, input: Pick<ActivityInput, 'type' | 'subjectType' | 'subjectId' | 'summary' | 'severity'> & { staffId: string }): ActivityInput {
+  return {
+    service: 'trust.iam',
+    ...staffActor(request),
+    type: input.type,
+    subjectType: input.subjectType,
+    subjectId: input.subjectId,
+    summary: input.summary,
+    severity: input.severity ?? 'ATTENTION',
+    consoleLink: `/trust/iam/users/${input.staffId}`
+  };
+}
+
+function iamActivityDeps(app: FastifyInstance) {
+  return { prisma: app.prisma, redis: app.redis, log: app.log };
+}
+
 function staffSelect() {
   return {
     roleAssignments: { include: { role: true }, orderBy: { grantedAt: 'desc' as const } },
@@ -123,11 +142,17 @@ async function changeStaffStatus(app: FastifyInstance, request: FastifyRequest, 
     if (next !== 'ACTIVE') {
       await tx.staffSession.updateMany({ where: { staffId: id, revokedAt: null }, data: { revokedAt: now } });
     }
-    return tx.staffUser.update({ where: { id }, data: { status: next }, include: staffSelect() });
+    const updated = await tx.staffUser.update({ where: { id }, data: { status: next }, include: staffSelect() });
+    const activity = await recordActivity(
+      tx,
+      iamActivity(request, { type: action, subjectType: 'staff_user', subjectId: id, staffId: id, summary: `${before.email}: ${before.status} → ${next}` })
+    );
+    return { updated, activity };
   });
+  publishActivity(app.redis, after.activity, app.log);
 
   await auditIam(request, action, 'staff_user', id, { status: before.status }, { status: next, sessionsRevoked: next !== 'ACTIVE' }, reason);
-  return reply.send(after);
+  return reply.send(after.updated);
 }
 
 export async function registerInternalIamRoutes(app: FastifyInstance) {
@@ -211,6 +236,10 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       rootGrantHardwareKeyFingerprint ? { staffUser: created, rootGrantHardwareKeyFingerprint } : created,
       body.reason
     );
+    await recordAndPublishActivity(
+      iamActivityDeps(app),
+      iamActivity(request, { type: 'staff.user.create', subjectType: 'staff_user', subjectId: created.id, staffId: created.id, summary: `Created ${created.email} with ${roleIds.join(', ')}` })
+    );
     reply.status(201).send(created);
   });
 
@@ -227,6 +256,10 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       await app.prisma.platformUser.update({ where: { id: before.platformUserId }, data: { name: body.name } });
     }
     await auditIam(request, 'staff.user.update', 'staff_user', id, { name: before.name }, { name: after.name }, body.reason);
+    await recordAndPublishActivity(
+      iamActivityDeps(app),
+      iamActivity(request, { type: 'staff.user.update', subjectType: 'staff_user', subjectId: id, staffId: id, summary: `Renamed ${before.email}`, severity: 'INFO' })
+    );
     reply.send(after);
   });
 
@@ -284,6 +317,17 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       rootGrantHardwareKeyFingerprint ? { assignment, rootGrantHardwareKeyFingerprint } : assignment,
       body.reason
     );
+    await recordAndPublishActivity(
+      iamActivityDeps(app),
+      iamActivity(request, {
+        type: 'staff.role.assign',
+        subjectType: 'staff_role_assignment',
+        subjectId: assignment.id,
+        staffId: body.staffId,
+        summary: `Granted ${body.roleId} to ${assignment.staff.email}`,
+        severity: ROOT_EQUIVALENT_ROLES.has(body.roleId) ? 'CRITICAL' : 'ATTENTION'
+      })
+    );
     reply.status(201).send(assignment);
   });
 
@@ -296,6 +340,10 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     }
     await app.prisma.staffRoleAssignment.delete({ where: { id } });
     await auditIam(request, 'staff.role.revoke', 'staff_role_assignment', id, before, null, reasonOf(request));
+    await recordAndPublishActivity(
+      iamActivityDeps(app),
+      iamActivity(request, { type: 'staff.role.revoke', subjectType: 'staff_role_assignment', subjectId: id, staffId: before.staffId, summary: `Revoked ${before.roleId} from ${before.staff.email}` })
+    );
     reply.status(204).send();
   });
 
@@ -325,6 +373,10 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
       }
     });
     await auditIam(request, 'staff.mfa.reset', 'staff_user', id, { mfaEnabled: staff.mfaEnabled }, { mfaEnabled: false, sessionsRevoked: true }, reason);
+    await recordAndPublishActivity(
+      iamActivityDeps(app),
+      iamActivity(request, { type: 'staff.mfa.reset', subjectType: 'staff_user', subjectId: id, staffId: id, summary: `Reset MFA for ${staff.email}` })
+    );
     reply.send({ id, mfaEnabled: false, sessionsRevokedAt: now.toISOString() });
   });
 

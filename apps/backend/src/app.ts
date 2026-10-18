@@ -55,6 +55,7 @@ import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js'
 import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
 import { registerInternalCustomer360Routes } from './modules/internal/customer360.routes.js';
 import { registerInternalConsolePhaseRoutes } from './modules/internal/console-phases.routes.js';
+import { registerStaffNotificationRoutes } from './modules/internal/shell/notifications.routes.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -143,6 +144,8 @@ export async function buildApp() {
 
   app.addHook('preHandler', auditMiddleware({ prisma: app.prisma as unknown as PlatformAuditClient, shouldAudit: (request) => {
     const method = request.method?.toUpperCase();
+    // Marking one's own bell entries read is not a platform mutation.
+    if (request.url?.startsWith('/api/internal/notifications/staff')) return false;
     return Boolean(request.url?.startsWith('/api/internal/') && method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
   } }));
 
@@ -282,6 +285,7 @@ export async function buildApp() {
   await registerInternalBillingRoutes(app);
   await registerInternalCustomer360Routes(app);
   await registerInternalConsolePhaseRoutes(app);
+  await registerStaffNotificationRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
   await registerShippingLabelRoutes(app);

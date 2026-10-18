@@ -15,8 +15,8 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0040_ledger_kind | P1 / WP-1.5 | `enum LedgerKind`; `kind` on Invoice/Payment/Refund/CreditNote; `Invoice.stripeInvoiceId` |
 | 0041_tenant_entitlements | P1 / WP-1.4 | `TenantFeatureOverride` |
 | 0042_tenant_close | P1 / WP-1.2 | `Tenant.closedAt`, `closedReason`, `purgeAfter` |
-| 0043_platform_activity | P1 / WP-1.0 | `PlatformActivity`; `OutboxEvent.tenantId` |
-| 0044_staff_notifications | P1 / WP-1.0 | `StaffNotification` |
+| 0043_platform_activity (real: `0040_platform_activity`, C11) | P1 / WP-1.0 | `PlatformActivity`; `OutboxEvent.tenantId` |
+| 0044_staff_notifications (real: `0041_staff_notifications`, C11) | P1 / WP-1.0 | `StaffNotification` |
 | 0045_support_audience | P2 / WP-2.3 | `TicketAudience`, `MessageAuthorType`, `MessageVisibility`; ticket/message columns; backfill |
 | 0046_region_change_requests | P2 / WP-2.6 | `RegionChangeRequest` |
 | 0047_plan_change | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
