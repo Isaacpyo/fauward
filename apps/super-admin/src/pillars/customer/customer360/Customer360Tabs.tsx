@@ -1,0 +1,432 @@
+import { useEffect, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { usePermission } from "@fauward/internal-rbac";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { MoneyCell } from "@/components/service-kit/MoneyCell";
+import { consoleApi } from "@/lib/console-api";
+import { toConsoleApiError } from "@/lib/console-api-error";
+import { C360_KEY, useC360 } from "./api";
+
+const card = "rounded-lg border border-[var(--color-border)] bg-white p-4";
+const th = "py-1 text-left text-xs font-semibold text-[var(--color-text-muted)]";
+
+function when(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString() : "—";
+}
+
+function limitText(value: number) {
+  return value === -1 ? "Unlimited" : String(value);
+}
+
+/** Loading / error / data for one tab; a failing endpoint only affects its own tab (ACC-C360-1). */
+function TabQuery<T>({ query, label, children }: { query: { isLoading: boolean; isError: boolean; error: unknown; data: T | undefined; refetch: () => unknown }; label: string; children: (data: T) => ReactNode }) {
+  if (query.isLoading) return <p className="text-sm text-[var(--color-text-muted)]">Loading {label}…</p>;
+  if (query.isError) return <ConsoleApiErrorPanel error={query.error} onRetry={() => void query.refetch()} title={`Unable to load ${label}`} />;
+  if (query.data === undefined) return null;
+  return <>{children(query.data)}</>;
+}
+
+export function OverviewTab({ tenantId }: { tenantId: string }) {
+  const summary = useC360(tenantId, "summary");
+  return (
+    <TabQuery query={summary} label="the overview">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Account</h2>
+            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <dt className="text-[var(--color-text-muted)]">Effective plan</dt>
+              <dd>
+                {data.plan.effectivePlan}
+                {data.plan.effectivePlan !== data.plan.billingPlan ? ` (billing ${data.plan.billingPlan})` : ""}
+              </dd>
+              <dt className="text-[var(--color-text-muted)]">Subscription</dt>
+              <dd>{data.subscription ? `${data.subscription.billingCycle.toLowerCase()} · ${data.subscription.status}` : "None"}</dd>
+              <dt className="text-[var(--color-text-muted)]">KYC</dt>
+              <dd>{data.kycStatus}</dd>
+              <dt className="text-[var(--color-text-muted)]">Active staff</dt>
+              <dd>{data.activeStaff}</dd>
+              <dt className="text-[var(--color-text-muted)]">Open tickets</dt>
+              <dd>{data.openTickets}</dd>
+              <dt className="text-[var(--color-text-muted)]">Customer since</dt>
+              <dd>{when(data.identity.createdAt)}</dd>
+            </dl>
+          </section>
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Suspensions</h2>
+            {data.activeSuspensions.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No active suspension.</p> : null}
+            <ul className="mt-2 space-y-1 text-sm">
+              {data.activeSuspensions.map((suspension) => (
+                <li key={suspension.id}>
+                  {suspension.source} · {suspension.category} since {when(suspension.createdAt)}
+                </li>
+              ))}
+            </ul>
+            <Link to={`/platform/tenants/${data.identity.id}?tab=suspensions`} className="mt-2 inline-block text-xs font-semibold text-[var(--fauward-navy)] hover:underline">
+              Manage on the tenant page
+            </Link>
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function UsageTab({ tenantId }: { tenantId: string }) {
+  const usage = useC360(tenantId, "usage");
+  return (
+    <TabQuery query={usage} label="usage">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <section className={`${card} lg:col-span-2`}>
+            <h2 className="text-sm font-semibold">Last 12 months</h2>
+            <table className="mt-2 min-w-full text-sm">
+              <thead>
+                <tr>
+                  <th className={th}>Month</th>
+                  <th className={`${th} text-right`}>Shipments</th>
+                  <th className={`${th} text-right`}>API calls</th>
+                  <th className={`${th} text-right`}>SMS</th>
+                  <th className={`${th} text-right`}>Emails</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {data.months.map((row) => (
+                  <tr key={row.month}>
+                    <td className="py-1 font-mono text-xs">{row.month}</td>
+                    <td className="py-1 text-right tabular-nums">{row.shipments}</td>
+                    <td className="py-1 text-right tabular-nums">{row.apiCalls}</td>
+                    <td className="py-1 text-right tabular-nums">{row.smsSent}</td>
+                    <td className="py-1 text-right tabular-nums">{row.emailsSent}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Limits vs usage</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">{data.limitsSource === "tenant" ? "Limits set by Fauward staff." : "Limits from the plan."}</p>
+            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+              <dt className="text-[var(--color-text-muted)]">Shipments this month</dt>
+              <dd>
+                {data.current.shipmentsThisMonth} / {limitText(data.limits.maxShipmentsPm)}
+              </dd>
+              <dt className="text-[var(--color-text-muted)]">Staff</dt>
+              <dd>
+                {data.current.staff} / {limitText(data.limits.maxStaff)}
+              </dd>
+              <dt className="text-[var(--color-text-muted)]">Shipments all time</dt>
+              <dd>{data.shipmentsTotal}</dd>
+              <dt className="text-[var(--color-text-muted)]">API calls (30 days)</dt>
+              <dd>
+                {data.api.callsLast30Days} ({data.api.errorsLast30Days} errors)
+              </dd>
+              <dt className="text-[var(--color-text-muted)]">API keys</dt>
+              <dd>{data.api.keys.filter((key) => key.isActive).length} active</dd>
+            </dl>
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function BillingTab({ tenantId }: { tenantId: string }) {
+  const billing = useC360(tenantId, "billing");
+  return (
+    <TabQuery query={billing} label="billing">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Invoices from Fauward ({data.invoiceCount})</h2>
+            {data.invoices.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">Fauward has not invoiced this tenant.</p> : null}
+            <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
+              {data.invoices.map((invoice) => (
+                <li key={invoice.id} className="flex justify-between gap-2 py-1">
+                  <Link to={`/revenue/billing/invoices/${invoice.id}`} className="font-mono text-xs underline">
+                    {invoice.invoiceNumber}
+                  </Link>
+                  <span className="text-xs">{invoice.status}</span>
+                  <MoneyCell amount={invoice.total} currency={invoice.currency} />
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Subscription and dunning</h2>
+            <p className="mt-2 text-sm">{data.subscription ? `${data.subscription.plan} · ${data.subscription.billingCycle.toLowerCase()} · ${data.subscription.status}${data.subscription.cancelAtPeriodEnd ? " · cancels at period end" : ""}` : "No subscription."}</p>
+            <h3 className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">Dunning events</h3>
+            {data.dunning.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">None.</p> : null}
+            <ul className="text-xs">
+              {data.dunning.map((event) => (
+                <li key={event.id}>
+                  {event.eventType} (attempt {event.attempt}) · {when(event.createdAt)}
+                </li>
+              ))}
+            </ul>
+            <h3 className="mt-3 text-xs font-semibold text-[var(--color-text-muted)]">Save offers</h3>
+            {data.saveOffers.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">None.</p> : null}
+            <ul className="text-xs">
+              {data.saveOffers.map((offer) => (
+                <li key={offer.id}>
+                  {offer.discount}% · {offer.status} · until {when(offer.expiresAt)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function TicketsTab({ tenantId }: { tenantId: string }) {
+  const tickets = useC360(tenantId, "tickets");
+  return (
+    <TabQuery query={tickets} label="tickets">
+      {(data) => (
+        <section className={card}>
+          <h2 className="text-sm font-semibold">{data.total} ticket(s)</h2>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {Object.entries(data.byStatus)
+              .map(([status, count]) => `${status}: ${count}`)
+              .join(" · ") || "No tickets."}
+          </p>
+          {!data.audienceTracked ? <p className="mt-1 text-xs text-amber-800">Tickets to Fauward and to the tenant&apos;s own customers are not separated until WP-2.3.</p> : null}
+          <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
+            {data.tickets.map((ticket) => (
+              <li key={ticket.id} className="py-1">
+                <span className="font-mono text-xs">{ticket.ticketNumber}</span> · {ticket.subject} · {ticket.status} · {ticket.priority}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </TabQuery>
+  );
+}
+
+export function HealthTab({ tenantId }: { tenantId: string }) {
+  const health = useC360(tenantId, "health");
+  return (
+    <TabQuery query={health} label="health">
+      {(data) =>
+        data.latest ? (
+          <section className={card}>
+            <h2 className="text-sm font-semibold">
+              Score {data.latest.score} ({data.latest.trend}) · {when(data.latest.computedAt)}
+            </h2>
+            <pre className="mt-2 overflow-auto rounded bg-[var(--color-surface-50)] p-2 text-xs">{Array.isArray(data.latest.factors) ? data.latest.factors.join("\n") : JSON.stringify(data.latest.factors, null, 2)}</pre>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">{data.history.length} score(s) in the last 90 days.</p>
+          </section>
+        ) : (
+          <p className={card} data-testid="health-not-scored">
+            Not yet scored.
+          </p>
+        )
+      }
+    </TabQuery>
+  );
+}
+
+export function AiTab({ tenantId }: { tenantId: string }) {
+  const ai = useC360(tenantId, "ai");
+  return (
+    <TabQuery query={ai} label="AI usage">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Usage by month and feature</h2>
+            {data.usage.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No AI usage in the last 6 months.</p> : null}
+            <ul className="mt-2 text-xs">
+              {data.usage.map((row) => (
+                <li key={row.id}>
+                  {row.month} · {row.feature} · {row.model}: {row.requestCount} requests, {row.tokenCount} tokens
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Agent runs ({data.runCount})</h2>
+            <p className="text-xs text-[var(--color-text-muted)]">{data.limit ? `Budget ${data.limit.monthlyBudgetUsd ?? "—"} USD/month` : "No AI limit set for this tenant."}</p>
+            <ul className="mt-2 text-xs">
+              {data.runs.map((run) => (
+                <li key={run.id}>
+                  {run.agentType} · {run.status} · {when(run.createdAt)}
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function AuditTab({ tenantId }: { tenantId: string }) {
+  const audit = useC360(tenantId, "audit");
+  return (
+    <TabQuery query={audit} label="the audit trail">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Tenant audit log</h2>
+            <ul className="mt-2 divide-y divide-[var(--color-border)] text-xs">
+              {data.tenantAudit.map((row) => (
+                <li key={row.id} className="py-1">
+                  {when(row.timestamp)} · {row.action} · {row.actorType}
+                  {row.resourceType ? ` · ${row.resourceType}` : ""}
+                </li>
+              ))}
+            </ul>
+            {data.tenantAudit.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No tenant audit entries.</p> : null}
+          </section>
+          <section className={card}>
+            <h2 className="text-sm font-semibold">Fauward staff actions on this tenant</h2>
+            <ul className="mt-2 divide-y divide-[var(--color-border)] text-xs">
+              {data.platformAudit.map((row) => (
+                <li key={row.id} className="py-1">
+                  {when(row.createdAt)} · {row.action} · {row.actorEmail ?? "system"}
+                  {row.reason ? ` — ${row.reason}` : ""}
+                </li>
+              ))}
+            </ul>
+            {data.platformAudit.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No staff actions recorded.</p> : null}
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function PeopleTab({ tenantId }: { tenantId: string }) {
+  const people = useC360(tenantId, "people");
+  return (
+    <TabQuery query={people} label="people">
+      {(data) => (
+        <section className={card}>
+          <h2 className="text-sm font-semibold">{data.total} user(s)</h2>
+          <table className="mt-2 min-w-full text-sm">
+            <thead>
+              <tr>
+                <th className={th}>User</th>
+                <th className={th}>Role</th>
+                <th className={th}>Status</th>
+                <th className={th}>MFA</th>
+                <th className={th}>Last sign-in</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {data.users.map((user) => (
+                <tr key={user.id}>
+                  <td className="py-1">
+                    {[user.firstName, user.lastName].filter(Boolean).join(" ") || "—"} <span className="block font-mono text-xs text-[var(--color-text-muted)]">{user.email}</span>
+                  </td>
+                  <td className="py-1 text-xs">{user.role}</td>
+                  <td className="py-1 text-xs">{user.isActive ? "Active" : "Inactive"}</td>
+                  <td className="py-1 text-xs">{user.mfaEnabled ? "On" : "Off"}</td>
+                  <td className="py-1 text-xs">{when(user.lastLogin)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+    </TabQuery>
+  );
+}
+
+function ConfigList({ title, values }: { title: string; values: Record<string, unknown> | null }) {
+  return (
+    <section className={card}>
+      <h2 className="text-sm font-semibold">{title}</h2>
+      {values ? (
+        <dl className="mt-2 grid grid-cols-2 gap-1 text-xs">
+          {Object.entries(values).map(([key, value]) => (
+            <div key={key} className="contents">
+              <dt className="text-[var(--color-text-muted)]">{key}</dt>
+              <dd className="break-all">{Array.isArray(value) ? value.join(", ") || "—" : value === null || value === "" ? "—" : String(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">Not set up.</p>
+      )}
+    </section>
+  );
+}
+
+export function ConfigTab({ tenantId }: { tenantId: string }) {
+  const config = useC360(tenantId, "config");
+  return (
+    <TabQuery query={config} label="configuration">
+      {(data) => (
+        <div className="grid gap-4 lg:grid-cols-2" data-testid="c360-config">
+          <ConfigList title="General" values={data.general} />
+          <ConfigList title="Branding" values={data.branding} />
+          <ConfigList title="Domains" values={data.domains} />
+          <ConfigList title="Notifications" values={data.notifications} />
+          <ConfigList title="Payments" values={data.payments ? { gateway: data.payments.gateway, currency: data.payments.currency, "gateway key": data.payments.gatewayKeyConfigured ? "configured (hidden)" : "not configured" } : null} />
+          <section className={card}>
+            <h2 className="text-sm font-semibold">API keys and webhooks</h2>
+            <ul className="mt-2 text-xs">
+              {data.apiKeys.map((key) => (
+                <li key={key.id}>
+                  <span className="font-mono">{key.keyPrefix}…</span> {key.name ?? ""} · {key.isActive ? "active" : "revoked"} · last used {when(key.lastUsedAt)}
+                </li>
+              ))}
+              {data.webhooks.map((hook) => (
+                <li key={hook.id}>
+                  {hook.url} · {hook.isActive ? "active" : "off"} · {hook.failuresLast30Days} failure(s) in 30 days
+                </li>
+              ))}
+            </ul>
+            {data.apiKeys.length === 0 && data.webhooks.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">No API keys or webhooks.</p> : null}
+          </section>
+        </div>
+      )}
+    </TabQuery>
+  );
+}
+
+export function NotesTab({ tenantId }: { tenantId: string }) {
+  const notes = useC360(tenantId, "notes");
+  const canEdit = usePermission(["platform.tenants.write", "customer.success.write"]) === true;
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState("");
+  useEffect(() => setValue(notes.data?.internalNotes ?? ""), [notes.data?.internalNotes]);
+  const save = useMutation({
+    mutationFn: async () => (await consoleApi.patch(`/tenants/${encodeURIComponent(tenantId)}/internal-notes`, { internalNotes: value })).data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...C360_KEY, "notes", tenantId] })
+  });
+  return (
+    <TabQuery query={notes} label="notes">
+      {(data) => (
+        <section className={card}>
+          <textarea aria-label="Internal notes" rows={8} disabled={!canEdit} value={value} onChange={(event) => setValue(event.target.value)} className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm disabled:bg-[var(--color-surface-50)]" />
+          {save.isError ? <p className="text-xs text-red-700">{toConsoleApiError(save.error).message}</p> : null}
+          {save.isSuccess ? <p role="status" className="text-xs text-green-700">Notes saved.</p> : null}
+          <button
+            type="button"
+            disabled={!canEdit || value === data.internalNotes || save.isPending}
+            title={canEdit ? undefined : "Requires platform.tenants.write or customer.success.write"}
+            onClick={() => save.mutate()}
+            className="mt-2 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+          >
+            {save.isPending ? "Saving…" : "Save notes"}
+          </button>
+        </section>
+      )}
+    </TabQuery>
+  );
+}
+
+export function ActivityTab() {
+  return (
+    <p className={card} data-testid="c360-activity-pending">
+      The tenant&apos;s activity feed arrives with the platform activity API (WP-2.1). Until then, the Audit tab lists what the tenant and Fauward staff did.
+    </p>
+  );
+}

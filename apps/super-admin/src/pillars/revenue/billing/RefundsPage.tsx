@@ -6,6 +6,7 @@ import { ActionDialog } from "@/components/service-kit/ActionDialog";
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { MoneyCell, formatMoney } from "@/components/service-kit/MoneyCell";
 import { PermissionButton } from "@/components/service-kit/PermissionButton";
+import { TenantChip } from "@/components/service-kit/TenantChip";
 import { createRefund, decideRefund, fetchRefunds, type Refund } from "./api";
 
 type Dialog = { kind: "create" } | { kind: "decide"; refund: Refund; decision: "approve" | "reject" } | null;
@@ -75,7 +76,7 @@ export function RefundsPage() {
             <li key={refund.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
               <div>
                 <p className="font-semibold">
-                  <MoneyCell amount={refund.amount} currency={currencyOf(refund)} /> for {refund.tenant?.name ?? refund.tenantId}
+                  <MoneyCell amount={refund.amount} currency={currencyOf(refund)} /> for {refund.tenant ? <TenantChip tenantId={refund.tenant.id} name={refund.tenant.name} slug={refund.tenant.slug} /> : refund.tenantId}
                 </p>
                 <p className="text-xs text-[var(--color-text-muted)]">
                   Payment {refund.paymentId} | requested by {refund.initiatedBy ?? "unknown"} | {refund.reason}
@@ -100,7 +101,7 @@ export function RefundsPage() {
         getRowId={(row) => row.id}
         emptyState={<EmptyState title="No refunds" message="No refunds have been requested yet." />}
         columns={[
-          { id: "tenant", header: "Tenant", cell: (row) => row.tenant?.name ?? row.tenantId },
+          { id: "tenant", header: "Tenant", cell: (row) => (row.tenant ? <TenantChip tenantId={row.tenant.id} name={row.tenant.name} slug={row.tenant.slug} /> : row.tenantId) },
           { id: "payment", header: "Payment", cell: (row) => <span className="font-mono text-xs">{row.paymentId}</span> },
           { id: "status", header: "Status", cell: (row) => <span className={`text-xs font-semibold ${STATUS_STYLE[row.status] ?? ""}`}>{row.status}</span> },
           { id: "amount", header: "Amount", align: "right", cell: (row) => <MoneyCell amount={row.amount} currency={currencyOf(row)} /> },

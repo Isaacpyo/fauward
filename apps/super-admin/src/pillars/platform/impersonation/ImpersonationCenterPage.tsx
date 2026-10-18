@@ -141,7 +141,7 @@ function StartSessionPanel() {
       {start.isError ? <ConsoleApiErrorPanel error={start.error} title="Unable to start impersonation" /> : null}
       {started ? (
         <p role="status" className="text-sm text-green-800">
-          Session started for {started.tenant.name} as {started.targetUser.email}, ends {new Date(started.expiresAt).toLocaleTimeString()}. If no tab opened,{" "}
+          Session started for <TenantChip tenantId={started.tenant.id} name={started.tenant.name} slug={started.tenant.slug} /> as {started.targetUser.email}, ends {new Date(started.expiresAt).toLocaleTimeString()}. If no tab opened,{" "}
           <a href={started.portalUrl} target="_blank" rel="noopener noreferrer" className="font-semibold underline">
             open the tenant portal
           </a>{" "}

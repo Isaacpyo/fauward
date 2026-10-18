@@ -3,7 +3,7 @@ import { registerConsoleAuthRoutes } from './auth/console-auth.routes.js';
 import { registerInternalIamRoutes } from './iam.routes.js';
 import { registerInternalAuditRoutes } from './audit.routes.js';
 import { registerInternalBillingRoutes } from './billing.routes.js';
-import { registerInternalCustomer360Routes } from './customer360.routes.js';
+import { registerCustomer360Routes } from './customer/customer360.routes.js';
 import { registerInternalConsolePhaseRoutes } from './console-phases.routes.js';
 import { registerStaffNotificationRoutes } from './shell/notifications.routes.js';
 import { registerConsoleMetricsRoutes } from './shell/metrics.routes.js';
@@ -29,7 +29,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);
   await registerInternalBillingRoutes(app);
-  await registerInternalCustomer360Routes(app);
+  await registerCustomer360Routes(app);
   await registerInternalConsolePhaseRoutes(app);
   await registerStaffNotificationRoutes(app);
   await registerMonitoringRoutes(app);
