@@ -24,7 +24,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0047_plan_change | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
 | 0048_feedback | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
 | 0049_announcement_receipts | P2 / WP-2.14 | `AnnouncementReceipt`; `PlatformAnnouncement.updatedAt/archivedAt` |
-| 0050_dsar_exports | P2 / WP-2.5 | `DSARRequest` fields; `ComplianceExport` fields; `ExportBlob`; `LegalHold.releaseReason` |
+| 0050_dsar_exports (real: `0049_dsar_exports`, C65; adds `DSARRequest.overdueAt`, `ExportBlob.tenantId`) | P2 / WP-2.5 | `DSARRequest` fields; `ComplianceExport` fields; `ExportBlob`; `LegalHold.releaseReason` |
 | 0051_tenant_payment_gateways | P2 / WP-2.12 | `TenantPaymentGateway` (encrypted); `TenantSettings.webhookSecret` encrypted in place |
 | 0052_tenant_user_lock | P2 / WP-2.15 | `User.lockedAt/lockedReason/lockedByPlatformUserId` |
 | 0053_ai_limits_and_escalations | P2 / WP-2.10, 2.11 | `TenantAiLimit` audit columns; `ExceptionCase` escalation columns |

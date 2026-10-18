@@ -17,6 +17,8 @@ import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
 import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
 import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
 import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
+import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
+import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
@@ -252,13 +254,18 @@ export const consoleRoutes: ConsoleRoute[] = [
                 <JitHistoryPage />
               </PermissionRoute> },
   { path: "/trust/compliance", element: <Navigate to="/trust/compliance/dsar" replace /> },
-  { path: "/trust/compliance/dsar", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Queue" description="GDPR data subject request workflow and SLA countdown." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/dsar/:id", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Detail" description="DSAR transition history and export delivery status." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/legal-hold", element: <OpsRoute permission="trust.compliance.legal-hold.read" title="Legal Holds" description="Active holds that block tenant data deletion and erasure completion." endpoint="/compliance/legal-hold" /> },
-  { path: "/trust/compliance/legal-hold/:id", element: <OpsRoute permission="trust.compliance.legal-hold.read" title="Legal Hold Detail" description="Hold scope and affected data." endpoint="/compliance/legal-hold" /> },
-  { path: "/trust/compliance/exports", element: <OpsRoute permission="trust.compliance.dsar.read" title="Compliance Exports" description="Bulk export jobs and signed delivery links." endpoint="/audit/entries?action=compliance" /> },
-  { path: "/trust/compliance/dpa", element: <OpsRoute permission="trust.compliance.dsar.read" title="DPA Tracking" description="Data processing agreement tracking surface." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/subpoenas", element: <OpsRoute permission="trust.compliance.dsar.read" title="Subpoenas" description="Subpoena response queue and audit trail." endpoint="/compliance/dsar" /> },
+  { path: "/trust/compliance/dsar", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <DsarQueuePage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/dsar/:id", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <DsarDetailPage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/legal-hold", element: <PermissionRoute permission="trust.compliance.legal-hold.read">
+                <LegalHoldsPage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/exports", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <ExportsPage />
+              </PermissionRoute> },
   { path: "/trust/safety", element: <Navigate to="/trust/safety/appeals" replace /> },
   { path: "/trust/safety/fraud", element: <Navigate to="/trust/safety/signals?category=FRAUD" replace /> },
   { path: "/trust/safety/aup", element: <Navigate to="/trust/safety/signals?category=AUP" replace /> },

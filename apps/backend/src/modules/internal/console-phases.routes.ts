@@ -6,7 +6,6 @@ import { requireConsolePermission } from '../../middleware/require-console-permi
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
-import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
 import { dangerous } from '../../middleware/dangerous.js';
@@ -38,17 +37,6 @@ type WebhookHmacOptions = {
   scheme: 'pagerduty' | 'persona' | 'docusign' | 'complyadvantage';
   webhookIdHeaderNames?: string[];
 };
-
-const DSAR_STATES = [
-  'RECEIVED',
-  'IDENTITY_VERIFIED',
-  'DATA_GATHERED',
-  'REVIEWED',
-  'RESPONSE_DRAFTED',
-  'APPROVED',
-  'DELIVERED',
-  'CLOSED'
-];
 
 function readPre(permission: Permission) {
   return [authenticatePlatformSession, requireConsolePermission(permission)];
@@ -274,15 +262,6 @@ function optionalJson(value: unknown) {
   return value === undefined ? null : value;
 }
 
-async function requireNoActiveLegalHold(app: FastifyInstance, tenantId: string | undefined | null, reply: FastifyReply) {
-  const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
-  if (hold) {
-    reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId, holdId: hold.id });
-    return false;
-  }
-  return true;
-}
-
 async function listWithMeta(model: Delegate, args: unknown = {}) {
   const data = await model.findMany(args);
   return { data };
@@ -321,7 +300,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerDunning(app);
   registerIncidents(app);
   registerSuccess(app);
-  registerCompliance(app);
   registerFlags(app);
   registerSecrets(app);
   registerSecurity(app);
@@ -592,77 +570,6 @@ function registerSuccess(app: FastifyInstance) {
     );
     await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');
     reply.status(202).send({ queued: true, jobId: job.id, name: job.name });
-  });
-}
-
-function registerCompliance(app: FastifyInstance) {
-  app.post('/api/internal/compliance/dsar', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    const requesterEmail = stringValue(body.requesterEmail);
-    if (!tenantId || !requesterEmail) return reply.status(400).send({ error: 'tenantId and requesterEmail are required' });
-    const dsar = await createAndAudit(
-      request,
-      delegate(app, 'dSARRequest'),
-      { tenantId, requesterEmail, requestType: stringValue(body.requestType, 'ACCESS'), status: 'RECEIVED', notes: stringValue(body.notes), dueAt: inDays(30) },
-      'compliance.dsar.create',
-      'dsar_request',
-      stringValue(body.reason, 'DSAR intake')
-    );
-    reply.status(201).send(dsar);
-  });
-
-  app.get('/api/internal/compliance/dsar', { preHandler: readPre('trust.compliance.dsar.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'dSARRequest'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.patch('/api/internal/compliance/dsar/:id', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const next = stringValue(body.status);
-    if (!DSAR_STATES.includes(next)) return reply.status(400).send({ error: 'Invalid DSAR state' });
-    const model = delegate(app, 'dSARRequest');
-    const before = await model.findUnique({ where: { id } }) as { status?: string; tenantId?: string; requestType?: string } | null;
-    if (!before) return reply.status(404).send({ error: 'DSAR request not found' });
-    if (before.requestType === 'ERASURE' && ['DELIVERED', 'CLOSED'].includes(next)) {
-      const allowed = await requireNoActiveLegalHold(app, before.tenantId, reply);
-      if (!allowed) return;
-    }
-    const after = await model.update({ where: { id }, data: { status: next, notes: stringValue(body.notes) || undefined, closedAt: next === 'CLOSED' ? new Date() : undefined } });
-    await delegate(app, 'dSARTransition').create({ data: { dsarId: id, fromStatus: before.status ?? null, toStatus: next, actorId: actorId(request), notes: stringValue(body.notes) || null } });
-    await writeInternalAudit(request, 'compliance.dsar.transition', 'dsar_request', id, before, after, stringValue(body.notes, 'DSAR transition'));
-    reply.send(after);
-  });
-
-  app.post('/api/internal/compliance/dsar/:id/gather', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const dsar = await delegate(app, 'dSARRequest').findUnique({ where: { id } }) as { tenantId?: string } | null;
-    if (!dsar) return reply.status(404).send({ error: 'DSAR request not found' });
-    const exportRow = await createAndAudit(request, delegate(app, 'complianceExport'), { tenantId: dsar.tenantId, dsarId: id, exportType: 'DSAR_BUNDLE', status: 'QUEUED', requestedBy: actorId(request) }, 'compliance.dsar.gather', 'dsar_request', 'DSAR gather job queued');
-    reply.status(202).send(exportRow);
-  });
-
-  app.post('/api/internal/compliance/dsar/:id/deliver', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const dsar = await delegate(app, 'dSARRequest').findUnique({ where: { id } }) as { tenantId?: string; requestType?: string } | null;
-    if (!dsar) return reply.status(404).send({ error: 'DSAR request not found' });
-    if (dsar.requestType === 'ERASURE') {
-      const allowed = await requireNoActiveLegalHold(app, dsar.tenantId, reply);
-      if (!allowed) return;
-    }
-    const signedUrl = `https://signed.example.fauward.internal/dsar/${id}?expires=${encodeURIComponent(inDays(30).toISOString())}`;
-    const after = await updateAndAudit(request, delegate(app, 'dSARRequest'), id, { exportUrl: signedUrl, expiresAt: inDays(30), status: 'DELIVERED' }, 'compliance.dsar.deliver', 'dsar_request', stringValue(bodyObject(request).reason, 'DSAR delivered'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/compliance/legal-hold', { preHandler: readPre('trust.compliance.legal-hold.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'legalHold'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/compliance/legal-hold', { preHandler: writePre('trust.compliance.legal-hold.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const hold = await createAndAudit(request, delegate(app, 'legalHold'), { tenantId: stringValue(body.tenantId) || null, scope: body.scope ?? {}, reason: stringValue(body.reason, 'Legal hold'), createdBy: actorId(request) }, 'compliance.legal_hold.create', 'legal_hold', stringValue(body.reason, 'Legal hold'));
-    reply.status(201).send(hold);
   });
 }
 

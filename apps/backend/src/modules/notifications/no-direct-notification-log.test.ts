@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 // sendEmail / sendSms / PlatformNotifier / notifyCustomer, so a log row always means a delivery attempt happened
 // (the C1 call sites wrote QUEUED rows that nothing ever sent).
 
-const ALLOWED = new Set(['modules/notifications/notifications.worker.ts']);
+// The personal-data registry may clear `recipient` when a data subject's erasure runs (WP-2.5); it never creates a row.
+const ALLOWED = new Set(['modules/notifications/notifications.worker.ts', 'config/personal-data-registry.ts']);
 const DIRECT_WRITE = /\.notificationLog\.(create|createMany|upsert|update|updateMany)\s*\(/g;
 const RAW_INSERT = /insert\s+into\s+"?notification_logs"?/gi;
 

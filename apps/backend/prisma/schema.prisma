@@ -2354,6 +2354,12 @@ model DSARRequest {
   closedAt       DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  /// trust.compliance (WP-2.5): the tenant User matching requesterEmail (the data subject), set when gathering.
+  subjectUserId      String?
+  identityVerifiedAt DateTime?
+  erasureCompletedAt DateTime?
+  /// Set once by the overdue sweep (one ATTENTION activity + staff notification per request).
+  overdueAt          DateTime?
 
   transitions DSARTransition[]
 
@@ -2386,6 +2392,7 @@ model LegalHold {
   createdBy  String
   releasedBy String?
   releasedAt DateTime?
+  releaseReason String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -2405,10 +2412,29 @@ model ComplianceExport {
   requestedBy String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  /// Storage adapter that holds the bundle (POSTGRES = ExportBlob, id in s3Key).
+  storageProvider   String?
+  byteSize          Int?
+  sha256            String?
+  /// sha256 of the one-time download token; cleared when the bundle is downloaded.
+  downloadTokenHash String?
+  downloadedAt      DateTime?
+  error             String?
 
   @@index([tenantId, createdAt])
   @@index([status])
   @@map("compliance_exports")
+}
+
+/// Bundle bytes for the POSTGRES storage adapter (trust.compliance, WP-2.5).
+model ExportBlob {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  bytes     Bytes
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("export_blobs")
 }
 
 model FraudSignal {

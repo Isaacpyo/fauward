@@ -9,6 +9,7 @@ import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-
 import { pruneOldActivity } from '../jobs/activity-prune.js';
 import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
 import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
+import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
@@ -186,6 +187,11 @@ export async function registerScheduledJobs() {
     repeat: { pattern: '*/15 * * * *', tz: 'UTC' }
   });
 
+  await scheduledJobsQueue.add('trust.dsar-overdue-sweep', {}, {
+    jobId: 'trust.dsar-overdue-sweep',
+    repeat: { pattern: '20 6 * * *', tz: 'UTC' }
+  });
+
   await scheduledJobsQueue.add('platform.activity-prune', {}, {
     jobId: 'platform.activity-prune',
     repeat: { pattern: '40 3 * * *', tz: 'UTC' }
@@ -349,6 +355,24 @@ export async function startScheduledWorker(app: FastifyInstance) {
       if (job.name === 'customer.support-sla-sweep') {
         const result = await sweepSupportSla(app);
         app.log.info(result, 'Scheduled support SLA sweep finished');
+        return;
+      }
+
+      if (job.name === DSAR_GATHER_JOB) {
+        const result = await gatherDsar(app, { dsarId: String(job.data.dsarId ?? ''), exportId: String(job.data.exportId ?? '') });
+        app.log.info({ ...result, dsarId: job.data.dsarId }, 'DSAR gather finished');
+        return;
+      }
+
+      if (job.name === DSAR_ERASE_JOB) {
+        const result = await eraseDsar(app, { dsarId: String(job.data.dsarId ?? ''), tenantId: String(job.data.tenantId ?? '') });
+        app.log.info({ status: result.status, dsarId: job.data.dsarId }, 'DSAR erasure finished');
+        return;
+      }
+
+      if (job.name === 'trust.dsar-overdue-sweep') {
+        const result = await sweepOverdueDsars(app);
+        app.log.info(result, 'Scheduled DSAR overdue sweep finished');
         return;
       }
 

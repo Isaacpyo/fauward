@@ -41,7 +41,6 @@ const WORKFLOW_PREFIXES = [
   "/incidents",
   "/announcements",
   "/success",
-  "/compliance",
   "/flags",
   "/security",
   "/kyc",
@@ -212,36 +211,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "CS playbook" }
         ],
         payload: (values) => ({ name: values.name, trigger: values.trigger, steps: [{ type: "notify_csm", status: "PENDING" }], reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/compliance")) {
-    return [
-      {
-        id: "transition",
-        label: "Advance DSAR",
-        description: "Move a DSAR through the audited workflow state machine.",
-        method: "patch",
-        path: (values) => `/compliance/dsar/${encodeURIComponent(values.dsarId)}`,
-        fields: [
-          { name: "dsarId", label: "DSAR ID", required: true },
-          { name: "status", label: "Next Status", type: "select", options: ["IDENTITY_VERIFIED", "DATA_GATHERED", "REVIEWED", "RESPONSE_DRAFTED", "APPROVED", "DELIVERED", "CLOSED"], defaultValue: "IDENTITY_VERIFIED" },
-          { name: "notes", label: "Notes", type: "textarea" }
-        ],
-        payload: (values) => ({ status: values.status, notes: values.notes })
-      },
-      {
-        id: "hold",
-        label: "Create Legal Hold",
-        description: "Create a hold that blocks tenant deletion and erasure completion.",
-        method: "post",
-        path: () => "/compliance/legal-hold",
-        fields: [
-          { name: "tenantId", label: "Tenant ID" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId || null, reason: values.reason, scope: { source: "console" } })
       }
     ];
   }

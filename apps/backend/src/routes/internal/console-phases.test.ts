@@ -280,63 +280,6 @@ describe('internal console phase routes', () => {
     expect(incidentRecord.upsert).not.toHaveBeenCalled();
   });
 
-  it('blocks erasure DSAR delivery while a legal hold is active', async () => {
-    currentPermissions = ['trust.compliance.dsar.write'];
-    const prisma = {
-      dSARRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'dsar_001', tenantId: 'tenant_001', requestType: 'ERASURE' })) }),
-      legalHold: delegate({ findFirst: vi.fn(async () => ({ id: 'hold_001', tenantId: 'tenant_001', status: 'ACTIVE' })) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/compliance/dsar/dsar_001/deliver', payload: { reason: 'deliver' } });
-
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toEqual({ error: 'LEGAL_HOLD_ACTIVE', tenantId: 'tenant_001', holdId: 'hold_001' });
-  });
-
-  it('records DSAR state transitions and queues export evidence', async () => {
-    currentPermissions = ['trust.compliance.dsar.write'];
-    const dSARRequest = delegate({
-      findUnique: vi.fn(async () => ({ id: 'dsar_001', tenantId: 'tenant_001', status: 'RECEIVED', requestType: 'ACCESS' })),
-      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'dsar_001', tenantId: 'tenant_001', ...data }))
-    });
-    const dSARTransition = delegate();
-    const complianceExport = delegate();
-    const prisma = { dSARRequest, dSARTransition, complianceExport };
-    const app = await buildApp(prisma);
-
-    const transition = await app.inject({
-      method: 'PATCH',
-      url: '/api/internal/compliance/dsar/dsar_001',
-      payload: { status: 'IDENTITY_VERIFIED', notes: 'identity verified' }
-    });
-
-    expect(transition.statusCode).toBe(200);
-    expect(dSARTransition.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        dsarId: 'dsar_001',
-        fromStatus: 'RECEIVED',
-        toStatus: 'IDENTITY_VERIFIED',
-        actorId: 'staff_001'
-      })
-    });
-
-    const gather = await app.inject({ method: 'POST', url: '/api/internal/compliance/dsar/dsar_001/gather' });
-
-    expect(gather.statusCode).toBe(202);
-    expect(complianceExport.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        tenantId: 'tenant_001',
-        dsarId: 'dsar_001',
-        exportType: 'DSAR_BUNDLE',
-        status: 'QUEUED',
-        requestedBy: 'staff_001'
-      })
-    }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'compliance.dsar.transition' }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'compliance.dsar.gather' }));
-  });
-
   it('requires senior compliance approval for PEP KYC approvals', async () => {
     currentPermissions = ['trust.kyc.approve'];
     currentRoles = ['FINANCE_ADMIN'];

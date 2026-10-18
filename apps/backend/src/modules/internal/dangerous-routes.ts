@@ -30,6 +30,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/safety/signals/:id/decision' },
   { method: 'POST', url: '/api/internal/safety/suspensions/:id/lift' },
   { method: 'POST', url: '/api/internal/safety/appeals/:id/decision' },
+  // trust.compliance (WP-2.5)
+  { method: 'POST', url: '/api/internal/compliance/dsar/:id/deliver' },
+  { method: 'POST', url: '/api/internal/compliance/dsar/:id/erase' },
+  { method: 'POST', url: '/api/internal/compliance/legal-holds' },
+  { method: 'POST', url: '/api/internal/compliance/legal-holds/:id/release' },
   // trust.audit (WP-1.9)
   { method: 'POST', url: '/api/internal/audit/export' },
   // revenue.billing (WP-0.6, WP-1.5)

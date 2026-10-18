@@ -71,7 +71,7 @@ describe("manifest reconciliation (D1)", () => {
   it("manifest statuses match the services that met the definition of done (Phase 1 + Phase 2 so far)", () => {
     expect(SERVICES).toHaveLength(41);
     expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key).sort()).toEqual(
-      ["customer.360", "customer.support", "platform.impersonation", "platform.tenants", "revenue.billing", "trust.audit", "trust.iam", "trust.jit", "trust.safety"]
+      ["customer.360", "customer.support", "platform.impersonation", "platform.tenants", "revenue.billing", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.safety"]
     );
     expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "revenue.recognition"]);
     for (const service of SERVICES.filter((item) => item.status === "preview")) {
