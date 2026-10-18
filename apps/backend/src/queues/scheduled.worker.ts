@@ -8,6 +8,7 @@ import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
 import { pruneOldActivity } from '../jobs/activity-prune.js';
 import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
+import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
 type ScheduledJobData = Record<string, unknown>;
@@ -179,6 +180,11 @@ export async function registerScheduledJobs() {
     repeat: { pattern: '*/5 * * * *', tz: 'UTC' }
   });
 
+  await scheduledJobsQueue.add('customer.support-sla-sweep', {}, {
+    jobId: 'customer.support-sla-sweep',
+    repeat: { pattern: '*/15 * * * *', tz: 'UTC' }
+  });
+
   await scheduledJobsQueue.add('platform.activity-prune', {}, {
     jobId: 'platform.activity-prune',
     repeat: { pattern: '40 3 * * *', tz: 'UTC' }
@@ -336,6 +342,12 @@ export async function startScheduledWorker(app: FastifyInstance) {
       if (job.name === 'platform.impersonation-expiry-sweep') {
         const ended = await sweepExpiredImpersonationSessions(app.prisma);
         app.log.info({ ended }, 'Scheduled impersonation expiry sweep finished');
+        return;
+      }
+
+      if (job.name === 'customer.support-sla-sweep') {
+        const result = await sweepSupportSla(app);
+        app.log.info(result, 'Scheduled support SLA sweep finished');
         return;
       }
 

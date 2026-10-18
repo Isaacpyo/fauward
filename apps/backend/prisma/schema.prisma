@@ -258,6 +258,25 @@ enum TicketPriority {
   URGENT
 }
 
+// D5: who a ticket is with — a tenant's own customer (END_CUSTOMER) or Fauward (PLATFORM).
+enum TicketAudience {
+  END_CUSTOMER
+  PLATFORM
+}
+
+enum MessageAuthorType {
+  TENANT_USER
+  END_CUSTOMER
+  STAFF
+  SYSTEM
+}
+
+enum MessageVisibility {
+  PUBLIC
+  TENANT_INTERNAL
+  STAFF_INTERNAL
+}
+
 enum TicketCategory {
   DELIVERY_ISSUE
   PAYMENT_ISSUE
@@ -1290,6 +1309,16 @@ model SupportTicket {
   priority     TicketPriority @default(NORMAL)
   status       TicketStatus   @default(OPEN)
   assignedTo   String?
+  audience     TicketAudience @default(END_CUSTOMER)
+  lastMessageAt         DateTime?
+  lastMessageAuthorType MessageAuthorType?
+  firstResponseAt       DateTime?
+  // Escalating an END_CUSTOMER ticket creates a PLATFORM ticket linked to it (both sides show the link).
+  linkedTicketId         String?
+  // Fauward assignee for PLATFORM tickets (a PlatformUser id).
+  assignedPlatformUserId String?
+  // Set by customer.support-sla-sweep the first time the ticket breaches its SLA (notifies once).
+  slaBreachedAt          DateTime?
   resolvedAt   DateTime?
   closedAt     DateTime?
   createdAt    DateTime       @default(now())
@@ -1299,11 +1328,14 @@ model SupportTicket {
   customer User?           @relation("TicketCustomer", fields: [customerId], references: [id])
   shipment Shipment?       @relation(fields: [shipmentId], references: [id])
   assignee User?           @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  linkedTicket SupportTicket?  @relation("TicketLink", fields: [linkedTicketId], references: [id], onDelete: SetNull)
+  linkedFrom   SupportTicket[] @relation("TicketLink")
   messages TicketMessage[]
 
   @@index([tenantId])
   @@index([status])
   @@index([assignedTo])
+  @@index([audience, status, lastMessageAt])
   @@map("support_tickets")
 }
 
@@ -1311,8 +1343,12 @@ model TicketMessage {
   id         String   @id @default(uuid())
   tenantId   String
   ticketId   String
-  authorId   String
+  // Tenant or end-customer User; null for STAFF (platformAuthorId) and SYSTEM messages (D5).
+  authorId   String?
+  authorType MessageAuthorType @default(TENANT_USER)
+  visibility MessageVisibility @default(PUBLIC)
   body       String
+  // Kept until 0062 (D5): isInternal → TENANT_INTERNAL, fromSA → authorType STAFF (backfill 0047-ticket-messages.ts).
   isInternal Boolean  @default(false)
   fromSA     Boolean  @default(false)
   platformAuthorId String?
@@ -1320,7 +1356,7 @@ model TicketMessage {
 
   tenant Tenant        @relation(fields: [tenantId], references: [id])
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author User          @relation(fields: [authorId], references: [id])
+  author User?         @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([tenantId])
   @@index([ticketId])

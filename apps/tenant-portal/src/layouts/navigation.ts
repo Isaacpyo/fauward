@@ -189,6 +189,13 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
   },
   {
+    to: "/help/tickets",
+    label: "Contact Fauward",
+    icon: MessageSquare,
+    feature: "support",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF"]
+  },
+  {
     to: "/reports",
     label: "Reports",
     icon: FileSpreadsheet,

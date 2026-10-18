@@ -11,6 +11,9 @@ import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
+import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
+import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
+import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
@@ -174,9 +177,18 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/360/:tenantId", element: <PermissionRoute permission="customer.360.read">
                 <Customer360Page />
               </PermissionRoute> },
-  { path: "/customer/support", element: <OpsRoute permission="customer.support.read" title="Support Desk" description="Zendesk tickets and SLA risk surfaced by tenant context." endpoint="/support/tickets" related={[{ label: "SLA", to: "/customer/support/sla" }, { label: "Macros", to: "/customer/support/macros" }]} /> },
-  { path: "/customer/support/sla", element: <OpsRoute permission="customer.support.read" title="SLA Risk" description="Open support tickets ordered by oldest update and breach risk." endpoint="/support/sla" /> },
-  { path: "/customer/support/macros", element: <OpsRoute permission="customer.support.read" title="Support Macros" description="Canned responses sourced from Zendesk when configured." endpoint="/support/macros" /> },
+  { path: "/customer/support", element: <PermissionRoute permission="customer.support.read">
+                <TicketQueuePage />
+              </PermissionRoute> },
+  { path: "/customer/support/tickets/:id", element: <PermissionRoute permission="customer.support.read">
+                <TicketDetailPage />
+              </PermissionRoute> },
+  { path: "/customer/support/sla", element: <PermissionRoute permission="customer.support.read">
+                <SlaPage />
+              </PermissionRoute> },
+  { path: "/customer/support/macros", element: <PermissionRoute permission="customer.support.read">
+                <MacrosPage />
+              </PermissionRoute> },
   { path: "/customer/success", element: <OpsRoute permission="customer.success.read" title="CS Console" description="CSM book of business and tenant health score rollups." endpoint="/success" related={[{ label: "At Risk", to: "/customer/success/at-risk" }, { label: "Expansion", to: "/customer/success/expansion" }, { label: "Playbooks", to: "/customer/success/playbooks" }, { label: "Health Scoring", to: "/customer/success/health-scoring" }]} /> },
   { path: "/customer/success/at-risk", element: <OpsRoute permission="customer.success.read" title="At-Risk Accounts" description="Low health score tenants queued for intervention." endpoint="/success/at-risk" /> },
   { path: "/customer/success/expansion", element: <OpsRoute permission="customer.success.read" title="Expansion Ready" description="High health score tenants ready for expansion motion." endpoint="/success/expansion" /> },

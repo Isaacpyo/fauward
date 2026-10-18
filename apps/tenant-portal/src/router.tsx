@@ -28,6 +28,8 @@ import { ReturnsListPage } from "@/pages/returns/ReturnsListPage";
 import { ReturnDetailPage } from "@/pages/returns/ReturnDetailPage";
 import { TicketsListPage } from "@/pages/support/TicketsListPage";
 import { TicketDetailPage } from "@/pages/support/TicketDetailPage";
+import { HelpTicketsPage } from "@/pages/help/HelpTicketsPage";
+import { HelpTicketDetailPage } from "@/pages/help/HelpTicketDetailPage";
 import { ActivityTimelinePage } from "@/pages/activity/ActivityTimelinePage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
@@ -160,6 +162,8 @@ function WorkspaceRoutes() {
       <Route path="returns/:id" element={<ReturnDetailPage />} />
       <Route path="support" element={<TicketsListPage />} />
       <Route path="support/:id" element={<TicketDetailPage />} />
+      <Route path="help/tickets" element={<HelpTicketsPage />} />
+      <Route path="help/tickets/:id" element={<HelpTicketDetailPage />} />
       <Route path="activity" element={<ActivityTimelinePage />} />
       <Route path="activity/notifications" element={<NotificationsInboxPage />} />
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />

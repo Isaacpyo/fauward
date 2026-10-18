@@ -39,7 +39,6 @@ type WorkflowAction = {
 const WORKFLOW_PREFIXES = [
   "/dunning",
   "/incidents",
-  "/support",
   "/announcements",
   "/success",
   "/compliance",
@@ -157,25 +156,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "notes", label: "Notes", type: "textarea" }
         ],
         payload: (values) => ({ tenantId: values.tenantId, impactLevel: values.impactLevel, notes: values.notes })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/support")) {
-    return [
-      {
-        id: "ticket",
-        label: "Create Linked Ticket",
-        description: "Create a tenant-linked Zendesk ticket record from the console.",
-        method: "post",
-        path: () => "/support/tickets",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "subject", label: "Subject", required: true },
-          { name: "priority", label: "Priority", type: "select", options: ["normal", "high", "urgent"], defaultValue: "normal" },
-          { name: "requesterEmail", label: "Requester Email" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, subject: values.subject, priority: values.priority, requesterEmail: values.requesterEmail })
       }
     ];
   }

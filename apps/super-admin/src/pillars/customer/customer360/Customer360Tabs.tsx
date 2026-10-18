@@ -189,17 +189,27 @@ export function TicketsTab({ tenantId }: { tenantId: string }) {
     <TabQuery query={tickets} label="tickets">
       {(data) => (
         <section className={card}>
-          <h2 className="text-sm font-semibold">{data.total} ticket(s)</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold">{data.total} ticket(s) with Fauward</h2>
+            <Link to={`/customer/support?tenantId=${encodeURIComponent(tenantId)}&view=all`} className="text-xs font-semibold text-[var(--fauward-navy)] hover:underline">
+              Open in Support Desk
+            </Link>
+          </div>
           <p className="text-xs text-[var(--color-text-muted)]">
             {Object.entries(data.byStatus)
               .map(([status, count]) => `${status}: ${count}`)
-              .join(" · ") || "No tickets."}
+              .join(" · ") || "No tickets with Fauward."}
           </p>
-          {!data.audienceTracked ? <p className="mt-1 text-xs text-amber-800">Tickets to Fauward and to the tenant&apos;s own customers are not separated until WP-2.3.</p> : null}
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            The tenant&apos;s own customer desk: {data.endCustomer.open} open of {data.endCustomer.total}.
+          </p>
           <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
             {data.tickets.map((ticket) => (
-              <li key={ticket.id} className="py-1">
-                <span className="font-mono text-xs">{ticket.ticketNumber}</span> · {ticket.subject} · {ticket.status} · {ticket.priority}
+              <li key={ticket.id} className="py-1" data-testid="c360-ticket-row">
+                <Link to={`/customer/support/tickets/${ticket.id}`} className="font-mono text-xs font-semibold text-[var(--fauward-navy)] hover:underline">
+                  {ticket.ticketNumber}
+                </Link>{" "}
+                · {ticket.subject} · {ticket.status} · {ticket.priority}
               </li>
             ))}
           </ul>

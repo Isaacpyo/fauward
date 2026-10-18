@@ -210,7 +210,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/success/health-scoring/run',
   'POST /api/internal/success/playbooks',
   'POST /api/internal/support/tickets',
-  'POST /api/internal/support/tickets/:id/reply',
+  'POST /api/internal/support/tickets/:id/messages',
   'POST /api/internal/tax/exemptions/:id/approve',
   'POST /api/internal/tenants/:id/close',
   'POST /api/internal/tenants/:id/feature-overrides',

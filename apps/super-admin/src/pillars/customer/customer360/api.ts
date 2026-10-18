@@ -40,9 +40,11 @@ export type C360Billing = {
 };
 
 export type C360Tickets = {
-  tickets: Array<{ id: string; ticketNumber: string; subject: string; category: string; priority: string; status: string; createdAt: string; updatedAt: string }>;
+  audience: "PLATFORM" | "END_CUSTOMER";
+  tickets: Array<{ id: string; ticketNumber: string; subject: string; category: string; priority: string; status: string; audience: string; lastMessageAt: string | null; createdAt: string; updatedAt: string }>;
   total: number;
   byStatus: Record<string, number>;
+  endCustomer: { total: number; open: number };
   audienceTracked: boolean;
 };
 

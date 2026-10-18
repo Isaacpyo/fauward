@@ -46,7 +46,7 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       app.prisma.tenantHealthScore.findFirst({ where: { tenantId: tenant.id }, orderBy: { computedAt: 'desc' }, select: { score: true, trend: true, computedAt: true } }),
       app.prisma.suspensionRecord.findMany({ where: { tenantId: tenant.id, status: 'ACTIVE' }, orderBy: { createdAt: 'desc' }, select: { id: true, source: true, category: true, publicReason: true, createdAt: true } }),
       app.prisma.user.count({ where: { tenantId: tenant.id, isActive: true, role: { notIn: [...CUSTOMER_ROLES] } } }),
-      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'PLATFORM', status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
     ]);
     return reply.send({
       identity: { id: tenant.id, name: tenant.name, slug: tenant.slug, customDomain: tenant.customDomain, region: tenant.region, createdAt: tenant.createdAt.toISOString() },
@@ -61,7 +61,7 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       health: health ? { score: health.score, trend: health.trend, computedAt: health.computedAt.toISOString() } : null,
       kycStatus: tenant.kycStatus,
       activeStaff: users,
-      // Support tickets have no audience until WP-2.3; this is every open ticket of the tenant.
+      // Open tickets this tenant has with Fauward (PLATFORM audience, D5).
       openTickets
     });
   });
@@ -114,20 +114,32 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     });
   });
 
+  // Tickets tab (D5): PLATFORM tickets by default; `?audience=END_CUSTOMER` is read-only context on the tenant's own
+  // support desk (counts and PUBLIC/TENANT_INTERNAL thread previews only).
   app.get('/api/internal/customer360/:tenantId/tickets', pre('customer.support.read'), async (request, reply) => {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
-    const [tickets, byStatus, total] = await Promise.all([
+    const audience = (request.query as { audience?: string }).audience === 'END_CUSTOMER' ? 'END_CUSTOMER' : 'PLATFORM';
+    const [tickets, byStatus, total, endCustomerTotal, endCustomerOpen] = await Promise.all([
       app.prisma.supportTicket.findMany({
-        where: { tenantId: tenant.id },
-        orderBy: { updatedAt: 'desc' },
+        where: { tenantId: tenant.id, audience },
+        orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
         take: 25,
-        select: { id: true, ticketNumber: true, subject: true, category: true, priority: true, status: true, createdAt: true, updatedAt: true }
+        select: { id: true, ticketNumber: true, subject: true, category: true, priority: true, status: true, audience: true, lastMessageAt: true, createdAt: true, updatedAt: true }
       }),
-      app.prisma.supportTicket.groupBy({ by: ['status'], where: { tenantId: tenant.id }, _count: { _all: true } }),
-      app.prisma.supportTicket.count({ where: { tenantId: tenant.id } })
+      app.prisma.supportTicket.groupBy({ by: ['status'], where: { tenantId: tenant.id, audience }, _count: { _all: true } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'END_CUSTOMER' } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'END_CUSTOMER', status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
     ]);
-    return reply.send({ tickets, total, byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])), audienceTracked: false });
+    return reply.send({
+      audience,
+      tickets,
+      total,
+      byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])),
+      endCustomer: { total: endCustomerTotal, open: endCustomerOpen },
+      audienceTracked: true
+    });
   });
 
   app.get('/api/internal/customer360/:tenantId/health', pre('customer.success.read'), async (request, reply) => {

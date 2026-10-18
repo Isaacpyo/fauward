@@ -9,8 +9,8 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 
 function targetColumns(input: AuditWriteInput) {
   if (input.target_type === 'tenant') return { targetTenantId: input.target_id, targetUserId: null };
-  if (input.target_type === 'user') return { targetTenantId: null, targetUserId: input.target_id };
-  return { targetTenantId: null, targetUserId: null };
+  if (input.target_type === 'user') return { targetTenantId: input.target_tenant_id ?? null, targetUserId: input.target_id };
+  return { targetTenantId: input.target_tenant_id ?? null, targetUserId: null };
 }
 
 export async function writeAudit(client: PlatformAuditClient, input: AuditWriteInput) {
