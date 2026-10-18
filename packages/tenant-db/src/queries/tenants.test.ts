@@ -105,7 +105,7 @@ describe("@fauward/tenant-db tenant accessors", () => {
           status: "ACTIVE",
           createdAt: "2026-01-01T00:00:00.000Z",
           primaryColor: "#111111",
-          accentColor: "#222222",
+          accentColor: "#FFD166",
           logoUrl: "https://cdn.example/logo.png",
         },
       ],
@@ -118,7 +118,7 @@ describe("@fauward/tenant-db tenant accessors", () => {
     expect(tenant?.displayName).toBe("Acme Logistics");
     expect(tenant?.branding).toEqual({
       primary: "#111111",
-      accent: "#222222",
+      accent: "#FFD166",
       radius: "8px",
       logoUrl: "https://cdn.example/logo.png",
     });

@@ -77,6 +77,12 @@ describe('customs service', () => {
       usageRecord: { upsert: vi.fn(async () => ({})) },
       outboxEvent: { create: vi.fn(async () => ({})) },
       auditLog: { create: vi.fn(async () => ({})) },
+      // Shipment create links or creates its Payment row (finance wire-up); no existing payment here.
+      payment: {
+        findFirst: vi.fn(async () => null),
+        update: vi.fn(async ({ data }: any) => ({ id: 'pay-1', ...data })),
+        create: vi.fn(async ({ data }: any) => ({ id: 'pay-1', ...data }))
+      },
       customsDeclaration: {
         create: vi.fn(async ({ data }: any) => {
           const row = { id: 'customs-1', ...data };
