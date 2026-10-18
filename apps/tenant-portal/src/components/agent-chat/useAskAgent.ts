@@ -123,7 +123,7 @@ export function useAskAgent() {
       const trimmed = question.trim();
       if (!trimmed) return;
 
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const id = crypto.randomUUID();
       setTurns((prev) => [...prev, { id, question: trimmed, pending: true }]);
       setLoading(true);
 

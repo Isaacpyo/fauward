@@ -25,7 +25,7 @@ export function AppShell() {
   const tenant = useTenantStore((state) => state.tenant);
   const { summary } = useBilling();
 
-  const suspended = summary.paymentStatus === "suspended" || tenant?.status === "SUSPENDED";
+  const suspended = summary?.paymentStatus === "suspended" || tenant?.status === "SUSPENDED";
   const onBillingSettings = location.pathname.startsWith("/settings") && location.search.includes("tab=billing");
   const showSuspendedOverlay = suspended && !onBillingSettings;
 
@@ -51,11 +51,15 @@ export function AppShell() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TrialBanner days={summary.trialDaysRemaining ?? 0} />
-        <UsageWarningBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
-        <LimitReachedBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
-        <FailedPaymentBanner visible={summary.paymentStatus === "failed"} nextRetryAt={summary.nextRetryAt} />
-        <SaveOfferBanner offer={summary.saveOffer} />
+        {summary ? (
+          <>
+            <TrialBanner days={summary.trialDaysRemaining ?? 0} />
+            <UsageWarningBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
+            <LimitReachedBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
+            <FailedPaymentBanner visible={summary.paymentStatus === "failed"} nextRetryAt={summary.nextRetryAt} />
+            <SaveOfferBanner offer={summary.saveOffer} />
+          </>
+        ) : null}
         <ImpersonationBanner />
         <AnnouncementBanner />
 

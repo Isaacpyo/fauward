@@ -8,7 +8,7 @@ import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
-import { findTicketDetail, type TicketDetail } from "@/pages/support/supportData";
+import type { TicketDetail } from "@/pages/support/supportData";
 
 async function fetchTicket(id: string) {
   const response = await api.get<TicketDetail>(`/v1/support/tickets/${id}`);
@@ -68,7 +68,7 @@ export function TicketDetailPage() {
     }
   });
 
-  const ticket = query.data ?? findTicketDetail(id);
+  const ticket = query.data;
 
   return (
     <PageShell

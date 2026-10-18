@@ -1,25 +1,21 @@
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 import { useTenantStore } from "@/stores/useTenantStore";
 import type { BillingSummary } from "@/types/billing";
 
 type CurrentPlanCardProps = {
   summary: BillingSummary;
   onChangePlan: () => void;
-  onManageBilling: () => void;
 };
 
-const staffSeatLimitLabel: Record<BillingSummary["plan"], string> = {
-  starter: "3 staff seats",
-  pro: "15 staff seats",
-  enterprise: "Unlimited staff seats"
-};
+function formatPrice(price: NonNullable<BillingSummary["price"]>) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency: price.currency }).format(Number(price.amount));
+}
 
 export function CurrentPlanCard({
   summary,
-  onChangePlan,
-  onManageBilling
+  onChangePlan
 }: CurrentPlanCardProps) {
   const tenant = useTenantStore((state) => state.tenant);
 
@@ -35,15 +31,18 @@ export function CurrentPlanCard({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Badge variant={badgeVariant}>{summary.plan.toUpperCase()}</Badge>
+          {summary.effectivePlan !== summary.plan ? (
+            <Badge variant="info" className="ml-2">Using {summary.effectivePlan.toUpperCase()} features</Badge>
+          ) : null}
           <p className="mt-2 text-lg font-semibold text-gray-900">
             {summary.cycle === "monthly" ? "Monthly" : "Annual"} ·{" "}
-            {formatCurrency(summary.amount, tenant)}
+            {summary.price ? formatPrice(summary.price) : "Custom pricing"}
           </p>
           <p className="mt-1 text-sm text-gray-600">
-            Renewal date: {formatDateTime(summary.renewalDate, tenant)}
+            {summary.renewalDate ? `Renewal date: ${formatDateTime(summary.renewalDate, tenant)}` : "No renewal date on record"}
           </p>
           <p className="mt-1 text-sm font-medium text-gray-700">
-            Staff seat limit: {staffSeatLimitLabel[summary.plan]}
+            Staff seat limit: {summary.usage.staff.limit === -1 ? "Unlimited" : summary.usage.staff.limit}
           </p>
           {typeof summary.trialDaysRemaining === "number" && summary.trialDaysRemaining > 0 ? (
             <Badge variant="warning" className="mt-2">
@@ -59,9 +58,6 @@ export function CurrentPlanCard({
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={onChangePlan}>
             Change Plan
-          </Button>
-          <Button variant="secondary" onClick={onManageBilling}>
-            Manage Billing
           </Button>
         </div>
       </div>

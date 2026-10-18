@@ -22,6 +22,7 @@ import { registerCrmRoutes } from './modules/crm/crm.routes.js';
 import { registerFinanceRoutes } from './modules/finance/finance.routes.js';
 import { registerAnalyticsRoutes } from './modules/analytics/analytics.routes.js';
 import { registerAuditRoutes } from './modules/audit/audit.routes.js';
+import { registerTenantSearchRoutes } from './modules/search/search.routes.js';
 import { registerDriverRoutes } from './modules/driver/driver.routes.js';
 import { registerAgentRoutes as registerFieldAgentRoutes } from './modules/agents/agent.routes.js';
 import { registerAgentRoutes as registerFauwardAgentRoutes } from './modules/agent/agent.routes.js';
@@ -251,6 +252,7 @@ export async function buildApp() {
   await registerPaymentsRoutes(app);
   await registerAnalyticsRoutes(app);
   await registerAuditRoutes(app);
+  await registerTenantSearchRoutes(app);
   await registerDriverRoutes(app);
   await registerFieldRoutes(app);
   await registerShipmentPermissionRoutes(app);

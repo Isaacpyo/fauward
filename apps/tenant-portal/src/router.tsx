@@ -5,18 +5,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { AppShell } from "@/layouts/AppShell";
 import { PublicLayout } from "@/layouts/PublicLayout";
 import {
-  CrmDetailPage,
-  CrmPage,
   DashboardPage,
-  FinanceDetailPage,
   FinancePage,
   LoginPage,
   NotFoundPage,
-  PublicBookingPage,
   RegisterPage,
-  SettingsPage,
-  TeamPage as LegacyTeamPage
+  SettingsPage
 } from "@/pages/AppPages";
+import { CrmPage } from "@/pages/crm/CrmPage";
+import { CrmDetailPage } from "@/pages/crm/CrmDetailPage";
+import { FinanceInvoiceDetailPage } from "@/pages/finance/FinanceInvoiceDetailPage";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ShipmentsListPage } from "@/pages/shipments/ShipmentsListPage";
 import { ShipmentDetailPage } from "@/pages/shipments/ShipmentDetailPage";
@@ -60,7 +58,7 @@ import { ShippingRulesPage } from "@/pages/shipping-rules/ShippingRulesPage";
 import { LabelsPage } from "@/pages/labels/LabelsPage";
 import { CustomsDeclarationPage } from "@/pages/customs/CustomsDeclarationPage";
 import { DeveloperPage } from "@/pages/developer/DeveloperPage";
-import { AuditLogPage } from "@/features/admin/audit/AuditLogPage";
+import { AuditLogPage } from "@/pages/audit/AuditLogPage";
 import { Button } from "@/components/ui/Button";
 import { formatPlanLabel, getFeatureMinimumPlan, type FeatureKey } from "@/lib/plan-features";
 import { useFeatureAccess } from "@/hooks/useEntitlements";
@@ -152,10 +150,9 @@ function WorkspaceRoutes() {
       <Route path="crm" element={<CrmPage />} />
       <Route path="crm/:id" element={<CrmDetailPage />} />
       <Route path="finance" element={<FinancePage />} />
-      <Route path="finance/:id" element={<FinanceDetailPage />} />
+      <Route path="finance/:id" element={<FinanceInvoiceDetailPage />} />
       <Route path="analytics" element={<PlanFeatureRoute feature="analytics"><AnalyticsPage /></PlanFeatureRoute>} />
       <Route path="team" element={<TeamPage />} />
-      <Route path="team-legacy" element={<LegacyTeamPage />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="profile" element={<Navigate to="settings?tab=profile" replace />} />
       <Route path="onboarding" element={<OnboardingPage />} />
@@ -205,7 +202,6 @@ export function AppRouter() {
       <Route element={<PublicLayout />}>
         <Route path="/track" element={<TrackingLookupPage />} />
         <Route path="/track/:number" element={<TrackingResultPage />} />
-        <Route path="/book" element={<PublicBookingPage />} />
       </Route>
 
       <Route path="/t/:tenantSlug/*" element={<TenantPathScope />}>

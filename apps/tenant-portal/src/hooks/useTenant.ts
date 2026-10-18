@@ -9,28 +9,6 @@ import { useTenantStore } from "@/stores/useTenantStore";
 import { applyTenantConfig } from "@/theme/tenant";
 import type { TenantConfig } from "@/types/domain";
 
-// The fallback is a stub for transient `/v1/tenant/me` failures (slow network,
-// HMR mid-fetch, brief backend hiccups). It must NOT set onboarding_complete to
-// `false` — AuthGuard treats that as "incomplete" and bounces every protected
-// page to /onboarding, which traps users any time a tenant fetch blips.
-// Leaving it `true` keeps the user where they were; real tenant data overrides
-// this as soon as the fetch succeeds.
-const fallbackTenant: TenantConfig = {
-  tenant_id: "tenant_demo",
-  name: "Fauward Demo Tenant",
-  logo_url: "",
-  domain: "demo.fauward.com",
-  primary_color: "#0D1F3C",
-  accent_color: "#D97706",
-  locale: "en-GB",
-  rtl: false,
-  currency: "GBP",
-  timezone: "Europe/London",
-  onboarding_complete: true,
-  support_email: "support@fauward.com",
-  support_phone: "+44 20 7946 0000"
-};
-
 async function fetchTenantConfig(): Promise<TenantConfig> {
   const response = await api.get<TenantConfig | Record<string, unknown>>("/v1/tenant/me");
   const data = response.data as unknown;
@@ -163,29 +141,9 @@ export function useTenant() {
       setTenant(resolvedTenant);
       setAppTenant(resolvedTenant);
       applyTenantConfig(resolvedTenant);
-      return;
     }
+  }, [query.data, setAppTenant, setTenant, tenant]);
 
-    if (query.isError && !tenant && !devSession?.tenant) {
-      setTenant(fallbackTenant);
-      setAppTenant(fallbackTenant);
-      applyTenantConfig(fallbackTenant);
-    }
-  }, [devSession, query.data, query.isError, setAppTenant, setTenant, tenant]);
-
-  useEffect(() => {
-    if (!query.isLoading || query.data || tenant || devSession?.tenant) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setTenant(fallbackTenant);
-      setAppTenant(fallbackTenant);
-      applyTenantConfig(fallbackTenant);
-    }, 1500);
-
-    return () => window.clearTimeout(timer);
-  }, [devSession, query.data, query.isLoading, setAppTenant, setTenant, tenant]);
-
+  // A failed tenant fetch is surfaced (App renders an error with Retry); no stand-in workspace is ever shown.
   return { ...query, tenant: query.data ?? tenant ?? devSession?.tenant ?? null };
 }

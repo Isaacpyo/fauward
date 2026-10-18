@@ -25,7 +25,6 @@ const NAV_GROUPS: { label: string; paths: string[] }[] = [
   { label: "Operations", paths: ["/", "/shipments", "/fauward-go", "/operations", "/operations/live-map", "/fleet"] },
   { label: "Business", paths: ["/crm", "/finance", "/analytics", "/pricing", "/returns"] },
   { label: "Admin", paths: ["/team", "/activity", "/support", "/reports", "/settings", "/developer"] },
-  { label: "Customer", paths: ["/book"] },
 ];
 
 function getGroupLabel(to: string): string | null {

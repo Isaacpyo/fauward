@@ -15,11 +15,14 @@ type PillarOverviewBaseProps = {
 };
 
 function StatusCell({ service }: { service: PillarServiceManifest }) {
+  const badgeKey = service.badgeKey;
   const query = useQuery({
-    queryKey: ["pillar-overview-status", service.id, service.badgeKey ?? "placeholder"],
-    queryFn: () => fetchBadge(service.badgeKey),
+    queryKey: ["pillar-overview-status", service.id, badgeKey ?? "none"],
+    queryFn: () => fetchBadge(badgeKey!),
+    enabled: Boolean(badgeKey),
     staleTime: 30_000
   });
+  if (!badgeKey) return null;
 
   const tone = query.data?.tone ?? "neutral";
   const className =

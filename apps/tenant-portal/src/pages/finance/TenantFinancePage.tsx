@@ -29,6 +29,7 @@ import {
 } from "recharts";
 
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -284,98 +285,8 @@ const invoiceStatusBars = [
   { key: "void", label: "Void", color: "#6B7280" }
 ];
 
-const fallbackSummary: FinanceSummary = {
-  totalInvoiced: 124000,
-  collected: 91350,
-  outstanding: 32650,
-  overdue: 8200
-};
-
-const fallbackInvoices: FinanceInvoice[] = [
-  {
-    id: "inv-1",
-    invoiceNumber: "FWD-INV-2026-0001",
-    total: 4820,
-    currency: "GBP",
-    status: "PAID",
-    dueDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    paidAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    sentAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 6).toISOString(),
-    organisation: { id: "org-1", name: "Acme Retail" }
-  },
-  {
-    id: "inv-2",
-    invoiceNumber: "FWD-INV-2026-0002",
-    total: 3120,
-    currency: "GBP",
-    status: "OVERDUE",
-    dueDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    sentAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 11).toISOString(),
-    organisation: { id: "org-2", name: "Northline Logistics" }
-  },
-  {
-    id: "inv-3",
-    invoiceNumber: "FWD-INV-2026-0003",
-    total: 1980,
-    currency: "GBP",
-    status: "PARTIALLY_PAID",
-    dueDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
-    sentAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-    organisation: { id: "org-3", name: "PortBridge" }
-  }
-];
-
-const fallbackPayments: FinancePayment[] = [
-  {
-    id: "pay-1",
-    invoiceId: "inv-1",
-    amount: 4820,
-    currency: "GBP",
-    status: "COMPLETED",
-    method: "CARD",
-    gatewayRef: "pi_001",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    invoice: { id: "inv-1", invoiceNumber: "FWD-INV-2026-0001", total: 4820, status: "PAID" }
-  },
-  {
-    id: "pay-2",
-    invoiceId: "inv-3",
-    amount: 980,
-    currency: "GBP",
-    status: "COMPLETED",
-    method: "COD",
-    gatewayRef: "cod_980",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 28).toISOString(),
-    invoice: { id: "inv-3", invoiceNumber: "FWD-INV-2026-0003", total: 1980, status: "PARTIALLY_PAID" }
-  },
-  {
-    id: "pay-3",
-    invoiceId: "inv-4",
-    amount: 1240,
-    currency: "GBP",
-    status: "COMPLETED",
-    method: "BANK_TRANSFER",
-    gatewayRef: "tr_004",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 52).toISOString(),
-    invoice: { id: "inv-4", invoiceNumber: "FWD-INV-2026-0004", total: 1240, status: "PAID" }
-  }
-];
-
-const fallbackCreditNotes: CreditNote[] = [
-  {
-    id: "cr-1",
-    creditNumber: "FWD-CR-2026-0001",
-    amount: 240,
-    currency: "GBP",
-    reason: "Damaged parcel refund",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72).toISOString(),
-    invoice: { id: "inv-2", invoiceNumber: "FWD-INV-2026-0002" },
-    organisation: { id: "org-2", name: "Northline Logistics" }
-  }
-];
+/** Before the first response (and on the dev session) totals are zero; a failed request renders an error, never sample data. */
+const emptySummary: FinanceSummary = { totalInvoiced: 0, collected: 0, outstanding: 0, overdue: 0 };
 
 function hasApiToken() {
   return Boolean(getAccessToken());
@@ -1361,10 +1272,11 @@ export function TenantFinancePage() {
     getErrorStatus(paymentsQuery.error) === 403 ||
     getErrorStatus(creditNotesQuery.error) === 403;
 
-  const summary = summaryQuery.data ?? fallbackSummary;
-  const invoices = invoicesQuery.data ?? fallbackInvoices;
-  const payments = paymentsQuery.data ?? fallbackPayments;
-  const creditNotes = creditNotesQuery.data ?? fallbackCreditNotes;
+  const financeLoadError = [summaryQuery, invoicesQuery, paymentsQuery, creditNotesQuery].find((query) => query.isError)?.error ?? null;
+  const summary = summaryQuery.data ?? emptySummary;
+  const invoices = useMemo(() => invoicesQuery.data ?? [], [invoicesQuery.data]);
+  const payments = useMemo(() => paymentsQuery.data ?? [], [paymentsQuery.data]);
+  const creditNotes = creditNotesQuery.data ?? [];
   const previousFinanceRange = useMemo(() => getPreviousFinanceRange(financeRange), [financeRange]);
   const financePeriodInvoices = useMemo(
     () => invoices.filter((invoice) => isWithinRange(invoice.createdAt, financeRange)),
@@ -1559,7 +1471,7 @@ export function TenantFinancePage() {
       <div className="space-y-4">
         {!hasToken ? (
           <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Dev session detected. Finance uses sample data until a real tenant API session is available.
+            Dev session detected. Finance stays empty until a real tenant API session is available.
           </div>
         ) : null}
 
@@ -1573,6 +1485,17 @@ export function TenantFinancePage() {
               <Link to="/settings?tab=billing">Open billing settings</Link>
             </Button>
           </div>
+        ) : financeLoadError ? (
+          <ErrorState
+            title="Finance could not be loaded"
+            description={getApiErrorMessage(financeLoadError, "The finance service returned an error.")}
+            onRetry={() => {
+              void summaryQuery.refetch();
+              void invoicesQuery.refetch();
+              void paymentsQuery.refetch();
+              void creditNotesQuery.refetch();
+            }}
+          />
         ) : (
           <Tabs
             value={currentTab}

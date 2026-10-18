@@ -2,7 +2,6 @@ import {
   BarChart3,
   Bot,
   Map,
-  BookOpen,
   BriefcaseBusiness,
   CreditCard,
   Gauge,
@@ -47,7 +46,6 @@ export type NavItem = {
 
 const settingsChildren: NavChild[] = [
   { to: "/settings?tab=profile", label: "Profile", tabValue: "profile", minimumPlan: "starter" },
-  { to: "/settings?tab=general", label: "General", tabValue: "general", minimumPlan: "starter" },
   { to: "/settings?tab=domain", label: "Domain", tabValue: "domain", minimumPlan: "pro" },
   { to: "/settings?tab=integrations", label: "Integrations", tabValue: "integrations", minimumPlan: "starter" },
   { to: "/settings?tab=billing", label: "Billing", tabValue: "billing", minimumPlan: "starter" },
@@ -261,13 +259,6 @@ export const navItems: NavItem[] = [
     feature: "settings",
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"],
     children: settingsChildren
-  },
-  {
-    to: "/book",
-    label: "Book Shipment",
-    icon: BookOpen,
-    feature: "shipments",
-    roles: ["CUSTOMER_ADMIN", "CUSTOMER_USER"]
   },
   {
     to: "/finance",

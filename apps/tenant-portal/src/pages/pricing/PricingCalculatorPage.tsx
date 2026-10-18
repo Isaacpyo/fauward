@@ -94,9 +94,6 @@ export function PricingCalculatorPage() {
             <p className="font-semibold">Total: {result.total.toFixed(2)} {result.currency}</p>
             <p className="text-xs text-gray-500">Quote expires at {new Date(result.quoteExpiresAt).toLocaleString()}</p>
           </div>
-          <Button variant="secondary" className="mt-3">
-            Save as quote
-          </Button>
         </div>
       ) : null}
     </PricingSectionPage>

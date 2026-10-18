@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { Dialog } from "@/components/ui/Dialog";
 import { Input } from "@/components/ui/Input";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { useAppStore } from "@/stores/useAppStore";
 
 type SearchResult = {
@@ -20,17 +21,11 @@ async function runSearch(query: string): Promise<SearchResult[]> {
   if (!query.trim()) {
     return [];
   }
-  const response = await api.get<SearchResult[]>("/search", {
+  const response = await api.get<SearchResult[]>("/v1/search", {
     params: { q: query }
   });
   return response.data;
 }
-
-const fallbackResults: SearchResult[] = [
-  { id: "trk-1001", label: "TRK-1001", subtitle: "Shipment", href: "/shipments/TRK-1001", type: "shipment" },
-  { id: "cus-acme", label: "Acme Wholesale", subtitle: "Customer", href: "/crm/cus-acme", type: "customer" },
-  { id: "inv-2001", label: "INV-2001", subtitle: "Invoice", href: "/finance/INV-2001", type: "invoice" }
-];
 
 export function CommandPalette() {
   const open = useAppStore((state) => state.commandPaletteOpen);
@@ -46,14 +41,7 @@ export function CommandPalette() {
     retry: 1
   });
 
-  const results = useMemo(() => {
-    if (searchQuery.isError && query.trim().length > 0) {
-      return fallbackResults.filter((result) =>
-        result.label.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-    return searchQuery.data ?? [];
-  }, [query, searchQuery.data, searchQuery.isError]);
+  const results = searchQuery.data ?? [];
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -96,7 +84,11 @@ export function CommandPalette() {
             <div className="p-4 text-sm text-gray-500">Searching...</div>
           ) : null}
 
-          {query.trim().length > 1 && results.length === 0 && !searchQuery.isLoading ? (
+          {searchQuery.isError ? (
+            <div className="p-4 text-sm text-red-700" role="alert">{apiErrorMessage(searchQuery.error, "Search is unavailable right now.")}</div>
+          ) : null}
+
+          {query.trim().length > 1 && searchQuery.isSuccess && results.length === 0 ? (
             <div className="p-4 text-sm text-gray-500">No results found.</div>
           ) : null}
 

@@ -83,15 +83,14 @@ export function ShipmentDetailPage() {
     }
   });
 
-  const handleExceptionAction = (action: "reattempt" | "return" | "contact" | "escalate") => {
+  const handleExceptionAction = (action: "reattempt" | "return" | "escalate") => {
     if (action === "reattempt") {
       updateStatusMutation.mutate({ status: "OUT_FOR_DELIVERY" });
     } else if (action === "return") {
       updateStatusMutation.mutate({ status: "RETURNED" });
-    } else if (action === "escalate") {
+    } else {
       updateStatusMutation.mutate({ status: "EXCEPTION" });
     }
-    // "contact" has no status change — future: open contact drawer
   };
 
   const quickNextStatuses = useMemo(() => {
@@ -244,6 +243,7 @@ export function ShipmentDetailPage() {
           <ExceptionBanner
             status={shipment.status}
             reason={shipment.exception_reason}
+            contactHref={shipment.recipient_phone ? `tel:${shipment.recipient_phone}` : shipment.recipient_email ? `mailto:${shipment.recipient_email}` : undefined}
             onAction={handleExceptionAction}
           />
 
@@ -273,7 +273,7 @@ export function ShipmentDetailPage() {
             {visitedTabs.has("documents") ? (
               <TabsContent value="documents">
                 <div className="space-y-4">
-                  <DocumentsPanel documents={shipment.documents} onDocumentsChange={(documents) => void documents} />
+                  <DocumentsPanel documents={shipment.documents} />
                   {shipment.status === "DELIVERED" ? (
                     <PODViewer
                       shipmentId={shipment.id}
@@ -307,7 +307,7 @@ export function ShipmentDetailPage() {
 
             {visitedTabs.has("notes") ? (
               <TabsContent value="notes">
-                <NotesPanel notes={shipment.notes} canWrite onNotesChange={(notes) => void notes} />
+                <NotesPanel notes={shipment.notes} />
               </TabsContent>
             ) : null}
           </Tabs>
