@@ -1443,6 +1443,9 @@ model Invoice {
   paidAt         DateTime?
   voidedAt       DateTime?
   createdBy      String?
+  /// PLATFORM = Fauward billing the tenant; TENANT_CUSTOMER = the tenant billing its customers (D4).
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
+  stripeInvoiceId String?      @unique
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -1450,6 +1453,7 @@ model Invoice {
   creditNotes CreditNote[]
 
   @@index([tenantId])
+  @@index([kind, tenantId, createdAt])
   @@map("invoices")
 }
 
@@ -1470,6 +1474,7 @@ model Payment {
   gatewayResponse Json?
   idempotencyKey  String?       @unique
   refundedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  kind            LedgerKind    @default(TENANT_CUSTOMER)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1478,6 +1483,7 @@ model Payment {
 
   @@index([tenantId])
   @@index([tenantId, gatewayRef])
+  @@index([kind, tenantId, createdAt])
   @@map("payments")
 }
 
@@ -1497,6 +1503,7 @@ model Refund {
   createdAt   DateTime @default(now())
   currency      String?
   failureReason String?
+  kind          LedgerKind @default(TENANT_CUSTOMER)
 
   approvals RefundApproval[]
 
@@ -1534,10 +1541,17 @@ model CreditNote {
   currency       String        @default("GBP")
   reason         String?
   appliedTo      String?
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
   createdAt      DateTime      @default(now())
 
   @@index([tenantId])
   @@map("credit_notes")
+}
+
+/// Which ledger a billing row belongs to (D4).
+enum LedgerKind {
+  PLATFORM
+  TENANT_CUSTOMER
 }
 
 model CurrencyRate {

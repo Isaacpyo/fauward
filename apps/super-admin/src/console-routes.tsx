@@ -132,7 +132,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/billing/invoices/:id", element: <PermissionRoute permission="revenue.invoices.read">
                 <InvoiceDetailPage />
               </PermissionRoute> },
-  { path: "/revenue/billing/credit-notes", element: <PermissionRoute permission="revenue.invoices.write">
+  { path: "/revenue/billing/credit-notes", element: <PermissionRoute permission="revenue.invoices.read">
                 <CreditNotesPage />
               </PermissionRoute> },
   { path: "/revenue/billing/refunds", element: <PermissionRoute permission="revenue.invoices.refund">

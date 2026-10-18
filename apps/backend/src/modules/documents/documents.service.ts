@@ -69,7 +69,7 @@ export const documentsService = {
 
   async generateInvoicePdf(app: FastifyInstance, tenantId: string, invoiceId: string) {
     const invoice = await app.prisma.invoice.findFirst({
-      where: { id: invoiceId, tenantId },
+      where: { kind: 'TENANT_CUSTOMER', id: invoiceId, tenantId },
       include: { tenant: true, organisation: true, shipment: true }
     });
     if (!invoice) {

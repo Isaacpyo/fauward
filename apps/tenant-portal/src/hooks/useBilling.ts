@@ -80,16 +80,18 @@ function paymentStatus(status?: string): BillingSummary["paymentStatus"] {
 }
 
 async function fetchBillingSummary(): Promise<BillingSummary> {
+  // Fauward's invoices to this workspace come from /tenants/me/billing/invoices (FauwardInvoicesTable, D4); the old
+  // source here was the workspace's own customer invoices.
   const [tenantResult, usageResult, invoicesResult, billingStatusResult] = await Promise.allSettled([
     api.get<TenantBillingPayload>("/v1/tenant/me"),
     api.get<UsagePayload>("/v1/tenant/usage"),
-    api.get<{ data: InvoicePayload[] }>("/v1/finance/invoices"),
+    api.get<{ invoices: InvoicePayload[] }>("/v1/tenants/me/billing/invoices"),
     api.get<BillingStatusPayload>("/v1/payments/billing-status")
   ]);
 
   const tenant = tenantResult.status === "fulfilled" ? tenantResult.value.data : {};
   const usage = usageResult.status === "fulfilled" ? usageResult.value.data : {};
-  const invoices = invoicesResult.status === "fulfilled" ? invoicesResult.value.data.data : [];
+  const invoices = invoicesResult.status === "fulfilled" ? invoicesResult.value.data.invoices ?? [] : [];
   const billingStatus = billingStatusResult.status === "fulfilled" ? billingStatusResult.value.data : {};
   const plan = normalizePlan(tenant.plan);
   const apiLimit = plan === "enterprise" ? 500_000 : plan === "pro" ? 50_000 : 0;

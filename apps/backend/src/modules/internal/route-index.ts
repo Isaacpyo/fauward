@@ -150,6 +150,8 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/auth/refresh',
   'POST /api/internal/billing/credit-notes',
   'POST /api/internal/billing/invoices',
+  'POST /api/internal/billing/invoices/:id/void',
+  'POST /api/internal/billing/payments',
   'POST /api/internal/billing/refunds',
   'POST /api/internal/billing/refunds/:id/approve',
   'POST /api/internal/billing/refunds/:id/reject',

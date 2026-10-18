@@ -346,18 +346,19 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerGtm(app);
 }
 
+// Dunning is about Fauward billing tenants: every ledger query here is kind PLATFORM (D4).
 function registerDunning(app: FastifyInstance) {
   app.get('/api/internal/dunning/failed-payments', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
     const [payments, overdueInvoices] = await Promise.all([
       app.prisma.payment.findMany({
-        where: { status: 'FAILED' },
+        where: { kind: 'PLATFORM', status: 'FAILED' },
         include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, invoice: true },
         orderBy: { updatedAt: 'desc' },
         take: 100
       }),
       app.prisma.invoice.findMany({
-        where: { status: 'OVERDUE' },
-        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: true },
+        where: { kind: 'PLATFORM', status: 'OVERDUE' },
+        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: { where: { kind: 'PLATFORM' } } },
         orderBy: { dueDate: 'asc' },
         take: 100
       })
@@ -370,14 +371,14 @@ function registerDunning(app: FastifyInstance) {
     const [events, saveOffers, invoices] = await Promise.all([
       delegate(app, 'dunningEvent').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100 }),
       delegate(app, 'saveOffer').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      app.prisma.invoice.findMany({ where: { tenantId }, include: { payments: true }, orderBy: { createdAt: 'desc' }, take: 30 })
+      app.prisma.invoice.findMany({ where: { kind: 'PLATFORM', tenantId }, include: { payments: { where: { kind: 'PLATFORM' } } }, orderBy: { createdAt: 'desc' }, take: 30 })
     ]);
     reply.send({ events, saveOffers, invoices });
   });
 
   app.post('/api/internal/dunning/retry/:invoiceId', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
     const { invoiceId } = request.params as { invoiceId: string };
-    const invoice = await app.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { tenant: true } });
+    const invoice = await app.prisma.invoice.findUnique({ where: { kind: 'PLATFORM', id: invoiceId }, include: { tenant: true } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
     const attempt = await delegate(app, 'dunningEvent').count({ where: { invoiceId, eventType: 'manual_retry' } });

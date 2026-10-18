@@ -24,7 +24,10 @@ export const DANGEROUS_ROUTES = [
   { method: 'DELETE', url: '/api/internal/flags/:key/overrides/:id' },
   // platform.impersonation (WP-1.1 move)
   { method: 'POST', url: '/api/internal/impersonation/sessions' },
-  // revenue.billing (WP-0.6)
+  // revenue.billing (WP-0.6, WP-1.5)
+  { method: 'POST', url: '/api/internal/billing/invoices/:id/void' },
+  { method: 'POST', url: '/api/internal/billing/payments' },
+  { method: 'POST', url: '/api/internal/billing/credit-notes' },
   { method: 'POST', url: '/api/internal/billing/refunds' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' }

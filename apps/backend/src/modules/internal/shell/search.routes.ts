@@ -44,8 +44,9 @@ export async function registerConsoleSearchRoutes(app: FastifyInstance) {
         : null,
       canInvoices
         ? app.prisma.invoice.findMany({
-            where: { invoiceNumber: contains },
-            select: { id: true, invoiceNumber: true, status: true, total: true, currency: true, tenantId: true, tenant: { select: { name: true, slug: true } } },
+            // Both ledgers: support looks up a tenant's customer invoices too; `kind` tells them apart (D4).
+            where: { invoiceNumber: contains, kind: { in: ['PLATFORM', 'TENANT_CUSTOMER'] } },
+            select: { id: true, invoiceNumber: true, status: true, total: true, currency: true, kind: true, tenantId: true, tenant: { select: { name: true, slug: true } } },
             orderBy: { createdAt: 'desc' },
             take: limit
           })

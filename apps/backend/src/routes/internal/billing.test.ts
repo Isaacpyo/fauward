@@ -326,3 +326,29 @@ describe('refund integrity (WP-0.6)', () => {
     }
   });
 });
+
+describe('ledger kind on console billing reads (D4)', () => {
+  it('ACC-BIL-6 the console lists PLATFORM invoices by default; TENANT_CUSTOMER is an explicit, read-only view', async () => {
+    const prisma = createPrisma();
+    const findMany = vi.fn(async () => []);
+    Object.assign(prisma, { invoice: { findMany } });
+    const { app } = await buildApp(prisma);
+
+    const platform = await app.inject({ method: 'GET', url: '/api/internal/billing/invoices' });
+    expect(platform.json()).toMatchObject({ kind: 'PLATFORM', readOnly: false, data: [] });
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { kind: 'PLATFORM' } }));
+
+    const customers = await app.inject({ method: 'GET', url: '/api/internal/billing/invoices?kind=TENANT_CUSTOMER&tenantId=tenant_001' });
+    expect(customers.json()).toMatchObject({ kind: 'TENANT_CUSTOMER', readOnly: true });
+    expect(findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: { tenantId: 'tenant_001', kind: 'TENANT_CUSTOMER' } }));
+
+    expect((await app.inject({ method: 'GET', url: '/api/internal/billing/invoices?kind=BOTH' })).statusCode).toBe(400);
+  });
+
+  it('ACC-BIL-6 console refunds only touch PLATFORM payments', async () => {
+    const prisma = createPrisma();
+    const { app } = await buildApp(prisma);
+    await refund(app, { paymentId: 'pay_001', amount: '1.00', reason: 'Duplicate charge on invoice' }, 'kind-key');
+    expect(prisma.payment.findUnique).toHaveBeenCalledWith({ where: { id: 'pay_001', kind: 'PLATFORM' } });
+  });
+});

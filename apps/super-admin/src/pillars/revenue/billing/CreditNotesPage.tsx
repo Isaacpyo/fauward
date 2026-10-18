@@ -1,12 +1,69 @@
-import { DenseTable, EmptyState } from "@fauward/internal-ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { createCreditNote, fetchCreditNotes, type CreditNote } from "./api";
+import { Link } from "react-router-dom";
+
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { MoneyCell } from "@/components/service-kit/MoneyCell";
+import { TenantChip } from "@/components/service-kit/TenantChip";
+import { useCreditNotes } from "./api";
+import { LedgerFilters, useLedgerFilters } from "./components/LedgerFilters";
 
 export function CreditNotesPage() {
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState({ tenantId: "", invoiceId: "", amount: 0, currency: "GBP", reason: "Credit note" });
-  const query = useQuery({ queryKey: ["billing-credit-notes"], queryFn: fetchCreditNotes });
-  const mutation = useMutation({ mutationFn: createCreditNote, onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["billing-credit-notes"] }) });
-  return <div className="space-y-4"><section className="grid gap-2 rounded-lg border border-[var(--color-border)] bg-white p-4 md:grid-cols-5"><input placeholder="Tenant ID" className="rounded-md border px-3 py-2 text-sm" value={form.tenantId} onChange={(e) => setForm({ ...form, tenantId: e.target.value })} /><input placeholder="Invoice ID" className="rounded-md border px-3 py-2 text-sm" value={form.invoiceId} onChange={(e) => setForm({ ...form, invoiceId: e.target.value })} /><input type="number" className="rounded-md border px-3 py-2 text-sm" value={form.amount} onChange={(e) => setForm({ ...form, amount: Number(e.target.value) })} /><input className="rounded-md border px-3 py-2 text-sm" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /><button className="rounded-md bg-[var(--fauward-navy)] px-3 py-2 text-sm font-semibold text-white" onClick={() => mutation.mutate({ ...form, invoiceId: form.invoiceId || undefined })}>Issue credit</button></section><DenseTable<CreditNote> data={query.data ?? []} loading={query.isLoading} getRowId={(row) => row.id} emptyState={<EmptyState title="No credit notes" message="No credit notes found." />} columns={[{ id: "number", header: "Credit note", cell: (row) => row.creditNumber }, { id: "invoice", header: "Invoice", cell: (row) => row.invoiceId ?? "-" }, { id: "amount", header: "Amount", align: "right", cell: (row) => `${row.currency} ${row.amount}` }, { id: "reason", header: "Reason", cell: (row) => row.reason ?? "-" }]} /></div>;
+  const { filters, set } = useLedgerFilters();
+  const query = useCreditNotes(filters);
+  const rows = query.data?.pages.flatMap((page) => page.data ?? []) ?? [];
+  const kindSuffix = filters.kind === "PLATFORM" ? "" : "?kind=TENANT_CUSTOMER";
+  return (
+    <div className="space-y-4">
+      <header>
+        <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Credit notes</h1>
+        <p className="mt-1 text-sm text-[var(--color-text-muted)]">Credits reduce an invoice&apos;s balance and can never exceed it. Issue one from the invoice page.</p>
+      </header>
+      <LedgerFilters filters={filters} set={set} />
+      {query.isError ? <ConsoleApiErrorPanel error={query.error} onRetry={() => void query.refetch()} title="Unable to load credit notes" /> : null}
+      {!query.isError ? (
+        <section className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-[var(--color-surface-50)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <tr>
+                <th className="px-3 py-2">Credit note</th>
+                <th className="px-3 py-2">Tenant</th>
+                <th className="px-3 py-2">Invoice</th>
+                <th className="px-3 py-2">Reason</th>
+                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2">Date</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {rows.map((credit) => (
+                <tr key={credit.id}>
+                  <td className="px-3 py-2 font-mono text-xs">{credit.creditNumber}</td>
+                  <td className="px-3 py-2">{credit.tenant ? <TenantChip tenantId={credit.tenant.id} name={credit.tenant.name} /> : credit.tenantId}</td>
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {credit.invoice ? (
+                      <Link to={`/revenue/billing/invoices/${credit.invoice.id}${kindSuffix}`} className="underline">
+                        {credit.invoice.invoiceNumber}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs">{credit.reason ?? "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    <MoneyCell amount={credit.amount} currency={credit.currency} />
+                  </td>
+                  <td className="px-3 py-2 text-xs">{new Date(credit.createdAt).toLocaleDateString()}</td>
+                </tr>
+              ))}
+              {!query.isLoading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-[var(--color-text-muted)]">
+                    No credit notes match these filters.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
+    </div>
+  );
 }

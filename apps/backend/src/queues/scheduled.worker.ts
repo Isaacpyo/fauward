@@ -41,7 +41,7 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
     app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(60), lt: daysAgo(30) } } }),
     app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(90) } } }),
-    app.prisma.payment.count({ where: { tenantId, status: 'FAILED' } }),
+    app.prisma.payment.count({ where: { kind: 'TENANT_CUSTOMER', tenantId, status: 'FAILED' } }),
     app.prisma.supportVendorTicket.count({ where: { tenantId, status: { in: ['new', 'open', 'pending'] } } }),
     app.prisma.supportVendorTicket.count({ where: { tenantId, sentiment: { in: ['negative', 'angry', 'frustrated'] } } }),
     app.prisma.apiKey.count({ where: { tenantId, isActive: true } }),
@@ -317,7 +317,7 @@ export async function startScheduledWorker(app: FastifyInstance) {
           const [shipments, users, payments, webhooks] = await Promise.all([
             app.prisma.shipment.count({ where: { tenantId: tenant.id } }),
             app.prisma.user.count({ where: { tenantId: tenant.id } }),
-            app.prisma.payment.count({ where: { tenantId: tenant.id } }),
+            app.prisma.payment.count({ where: { kind: 'TENANT_CUSTOMER', tenantId: tenant.id } }),
             app.prisma.webhookEndpoint.count({ where: { tenantId: tenant.id } })
           ]);
           const score = (shipments > 0 ? 30 : 0) + (users > 1 ? 20 : 0) + (payments > 0 ? 25 : 0) + (webhooks > 0 ? 15 : 0) + (tenant.customDomain ? 10 : 0);

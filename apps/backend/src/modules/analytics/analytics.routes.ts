@@ -161,7 +161,7 @@ async function getBaseMetrics(app: FastifyInstance, tenantId: string, dateFrom: 
   const [shipmentsCount, revenueAggregate, shipmentKpis] = await Promise.all([
     app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: dateFrom, lte: dateTo } } }),
     app.prisma.invoice.aggregate({
-      where: { tenantId, createdAt: { gte: dateFrom, lte: dateTo } },
+      where: { kind: 'TENANT_CUSTOMER', tenantId, createdAt: { gte: dateFrom, lte: dateTo } },
       _sum: { total: true }
     }),
     computeShipmentKpis(app, tenantId, dateFrom, dateTo)
@@ -204,7 +204,7 @@ async function getReportData(
   }
   if (type === 'revenue') {
     return app.prisma.invoice.findMany({
-      where: { tenantId, createdAt: { gte: range.dateFrom, lte: range.dateTo } },
+      where: { kind: 'TENANT_CUSTOMER', tenantId, createdAt: { gte: range.dateFrom, lte: range.dateTo } },
       include: { payments: true, organisation: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -450,6 +450,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance) {
     const [invoices, shipments] = await Promise.all([
       app.prisma.invoice.findMany({
         where: {
+          kind: 'TENANT_CUSTOMER',
           tenantId,
           createdAt: { gte: range.dateFrom, lte: range.dateTo }
         },
@@ -616,6 +617,7 @@ export async function registerAnalyticsRoutes(app: FastifyInstance) {
       }),
       app.prisma.invoice.findMany({
         where: {
+          kind: 'TENANT_CUSTOMER',
           tenantId,
           OR: [{ sentAt: { gte: from } }, { paidAt: { gte: from } }]
         },

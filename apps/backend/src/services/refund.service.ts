@@ -1,8 +1,9 @@
-import { Prisma, type Payment, type PrismaClient, type Refund } from '@prisma/client';
+import { Prisma, type LedgerKind, type Payment, type PrismaClient, type Refund } from '@prisma/client';
 import { MoneyFormatError, currencyDecimals, toMinorUnits } from '../modules/payments/stripe.service.js';
 
 // Refund integrity (WP-0.6): no over-refunds, refundedAmount kept true, a second approver for manual or large refunds,
-// Stripe failures recorded and surfaced as a handled 502.
+// Stripe failures recorded and surfaced as a handled 502. Every query names the ledger kind (D4): the console refunds
+// PLATFORM payments only.
 
 export const REFUND_STATUS = {
   PENDING_APPROVAL: 'PENDING_APPROVAL',
@@ -47,16 +48,16 @@ export function parseRefundAmount(raw: unknown, currency: string) {
 }
 
 /** Row lock on the payment so concurrent refunds see each other (Prisma cannot express FOR UPDATE). */
-async function lockPayment(tx: Tx, paymentId: string, tenantId: string) {
+async function lockPayment(tx: Tx, paymentId: string, tenantId: string, kind: LedgerKind) {
   await tx.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId} AND "tenantId" = ${tenantId} FOR UPDATE`;
-  const payment = await tx.payment.findFirst({ where: { id: paymentId, tenantId } });
+  const payment = await tx.payment.findFirst({ where: { id: paymentId, tenantId, kind } });
   if (!payment) throw new RefundError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
   return payment;
 }
 
 async function availableToRefund(tx: Tx, payment: Payment, excludeRefundId?: string) {
   const inFlight = await tx.refund.aggregate({
-    where: { paymentId: payment.id, tenantId: payment.tenantId, status: { in: IN_FLIGHT }, ...(excludeRefundId ? { id: { not: excludeRefundId } } : {}) },
+    where: { paymentId: payment.id, tenantId: payment.tenantId, kind: payment.kind, status: { in: IN_FLIGHT }, ...(excludeRefundId ? { id: { not: excludeRefundId } } : {}) },
     _sum: { amount: true }
   });
   return new Prisma.Decimal(payment.amount).minus(payment.refundedAmount).minus(inFlight._sum.amount ?? 0);
@@ -87,24 +88,26 @@ export async function executeStripeRefund<R extends Refund>(db: Db, stripe: Stri
     });
   } catch (error) {
     const failureReason = (error instanceof Error ? error.message : 'Stripe refund failed').slice(0, 500);
-    await db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId }, data: { status: REFUND_STATUS.FAILED, failureReason } });
+    await db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId, kind: refund.kind }, data: { status: REFUND_STATUS.FAILED, failureReason } });
     throw new RefundError(502, 'VENDOR_ERROR', `Stripe did not accept the refund: ${failureReason}`, { vendor: 'stripe', degraded: true, refundId: refund.id });
   }
 
   if (result.status === 'failed' || result.status === 'canceled') {
     const failureReason = `Stripe refund ${result.id} returned status ${result.status}`;
-    await db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId }, data: { status: REFUND_STATUS.FAILED, failureReason, gatewayRef: result.id } });
+    await db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId, kind: refund.kind }, data: { status: REFUND_STATUS.FAILED, failureReason, gatewayRef: result.id } });
     throw new RefundError(502, 'VENDOR_ERROR', failureReason, { vendor: 'stripe', degraded: true, refundId: refund.id });
   }
 
   await db.$transaction([
-    db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId }, data: { status: REFUND_STATUS.SUCCEEDED, gatewayRef: result.id, failureReason: null } }),
-    db.payment.updateMany({ where: { id: payment.id, tenantId: payment.tenantId }, data: { refundedAmount: { increment: refund.amount } } })
+    db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId, kind: refund.kind }, data: { status: REFUND_STATUS.SUCCEEDED, gatewayRef: result.id, failureReason: null } }),
+    db.payment.updateMany({ where: { id: payment.id, tenantId: payment.tenantId, kind: payment.kind }, data: { refundedAmount: { increment: refund.amount } } })
   ]);
   return { ...refund, status: REFUND_STATUS.SUCCEEDED, gatewayRef: result.id, failureReason: null };
 }
 
 export type RequestRefundInput = {
+  /** Ledger the payment must belong to; the console passes PLATFORM. */
+  kind: LedgerKind;
   paymentId: string;
   amount: unknown;
   reason: string;
@@ -115,10 +118,10 @@ export type RequestRefundInput = {
 };
 
 export async function requestRefund(db: Db, deps: { stripe: StripeRefunds; largeRefundThreshold: string }, input: RequestRefundInput) {
-  const existing = await db.refund.findUnique({ where: { idempotencyKey: input.idempotencyKey }, include: { approvals: true } });
+  const existing = await db.refund.findUnique({ where: { idempotencyKey: input.idempotencyKey, kind: input.kind }, include: { approvals: true } });
   if (existing) return { refund: existing, created: false, path: existing.status === REFUND_STATUS.PENDING_APPROVAL ? ('approval' as const) : ('stripe' as const) };
 
-  const payment = await db.payment.findUnique({ where: { id: input.paymentId } });
+  const payment = await db.payment.findUnique({ where: { id: input.paymentId, kind: input.kind } });
   if (!payment) throw new RefundError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
   const amount = parseRefundAmount(input.amount, payment.currency);
   const large = amount.gte(new Prisma.Decimal(deps.largeRefundThreshold));
@@ -129,11 +132,12 @@ export async function requestRefund(db: Db, deps: { stripe: StripeRefunds; large
   let refund: Refund & { approvals: Array<{ id: string; status: string }> };
   try {
     refund = await db.$transaction(async (tx) => {
-      const locked = await lockPayment(tx, payment.id, payment.tenantId);
+      const locked = await lockPayment(tx, payment.id, payment.tenantId, input.kind);
       const available = await availableToRefund(tx, locked);
       if (amount.gt(available)) throw overRefund(amount, available, locked.currency);
       return tx.refund.create({
         data: {
+          kind: locked.kind,
           tenantId: locked.tenantId,
           paymentId: locked.id,
           amount,
@@ -149,7 +153,7 @@ export async function requestRefund(db: Db, deps: { stripe: StripeRefunds; large
     });
   } catch (error) {
     if (!isUniqueViolation(error)) throw error;
-    const raced = await db.refund.findUnique({ where: { idempotencyKey: input.idempotencyKey }, include: { approvals: true } });
+    const raced = await db.refund.findUnique({ where: { idempotencyKey: input.idempotencyKey, kind: input.kind }, include: { approvals: true } });
     if (!raced) throw error;
     return { refund: raced, created: false, path };
   }
@@ -159,8 +163,8 @@ export async function requestRefund(db: Db, deps: { stripe: StripeRefunds; large
   return { refund: { ...settled, approvals: refund.approvals }, created: true, path, large };
 }
 
-export async function decideRefund(db: Db, deps: { stripe: StripeRefunds }, input: { refundId: string; decision: 'APPROVE' | 'REJECT'; actorId: string; reason: string }) {
-  const refund = await db.refund.findUnique({ where: { id: input.refundId }, include: { approvals: true, payment: true } });
+export async function decideRefund(db: Db, deps: { stripe: StripeRefunds }, input: { kind: LedgerKind; refundId: string; decision: 'APPROVE' | 'REJECT'; actorId: string; reason: string }) {
+  const refund = await db.refund.findUnique({ where: { id: input.refundId, kind: input.kind }, include: { approvals: true, payment: true } });
   if (!refund) throw new RefundError(404, 'REFUND_NOT_FOUND', 'Refund not found');
   const approval = refund.approvals.find((item) => item.status === 'PENDING');
   if (refund.status !== REFUND_STATUS.PENDING_APPROVAL || !approval) throw new RefundError(409, 'REFUND_NOT_PENDING', 'This refund is not awaiting approval.');
@@ -172,7 +176,7 @@ export async function decideRefund(db: Db, deps: { stripe: StripeRefunds }, inpu
   if (input.decision === 'REJECT') {
     await db.$transaction([
       db.refundApproval.update({ where: { id: approval.id }, data: { status: 'REJECTED', approvedBy: input.actorId, decidedAt } }),
-      db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId }, data: { status: REFUND_STATUS.REJECTED, failureReason: input.reason } })
+      db.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId, kind: refund.kind }, data: { status: REFUND_STATUS.REJECTED, failureReason: input.reason } })
     ]);
     return { ...refund, status: REFUND_STATUS.REJECTED };
   }
@@ -180,14 +184,14 @@ export async function decideRefund(db: Db, deps: { stripe: StripeRefunds }, inpu
   const useStripe = Boolean(refund.payment.gatewayRef) && deps.stripe.isConfigured();
   const nextStatus = useStripe ? REFUND_STATUS.PROCESSING : REFUND_STATUS.RECORDED_MANUAL;
   await db.$transaction(async (tx) => {
-    const locked = await lockPayment(tx, refund.paymentId, refund.tenantId);
+    const locked = await lockPayment(tx, refund.paymentId, refund.tenantId, refund.kind);
     const available = await availableToRefund(tx, locked, refund.id);
     if (new Prisma.Decimal(refund.amount).gt(available)) throw overRefund(new Prisma.Decimal(refund.amount), available, locked.currency);
     await tx.refundApproval.update({ where: { id: approval.id }, data: { status: 'APPROVED', approvedBy: input.actorId, decidedAt } });
-    await tx.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId }, data: { status: nextStatus } });
+    await tx.refund.updateMany({ where: { id: refund.id, tenantId: refund.tenantId, kind: refund.kind }, data: { status: nextStatus } });
     // Manual refunds are settled outside Fauward; refundedAmount moves only once a second person approves.
     if (!useStripe) {
-      await tx.payment.updateMany({ where: { id: locked.id, tenantId: locked.tenantId }, data: { refundedAmount: { increment: refund.amount } } });
+      await tx.payment.updateMany({ where: { id: locked.id, tenantId: locked.tenantId, kind: locked.kind }, data: { refundedAmount: { increment: refund.amount } } });
     }
   });
 

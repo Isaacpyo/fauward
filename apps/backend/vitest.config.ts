@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     passWithNoTests: true,
+    // The first test in a file pays for importing route modules (Prisma client, queues, config); under turbo's parallel
+    // runs that alone can pass vitest's 5 s default on Windows/CI runners.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'lcov'],

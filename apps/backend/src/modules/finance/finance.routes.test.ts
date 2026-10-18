@@ -221,8 +221,10 @@ describe('runOverdueInvoiceSweep', () => {
     const count = await runOverdueInvoiceSweep(app);
 
     expect(count).toBe(1);
+    // The sweep only touches tenants' own customer invoices (D4); PLATFORM invoices go to dunning.
+    expect(prisma.invoice.findMany).toHaveBeenCalledWith({ where: expect.objectContaining({ kind: 'TENANT_CUSTOMER' }) });
     expect(prisma.invoice.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'inv-overdue' }, data: { status: 'OVERDUE' } })
+      expect.objectContaining({ where: { kind: 'TENANT_CUSTOMER', id: 'inv-overdue' }, data: { status: 'OVERDUE' } })
     );
     expect(prisma.notificationLog.createMany).toHaveBeenCalledTimes(1);
   });

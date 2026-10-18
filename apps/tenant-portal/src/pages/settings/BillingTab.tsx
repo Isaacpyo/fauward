@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { ChangePlanModal } from "@/components/billing/ChangePlanModal";
 import { CurrentPlanCard } from "@/components/billing/CurrentPlanCard";
-import { InvoiceHistoryTable } from "@/components/billing/InvoiceHistoryTable";
+import { FauwardInvoicesTable } from "@/components/billing/FauwardInvoicesTable";
 import { PaymentMethodCard } from "@/components/billing/PaymentMethodCard";
 import { PlanComparisonTable } from "@/components/billing/PlanComparisonTable";
 import { UsageSection } from "@/components/billing/UsageSection";
@@ -33,7 +33,7 @@ export function BillingTab() {
       />
       <UsageSection summary={summary} onUpgrade={() => setChangePlanOpen(true)} />
       <PlanComparisonTable currentPlan={summary.plan} onUpgradePlan={() => setChangePlanOpen(true)} />
-      <InvoiceHistoryTable summary={summary} />
+      <FauwardInvoicesTable />
       <PaymentMethodCard summary={summary} onManageBilling={manageBilling} />
 
       <ChangePlanModal
