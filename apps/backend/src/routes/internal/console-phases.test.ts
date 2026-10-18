@@ -153,6 +153,22 @@ describe('internal console phase routes', () => {
     expect(response.json()).toEqual({ error: 'Self approval is not allowed' });
   });
 
+  it('ACC-IAM-2 rejects JIT approval when the approver is the requesting StaffUser', async () => {
+    currentPermissions = ['trust.jit.approve'];
+    const approvalModel = delegate();
+    const prisma = {
+      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_002', requesterPlatformUserId: 'other_platform_user', requesterStaffId: 'staff_row_001', rootRequest: false, durationMinutes: 60 })) }),
+      jitAccessApproval: approvalModel,
+      staffUser: { findUnique: vi.fn(async () => ({ id: 'staff_row_001' })) }
+    };
+    const app = await buildApp(prisma);
+
+    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_002/approve', payload: { notes: 'self' } });
+
+    expect(response.statusCode).toBe(403);
+    expect(approvalModel.upsert).not.toHaveBeenCalled();
+  });
+
   it('requires CFO-level permission for quote discounts over 25 percent', async () => {
     currentPermissions = ['gtm.contracts.write', 'gtm.contracts.discount.large'];
     const prisma = {

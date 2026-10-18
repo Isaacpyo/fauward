@@ -1,6 +1,5 @@
 import type { PlatformUser, PrismaClient } from '@prisma/client';
 import { PERMISSIONS, ROLE_PERMISSIONS, Role, type Permission } from '@fauward/internal-rbac';
-import { permissionsForPlatformRole } from './platform-permission.service.js';
 
 export const STAFF_ROLE_DEFINITIONS = [
   ...Object.values(Role).map((role) => ({
@@ -58,45 +57,41 @@ export async function seedStaffRoles(prisma: PrismaClient) {
   );
 }
 
-export async function ensureStaffUserForPlatformUser(prisma: PrismaClient, user: PlatformUser) {
-  await seedStaffRoles(prisma);
-  const existing = await prisma.staffUser.findUnique({ where: { email: user.email } });
-  const staff =
-    existing ??
-    (await prisma.staffUser.create({
-      data: {
-        platformUserId: user.id,
-        email: user.email,
-        name: user.name ?? user.email,
-        ssoProvider: user.role === 'SUPER_ADMIN' ? 'root' : 'totp',
-        status: user.status === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED',
-        mfaEnabled: user.mfaEnabled,
-        lastLoginAt: user.lastLoginAt
-      }
-    }));
+const activeAssignmentsInclude = () => ({
+  roleAssignments: { include: { role: true }, where: { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } }
+});
 
-  if (!staff.platformUserId) {
-    await prisma.staffUser.update({ where: { id: staff.id }, data: { platformUserId: user.id } });
+/**
+ * Resolves (or, the first time, creates) the StaffUser behind a PlatformUser. The legacy PlatformRole is mapped to a
+ * staff role only when the StaffUser is created; an existing staff user's roles are never re-added (S5), so a revoked
+ * legacy-mapped role stays revoked. Staff roles are seeded at boot and by `staff:roles:seed`, never per request.
+ */
+export async function ensureStaffUserForPlatformUser(prisma: PrismaClient, user: PlatformUser) {
+  const existing =
+    (await prisma.staffUser.findUnique({ where: { platformUserId: user.id }, include: activeAssignmentsInclude() })) ??
+    (await prisma.staffUser.findUnique({ where: { email: user.email }, include: activeAssignmentsInclude() }));
+
+  if (existing) {
+    if (!existing.platformUserId) {
+      await prisma.staffUser.update({ where: { id: existing.id }, data: { platformUserId: user.id } });
+    }
+    return existing;
   }
 
   const roleId = LEGACY_PLATFORM_ROLE_TO_STAFF_ROLE[user.role] ?? Role.EXECUTIVE;
-  await prisma.staffRoleAssignment.upsert({
-    where: { staffId_roleId: { staffId: staff.id, roleId } },
-    create: { staffId: staff.id, roleId, grantedBy: 'legacy-platform-role' },
-    update: {}
-  });
-
-  if (user.role === 'SUPER_ADMIN') {
-    await prisma.staffRoleAssignment.upsert({
-      where: { staffId_roleId: { staffId: staff.id, roleId: 'SUPER_ADMIN' } },
-      create: { staffId: staff.id, roleId: 'SUPER_ADMIN', grantedBy: 'legacy-platform-role' },
-      update: {}
-    });
-  }
-
-  return prisma.staffUser.findUniqueOrThrow({
-    where: { id: staff.id },
-    include: { roleAssignments: { include: { role: true }, where: { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } } }
+  const legacyRoles: string[] = user.role === 'SUPER_ADMIN' ? [roleId, 'SUPER_ADMIN'] : [roleId];
+  return prisma.staffUser.create({
+    data: {
+      platformUserId: user.id,
+      email: user.email,
+      name: user.name ?? user.email,
+      ssoProvider: user.role === 'SUPER_ADMIN' ? 'root' : 'totp',
+      status: user.status === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED',
+      mfaEnabled: user.mfaEnabled,
+      lastLoginAt: user.lastLoginAt,
+      roleAssignments: { create: legacyRoles.map((legacyRoleId) => ({ roleId: legacyRoleId, grantedBy: 'legacy-platform-role' })) }
+    },
+    include: activeAssignmentsInclude()
   });
 }
 
@@ -108,12 +103,6 @@ export async function staffPermissionContextForPlatformUser(prisma: PrismaClient
   for (const assignment of staff.roleAssignments) {
     for (const permission of assignment.role.permissions) {
       if (isPermission(permission)) permissions.add(permission);
-    }
-  }
-
-  if (permissions.size === 0) {
-    for (const permission of permissionsForPlatformRole(user.role)) {
-      permissions.add(permission as Permission);
     }
   }
 

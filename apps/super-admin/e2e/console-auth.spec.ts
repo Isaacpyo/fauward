@@ -92,8 +92,9 @@ test("ACC-AUTH-6 login → enrol MFA → dashboard; a dangerous action opens the
 
   await page.goto("/trust/iam/users/staff_002");
   await page.getByRole("button", { name: "Reset MFA" }).click();
-  await page.getByLabel("Reason").fill("Lost phone, confirmed on a video call");
-  await page.getByRole("button", { name: "Reset MFA" }).last().click();
+  const resetDialog = page.getByRole("dialog", { name: /Reset MFA for lost-phone@fauward.com/ });
+  await resetDialog.getByLabel(/Reason/).fill("Lost phone, confirmed on a video call");
+  await resetDialog.getByRole("button", { name: "Reset MFA" }).click();
 
   const stepUp = page.getByRole("dialog", { name: "Confirm it’s you" });
   await expect(stepUp).toBeVisible();
@@ -106,4 +107,5 @@ test("ACC-AUTH-6 login → enrol MFA → dashboard; a dangerous action opens the
   expect(resetCalls[0].key).toBeTruthy();
   expect(resetCalls[1].key).toBe(resetCalls[0].key);
   expect(resetCalls[1].body).toEqual({ reason: "Lost phone, confirmed on a video call" });
+  await expect(page.getByRole("status")).toContainText("MFA reset for lost-phone@fauward.com");
 });

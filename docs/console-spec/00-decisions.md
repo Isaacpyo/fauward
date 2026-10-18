@@ -30,6 +30,10 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C18 | WP-0.2: tests for the client | `apps/super-admin` had no unit-test runner | Added vitest + jsdom + Testing Library (`npm run test` in the workspace) |
 | C19 | WP-0.3: sidebar/palette/overview read `status`; D1 router built from per-service `routes.tsx` | `CommandPalette` listed hardcoded fake tenants/invoices; router hand-listed 137 routes | Palette now lists manifest services only (entity search returns with `/api/internal/search`, WP-1.2). Routes moved into one table `src/console-routes.tsx` that the reconciliation test reads; per-service `routes.tsx` files arrive as each service is rebuilt |
 | C20 | ADR snapshot: commissions/partners/pricing stay `preview` | They are not planned (`livePhase: null`) but keep their pages until WP-4.0b | Manifest: `status: preview`, `livePhase: null`; banner says "being removed" |
+| C21 | S3: JIT self-approval compared different id spaces | `jit/requests/:id/approve` already compared PlatformUser ids correctly (`requesterPlatformUserId` vs caller) | Kept, and the request's `requesterStaffId` is now also compared with the approver's StaffUser id |
+| C22 | Catalogue: `POST /iam/users/:id/suspend · /offboard · /reactivate` | Code changed status through `PATCH /iam/users/:id` (no session revoke on suspend) and `DELETE` | Added the three dangerous POST routes (one transaction each); `PATCH` can no longer change status or MFA (400 `USE_LIFECYCLE_ACTION`); `DELETE` = offboard, dangerous |
+| C23 | S5: re-grant per request | Besides the per-request upsert, `staffPermissionContextForPlatformUser` fell back to the legacy role's permissions when a staff user had no roles | Fallback removed: a staff user with no roles has no permissions |
+| C24 | S2: ROOT grants need the hardware assertion | The deprecated `SUPER_ADMIN` staff role carries ROOT's permissions and could be assigned without the ROOT check | Deprecated roles cannot be assigned (400 `ROLE_DEPRECATED`); `SUPER_ADMIN` is also treated as ROOT-equivalent in the check |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

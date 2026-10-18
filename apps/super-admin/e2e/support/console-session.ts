@@ -1,11 +1,11 @@
 import type { BrowserContext, Page } from "@playwright/test";
 
-export function meBody(permissions: string[], options: { pending?: boolean; mfaEnabled?: boolean } = {}) {
+export function meBody(permissions: string[], options: { pending?: boolean; mfaEnabled?: boolean; role?: string | null } = {}) {
   const pending = options.pending ?? false;
   const mfaEnabled = options.mfaEnabled ?? !pending;
   const verifiedAt = pending ? null : new Date().toISOString();
   return {
-    user: { id: "staff_001", email: "staff@fauward.com", name: "Staff User", role: "SUPER_ADMIN", permissions, mfaEnabled, mfaVerifiedAt: verifiedAt },
+    user: { id: "staff_001", email: "staff@fauward.com", name: "Staff User", role: options.role === undefined ? "SUPER_ADMIN" : options.role, permissions, mfaEnabled, mfaVerifiedAt: verifiedAt },
     mfa: { enabled: mfaEnabled, verifiedAt, pending },
     roles: ["ROOT"],
     permissions,

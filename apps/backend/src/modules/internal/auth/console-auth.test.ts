@@ -71,7 +71,11 @@ function createPrisma(state: ReturnType<typeof createState>) {
         state.sessions.set(row.id, row);
         return row;
       }),
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => state.sessions.get(where.id) ?? null),
+      findUnique: vi.fn(async ({ where, include }: { where: { id: string }; include?: { platformUser?: boolean } }) => {
+        const row = state.sessions.get(where.id);
+        if (!row) return null;
+        return include?.platformUser ? { ...row, platformUser: state.users.get(row.platformUserId) } : row;
+      }),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<SessionRow> }) => {
         const row = state.sessions.get(where.id)!;
         Object.assign(row, data);
@@ -313,6 +317,28 @@ describe('console auth — WP-0.1', () => {
     expect(response.json()).toMatchObject({ error: 'MFA_LOCKED' });
     expect(state.sessions.get(sessionId)!.revokedAt).toBeInstanceOf(Date);
     expect(auditCalls).toContainEqual(expect.objectContaining({ action: 'PLATFORM_SESSION_REVOKED', metadata: expect.objectContaining({ reason: 'mfa_failures' }) }));
+  });
+});
+
+describe('suspended staff — WP-0.4', () => {
+  it('ACC-IAM-3 after suspension the next request returns 401 and refresh returns 401', async () => {
+    const state = createState();
+    const secret = authenticator.generateSecret();
+    const { encryptField } = await import('../../../services/crypto/field-encryption.js');
+    addUser(state, { mfaEnabled: true, mfaSecretEncrypted: encryptField(secret) });
+    const app = await buildApp(state);
+    const jar = new CookieJar();
+    await login(app, jar);
+    const verify = await app.inject({ method: 'POST', url: '/api/internal/auth/mfa/verify', headers: jar.headers(true), payload: { code: authenticator.generate(secret) } });
+    jar.absorb(verify);
+    expect((await app.inject({ method: 'GET', url: '/api/internal/tenants', headers: jar.headers() })).statusCode).toBe(200);
+
+    state.staff.status = 'SUSPENDED';
+
+    const next = await app.inject({ method: 'GET', url: '/api/internal/tenants', headers: jar.headers() });
+    expect(next.statusCode).toBe(401);
+    const refresh = await app.inject({ method: 'POST', url: '/api/internal/auth/refresh', headers: jar.headers(true) });
+    expect(refresh.statusCode).toBe(401);
   });
 });
 

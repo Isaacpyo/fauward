@@ -66,8 +66,11 @@ export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser,
   return response.data;
 }
 
-export async function offboardStaffUser(id: string, reason: string) {
-  const response = await internalApi.delete<StaffUser>(`/iam/users/${id}`, { data: { reason } });
+export type StaffLifecycleAction = "suspend" | "reactivate" | "offboard";
+
+/** Suspend / reactivate / offboard (dangerous: fresh MFA + reason). Suspend and offboard revoke every session. */
+export async function changeStaffStatus(id: string, action: StaffLifecycleAction, reason: string) {
+  const response = await internalApi.post<StaffUser>(`/iam/users/${id}/${action}`, { reason }, { idempotent: true });
   return response.data;
 }
 
@@ -81,13 +84,13 @@ export async function fetchStaffRole(id: string) {
   return response.data;
 }
 
-export async function assignStaffRole(input: { staffId: string; roleId: string; expiresAt?: string; reason: string }) {
-  const response = await internalApi.post<StaffRoleAssignment>("/iam/role-assignments", input);
+export async function assignStaffRole(input: { staffId: string; roleId: string; expiresAt?: string; reason: string; hardwareKeyAssertion?: string }) {
+  const response = await internalApi.post<StaffRoleAssignment>("/iam/role-assignments", input, { idempotent: true });
   return response.data;
 }
 
 export async function revokeStaffRole(id: string, reason: string) {
-  await internalApi.delete(`/iam/role-assignments/${id}`, { data: { reason } });
+  await internalApi.delete(`/iam/role-assignments/${id}`, { data: { reason }, idempotent: true });
 }
 
 export async function fetchPermissionInventory() {
