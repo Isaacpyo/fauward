@@ -24,6 +24,8 @@ export const DANGEROUS_ROUTES = [
   { method: 'DELETE', url: '/api/internal/flags/:key/overrides/:id' },
   // platform.impersonation (WP-1.1 move)
   { method: 'POST', url: '/api/internal/impersonation/sessions' },
+  // trust.jit (WP-1.7)
+  { method: 'POST', url: '/api/internal/jit/requests/:id/approve' },
   // revenue.billing (WP-0.6, WP-1.5)
   { method: 'POST', url: '/api/internal/billing/invoices/:id/void' },
   { method: 'POST', url: '/api/internal/billing/payments' },

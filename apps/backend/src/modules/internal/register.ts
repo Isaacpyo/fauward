@@ -13,6 +13,7 @@ import { registerConsoleImpersonationRoutes } from './platform/impersonation.rou
 import { registerConsoleOperationsRoutes } from './platform/operations.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerMonitoringRoutes } from './monitoring.routes.js';
+import { registerJitRoutes } from './trust/jit.routes.js';
 
 /**
  * Every console endpoint lives under /api/internal (D2). This is the only console registration call in app.ts; the
@@ -28,6 +29,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleCommsRoutes(app);
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);
+  await registerJitRoutes(app);
   await registerInternalBillingRoutes(app);
   await registerCustomer360Routes(app);
   await registerInternalConsolePhaseRoutes(app);

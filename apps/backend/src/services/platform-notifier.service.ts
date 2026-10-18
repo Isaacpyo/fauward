@@ -85,6 +85,8 @@ export type StaffNotificationInput = ({ permission: Permission; platformUserIds?
   link?: string;
   severity?: ActivitySeverity;
   tenantId?: string | null;
+  /** Never notify these staff, e.g. the requester of a JIT request who also holds the approve permission. */
+  excludePlatformUserIds?: string[];
 };
 
 /** Platform users of active staff holding `permission` through an unexpired role assignment. */
@@ -107,7 +109,9 @@ async function platformUsersWithPermission(app: NotifierApp, permission: Permiss
  */
 export async function notifyStaff(app: NotifierApp, input: StaffNotificationInput): Promise<{ inApp: number }> {
   try {
-    const recipients = input.permission ? await platformUsersWithPermission(app, input.permission) : [...new Set(input.platformUserIds)];
+    const excluded = new Set(input.excludePlatformUserIds ?? []);
+    const candidates = input.permission ? await platformUsersWithPermission(app, input.permission) : [...new Set(input.platformUserIds)];
+    const recipients = candidates.filter((platformUserId) => !excluded.has(platformUserId));
     if (recipients.length === 0) return { inApp: 0 };
     await app.prisma.staffNotification.createMany({
       data: recipients.map((platformUserId) => ({

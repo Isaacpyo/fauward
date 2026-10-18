@@ -185,36 +185,6 @@ describe('internal console phase routes', () => {
     expect(liftSuspensionMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', suspensionId: 'susp_linked', via: 'APPEAL' }));
   });
 
-  it('rejects self approval for JIT requests', async () => {
-    currentPermissions = ['trust.jit.approve'];
-    const prisma = {
-      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_001', requesterPlatformUserId: 'staff_001', rootRequest: false, durationMinutes: 60 })) }),
-      jitAccessApproval: delegate()
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_001/approve', payload: { notes: 'self' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Self approval is not allowed' });
-  });
-
-  it('ACC-IAM-2 rejects JIT approval when the approver is the requesting StaffUser', async () => {
-    currentPermissions = ['trust.jit.approve'];
-    const approvalModel = delegate();
-    const prisma = {
-      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_002', requesterPlatformUserId: 'other_platform_user', requesterStaffId: 'staff_row_001', rootRequest: false, durationMinutes: 60 })) }),
-      jitAccessApproval: approvalModel,
-      staffUser: { findUnique: vi.fn(async () => ({ id: 'staff_row_001' })) }
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_002/approve', payload: { notes: 'self' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(approvalModel.upsert).not.toHaveBeenCalled();
-  });
-
   it('ACC-SEC-2 ACC-FLG-1 the flag override route never calls LaunchDarkly and writes a per-tenant TenantFeatureOverride', async () => {
     currentPermissions = ['platform.flags.write'];
     process.env.LAUNCHDARKLY_API_TOKEN = 'ld-test-token';

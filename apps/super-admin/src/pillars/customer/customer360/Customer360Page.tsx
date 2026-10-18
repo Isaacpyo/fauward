@@ -28,10 +28,6 @@ const TABS: TabDef[] = [
   { id: "notes", label: "Notes", permission: "customer.360.read", Component: NotesTab }
 ];
 
-async function noRequest() {
-  // The access-denied panel has its own "Request access" dialog; JITGate's built-in button is not used here.
-}
-
 function healthStatus(score: number) {
   return score >= 70 ? "green" : score >= 45 ? "amber" : "red";
 }
@@ -95,7 +91,7 @@ export function Customer360Page() {
         </nav>
       </header>
       <SectionErrorBoundary label={tab.label} resetKey={`${tenantId}:${tab.id}`}>
-        <JITGate permission={tab.permission} onRequest={noRequest} fallback={<AccessDenied permission={tab.permission} title={`You don't have access to the ${tab.label} tab`} />}>
+        <JITGate permission={tab.permission} fallback={<AccessDenied permission={tab.permission} title={`You don't have access to the ${tab.label} tab`} />}>
           <tab.Component tenantId={tenantId} />
         </JITGate>
       </SectionErrorBoundary>

@@ -71,6 +71,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'GET /api/internal/integrations/credentials',
   'GET /api/internal/integrations/webhooks',
   'GET /api/internal/integrations/webhooks/failures',
+  'GET /api/internal/jit/requests',
   'GET /api/internal/jit/requests/pending',
   'GET /api/internal/jit/sessions/active',
   'GET /api/internal/jit/sessions/my',

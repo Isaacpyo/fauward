@@ -1,7 +1,6 @@
-import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
+import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
@@ -279,10 +278,6 @@ function optionalJson(value: unknown) {
   return value === undefined ? null : value;
 }
 
-function assertPermissionValue(value: unknown): Permission | null {
-  return typeof value === 'string' && (PERMISSIONS as readonly string[]).includes(value) ? (value as Permission) : null;
-}
-
 async function requireNoActiveLegalHold(app: FastifyInstance, tenantId: string | undefined | null, reply: FastifyReply) {
   const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
   if (hold) {
@@ -331,7 +326,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerIncidents(app);
   registerSupport(app);
   registerSuccess(app);
-  registerJit(app);
   registerCompliance(app);
   registerSafety(app);
   registerFlags(app);
@@ -737,98 +731,6 @@ function registerSuccess(app: FastifyInstance) {
     );
     await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');
     reply.status(202).send({ queued: true, jobId: job.id, name: job.name });
-  });
-}
-
-function registerJit(app: FastifyInstance) {
-  app.post('/api/internal/jit/requests', { preHandler: writePre('trust.jit.request') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const permission = assertPermissionValue(body.permission);
-    const reason = stringValue(body.reason);
-    const durationMinutes = Math.min(240, Math.max(1, numberValue(body.durationMinutes, 60)));
-    if (!permission || !reason) return reply.status(400).send({ error: 'permission and reason are required' });
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    const rootRequest = permission === 'trust.iam.root' || body.rootRequest === true;
-    // No literal fallback (S2): without DEV_HARDWARE_KEY_ASSERTION, ROOT JIT is unavailable.
-    const rootCheck = rootRequest ? checkRootHardwareAssertion(body.hardwareKeyAssertion) : null;
-    if (rootCheck && !rootCheck.ok) {
-      return reply.status(rootCheck.status).send({ error: rootCheck.error, message: rootCheck.status === 403 ? 'ROOT JIT requires hardware key verification' : rootCheck.message });
-    }
-    const hardwareKeyVerified = !rootRequest || Boolean(rootCheck?.ok);
-    const jit = await createAndAudit(
-      request,
-      delegate(app, 'jitAccessRequest'),
-      {
-        requesterPlatformUserId: actorId(request),
-        requesterStaffId: context.staff.id,
-        permission,
-        reason,
-        durationMinutes,
-        rootRequest,
-        hardwareKeyVerified,
-        status: 'PENDING'
-      },
-      'jit.request.create',
-      'jit_request',
-      reason
-    );
-    reply.status(201).send(jit);
-  });
-
-  app.get('/api/internal/jit/requests/pending', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } }));
-  });
-
-  app.post('/api/internal/jit/requests/:id/approve', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const jitModel = delegate(app, 'jitAccessRequest');
-    const approvalModel = delegate(app, 'jitAccessApproval');
-    const before = await jitModel.findUnique({ where: { id } }) as { requesterPlatformUserId?: string; requesterStaffId?: string | null; rootRequest?: boolean; durationMinutes?: number; hardwareKeyVerified?: boolean } | null;
-    if (!before) return reply.status(404).send({ error: 'JIT request not found' });
-    // Compare both identities: the request stores the requester's PlatformUser id and StaffUser id (S3).
-    if (before.requesterPlatformUserId === actorId(request)) return reply.status(403).send({ error: 'Self approval is not allowed' });
-    if (before.requesterStaffId) {
-      const approverStaff = await app.prisma.staffUser.findUnique({ where: { platformUserId: actorId(request) }, select: { id: true } });
-      if (approverStaff?.id === before.requesterStaffId) return reply.status(403).send({ error: 'Self approval is not allowed' });
-    }
-    if (before.rootRequest && !before.hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
-    await approvalModel.upsert({
-      where: { requestId_approverPlatformUserId: { requestId: id, approverPlatformUserId: actorId(request) } },
-      create: { requestId: id, approverPlatformUserId: actorId(request), decision: 'APPROVED', notes: stringValue(body.notes) || null },
-      update: { decision: 'APPROVED', notes: stringValue(body.notes) || null }
-    });
-    const approvals = await approvalModel.count({ where: { requestId: id, decision: 'APPROVED' } });
-    const required = before.rootRequest ? 2 : 1;
-    const after = approvals >= required
-      ? await jitModel.update({ where: { id }, data: { status: 'APPROVED', expiresAt: new Date(Date.now() + (before.durationMinutes ?? 60) * 60 * 1000) } })
-      : await jitModel.findUnique({ where: { id } });
-    await writeInternalAudit(request, 'jit.request.approve', 'jit_request', id, before, after, stringValue(body.notes, 'JIT approval'));
-    reply.send({ approvals, required, request: after });
-  });
-
-  app.post('/api/internal/jit/requests/:id/deny', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { status: 'DENIED', deniedReason: stringValue(body.reason, 'Denied') }, 'jit.request.deny', 'jit_request', stringValue(body.reason, 'Denied'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/jit/sessions/active', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { expiresAt: 'asc' } }));
-  });
-
-  app.get('/api/internal/jit/sessions/my', { preHandler: readPre('trust.jit.request') }, async (request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), {
-      where: { requesterPlatformUserId: actorId(request), status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { expiresAt: 'asc' }
-    }));
-  });
-
-  app.post('/api/internal/jit/sessions/:id/revoke', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { revokedAt: new Date(), status: 'REVOKED' }, 'jit.session.revoke', 'jit_request', stringValue(bodyObject(request).reason, 'JIT revoked'));
-    reply.send(after);
   });
 }
 

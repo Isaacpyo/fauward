@@ -1,18 +1,20 @@
 import { useState } from "react";
 import type { Permission } from "@fauward/internal-rbac";
 
-import { consoleApi } from "@/lib/console-api";
+import { useCreateJitRequest } from "@/pillars/trust/jit/api";
 import { ActionDialog } from "./ActionDialog";
 
-const DURATIONS = [30, 60, 120, 240] as const;
-/** Same minimum the backend enforces for a JIT request reason (trust.jit catalogue entry). */
+/** Same limits the backend enforces (trust.jit catalogue entry): reason ≥ 20, duration ≤ 240 min, ROOT ≤ 60 min. */
+export const JIT_DURATIONS: readonly number[] = [30, 60, 120, 240];
 export const JIT_MIN_REASON = 20;
+export const JIT_ROOT_MAX_MINUTES = 60;
 
 type JitRequestDialogProps = { open: boolean; permission: Permission; onClose: () => void; onRequested?: () => void };
 
 /** Request temporary elevation for one permission (D2: every role holds trust.jit.request). Errors are shown, not swallowed. */
 export function JitRequestDialog({ open, permission, onClose, onRequested }: JitRequestDialogProps) {
   const [durationMinutes, setDurationMinutes] = useState<number>(60);
+  const create = useCreateJitRequest();
   return (
     <ActionDialog
       open={open}
@@ -27,7 +29,7 @@ export function JitRequestDialog({ open, permission, onClose, onRequested }: Jit
       minReason={JIT_MIN_REASON}
       onClose={onClose}
       onSubmit={async (reason) => {
-        await consoleApi.post("/jit/requests", { permission, reason, durationMinutes }, { idempotent: true });
+        await create.mutateAsync({ permission, reason, durationMinutes });
         onRequested?.();
       }}
     >
@@ -40,7 +42,7 @@ export function JitRequestDialog({ open, permission, onClose, onRequested }: Jit
         onChange={(event) => setDurationMinutes(Number(event.target.value))}
         className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm"
       >
-        {DURATIONS.map((minutes) => (
+        {JIT_DURATIONS.map((minutes) => (
           <option key={minutes} value={minutes}>
             {minutes < 60 ? `${minutes} minutes` : `${minutes / 60} hour${minutes > 60 ? "s" : ""}`}
           </option>
