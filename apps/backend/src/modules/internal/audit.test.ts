@@ -5,8 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // the handler builds, and the export writes its audit row through the real @fauward/internal-audit writer.
 
 const permissions = new Set<string>();
+const activityMock = vi.hoisted(() => vi.fn(async () => ({ id: 'act_1' })));
 const mfa = { verifiedAt: new Date() as Date | null };
 
+vi.mock('../../services/platform-activity.service.js', () => ({
+  recordAndPublishActivity: activityMock,
+  staffActor: () => ({ actorType: 'STAFF', actorId: 'pu_auditor', actorLabel: 'auditor@fauward.com' })
+}));
 vi.mock('../../middleware/require-platform-csrf.js', () => ({ requirePlatformCsrf: async () => undefined }));
 vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
@@ -126,6 +131,7 @@ describe('trust.audit routes (WP-1.9)', () => {
   beforeEach(async () => {
     permissions.clear();
     permissions.add('trust.audit.read');
+    activityMock.mockClear();
     mfa.verifiedAt = new Date();
     store = createStore();
     app = await buildApp();
@@ -198,6 +204,8 @@ describe('trust.audit routes (WP-1.9)', () => {
     const exportRow = store.rows.find((row) => row.action === 'audit.export');
     expect(exportRow).toMatchObject({ actorId: 'pu_auditor', actorEmail: 'auditor@fauward.com', targetType: 'audit_log', reason: 'SOC 2 evidence for Q4', sessionId: 'ps_auditor' });
     expect(JSON.stringify(exportRow?.after ?? exportRow?.metadata)).toContain('"rows":2');
+    expect(activityMock).toHaveBeenCalledTimes(1);
+    expect(activityMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ service: 'trust.audit', type: 'audit.exported', metadata: expect.objectContaining({ rows: 2, format: 'csv' }) }));
 
     const json = await app.inject({ method: 'POST', url: '/api/internal/audit/export', payload: { tenantId: 't_acme', reason: 'SOC 2 evidence for Q4' } });
     const exported = JSON.parse(Buffer.from(json.json<{ url: string }>().url.replace('data:application/json;base64,', ''), 'base64').toString('utf8')) as Row[];
@@ -212,6 +220,7 @@ describe('trust.audit routes (WP-1.9)', () => {
     mfa.verifiedAt = null;
     expect((await app.inject({ method: 'POST', url: '/api/internal/audit/export', payload: { reason: 'SOC 2 evidence for Q4' } })).json()).toMatchObject({ error: 'MFA_REQUIRED' });
     expect(store.rows.some((row) => row.action === 'audit.export')).toBe(false);
+    expect(activityMock).not.toHaveBeenCalled();
   });
 
   it('entry detail returns before/after and 404s for unknown ids', async () => {

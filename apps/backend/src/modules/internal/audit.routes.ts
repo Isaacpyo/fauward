@@ -6,6 +6,7 @@ import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
+import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
 import { writeInternalAudit } from './internal-audit.js';
 
 // trust.audit (WP-1.9): server-filtered, cursor-paginated platform audit log; export is a dangerous action and is itself
@@ -115,7 +116,23 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
     const exported = truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows;
     // Written after the read, so the export never contains its own row.
-    await writeInternalAudit(request, 'audit.export', 'audit_log', `${filters.from ?? 'begin'}:${filters.to ?? 'now'}`, null, { filters, format: body.format, rows: exported.length, truncated }, body.reason);
+    const range = `${filters.from ?? 'begin'}:${filters.to ?? 'now'}`;
+    await writeInternalAudit(request, 'audit.export', 'audit_log', range, null, { filters, format: body.format, rows: exported.length, truncated }, body.reason);
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'trust.audit',
+        type: 'audit.exported',
+        tenantId: filters.tenantId ?? null,
+        ...staffActor(request),
+        subjectType: 'audit_log',
+        subjectId: range,
+        summary: `${request.platform!.user.email} exported ${exported.length} audit entries as ${body.format.toUpperCase()}`,
+        severity: 'ATTENTION',
+        consoleLink: '/trust/audit',
+        metadata: { filters, format: body.format, rows: exported.length, truncated }
+      }
+    );
     const content = body.format === 'csv' ? auditRowsToCsv(exported) : JSON.stringify(exported, null, 2);
     const mime = body.format === 'csv' ? 'text/csv' : 'application/json';
     return reply.send({ url: `data:${mime};base64,${Buffer.from(content).toString('base64')}`, format: body.format, rows: exported.length, truncated, maxRows: AUDIT_EXPORT_MAX_ROWS });
