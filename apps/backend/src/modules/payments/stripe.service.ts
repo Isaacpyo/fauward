@@ -19,7 +19,7 @@ function getStripeClient() {
   }
 
   stripeClient ??= new Stripe(config.stripe.secretKey, {
-    apiVersion: '2026-03-25.dahlia'
+    apiVersion: '2026-04-22.dahlia'
   });
 
   return stripeClient;

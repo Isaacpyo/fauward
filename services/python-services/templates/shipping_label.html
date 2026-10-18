@@ -3,32 +3,187 @@
 <head>
   <meta charset="utf-8">
   <style>
-    @page { size: 100mm 150mm; margin: 6mm; }
-    body { font-family: {{ tenant.fontFamily|default('"Courier New", monospace') }}; color: #111827; margin: 0; width: 88mm; height: 138mm; }
-    .top { text-align: center; border-bottom: 4px solid {{ tenant.primaryColour or tenant.primaryColor }}; padding-bottom: 4mm; }
-    .logo { max-height: 16mm; max-width: 60mm; object-fit: contain; }
-    .brand { font-family: Arial, sans-serif; font-weight: bold; color: {{ tenant.primaryColor }}; }
-    .qr { display: block; width: 52mm; height: 52mm; margin: 8mm auto 4mm; }
-    .tracking { text-align: center; font-size: 17px; font-weight: bold; letter-spacing: .04em; margin-bottom: 6mm; }
-    .addresses { display: table; width: 100%; border-top: 1px solid #111827; padding-top: 4mm; }
-    .col { display: table-cell; width: 50%; font-size: 9px; line-height: 1.35; vertical-align: top; }
-    .label { font-family: Arial, sans-serif; font-size: 8px; color: #6b7280; text-transform: uppercase; margin-bottom: 2mm; }
+    @page { size: 100mm 150mm; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: {{ tenant.fontFamily|default('"Helvetica", "Arial", sans-serif') }};
+      color: #0f172a;
+      margin: 0;
+      padding: 4mm;
+      width: 100mm;
+      height: 150mm;
+    }
+    .label { display: flex; flex-direction: column; height: 142mm; }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1.5pt solid {{ tenant.primaryColor }};
+      padding-bottom: 2mm;
+    }
+    .brand-logo { max-height: 10mm; max-width: 40mm; object-fit: contain; }
+    .brand-name {
+      font-size: 11pt;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: {{ tenant.primaryColor }};
+      text-transform: uppercase;
+    }
+    .service-tier {
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 1mm 2.5mm;
+      border: 1pt solid {{ tenant.primaryColor }};
+      border-radius: 2mm;
+      color: {{ tenant.primaryColor }};
+      white-space: nowrap;
+    }
+    .barcode {
+      margin-top: 3mm;
+      text-align: center;
+    }
+    .barcode svg { width: 86mm; height: 18mm; display: block; margin: 0 auto; }
+    .tracking-text {
+      font-family: "Courier New", monospace;
+      font-size: 13pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-align: center;
+      margin-top: 1mm;
+    }
+    .addresses {
+      display: flex;
+      gap: 3mm;
+      margin-top: 3mm;
+      border-top: 0.5pt solid #cbd5e1;
+      padding-top: 2mm;
+    }
+    .addr-block { flex: 1; min-width: 0; }
+    .addr-block.with-qr { flex: 2; }
+    .addr-label {
+      font-size: 7pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: 1mm;
+    }
+    .addr-name { font-size: 9pt; font-weight: 700; }
+    .addr-lines { font-size: 8.5pt; line-height: 1.3; word-wrap: break-word; }
+    .addr-contact { font-size: 7.5pt; color: #475569; margin-top: 1mm; line-height: 1.35; }
+    .qr-block { width: 24mm; flex-shrink: 0; text-align: center; }
+    .qr-block img { width: 22mm; height: 22mm; }
+    .qr-block .qr-caption { font-size: 6pt; color: #64748b; margin-top: 0.5mm; }
+    .package {
+      margin-top: 3mm;
+      padding: 2mm 2.5mm;
+      background: #f1f5f9;
+      border-radius: 1.5mm;
+      font-size: 8.5pt;
+      line-height: 1.4;
+    }
+    .package-row { display: flex; flex-wrap: wrap; gap: 3mm; }
+    .package-row span { white-space: nowrap; }
+    .package-row .key { font-weight: 700; color: #334155; }
+    .fragile {
+      display: inline-block;
+      margin-top: 1mm;
+      padding: 0.5mm 2mm;
+      background: #fef2f2;
+      border: 0.5pt solid #dc2626;
+      color: #b91c1c;
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 1mm;
+    }
+    .footer {
+      margin-top: auto;
+      padding-top: 2mm;
+      border-top: 0.5pt dashed #cbd5e1;
+      display: flex;
+      justify-content: space-between;
+      font-size: 7pt;
+      color: #64748b;
+    }
+    .footer .ref { font-family: "Courier New", monospace; }
   </style>
 </head>
 <body>
-  <div class="top">
-    {% if tenant.logoUrl %}<img class="logo" src="{{ tenant.logoUrl }}" alt="{{ tenant.brandName }}">{% else %}<div class="brand">{{ tenant.brandName }}</div>{% endif %}
-  </div>
-  <img class="qr" src="{{ data.qrCodeDataUri }}" alt="tracking QR">
-  <div class="tracking">{{ data.trackingRef or data.trackingNumber or shipmentId }}</div>
-  <div class="addresses">
-    <div class="col">
-      <div class="label">Origin</div>
-      {{ data.originAddress or data.origin or "" }}
+  <div class="label">
+    <div class="header">
+      <div>
+        {% if tenant.logoUrl %}
+          <img class="brand-logo" src="{{ tenant.logoUrl }}" alt="{{ tenant.brandName }}">
+        {% else %}
+          <div class="brand-name">{{ tenant.brandName }}</div>
+        {% endif %}
+      </div>
+      {% if data.serviceTier %}
+        <span class="service-tier">{{ data.serviceTier }}</span>
+      {% endif %}
     </div>
-    <div class="col">
-      <div class="label">Destination</div>
-      {{ data.destAddress or data.destinationAddress or data.destination or "" }}
+
+    {% if data.barcodeSvg %}
+      <div class="barcode">{{ data.barcodeSvg | safe }}</div>
+    {% endif %}
+    <div class="tracking-text">{{ data.trackingRef or data.trackingNumber or shipmentId }}</div>
+
+    <div class="addresses">
+      <div class="addr-block">
+        <div class="addr-label">From</div>
+        <div class="addr-lines">{{ data.originAddress or "—" }}</div>
+      </div>
+      <div class="addr-block with-qr">
+        <div class="addr-label">To</div>
+        {% if data.recipientName %}
+          <div class="addr-name">{{ data.recipientName }}</div>
+        {% endif %}
+        <div class="addr-lines">{{ data.destAddress or "—" }}</div>
+        {% if data.recipientEmail or data.recipientPhone %}
+          <div class="addr-contact">
+            {% if data.recipientEmail %}{{ data.recipientEmail }}{% endif %}
+            {% if data.recipientEmail and data.recipientPhone %} · {% endif %}
+            {% if data.recipientPhone %}{{ data.recipientPhone }}{% endif %}
+          </div>
+        {% endif %}
+      </div>
+      {% if data.qrCodeDataUri %}
+        <div class="qr-block">
+          <img src="{{ data.qrCodeDataUri }}" alt="tracking QR">
+          <div class="qr-caption">Track online</div>
+        </div>
+      {% endif %}
+    </div>
+
+    {% set has_pkg = data.weightKg or data.packageQuantity or data.dimensions %}
+    {% if has_pkg or data.fragile %}
+      <div class="package">
+        {% if has_pkg %}
+          <div class="package-row">
+            {% if data.weightKg %}<span><span class="key">Weight</span> {{ data.weightKg }} kg</span>{% endif %}
+            {% if data.packageQuantity %}<span><span class="key">Qty</span> {{ data.packageQuantity }}</span>{% endif %}
+            {% if data.dimensions %}<span><span class="key">Dims</span> {{ data.dimensions }}</span>{% endif %}
+          </div>
+        {% endif %}
+        {% if data.fragile %}
+          <div><span class="fragile">Fragile · Handle with care</span></div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <div class="footer">
+      {% if data.referenceNumber %}
+        <span><span class="ref">Ref:</span> {{ data.referenceNumber }}</span>
+      {% else %}
+        <span></span>
+      {% endif %}
+      {% if data.createdAt %}
+        <span>{{ data.createdAt }}</span>
+      {% endif %}
     </div>
   </div>
 </body>

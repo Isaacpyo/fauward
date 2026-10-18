@@ -18,6 +18,8 @@
     "lint": "turbo run lint",
     "test": "turbo run test --",
     "typecheck": "turbo run typecheck",
+    "verify": "turbo run typecheck lint",
+    "prepare": "git config core.hooksPath .githooks",
     "platform:admin:create": "npm run platform:admin:create --workspace=apps/backend"
   },
   "engines": {

@@ -493,3 +493,58 @@ it didn't.
 - [ActionConfirmDialog.spec.tsx](apps/tenant-portal/src/pages/agent/ActionConfirmDialog.spec.tsx)
   — extended with parametrized assertions across `(type, templateKey)` → heading + primary
   label + working label + success label, for both approve and reject kinds.
+
+---
+
+## Ask the agent (read-only chat, step 1) — 2026-05-26
+
+### LLM gateway confidence-parse fix
+
+The pre-existing bug at [llm-gateway.service.ts:128-130](apps/backend/src/shared/services/llm-gateway.service.ts#L128-L130) is fixed. The second parse (`z.object({ confidence: z.number() }).passthrough().parse(parsed)`) became `safeParse(parsed)` with a `0` fallback. Rationale: a strict `.parse()` would still throw whenever the caller's `outputSchema` doesn't include `confidence` (e.g. `AgentToolOutputSchema` for sweeps + ask), but the relay AI service reads `classification.confidence` from the gateway return value and so we cannot drop the field from the return shape. `safeParse` keeps both consumers honest: when the caller's schema carries `confidence` (relay) the value flows through, and when it doesn't (agent / ask) the parse no longer throws. This unblocks every LLM-driven path the sweep deliberately worked around — failed-delivery agent runs and the new `/ask` endpoint now actually return tool calls.
+
+### `POST /api/v1/agent/ask`
+
+New endpoint at [agent.ask.ts](apps/backend/src/modules/agent/agent.ask.ts), registered from `registerAgentRoutes`. preHandlers: `app.authenticate + requireTenantMatch + requireFeature('agent')`. Wrapped behind `typeof app.rateLimit === 'function'` like the sweep route — `@fastify/rate-limit` enforces 20 questions per minute per tenant when present, but the route still mounts in test harnesses that skip the plugin.
+
+Body: `{ question: string (1..500, trimmed) }`. Response: `{ answer: string, toolsUsed: Array<{ name, args, result }>, status: 'answered' | 'cannot_answer' | 'error' }`. The endpoint never returns 500 from inside its handler — LLM failures degrade to `status: 'error'` with a friendly message.
+
+### Read-only tool whitelist (enforced server-side)
+
+[agent.ask.ts](apps/backend/src/modules/agent/agent.ask.ts) holds a `READ_ONLY_TOOLS` set with exactly these 9 tools: `get_failed_shipments_count`, `get_delay_reasons`, `get_sla_breach_rate`, `get_driver_performance`, `get_carrier_performance`, `get_shipments_by_status`, `get_weekly_operations_summary`, `get_shipment_details`, `get_available_drivers`. Only these are passed to the LLM, and **any tool call the model tries to make outside the whitelist is rejected → `cannot_answer`**, no handler invoked. A test asserts a mocked `assign_shipment` tool call from the LLM produces no handler invocation and no `AgentAction` row.
+
+### Tenant isolation
+
+`tenantId = request.tenant?.id` (from the JWT) is forced onto every tool's `args` before dispatch — `args.tenantId = tenantId` overwrites whatever the LLM tried to pass. The handler's `HandlerContext.tenantId` is also the auth tenant. A test asserts that even when the LLM returns `tenantId: 'attacker-tenant'` in its arguments JSON, the handler receives `'tenant-1'`.
+
+### Honest fallback
+
+If the LLM returns no tool call (and no answer that cites tool output), the endpoint replies with `status: 'cannot_answer'` and the fixed string from `CANNOT_ANSWER_MESSAGE` in [agent.prompts.ts](apps/backend/src/modules/agent/agent.prompts.ts). The new `buildAskSystemPrompt(tenantId)` in the same file instructs the model to use that exact string when no tool fits. No fabricated numbers ever surface — a test mocks an empty tool_calls response and asserts the cannot_answer path. **Chat creates zero `AgentAction` rows**; that table belongs to `runAgent()` / sweep.
+
+### Two-round tool loop
+
+Round 1: gateway invoked with the question + read-only tools + `buildAskSystemPrompt`. Round 2 (only when round 1 returned ≥1 tool call): gateway invoked again with `{ question, toolResults }` as input, **no tools**, and an extended system prompt instructing the model to respond with `{"answer": "<phrasing>"}`. The 2-round cap guards token cost. Both calls land on the new `agent_ask: 'deepseek-v4-flash'` entry in `MODEL_ROUTING`, so per-call cost is bounded and tracked via existing `TenantAiUsage` upserts.
+
+### Frontend slide-out panel (Tasks + Usage)
+
+Self-contained component family at [apps/tenant-portal/src/components/agent-chat/](apps/tenant-portal/src/components/agent-chat/) — `AskAgentToggleButton.tsx` (header trigger, Sparkles icon, owns its open state), `AskAgentPanel.tsx` (right-edge slide-over built on `@radix-ui/react-dialog` with custom positioning), `useAskAgent.ts` (axios POST via `api`, in-memory transcript). New tailwind keyframes `fauwardSlideInRight` / `fauwardSlideOutRight` + matching animation utilities added to [tailwind.config.ts](apps/tenant-portal/tailwind.config.ts) — same Radix cubic-bezier as the existing zoom keyframes.
+
+Both [AgentTasksPage.tsx](apps/tenant-portal/src/pages/agent/AgentTasksPage.tsx) and [AgentUsagePage.tsx](apps/tenant-portal/src/pages/agent/AgentUsagePage.tsx) place `<AskAgentToggleButton />` in their `PageShell actions` slot — the panel overlays (does not squeeze) page content via Radix portal. UI surfaces 3 example questions in the empty state, a tool-chip "Based on:" footer beneath each answered turn, and distinct color treatment for `answered` (gray bubble) vs `cannot_answer` (amber) vs `error` (red).
+
+### What's explicitly deferred
+
+- **Multi-turn memory.** Each `/ask` call is independent; the in-memory `turns` list in `useAskAgent` is purely a session transcript, never sent back to the server as context.
+- **Action-proposing from chat.** Even if the model suggests an action, chat is read-only — only the 9 read-only tools are reachable, and the route never writes to `AgentAction`.
+- **Conversation history across sessions / pages.** No persistence.
+
+### Tests
+
+- [agent.ask.test.ts](apps/backend/src/modules/agent/agent.ask.test.ts) — 6 specs: tool-mapped answer (asserts handler receives auth tenantId, not attacker tenantId from LLM args); `cannot_answer` when the model returns no tool call; whitelist enforcement (mocked `assign_shipment` LLM call → cannot_answer, handler never invoked, no `AgentAction` written); graceful `status: 'error'` on gateway throw; 403 when plan lacks `agent`; 400 on empty / overlong question.
+- [llm-gateway.service.test.ts](apps/backend/src/shared/services/llm-gateway.service.test.ts) — bumped to 18 tasks (was 17) for the new `agent_ask` entry. All 8 gateway specs continue to pass.
+- Full backend suite: 507 passing (1 pre-existing customs failure unchanged). Full tenant-portal suite: 55 passing.
+
+### Follow-ups
+
+- **Multi-turn conversation.** Persist a session id, replay prior question/answer pairs into the system prompt so follow-up questions ("what about last month?") work. Needs a per-tenant session table and a cap on history depth.
+- **Action-proposing from chat.** Optional second mode where chat can write `PENDING_APPROVAL` `AgentAction` rows through the existing approval flow, with an explicit "propose action" toggle in the UI.
+- **Promote the panel to a global rail.** The component is already decoupled from page internals — move the toggle into the AppShell header once we want it on every screen.
+- **Smarter cost control.** The current 20/min rate limit + per-call `TenantAiLimit` is fine for v1. Add a dedicated `agent_ask` feature key in `featuresEnabled` so a plan can enable Tasks without enabling chat.

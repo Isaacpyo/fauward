@@ -171,7 +171,7 @@ describe('runAgent', () => {
     const redis = { set: vi.fn().mockResolvedValue('OK') };
     const prisma = buildPrisma();
 
-    const event = { eventId: 'evt-e2e', type: 'failed_delivery', tenantId: 'tenant-e2e', shipmentId: 'ship-e2e' };
+    const event = { eventId: 'evt-e2e', type: 'failed_delivery' as const, tenantId: 'tenant-e2e', shipmentId: 'ship-e2e' };
     const result = await runAgent(
       event,
       { get_shipment_details: safeHandler, reroute_shipment: riskyHandler } as any,
@@ -220,7 +220,7 @@ describe('runAgent', () => {
 
     const prisma = buildPrisma();
 
-    const event = { eventId: 'evt-idem-1', type: 'shipment_created', tenantId: 'tenant-idem' };
+    const event = { eventId: 'evt-idem-1', type: 'shipment_created' as const, tenantId: 'tenant-idem' };
 
     const result1 = await runAgent(event, { get_available_drivers: handler } as any, prisma, redis);
     const result2 = await runAgent(event, { get_available_drivers: handler } as any, prisma, redis);

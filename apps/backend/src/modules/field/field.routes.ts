@@ -1,9 +1,12 @@
 import { createHash, randomUUID } from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Prisma, Shipment, UserRole } from '@prisma/client';
+import { ShipmentStatus } from '@prisma/client';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
+import { enqueueAgentEvent } from '../agent/agent.queue.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
 
 const INTERNAL_FIELD_ROLES: UserRole[] = ['TENANT_ADMIN', 'TENANT_MANAGER', 'TENANT_STAFF', 'TENANT_DRIVER'];
 
@@ -585,18 +588,23 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
     });
 
     if (nextShipmentStatus === 'FAILED_DELIVERY') {
-      void enqueueAgentEvent(app, {
-        eventId: `failed-delivery-${shipment.id}-${shipmentEvent.id}`,
-        type: 'failed_delivery',
-        tenantId,
-        shipmentId: shipment.id,
-        payload: {
-          newStatus: nextShipmentStatus,
-          previousStatus: shipment.status,
-          reason: typeof payload.reason === 'string' ? payload.reason : undefined,
-          source: 'FAUWARD_GO'
-        }
-      });
+      fireAndForget(
+        enqueueAgentEvent(app, {
+          eventId: `failed-delivery-${shipment.id}-${shipmentEvent.id}`,
+          type: 'failed_delivery',
+          tenantId,
+          shipmentId: shipment.id,
+          payload: {
+            newStatus: nextShipmentStatus,
+            previousStatus: shipment.status,
+            reason: typeof payload.reason === 'string' ? payload.reason : undefined,
+            source: 'FAUWARD_GO'
+          }
+        }),
+        app.log,
+        'enqueueAgentEvent failed',
+        { shipmentId: shipment.id }
+      );
     }
 
     await publishFieldEvent(app, {
@@ -807,9 +815,15 @@ export async function registerFieldRoutes(app: FastifyInstance) {
 
     // Also include directly assigned shipments (no RouteStop needed)
     const driver = await app.prisma.driver.findFirst({ where: { tenantId, userId } });
+    const excludedStatuses: ShipmentStatus[] = [
+      ShipmentStatus.DELIVERED,
+      ShipmentStatus.CANCELLED,
+      ShipmentStatus.RETURNED,
+      ShipmentStatus.FAILED_DELIVERY
+    ];
     const assignedWhere = role === 'TENANT_DRIVER' && driver
-      ? { tenantId, assignedDriverId: driver.id, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } }
-      : { tenantId, assignedDriverId: { not: null }, status: { notIn: ['DELIVERED', 'CANCELLED', 'RETURNED', 'FAILED_DELIVERY'] as const } };
+      ? { tenantId, assignedDriverId: driver.id, status: { notIn: excludedStatuses } }
+      : { tenantId, assignedDriverId: { not: null }, status: { notIn: excludedStatuses } };
 
     const assignedShipments = await app.prisma.shipment.findMany({
       where: assignedWhere,
