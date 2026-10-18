@@ -58,7 +58,7 @@ export function Customer360Page() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <HealthPill status={data.metrics.healthScore >= 70 ? "green" : data.metrics.healthScore >= 45 ? "amber" : "red"} label={`Health ${data.metrics.healthScore}`} />
-            <Link className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" to={`/platform/impersonation?tenant=${data.tenant.id}`}>Impersonate</Link>
+            <Link className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" to={`/platform/impersonation?tenantId=${encodeURIComponent(data.tenant.id)}`}>Impersonate</Link>
             <a className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" href={`https://dashboard.stripe.com/search?query=${data.tenant.id}`}>Stripe</a>
             <a className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" href={`https://zendesk.com/search?query=${data.tenant.slug}`}>Zendesk</a>
           </div>

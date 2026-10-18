@@ -7,6 +7,7 @@ import { config } from '../../config/index.js';
 import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
 import { registerDomainRoutes } from './domain.routes.js';
 import { registerTenantSlugRoutes } from './slug.routes.js';
+import { registerStaffAccessRoutes } from './staff-access.routes.js';
 import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
@@ -47,6 +48,7 @@ export async function registerTenantRoutes(app: FastifyInstance) {
 
   await registerDomainRoutes(app);
   await registerTenantSlugRoutes(app);
+  await registerStaffAccessRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 let mfaVerifiedAt = new Date();
 vi.mock('../middleware/authenticate-platform-session.js', () => ({
@@ -131,7 +131,12 @@ describe('resolveTenantEntitlements (architecture §9.5)', () => {
 });
 
 describe('entitlements honour overrides (WP-1.4)', () => {
-  it('ACC-ENT-1 override STARTER → PRO: a PRO-only route returns 200 on another instance without restart', async () => {
+  // Load the console route module once up front so the timed assertions measure the override, not module loading.
+  beforeAll(async () => {
+    await import('../modules/internal/platform/tenants.routes.js');
+  }, 60_000);
+
+  it('ACC-ENT-1 override STARTER → PRO: a PRO-only route returns 200 on another instance without restart', { timeout: 30_000 }, async () => {
     const { db } = createDb('STARTER');
     const redis = createRedis();
     const tenantA = await tenantInstance(db, redis);
@@ -153,7 +158,7 @@ describe('entitlements honour overrides (WP-1.4)', () => {
     expect((await tenantA.inject({ method: 'GET', url: '/api/v1/tenant/api-keys' })).statusCode).toBe(200);
   });
 
-  it('ACC-ENT-2 once the override expires the route returns 403 FEATURE_NOT_AVAILABLE again', async () => {
+  it('ACC-ENT-2 once the override expires the route returns 403 FEATURE_NOT_AVAILABLE again', { timeout: 30_000 }, async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-18T12:00:00Z'));
     mfaVerifiedAt = new Date();
@@ -169,6 +174,21 @@ describe('entitlements honour overrides (WP-1.4)', () => {
     const expired = await tenantApp.inject({ method: 'GET', url: '/api/v1/tenant/api-keys' });
     expect(expired.statusCode).toBe(403);
     expect(expired.json()).toMatchObject({ code: 'FEATURE_NOT_AVAILABLE' });
+  });
+
+  it('ACC-TEN-6 a plan override needs a reason and revokes the previous override', { timeout: 30_000 }, async () => {
+    const { db, planOverrides } = createDb('STARTER');
+    const redis = createRedis();
+    const consoleApp = await consoleInstance(db, redis);
+    const noReason = await consoleApp.inject({ method: 'POST', url: '/api/internal/tenants/t_1/plan-overrides', payload: { plan: 'PRO' } });
+    expect(noReason.statusCode).toBe(400);
+    expect(noReason.json()).toMatchObject({ error: 'REASON_REQUIRED' });
+    await consoleApp.inject({ method: 'POST', url: '/api/internal/tenants/t_1/plan-overrides', payload: { plan: 'PRO', reason: 'Pilot of the API for a launch partner' } });
+    await consoleApp.inject({ method: 'POST', url: '/api/internal/tenants/t_1/plan-overrides', payload: { plan: 'ENTERPRISE', reason: 'Upgraded pilot after the launch went well' } });
+    expect(planOverrides.map((row) => [row.plan, row.revokedAt === null])).toEqual([
+      ['PRO', false],
+      ['ENTERPRISE', true]
+    ]);
   });
 
   it('ACC-ENT-3 a feature override enabled:false on a PRO tenant blocks that feature only', async () => {

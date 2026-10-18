@@ -15,7 +15,8 @@ import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
-import { ImpersonationStartPage } from "@/pillars/platform/impersonation/ImpersonationStartPage";
+import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
+import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
@@ -106,7 +107,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/integrations/webhooks", element: <OpsRoute permission="platform.integrations.read" title="Webhook Health" description="Outbound webhook delivery attempts, retries and failures." endpoint="/integrations/webhooks" /> },
   { path: "/platform/integrations/:provider", element: <OpsRoute permission="platform.integrations.read" title="Provider Detail" description="Provider health detail and recent status." endpoint="/integrations/:provider" /> },
   { path: "/platform/impersonation", element: <PermissionRoute permission="platform.impersonation.start">
-                <ImpersonationStartPage />
+                <ImpersonationCenterPage />
+              </PermissionRoute> },
+  { path: "/platform/impersonation/sessions/:id", element: <PermissionRoute permission="platform.impersonation.start">
+                <SessionDetailPage />
               </PermissionRoute> },
   { path: "/platform/tenants", element: <PermissionRoute permission="platform.tenants.read">
                 <TenantsListPage />

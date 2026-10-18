@@ -55,7 +55,8 @@ const settingsChildren: NavChild[] = [
   { to: "/settings?tab=webhooks", label: "Webhooks", tabValue: "webhooks", minimumPlan: "pro" },
   { to: "/settings?tab=email", label: "Email", tabValue: "email", minimumPlan: "enterprise" },
   { to: "/settings?tab=branding", label: "Branding", tabValue: "branding", minimumPlan: "starter" },
-  { to: "/settings?tab=privacy", label: "Privacy", tabValue: "privacy", minimumPlan: "starter" }
+  { to: "/settings?tab=privacy", label: "Privacy", tabValue: "privacy", minimumPlan: "starter" },
+  { to: "/settings?tab=staff-access", label: "Staff access", tabValue: "staff-access", minimumPlan: "starter" }
 ];
 
 const financeChildren: NavChild[] = [

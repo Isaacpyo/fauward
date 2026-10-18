@@ -149,7 +149,11 @@ export function useTenantList(filters: TenantListFilters) {
 }
 
 export function useTenantDetail(id: string) {
-  return useQuery({ queryKey: [...TENANTS_KEY, "detail", id], queryFn: async () => (await consoleApi.get<TenantDetail>(`/tenants/${encodeURIComponent(id)}`)).data });
+  return useQuery({
+    queryKey: [...TENANTS_KEY, "detail", id],
+    queryFn: async () => (await consoleApi.get<TenantDetail>(`/tenants/${encodeURIComponent(id)}`)).data,
+    enabled: id.length > 0
+  });
 }
 
 export function useTenantUsers(id: string, options: { activeOnly?: boolean; search?: string; enabled?: boolean } = {}) {
@@ -157,7 +161,7 @@ export function useTenantUsers(id: string, options: { activeOnly?: boolean; sear
   return useQuery({
     queryKey: [...TENANTS_KEY, "users", id, params],
     queryFn: async () => (await consoleApi.get<{ data: TenantUser[] }>(`/tenants/${encodeURIComponent(id)}/users`, { params })).data.data,
-    enabled: options.enabled ?? true
+    enabled: (options.enabled ?? true) && id.length > 0
   });
 }
 

@@ -91,6 +91,13 @@ function createPrisma() {
       )
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    auditLog: {
+      findMany: vi.fn(async ({ where }: { where: { tenantId: string; metadata: { path: string[]; equals: string } } }) =>
+        where.metadata.equals === 'imp_1'
+          ? [{ id: 'audit_1', tenantId: where.tenantId, actorType: 'IMPERSONATOR', action: 'SHIPMENT_VIEWED', metadata: { impersonationSessionId: 'imp_1', platformUserId: 'pu_staff' }, timestamp: new Date() }]
+          : []
+      )
+    },
     platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `act_${String(create.type)}`, ...create })) },
     platformImpersonationSession: {
       create: vi.fn(async ({ data }: { data: Omit<SessionRow, 'id' | 'revokedAt' | 'endedAt' | 'endedReason' | 'exchangedAt' | 'createdAt'> }) => {
@@ -221,6 +228,28 @@ describe('impersonation start (S6, S18)', () => {
   });
 });
 
+describe('Impersonation Center (WP-1.10)', () => {
+  it('ACC-IMP-9 session detail lists the tenant audit rows written in-session (actorType IMPERSONATOR)', async () => {
+    const { app, prisma } = await buildConsoleApp();
+    const body = (await start(app, { reason: 'Investigating a failed label print' })).json() as { impersonationSessionId: string };
+    const detail = await app.inject({ method: 'GET', url: `/api/internal/impersonation/sessions/${body.impersonationSessionId}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ session: { id: 'imp_1', targetTenantId: 'tenant_1' }, auditRows: [{ actorType: 'IMPERSONATOR', metadata: { impersonationSessionId: 'imp_1' } }] });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: 'tenant_1', metadata: { path: ['impersonationSessionId'], equals: 'imp_1' } } }));
+  });
+
+  it("ending another staff member's session needs platform.impersonation.mutate", async () => {
+    const { app, prisma } = await buildConsoleApp();
+    const body = (await start(app, { reason: 'Investigating a failed label print' })).json() as { impersonationSessionId: string };
+    prisma.sessions.get(body.impersonationSessionId)!.platformUserId = 'pu_someone_else';
+    const denied = await app.inject({ method: 'DELETE', url: `/api/internal/impersonation/sessions/${body.impersonationSessionId}`, payload: { reason: 'Shift change handover' } });
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({ permission: 'platform.impersonation.mutate' });
+    staffPermissions.add('platform.impersonation.mutate');
+    expect((await app.inject({ method: 'DELETE', url: `/api/internal/impersonation/sessions/${body.impersonationSessionId}`, payload: { reason: 'Shift change handover' } })).statusCode).toBe(204);
+  });
+});
+
 describe('impersonation token enforcement (authenticate.ts)', () => {
   async function buildTenantApp(scopes: string[], overrides: Partial<SessionRow> = {}) {
     const { config } = await import('../../../config/index.js');
@@ -272,7 +301,7 @@ describe('impersonation token enforcement (authenticate.ts)', () => {
     expect(post.statusCode).toBe(200);
   });
 
-  it('a revoked session is rejected even while the Redis key still exists', async () => {
+  it('ACC-IMP-8 a revoked (ended) session is rejected with IMPERSONATION_EXPIRED even while the Redis key still exists', async () => {
     const { app, headers } = await buildTenantApp(['read'], { revokedAt: new Date() });
     const get = await app.inject({ method: 'GET', url: '/api/v1/shipments', headers });
     expect(get.statusCode).toBe(401);
