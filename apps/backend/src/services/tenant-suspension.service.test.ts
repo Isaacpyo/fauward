@@ -24,6 +24,7 @@ function createWorld(tenantOverrides: Record<string, unknown> = {}) {
   const inApp: Row[] = [];
   const audit: Row[] = [];
   const activity: Row[] = [];
+  const dunningEvents: Row[] = [];
 
   const matches = (row: Row, where: Record<string, unknown>) =>
     Object.entries(where).every(([key, value]) => {
@@ -68,6 +69,16 @@ function createWorld(tenantOverrides: Record<string, unknown> = {}) {
         if (existing) return existing;
         const row = { id: `act_${activity.length + 1}`, ...create };
         activity.push(row);
+        return row;
+      })
+    },
+    dunningEvent: {
+      findFirst: vi.fn(async ({ where }: { where: { tenantId: string; eventType: string; attempt: number; metadata: { equals: string } } }) =>
+        dunningEvents.find((row) => row.tenantId === where.tenantId && row.eventType === where.eventType && row.attempt === where.attempt && (row.metadata as { invoiceRef?: string }).invoiceRef === where.metadata.equals) ?? null
+      ),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: `de_${dunningEvents.length + 1}`, ...data };
+        dunningEvents.push(row);
         return row;
       })
     },

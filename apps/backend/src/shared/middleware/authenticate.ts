@@ -34,6 +34,9 @@ function isSuspendedTenantAllowedPath(method: string, path: string) {
     return true;
   }
   if (method === 'POST' && /^\/api\/v1\/tenants\/me\/suspension-appeal\/[^/]+\/reply$/.test(path)) return true;
+  // A DUNNING suspension is cleared by paying: billing summary, the Stripe portal and save offers stay reachable (WP-2.7).
+  if (method === 'GET' && path === '/api/v1/tenants/me/billing/summary') return true;
+  if (method === 'POST' && (path === '/api/v1/tenants/me/billing/portal-session' || /^\/api\/v1\/tenants\/me\/save-offers\/[^/]+\/redeem$/.test(path))) return true;
   return method === 'POST' && [
     '/api/v1/tenant/impersonation/exit',
     '/api/v1/tenants/me/impersonation/exit',

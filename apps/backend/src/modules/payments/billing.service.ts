@@ -3,8 +3,39 @@ import { domainService } from '../tenants/domain.service.js';
 import { getActiveSuspensions, liftDunningSuspensionForInvoice, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { notifyTenantAdmins } from '../../services/platform-notifier.service.js';
 import { DUNNING_SUSPEND_RULE } from '../../config/safety-rules.js';
+import { SYSTEM_ACTOR, recordAndPublishActivity } from '../../services/platform-activity.service.js';
 
 const STRIPE_ACTOR = { type: 'SYSTEM' as const, label: 'Stripe billing' };
+
+/**
+ * One DunningEvent per Stripe invoice and attempt (WP-2.7, ACC-L6-2) plus the payment.* activity; a redelivered
+ * webhook finds the existing row and writes nothing.
+ */
+async function recordStripeDunningEvent(app: FastifyInstance, input: { tenantId: string; eventType: 'payment_failed' | 'payment_succeeded'; attempt: number; invoiceRef: string }) {
+  const existing = await app.prisma.dunningEvent.findFirst({
+    where: { tenantId: input.tenantId, eventType: input.eventType, attempt: input.attempt, metadata: { path: ['invoiceRef'], equals: input.invoiceRef } }
+  });
+  if (existing) return existing;
+  const row = await app.prisma.dunningEvent.create({ data: { tenantId: input.tenantId, eventType: input.eventType, attempt: input.attempt, metadata: { invoiceRef: input.invoiceRef, source: 'stripe' } } });
+  const tenant = await app.prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { name: true } });
+  await recordAndPublishActivity(
+    { prisma: app.prisma, redis: app.redis, log: app.log },
+    {
+      service: 'revenue.dunning',
+      type: input.eventType === 'payment_failed' ? 'payment.failed' : 'payment.succeeded',
+      tenantId: input.tenantId,
+      ...SYSTEM_ACTOR,
+      actorLabel: 'Stripe',
+      subjectType: 'dunning_event',
+      subjectId: row.id,
+      summary: input.eventType === 'payment_failed' ? `${tenant?.name ?? input.tenantId}: Fauward payment failed (attempt ${input.attempt})` : `${tenant?.name ?? input.tenantId}: Fauward invoice paid`,
+      severity: input.eventType === 'payment_failed' ? 'ATTENTION' : 'INFO',
+      consoleLink: `/revenue/dunning/${input.tenantId}`,
+      dedupeKey: `${input.eventType}:${input.invoiceRef}:${input.attempt}`
+    }
+  );
+  return row;
+}
 
 /**
  * Stripe `invoice.payment_failed` (D3 caller 3): attempt 2 opens a DUNNING suspension for that Stripe invoice through
@@ -19,6 +50,7 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
 }) {
   const { tenantId, attempt } = event;
   const prisma = app.prisma;
+  await recordStripeDunningEvent(app, { tenantId, eventType: 'payment_failed', attempt, invoiceRef: event.invoiceRef });
 
   if (attempt < DUNNING_SUSPEND_RULE.suspendOnAttempt) {
     await notifyTenantAdmins(app, {
@@ -84,5 +116,6 @@ export async function handleDunningEvent(app: FastifyInstance, event: {
 
 /** Stripe `invoice.paid`: lifts the DUNNING suspension opened for that invoice (via PAYMENT), if there is one. */
 export async function handleDunningPaid(app: FastifyInstance, event: { tenantId: string; invoiceRef: string }) {
+  await recordStripeDunningEvent(app, { tenantId: event.tenantId, eventType: 'payment_succeeded', attempt: 0, invoiceRef: event.invoiceRef });
   return liftDunningSuspensionForInvoice(app, { tenantId: event.tenantId, invoiceRef: event.invoiceRef, actor: STRIPE_ACTOR });
 }

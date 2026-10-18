@@ -171,5 +171,54 @@ export const stripeService = {
       results.push(txn);
     }
     return results;
+  },
+
+  /** Plan change for a tenant without a Stripe subscription yet (WP-2.7): a subscription-mode Checkout session. */
+  async createSubscriptionCheckout(params: { customerId?: string | null; customerEmail?: string | null; priceId: string; metadata: Record<string, string>; successUrl: string; cancelUrl: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: 'subscription',
+        line_items: [{ price: params.priceId, quantity: 1 }],
+        ...(params.customerId ? { customer: params.customerId } : params.customerEmail ? { customer_email: params.customerEmail } : {}),
+        metadata: params.metadata,
+        subscription_data: { metadata: params.metadata },
+        success_url: params.successUrl,
+        cancel_url: params.cancelUrl
+      },
+      { idempotencyKey: params.idempotencyKey }
+    );
+    return { sessionId: session.id, url: session.url ?? '' };
+  },
+
+  /** Plan change on an existing Stripe subscription: swaps the price with proration (WP-2.7). */
+  async changeSubscriptionPrice(params: { subscriptionId: string; priceId: string; metadata: Record<string, string>; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const current = await stripe.subscriptions.retrieve(params.subscriptionId);
+    const item = current.items.data[0];
+    if (!item) throw new Error(`Stripe subscription ${params.subscriptionId} has no items`);
+    const updated = await stripe.subscriptions.update(
+      params.subscriptionId,
+      { items: [{ id: item.id, price: params.priceId }], proration_behavior: 'create_prorations', metadata: params.metadata },
+      { idempotencyKey: params.idempotencyKey }
+    );
+    return { id: updated.id, status: updated.status };
+  },
+
+  async createBillingPortalSession(params: { customerId: string; returnUrl: string }) {
+    const stripe = getStripeClient();
+    const session = await stripe.billingPortal.sessions.create({ customer: params.customerId, return_url: params.returnUrl });
+    return { url: session.url };
+  },
+
+  /** Save offer redemption (WP-2.7): a one-off amount-off coupon applied to the tenant's subscription. */
+  async applyAmountOffCoupon(params: { subscriptionId: string; amountMajor: string; currency: string; name: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const coupon = await stripe.coupons.create(
+      { amount_off: toMinorUnits(params.amountMajor, params.currency), currency: params.currency.toLowerCase(), duration: 'once', name: params.name },
+      { idempotencyKey: `${params.idempotencyKey}:coupon` }
+    );
+    await stripe.subscriptions.update(params.subscriptionId, { discounts: [{ coupon: coupon.id }] }, { idempotencyKey: `${params.idempotencyKey}:apply` });
+    return { couponId: coupon.id };
   }
 };

@@ -125,7 +125,7 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
       {
         id: "save-offer",
         label: "Issue Save Offer",
-        description: "Create an approved save-the-customer offer for a tenant.",
+        description: "Create a save-the-customer offer for a tenant. It stays pending until approved.",
         method: "post",
         path: () => "/dunning/save-offers",
         fields: [
@@ -135,6 +135,18 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Save offer" }
         ],
         payload: (values) => ({ tenantId: values.tenantId, discount: numeric(values.discount), expiresAt: values.expiresAt || undefined, reason: values.reason })
+      },
+      {
+        id: "approve-save-offer",
+        label: "Approve Save Offer",
+        description: "Approve a pending offer: generates the code the tenant redeems in Billing (fresh MFA and a reason).",
+        method: "post",
+        path: (values) => `/dunning/save-offers/${encodeURIComponent(values.offerId)}/approve`,
+        fields: [
+          { name: "offerId", label: "Save offer ID", required: true },
+          { name: "reason", label: "Reason", type: "textarea", required: true }
+        ],
+        payload: (values) => ({ reason: values.reason })
       }
     ];
   }

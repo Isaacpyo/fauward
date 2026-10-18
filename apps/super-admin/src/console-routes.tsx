@@ -18,6 +18,8 @@ import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
 import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
 import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
 import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
+import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
+import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
@@ -165,10 +167,21 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/tax/returns", element: <OpsRoute permission="revenue.tax.read" title="Tax Returns" description="Per-region return periods and filing status." endpoint="/tax/returns" /> },
   { path: "/revenue/tax/registrations", element: <OpsRoute permission="revenue.tax.read" title="Tax Registrations" description="VAT and GST registrations across Fauward operating regions." endpoint="/tax/registrations" /> },
   { path: "/revenue/tax/exemptions", element: <OpsRoute permission="revenue.tax.read" title="Tax Exemptions" description="Tenant exemption certificates and approval state." endpoint="/tax/exemptions" /> },
-  { path: "/revenue/subscriptions", element: <OpsRoute permission="revenue.subscriptions.read" title="Subscription Manager" description="Custom contracts, pricing overrides and subscription state." endpoint="/subscriptions" related={[{ label: "Contracts", to: "/revenue/subscriptions/contracts" }, { label: "Overrides", to: "/revenue/subscriptions/overrides" }]} /> },
-  { path: "/revenue/subscriptions/:id", element: <OpsRoute permission="revenue.subscriptions.read" title="Subscription Detail" description="Subscription and custom contract context." endpoint="/subscriptions" /> },
-  { path: "/revenue/subscriptions/contracts", element: <OpsRoute permission="revenue.subscriptions.read" title="Enterprise MSAs" description="Custom contracts and signed agreement metadata." endpoint="/subscriptions/contracts" /> },
-  { path: "/revenue/subscriptions/overrides", element: <OpsRoute permission="revenue.subscriptions.read" title="Pricing Overrides" description="Non-standard pricing approvals and active override rules." endpoint="/subscriptions/overrides" /> },
+  { path: "/revenue/subscriptions", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <SubscriptionsListPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/plan-change-requests", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <PlanChangeRequestsPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/contracts", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <ContractsPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/overrides", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <OverridesPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/:id", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <SubscriptionDetailPage />
+              </PermissionRoute> },
   { path: "/revenue/commissions", element: <OpsRoute permission="revenue.commissions.read" title="Reseller Commissions" description="Partner commission ledger and payout controls." endpoint="/commissions" related={[{ label: "Payouts", to: "/revenue/commissions/payouts" }, { label: "Disputes", to: "/revenue/commissions/disputes" }]} /> },
   { path: "/revenue/commissions/payouts", element: <OpsRoute permission="revenue.commissions.read" title="Commission Payouts" description="Finance-approved payout queue with CFO threshold controls." endpoint="/commissions/payouts" /> },
   { path: "/revenue/commissions/disputes", element: <OpsRoute permission="revenue.commissions.read" title="Commission Disputes" description="Partner disputes over commission attribution or payout." endpoint="/commissions/disputes" /> },

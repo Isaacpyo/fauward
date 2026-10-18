@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { handleStripeSubscriptionEvent, tenantForStripeInvoice } from '../../services/subscription.service.js';
 import { PaymentStatus } from '@prisma/client';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -286,7 +287,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
         select: { nextRetryAt: true }
       }),
       app.prisma.saveOffer.findFirst({
-        where: { tenantId, status: 'APPROVED', expiresAt: { gt: now } },
+        where: { tenantId, status: 'APPROVED', code: { not: null }, redeemedAt: null, expiresAt: { gt: now } },
         orderBy: { createdAt: 'desc' }
       })
     ]);
@@ -309,7 +310,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
         ? {
             discount: Number(saveOffer.discount),
             validUntil: saveOffer.expiresAt.toISOString(),
-            code: `SAVE-${saveOffer.id.slice(0, 8).toUpperCase()}`
+            code: saveOffer.code ?? ''
           }
         : undefined
     });
@@ -407,10 +408,14 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       }
     }
 
-    if (eventType === 'invoice.payment_failed') {
-      const tenantId = String(eventAny.data?.object?.metadata?.tenantId ?? '');
-      const attemptCount = Number(eventAny.data?.object?.attempt_count ?? 1);
-      const invoiceRef = String(eventAny.data?.object?.id ?? '');
+    if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted' || (event.type === 'checkout.session.completed' && event.data.object.metadata?.planChangeRequestId)) {
+      await handleStripeSubscriptionEvent(app, event);
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const tenantId = (await tenantForStripeInvoice(app, event.data.object)) ?? '';
+      const attemptCount = Number(event.data.object.attempt_count ?? 1);
+      const invoiceRef = event.data.object.id ?? '';
       if (tenantId) {
         await handleDunningEvent(app, {
           tenantId,
@@ -420,9 +425,9 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       }
     }
 
-    if (eventType === 'invoice.paid') {
-      const tenantId = String(eventAny.data?.object?.metadata?.tenantId ?? '');
-      const invoiceRef = String(eventAny.data?.object?.id ?? '');
+    if (event.type === 'invoice.paid') {
+      const tenantId = (await tenantForStripeInvoice(app, event.data.object)) ?? '';
+      const invoiceRef = event.data.object.id ?? '';
       if (tenantId && invoiceRef) await handleDunningPaid(app, { tenantId, invoiceRef });
     }
 

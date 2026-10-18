@@ -51,6 +51,11 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  // Fauward plan prices in Stripe (WP-2.7). A plan/cycle without a price id is changed by staff approval instead.
+  STRIPE_PRICE_STARTER_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_STARTER_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
   VERCEL_API_TOKEN: z.string().min(1).optional(),
   VERCEL_PORTAL_PROJECT_ID: z.string().min(1).optional(),
   VERCEL_TEAM_ID: z.string().optional(),
@@ -185,7 +190,11 @@ export const config = {
   stripe: {
     // Accept either env name so deploy config can use the existing Stripe secret key label.
     secretKey: parsed.data.STRIPE_SECRET_KEY ?? parsed.data.STRIPE_API_KEY,
-    webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
+    webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET,
+    prices: {
+      STARTER: { MONTHLY: parsed.data.STRIPE_PRICE_STARTER_MONTHLY || undefined, ANNUAL: parsed.data.STRIPE_PRICE_STARTER_ANNUAL || undefined },
+      PRO: { MONTHLY: parsed.data.STRIPE_PRICE_PRO_MONTHLY || undefined, ANNUAL: parsed.data.STRIPE_PRICE_PRO_ANNUAL || undefined }
+    } as Record<string, Record<string, string | undefined>>
   },
   vercel: {
     apiToken: parsed.data.VERCEL_API_TOKEN,

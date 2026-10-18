@@ -10,6 +10,7 @@ import { registerDomainRoutes } from './domain.routes.js';
 import { registerTenantSlugRoutes } from './slug.routes.js';
 import { registerStaffAccessRoutes } from './staff-access.routes.js';
 import { registerTenantPlatformInvoiceRoutes } from './platform-invoices.routes.js';
+import { registerPlanChangeRoutes } from './plan-change.routes.js';
 import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
@@ -52,6 +53,7 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   await registerTenantSlugRoutes(app);
   await registerStaffAccessRoutes(app);
   await registerTenantPlatformInvoiceRoutes(app);
+  await registerPlanChangeRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);

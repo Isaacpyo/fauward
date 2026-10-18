@@ -7,6 +7,7 @@ import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
+import { approveSaveOffer, SaveOfferError } from '../../services/save-offer.service.js';
 import { writeInternalAudit } from './internal-audit.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
@@ -306,7 +307,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerKyc(app);
   registerIntegrations(app);
   registerTax(app);
-  registerSubscriptions(app);
   registerContracts(app);
   registerQbr(app);
   registerGtm(app);
@@ -383,12 +383,25 @@ function registerDunning(app: FastifyInstance) {
     const offer = await createAndAudit(
       request,
       delegate(app, 'saveOffer'),
-      { tenantId, discount, expiresAt: dateValue(body.expiresAt, inDays(14)), status: 'APPROVED', approvedBy: actorId(request), reason: stringValue(body.reason, 'Save offer') },
+      // WP-2.7: created PENDING; a second, dangerous step approves it and generates the code the tenant redeems.
+      { tenantId, discount, expiresAt: dateValue(body.expiresAt, inDays(14)), status: 'PENDING', reason: stringValue(body.reason, 'Save offer') },
       'dunning.save_offer.issue',
       'save_offer',
       stringValue(body.reason, 'Save offer')
     );
     reply.status(201).send(offer);
+  });
+
+  app.post('/api/internal/dunning/save-offers/:id/approve', { preHandler: dangerous('revenue.dunning.write') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    try {
+      const offer = await approveSaveOffer(app, request, { id, reason: stringValue(bodyObject(request).reason) });
+      await writeInternalAudit(request, 'dunning.save_offer.approve', 'save_offer', id, { status: 'PENDING' }, { status: offer.status, code: offer.code }, stringValue(bodyObject(request).reason), { targetTenantId: offer.tenantId });
+      return reply.send({ offer });
+    } catch (error) {
+      if (error instanceof SaveOfferError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/dunning/save-offers', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
@@ -877,63 +890,6 @@ function registerTax(app: FastifyInstance) {
     const after = await updateAndAudit(request, delegate(app, 'taxExemption'), id, { status: 'APPROVED', approvedBy: actorId(request), approvedAt: new Date() }, 'tax.exemption.approve', 'tax_exemption', stringValue(bodyObject(request).reason, 'Tax exemption approved'));
     if (exemption.tenantId) await app.prisma.tenant.update({ where: { id: exemption.tenantId }, data: { taxExempt: true } });
     reply.send(after);
-  });
-}
-
-function registerSubscriptions(app: FastifyInstance) {
-  app.get('/api/internal/subscriptions', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    const data = await app.prisma.subscription.findMany({ include: { tenant: true }, orderBy: { updatedAt: 'desc' }, take: 100 });
-    reply.send({ data });
-  });
-
-  app.get('/api/internal/subscriptions/contracts', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'customContract'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/subscriptions/contracts', { preHandler: writePre('revenue.subscriptions.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const contract = await createAndAudit(request, delegate(app, 'customContract'), { tenantId, msaUrl: stringValue(body.msaUrl) || null, termStart: dateValue(body.termStart), termEnd: dateValue(body.termEnd, inDays(365)), terms: body.terms ?? {}, status: 'DRAFT' }, 'subscriptions.contract.create', 'custom_contract', stringValue(body.reason, 'Custom contract'));
-    reply.status(201).send(contract);
-  });
-
-  app.get('/api/internal/subscriptions/overrides', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'pricingOverride'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/subscriptions/overrides', { preHandler: writePre('revenue.subscriptions.override') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-
-    const discountPercent = numberValue(body.discountPercent);
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    if (discountPercent > 25 && !context.roles.includes('CFO') && !context.roles.includes('ROOT')) {
-      return reply.status(403).send({ error: 'CFO approval required', requiredRole: 'CFO' });
-    }
-    if (discountPercent >= 10 && !context.roles.some((role) => ['SALES_MANAGER', 'SALES_DIRECTOR', 'CFO', 'ROOT'].includes(role))) {
-      return reply.status(403).send({ error: 'Sales manager approval required', requiredRole: 'SALES_MANAGER' });
-    }
-
-    const override = await createAndAudit(
-      request,
-      delegate(app, 'pricingOverride'),
-      {
-        tenantId,
-        contractId: stringValue(body.contractId) || null,
-        ruleType: stringValue(body.ruleType, 'discount_percent'),
-        ruleValue: body.ruleValue ?? { discountPercent },
-        discountPercent,
-        validFrom: dateValue(body.validFrom),
-        validTo: body.validTo ? dateValue(body.validTo) : null,
-        status: 'APPROVED'
-      },
-      'subscriptions.override.create',
-      'pricing_override',
-      stringValue(body.reason, 'Pricing override')
-    );
-    reply.status(201).send(override);
   });
 }
 
