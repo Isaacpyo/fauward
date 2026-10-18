@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import dotenv from 'dotenv';
+import { assertFieldEncryptionBootConfig } from '../services/crypto/field-encryption.js';
 
 dotenv.config();
 
@@ -68,7 +69,10 @@ const envSchema = z.object({
   ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
   TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
-  FAUWARD_GO_URL: z.string().url().default('https://fauward.com/go')
+  FAUWARD_GO_URL: z.string().url().default('https://fauward.com/go'),
+  FIELD_ENCRYPTION_KEYS: z.string().optional(),
+  FIELD_ENCRYPTION_ACTIVE_KEY_ID: z.string().optional(),
+  CONSOLE_MFA_REQUIRED: z.string().default('true')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -88,6 +92,8 @@ if (parsed.data.NODE_ENV === 'production') {
   if (missing.length > 0) {
     throw new Error(`Missing required production platform auth environment variables: ${missing.join(', ')}`);
   }
+
+  assertFieldEncryptionBootConfig(process.env);
 }
 
 const devOnlyPlatformSessionSecret =
@@ -98,6 +104,9 @@ const devOnlyPlatformRefreshSecret =
 function parseFeatureFlag(value: string) {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }
+
+// Console MFA can only be switched off in development (architecture §2.1).
+const consoleMfaRequired = parsed.data.NODE_ENV !== 'development' || parseFeatureFlag(parsed.data.CONSOLE_MFA_REQUIRED);
 
 export const config = {
   nodeEnv: parsed.data.NODE_ENV,
@@ -172,7 +181,8 @@ export const config = {
     refreshSecret: devOnlyPlatformRefreshSecret,
     cookieDomain: parsed.data.PLATFORM_COOKIE_DOMAIN,
     issuer: 'fauward-platform',
-    audience: 'fauward-platform-admin'
+    audience: 'fauward-platform-admin',
+    mfaRequired: consoleMfaRequired
   },
   admin: {
     hostname: parsed.data.ADMIN_HOSTNAME.trim().toLowerCase()

@@ -47,6 +47,7 @@ import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.real
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
+import { registerConsoleAuthRoutes } from './modules/internal/auth/console-auth.routes.js';
 import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
 import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
@@ -268,6 +269,7 @@ export async function buildApp() {
   await registerExceptionsRoutes(app);
   await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
+  await registerConsoleAuthRoutes(app);
   await registerPlatformRoutes(app);
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);

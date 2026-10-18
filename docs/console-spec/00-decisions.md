@@ -20,6 +20,11 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C8 | — | `IncidentRecord.vendorId` is required and `@unique`; native incidents cannot be created without it | Migration makes it optional (`02-data-model.md` 0056) |
 | C9 | — | The tenant portal already has `ImpersonateCallbackPage` reading `?token=` and its own `ImpersonationBanner` | WP-0.5 changes the transport to a one-time code in the URL fragment; it does not build a new page |
 | C10 | — | The main checkout's `apps/backend/.env` `DATABASE_URL`/`DIRECT_URL` point at the Supabase cloud pooler (`aws-1-eu-central-2.pooler.supabase.com`), and `vm-slot.sh env` only rewrites `localhost` ports, so a worktree with copied env files would still migrate the cloud database | All implementation runs in a worktree whose env files are sanitised by `console-run/safe-env.mjs` (DB → VM slot, SendGrid/Twilio/Supabase service keys blanked) |
+| C11 | Migration labels 0036–0038 for Phase 0 | `0036_return_fees` already exists on `master` | Real numbers shift by one: `0037_console_mfa`, `0038_impersonation_hardening`, `0039_refund_integrity`; later labels shift at creation (index in `02-data-model.md` updated) |
+| C12 | WP-0.1: IAM create "encrypt on every write path" | `POST /iam/users` set `mfaEnabled: true` for ROOT grantees without any secret (an account that could never pass MFA); `PATCH /iam/users/:id` let admins flip `mfaEnabled` directly | Both write `mfaEnabled: false`; enrolment only via self-service `/auth/mfa/enroll/*`, reset only via `/iam/users/:id/mfa/reset` |
+| C13 | Architecture §9.1: env vars documented in `apps/backend/.env.example` | The repo has one `.env.example` at the root | New variables are documented in the root `.env.example` |
+| C14 | §2.6 backfill is the only plaintext path | Verify also accepts a legacy plaintext secret once and re-encrypts it on success, so a deploy before the backfill does not lock staff out | Backfill still required; verify path is belt-and-braces |
+| C15 | WP-0.1 rate limit 5/min per session on verify | `@fastify/rate-limit` keys before the session is authenticated | Key = session id from the (verified) access cookie, falling back to client IP |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

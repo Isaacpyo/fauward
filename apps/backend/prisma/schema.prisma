@@ -459,6 +459,9 @@ model PlatformUser {
   status             PlatformUserStatus @default(ACTIVE)
   mfaEnabled         Boolean            @default(false)
   mfaSecretEncrypted String?
+  // TOTP enrolment in progress (field-encryption ciphertext); moved to mfaSecretEncrypted on confirm.
+  mfaPendingSecretEncrypted String?
+  mfaEnrolledAt             DateTime?
   lastLoginAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt

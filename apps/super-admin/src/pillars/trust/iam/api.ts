@@ -61,7 +61,7 @@ export async function createStaffUser(input: { email: string; name: string; pass
   return response.data;
 }
 
-export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser, "name" | "status" | "mfaEnabled">> & { reason?: string }) {
+export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser, "name" | "status">> & { reason?: string }) {
   const response = await internalApi.patch<StaffUser>(`/iam/users/${id}`, input);
   return response.data;
 }
@@ -95,7 +95,8 @@ export async function fetchPermissionInventory() {
   return response.data.data;
 }
 
-export async function enrollTotp(id: string) {
-  const response = await internalApi.post<{ otpauth: string; qrCode: string }>(`/iam/users/${id}/totp-enrollment`, {});
+// Enrolment is self-service at login; admins can only reset another person's MFA (dangerous: fresh MFA + reason).
+export async function resetStaffMfa(id: string, reason: string) {
+  const response = await internalApi.post<{ id: string; mfaEnabled: false; sessionsRevokedAt: string }>(`/iam/users/${id}/mfa/reset`, { reason });
   return response.data;
 }

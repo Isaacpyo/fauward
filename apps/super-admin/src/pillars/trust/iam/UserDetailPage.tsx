@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { assignStaffRole, enrollTotp, fetchStaffRoles, fetchStaffUser, offboardStaffUser, revokeStaffRole } from "./api";
+import { ReasonModal } from "@fauward/internal-ui";
+import { assignStaffRole, fetchStaffRoles, fetchStaffUser, offboardStaffUser, resetStaffMfa, revokeStaffRole } from "./api";
 import { MfaStatusPill, RoleAssignmentTable, SessionTable, UserAvatar } from "./components";
 
 export function UserDetailPage() {
@@ -11,7 +13,14 @@ export function UserDetailPage() {
   const assignMutation = useMutation({ mutationFn: assignStaffRole, onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["staff-user", id] }) });
   const revokeMutation = useMutation({ mutationFn: ({ assignmentId }: { assignmentId: string }) => revokeStaffRole(assignmentId, "Role revoked from staff profile"), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["staff-user", id] }) });
   const offboardMutation = useMutation({ mutationFn: () => offboardStaffUser(id, "Staff offboarded from IAM detail page"), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["staff-user", id] }) });
-  const totpMutation = useMutation({ mutationFn: () => enrollTotp(id) });
+  const [resetMfaOpen, setResetMfaOpen] = useState(false);
+  const resetMfaMutation = useMutation({
+    mutationFn: (reason: string) => resetStaffMfa(id, reason),
+    onSuccess: () => {
+      setResetMfaOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ["staff-user", id] });
+    }
+  });
 
   const user = userQuery.data;
   if (userQuery.isLoading) return <p className="text-sm text-[var(--color-text-muted)]">Loading staff user...</p>;
@@ -56,11 +65,21 @@ export function UserDetailPage() {
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-[var(--color-border)] bg-white p-4">
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">MFA</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">ROOT requires TOTP until hardware key enforcement is added.</p>
-          <button type="button" className="mt-3 rounded-md bg-[var(--fauward-navy)] px-3 py-2 text-sm font-semibold text-white" onClick={() => totpMutation.mutate()}>
-            Rotate TOTP
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Staff enrol their own authenticator app at sign-in. Reset clears it (for a lost device) and signs them out everywhere; they enrol again at next login.</p>
+          <button type="button" disabled={!user.mfaEnabled || resetMfaMutation.isPending} className="mt-3 rounded-md border border-red-300 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50" onClick={() => setResetMfaOpen(true)}>
+            Reset MFA
           </button>
-          {totpMutation.data ? <img src={totpMutation.data.qrCode} alt="TOTP QR code" className="mt-3 h-32 w-32" /> : null}
+          {resetMfaMutation.isError ? <p role="alert" className="mt-2 text-sm text-red-700">MFA reset failed. Check you have trust.iam.write and recent MFA, and are not resetting yourself.</p> : null}
+          <ReasonModal
+            open={resetMfaOpen}
+            title={`Reset MFA for ${user.email}?`}
+            description="Clears their authenticator and revokes all of their console sessions."
+            confirmLabel={resetMfaMutation.isPending ? "Resetting…" : "Reset MFA"}
+            onCancel={() => setResetMfaOpen(false)}
+            onConfirm={(reason) => {
+              if (!resetMfaMutation.isPending) resetMfaMutation.mutate(reason);
+            }}
+          />
         </div>
         <div className="rounded-lg border border-[var(--color-border)] bg-white p-4">
           <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Offboarding</h2>

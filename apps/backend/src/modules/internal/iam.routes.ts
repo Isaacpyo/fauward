@@ -6,9 +6,10 @@ import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { PlatformRole } from '@prisma/client';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
+import { requireFreshMfa } from '../../middleware/require-fresh-platform-mfa.js';
+import { requirePlatformReason } from '../../middleware/require-platform-reason.js';
 import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
 import { hashPassword } from '../../shared/utils/hash.js';
-import { generateQrCodeDataUrl, generateTotpSecret } from '../../shared/utils/totp.js';
 import { seedStaffRoles, STAFF_ROLE_DEFINITIONS, staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 
 const mutationPre = [authenticatePlatformSession, requirePlatformCsrf];
@@ -133,7 +134,8 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
           name: body.name,
           passwordHash: await hashPassword(body.password!),
           role: roleIds.includes('ROOT') ? PlatformRole.SUPER_ADMIN : PlatformRole.PLATFORM_READONLY,
-          mfaEnabled: roleIds.includes('ROOT')
+          // New staff enrol MFA themselves at first login.
+          mfaEnabled: false
         }
       });
       const staff = await tx.staffUser.create({
@@ -142,7 +144,7 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
           email: normalizedEmail,
           name: body.name!,
           ssoProvider: body.ssoProvider ?? (roleIds.includes('ROOT') ? 'root' : 'totp'),
-          mfaEnabled: roleIds.includes('ROOT')
+          mfaEnabled: false
         }
       });
       await tx.staffRoleAssignment.createMany({
@@ -166,22 +168,21 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
 
   app.patch('/api/internal/iam/users/:id', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = request.body as { name?: string; status?: 'ACTIVE' | 'SUSPENDED' | 'OFFBOARDED'; mfaEnabled?: boolean; reason?: string };
+    const body = request.body as { name?: string; status?: 'ACTIVE' | 'SUSPENDED' | 'OFFBOARDED'; reason?: string };
     const before = await app.prisma.staffUser.findUnique({ where: { id } });
     if (!before) return reply.status(404).send({ error: 'Staff user not found' });
     const after = await app.prisma.staffUser.update({
       where: { id },
       data: {
         name: body.name,
-        status: body.status,
-        mfaEnabled: body.mfaEnabled
+        status: body.status
       },
       include: staffSelect()
     });
     if (before.platformUserId) {
       await app.prisma.platformUser.updateMany({
         where: { id: before.platformUserId },
-        data: { name: body.name, status: body.status === 'OFFBOARDED' ? 'DISABLED' : undefined, mfaEnabled: body.mfaEnabled }
+        data: { name: body.name, status: body.status === 'OFFBOARDED' ? 'DISABLED' : undefined }
       });
     }
     await auditIam(request, 'staff.user.update', 'staff_user', id, before, after, body.reason);
@@ -255,17 +256,34 @@ export async function registerInternalIamRoutes(app: FastifyInstance) {
     reply.send({ data: PERMISSIONS });
   });
 
-  app.post('/api/internal/iam/users/:id/totp-enrollment', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const staff = await app.prisma.staffUser.findUnique({ where: { id } });
-    if (!staff) return reply.status(404).send({ error: 'Staff user not found' });
-    const secret = generateTotpSecret(staff.email);
-    const qrCode = await generateQrCodeDataUrl(secret.otpauth);
-    await app.prisma.staffUser.update({ where: { id }, data: { mfaEnabled: true } });
-    if (staff.platformUserId) await app.prisma.platformUser.update({ where: { id: staff.platformUserId }, data: { mfaEnabled: true, mfaSecretEncrypted: secret.secret } });
-    await auditIam(request, 'staff.totp.enroll', 'staff_user', id, { mfaEnabled: staff.mfaEnabled }, { mfaEnabled: true }, null);
-    reply.send({ otpauth: secret.otpauth, qrCode });
-  });
+  // Admins can only reset another person's MFA; enrolment is self-service at login (S17).
+  app.post(
+    '/api/internal/iam/users/:id/mfa/reset',
+    { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write'), requireFreshMfa, requirePlatformReason] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const reason = (request.body as { reason: string }).reason.trim();
+      const staff = await app.prisma.staffUser.findUnique({ where: { id } });
+      if (!staff) return reply.status(404).send({ error: 'Staff user not found' });
+      if (staff.platformUserId === request.platform!.user.id) {
+        return reply.status(403).send({ error: 'CANNOT_TARGET_SELF', message: 'Ask another IAM admin to reset your MFA.' });
+      }
+
+      const now = new Date();
+      await app.prisma.$transaction(async (tx) => {
+        await tx.staffUser.update({ where: { id }, data: { mfaEnabled: false } });
+        if (staff.platformUserId) {
+          await tx.platformUser.update({
+            where: { id: staff.platformUserId },
+            data: { mfaEnabled: false, mfaSecretEncrypted: null, mfaPendingSecretEncrypted: null, mfaEnrolledAt: null }
+          });
+          await tx.platformSession.updateMany({ where: { platformUserId: staff.platformUserId, revokedAt: null }, data: { revokedAt: now } });
+        }
+      });
+      await auditIam(request, 'staff.mfa.reset', 'staff_user', id, { mfaEnabled: staff.mfaEnabled }, { mfaEnabled: false, sessionsRevoked: true }, reason);
+      reply.send({ id, mfaEnabled: false, sessionsRevokedAt: now.toISOString() });
+    }
+  );
 
   app.post('/api/internal/iam/sso/google/callback', { preHandler: [...mutationPre, requireInternalPermission('trust.iam.write')] }, async (request, reply) => {
     const body = request.body as { email?: string; name?: string; googleSubject?: string; reason?: string };
