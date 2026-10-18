@@ -2,23 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type JobRow = {
-  title: string;
-  department: string;
-  location: string;
-  status: string;
-  docId: string;
-  slug: string;
-};
-
-type AppsScriptJob = {
-  Title?: string;
-  Department?: string;
-  Location?: string;
-  Status?: string;
-  "Doc ID"?: string;
-  Slug?: string;
-};
+import { fetchOpenJobs, type CareersConfig, type JobRow } from "@/lib/careers-jobs";
 
 type EducationRow = {
   school: string;
@@ -45,10 +29,7 @@ type FormState = {
   visaSponsorship: string;
 };
 
-type Config = {
-  jobsSheetId?: string;
-  appsScriptUrl?: string;
-};
+type Config = CareersConfig;
 
 type Props = Config & {
   jobSlug?: string;
@@ -109,67 +90,6 @@ function getSlugFromLocation() {
   if (typeof window === "undefined") return "";
   const parts = window.location.pathname.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? "";
-}
-
-function parseCsv(csv: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-
-  for (let index = 0; index < csv.length; index += 1) {
-    const char = csv[index];
-    const next = csv[index + 1];
-
-    if (char === '"' && quoted && next === '"') {
-      field += '"';
-      index += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === "," && !quoted) {
-      row.push(field.trim());
-      field = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && next === "\n") index += 1;
-      row.push(field.trim());
-      if (row.some(Boolean)) rows.push(row);
-      row = [];
-      field = "";
-    } else {
-      field += char;
-    }
-  }
-
-  row.push(field.trim());
-  if (row.some(Boolean)) rows.push(row);
-  return rows;
-}
-
-function parseJobsCsv(csv: string): JobRow[] {
-  const [header, ...rows] = parseCsv(csv);
-  const keyMap = header.map((key) => key.toLowerCase());
-
-  const value = (row: string[], label: string) => row[keyMap.indexOf(label.toLowerCase())] ?? "";
-
-  return rows.map((row) => ({
-    title: value(row, "Title"),
-    department: value(row, "Department"),
-    location: value(row, "Location"),
-    status: value(row, "Status"),
-    docId: value(row, "Doc ID"),
-    slug: value(row, "Slug"),
-  }));
-}
-
-function normalizeJob(row: AppsScriptJob): JobRow {
-  return {
-    title: row.Title ?? "",
-    department: row.Department ?? "",
-    location: row.Location ?? "",
-    status: row.Status ?? "",
-    docId: row["Doc ID"] ?? "",
-    slug: row.Slug ?? "",
-  };
 }
 
 function readFileAsBase64(file: File | null) {
@@ -351,24 +271,12 @@ export default function CareersJobListingPage({ jobSlug, jobsSheetId, appsScript
       setLoadError("");
 
       try {
-        if (!resolvedAppsScriptUrl && !resolvedJobsSheetId) {
-          throw new Error("Missing VITE_APPS_SCRIPT_URL or VITE_JOBS_SHEET_ID.");
-        }
         if (!resolvedSlug) throw new Error("Missing job slug.");
 
-        const openJobs = resolvedAppsScriptUrl
-          ? await fetch(resolvedAppsScriptUrl)
-              .then((response) => {
-                if (!response.ok) throw new Error("Could not fetch the jobs index.");
-                return response.json() as Promise<AppsScriptJob[]>;
-              })
-              .then((rows) => rows.map(normalizeJob))
-          : await fetch(`https://docs.google.com/spreadsheets/d/${resolvedJobsSheetId}/export?format=csv`)
-              .then((response) => {
-                if (!response.ok) throw new Error("Could not fetch the jobs index.");
-                return response.text();
-              })
-              .then((csv) => parseJobsCsv(csv).filter((row) => row.status.toLowerCase() === "open"));
+        const openJobs = await fetchOpenJobs({
+          jobsSheetId: resolvedJobsSheetId,
+          appsScriptUrl: resolvedAppsScriptUrl,
+        });
         const matchedJob = openJobs.find((row) => row.slug === resolvedSlug);
         if (!matchedJob) throw new Error("This role is not currently open.");
 
@@ -561,182 +469,184 @@ export default function CareersJobListingPage({ jobSlug, jobsSheetId, appsScript
             </>
           ) : null}
 
-          <section id="apply" ref={applyRef} className="mt-16 scroll-mt-28 rounded-xl border border-gray-200 bg-gray-50 p-5 sm:p-8">
-            <div className="mb-8">
-              <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Application</p>
-              <h2 className="mt-2 text-2xl font-bold text-gray-900">Apply for this role</h2>
-            </div>
-
-            {submittedName ? (
-              <div className="rounded-xl border border-green-200 bg-white p-6">
-                <p className="text-lg font-bold text-gray-900">Thanks {submittedName}, your application has been received.</p>
-                <p className="mt-2 text-sm leading-6 text-gray-600">Our team will review it and follow up if there is a strong match.</p>
+          {job ? (
+            <section id="apply" ref={applyRef} className="mt-16 scroll-mt-28 rounded-xl border border-gray-200 bg-gray-50 p-5 sm:p-8">
+              <div className="mb-8">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Application</p>
+                <h2 className="mt-2 text-2xl font-bold text-gray-900">Apply for this role</h2>
               </div>
-            ) : (
-              <form className="space-y-6" onSubmit={handleSubmit} noValidate>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label required>First Name</Label>
-                    <input className={inputClasses(Boolean(errors.firstName))} value={form.firstName} onChange={(event) => updateForm("firstName", event.target.value)} />
-                    <FieldError message={errors.firstName} />
-                  </div>
-                  <div>
-                    <Label required>Last Name</Label>
-                    <input className={inputClasses(Boolean(errors.lastName))} value={form.lastName} onChange={(event) => updateForm("lastName", event.target.value)} />
-                    <FieldError message={errors.lastName} />
-                  </div>
-                  <div>
-                    <Label>Preferred First Name</Label>
-                    <input className={inputClasses()} value={form.preferredFirstName} onChange={(event) => updateForm("preferredFirstName", event.target.value)} />
-                  </div>
-                  <div />
-                  <div>
-                    <Label required>Email</Label>
-                    <input type="email" className={inputClasses(Boolean(errors.email))} value={form.email} onChange={(event) => updateForm("email", event.target.value)} />
-                    <FieldError message={errors.email} />
-                  </div>
-                  <div>
-                    <Label>Phone</Label>
-                    <input className={inputClasses()} value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} />
-                  </div>
-                  <div>
-                    <Label required>Country</Label>
-                    <select className={inputClasses(Boolean(errors.country))} value={form.country} onChange={(event) => updateForm("country", event.target.value)}>
-                      <option value="">Select country</option>
-                      <option>United Kingdom</option>
-                      <option>United States</option>
-                      <option>Nigeria</option>
-                      <option>Kenya</option>
-                      <option>United Arab Emirates</option>
-                      <option>Other</option>
-                    </select>
-                    <FieldError message={errors.country} />
-                  </div>
-                  <div>
-                    <Label required>Phone number</Label>
-                    <input className={inputClasses(Boolean(errors.phoneNumber))} value={form.phoneNumber} onChange={(event) => updateForm("phoneNumber", event.target.value)} />
-                    <FieldError message={errors.phoneNumber} />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <Label required>Location (City)</Label>
-                    <input className={inputClasses(Boolean(errors.locationCity))} value={form.locationCity} onChange={(event) => updateForm("locationCity", event.target.value)} />
-                    <FieldError message={errors.locationCity} />
-                  </div>
-                  <FilePicker label="Resume/CV" required file={resumeFile} error={errors.resume} onChange={setResumeFile} />
-                  <FilePicker label="Cover Letter" file={coverLetterFile} onChange={setCoverLetterFile} />
-                </div>
 
-                <div className="space-y-3">
-                  <p className="text-sm font-semibold text-gray-900">Education</p>
-                  {education.map((row, index) => (
-                    <div key={index} className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-3">
-                      <input
-                        className={inputClasses()}
-                        placeholder="School"
-                        value={row.school}
-                        onChange={(event) =>
-                          setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, school: event.target.value } : item))
-                        }
-                      />
-                      <input
-                        className={inputClasses()}
-                        placeholder="Degree"
-                        value={row.degree}
-                        onChange={(event) =>
-                          setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, degree: event.target.value } : item))
-                        }
-                      />
-                      <select
-                        className={inputClasses()}
-                        value={row.discipline}
-                        onChange={(event) =>
-                          setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, discipline: event.target.value } : item))
-                        }
-                      >
-                        <option value="">Discipline</option>
-                        <option>Computer Science</option>
-                        <option>Design</option>
-                        <option>Logistics</option>
-                        <option>Data Science</option>
-                        <option>Business</option>
+              {submittedName ? (
+                <div className="rounded-xl border border-green-200 bg-white p-6">
+                  <p className="text-lg font-bold text-gray-900">Thanks {submittedName}, your application has been received.</p>
+                  <p className="mt-2 text-sm leading-6 text-gray-600">Our team will review it and follow up if there is a strong match.</p>
+                </div>
+              ) : (
+                <form className="space-y-6" onSubmit={handleSubmit} noValidate>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label required>First Name</Label>
+                      <input className={inputClasses(Boolean(errors.firstName))} value={form.firstName} onChange={(event) => updateForm("firstName", event.target.value)} />
+                      <FieldError message={errors.firstName} />
+                    </div>
+                    <div>
+                      <Label required>Last Name</Label>
+                      <input className={inputClasses(Boolean(errors.lastName))} value={form.lastName} onChange={(event) => updateForm("lastName", event.target.value)} />
+                      <FieldError message={errors.lastName} />
+                    </div>
+                    <div>
+                      <Label>Preferred First Name</Label>
+                      <input className={inputClasses()} value={form.preferredFirstName} onChange={(event) => updateForm("preferredFirstName", event.target.value)} />
+                    </div>
+                    <div />
+                    <div>
+                      <Label required>Email</Label>
+                      <input type="email" className={inputClasses(Boolean(errors.email))} value={form.email} onChange={(event) => updateForm("email", event.target.value)} />
+                      <FieldError message={errors.email} />
+                    </div>
+                    <div>
+                      <Label>Phone</Label>
+                      <input className={inputClasses()} value={form.phone} onChange={(event) => updateForm("phone", event.target.value)} />
+                    </div>
+                    <div>
+                      <Label required>Country</Label>
+                      <select className={inputClasses(Boolean(errors.country))} value={form.country} onChange={(event) => updateForm("country", event.target.value)}>
+                        <option value="">Select country</option>
+                        <option>United Kingdom</option>
+                        <option>United States</option>
+                        <option>Nigeria</option>
+                        <option>Kenya</option>
+                        <option>United Arab Emirates</option>
                         <option>Other</option>
                       </select>
+                      <FieldError message={errors.country} />
                     </div>
-                  ))}
+                    <div>
+                      <Label required>Phone number</Label>
+                      <input className={inputClasses(Boolean(errors.phoneNumber))} value={form.phoneNumber} onChange={(event) => updateForm("phoneNumber", event.target.value)} />
+                      <FieldError message={errors.phoneNumber} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label required>Location (City)</Label>
+                      <input className={inputClasses(Boolean(errors.locationCity))} value={form.locationCity} onChange={(event) => updateForm("locationCity", event.target.value)} />
+                      <FieldError message={errors.locationCity} />
+                    </div>
+                    <FilePicker label="Resume/CV" required file={resumeFile} error={errors.resume} onChange={setResumeFile} />
+                    <FilePicker label="Cover Letter" file={coverLetterFile} onChange={setCoverLetterFile} />
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-sm font-semibold text-gray-900">Education</p>
+                    {education.map((row, index) => (
+                      <div key={index} className="grid gap-3 rounded-lg border border-gray-200 bg-white p-3 sm:grid-cols-3">
+                        <input
+                          className={inputClasses()}
+                          placeholder="School"
+                          value={row.school}
+                          onChange={(event) =>
+                            setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, school: event.target.value } : item))
+                          }
+                        />
+                        <input
+                          className={inputClasses()}
+                          placeholder="Degree"
+                          value={row.degree}
+                          onChange={(event) =>
+                            setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, degree: event.target.value } : item))
+                          }
+                        />
+                        <select
+                          className={inputClasses()}
+                          value={row.discipline}
+                          onChange={(event) =>
+                            setEducation((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, discipline: event.target.value } : item))
+                          }
+                        >
+                          <option value="">Discipline</option>
+                          <option>Computer Science</option>
+                          <option>Design</option>
+                          <option>Logistics</option>
+                          <option>Data Science</option>
+                          <option>Business</option>
+                          <option>Other</option>
+                        </select>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="text-sm font-semibold text-amber-700 hover:text-amber-600"
+                      onClick={() => setEducation((current) => [...current, { ...emptyEducation }])}
+                    >
+                      + Add another
+                    </button>
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-6" />
+
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label required>Full Legal Name</Label>
+                      <input className={inputClasses(Boolean(errors.fullLegalName))} value={form.fullLegalName} onChange={(event) => updateForm("fullLegalName", event.target.value)} />
+                      <FieldError message={errors.fullLegalName} />
+                    </div>
+                    <div>
+                      <Label required>Your Location</Label>
+                      <input className={inputClasses(Boolean(errors.legalLocation))} value={form.legalLocation} onChange={(event) => updateForm("legalLocation", event.target.value)} />
+                      <FieldError message={errors.legalLocation} />
+                    </div>
+                    <div>
+                      <Label>Website</Label>
+                      <input className={inputClasses()} value={form.website} onChange={(event) => updateForm("website", event.target.value)} />
+                    </div>
+                    <div>
+                      <Label>LinkedIn Profile</Label>
+                      <input className={inputClasses()} value={form.linkedin} onChange={(event) => updateForm("linkedin", event.target.value)} />
+                    </div>
+                    <div>
+                      <Label>X Profile</Label>
+                      <input className={inputClasses()} value={form.xProfile} onChange={(event) => updateForm("xProfile", event.target.value)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label required>What makes you the ideal candidate for this role?</Label>
+                    <textarea className={textareaClasses(Boolean(errors.idealCandidateAnswer))} value={form.idealCandidateAnswer} onChange={(event) => updateForm("idealCandidateAnswer", event.target.value)} />
+                    <FieldError message={errors.idealCandidateAnswer} />
+                  </div>
+
+                  <div>
+                    <Label required>What exceptional work have you done?</Label>
+                    <textarea className={textareaClasses(Boolean(errors.proudWorkAnswer))} value={form.proudWorkAnswer} onChange={(event) => updateForm("proudWorkAnswer", event.target.value)} />
+                    <p className="mt-1 text-sm text-gray-500">In 100 words or less.</p>
+                    <FieldError message={errors.proudWorkAnswer} />
+                  </div>
+
+                  <div>
+                    <Label required>Visa sponsorship required?</Label>
+                    <select className={inputClasses(Boolean(errors.visaSponsorship))} value={form.visaSponsorship} onChange={(event) => updateForm("visaSponsorship", event.target.value)}>
+                      <option value="">Select an option</option>
+                      <option>No</option>
+                      <option>Yes</option>
+                      <option>Unsure</option>
+                    </select>
+                    <FieldError message={errors.visaSponsorship} />
+                  </div>
+
+                  {submitError ? (
+                    <p className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-medium text-red-700">{submitError}</p>
+                  ) : null}
+
                   <button
-                    type="button"
-                    className="text-sm font-semibold text-amber-700 hover:text-amber-600"
-                    onClick={() => setEducation((current) => [...current, { ...emptyEducation }])}
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-amber-600 px-8 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    + Add another
+                    {submitting ? "Submitting..." : "Submit application"}
                   </button>
-                </div>
-
-                <div className="border-t border-gray-200 pt-6" />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <Label required>Full Legal Name</Label>
-                    <input className={inputClasses(Boolean(errors.fullLegalName))} value={form.fullLegalName} onChange={(event) => updateForm("fullLegalName", event.target.value)} />
-                    <FieldError message={errors.fullLegalName} />
-                  </div>
-                  <div>
-                    <Label required>Your Location</Label>
-                    <input className={inputClasses(Boolean(errors.legalLocation))} value={form.legalLocation} onChange={(event) => updateForm("legalLocation", event.target.value)} />
-                    <FieldError message={errors.legalLocation} />
-                  </div>
-                  <div>
-                    <Label>Website</Label>
-                    <input className={inputClasses()} value={form.website} onChange={(event) => updateForm("website", event.target.value)} />
-                  </div>
-                  <div>
-                    <Label>LinkedIn Profile</Label>
-                    <input className={inputClasses()} value={form.linkedin} onChange={(event) => updateForm("linkedin", event.target.value)} />
-                  </div>
-                  <div>
-                    <Label>X Profile</Label>
-                    <input className={inputClasses()} value={form.xProfile} onChange={(event) => updateForm("xProfile", event.target.value)} />
-                  </div>
-                </div>
-
-                <div>
-                  <Label required>What makes you the ideal candidate for this role?</Label>
-                  <textarea className={textareaClasses(Boolean(errors.idealCandidateAnswer))} value={form.idealCandidateAnswer} onChange={(event) => updateForm("idealCandidateAnswer", event.target.value)} />
-                  <FieldError message={errors.idealCandidateAnswer} />
-                </div>
-
-                <div>
-                  <Label required>What exceptional work have you done?</Label>
-                  <textarea className={textareaClasses(Boolean(errors.proudWorkAnswer))} value={form.proudWorkAnswer} onChange={(event) => updateForm("proudWorkAnswer", event.target.value)} />
-                  <p className="mt-1 text-sm text-gray-500">In 100 words or less.</p>
-                  <FieldError message={errors.proudWorkAnswer} />
-                </div>
-
-                <div>
-                  <Label required>Visa sponsorship required?</Label>
-                  <select className={inputClasses(Boolean(errors.visaSponsorship))} value={form.visaSponsorship} onChange={(event) => updateForm("visaSponsorship", event.target.value)}>
-                    <option value="">Select an option</option>
-                    <option>No</option>
-                    <option>Yes</option>
-                    <option>Unsure</option>
-                  </select>
-                  <FieldError message={errors.visaSponsorship} />
-                </div>
-
-                {submitError ? (
-                  <p className="rounded-lg border border-red-200 bg-white px-4 py-3 text-sm font-medium text-red-700">{submitError}</p>
-                ) : null}
-
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="inline-flex h-12 w-full items-center justify-center rounded-lg bg-amber-600 px-8 text-sm font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {submitting ? "Submitting..." : "Submit application"}
-                </button>
-              </form>
-            )}
-          </section>
+                </form>
+              )}
+            </section>
+          ) : null}
         </div>
       </div>
     </div>
