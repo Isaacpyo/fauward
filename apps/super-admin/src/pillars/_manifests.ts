@@ -37,7 +37,7 @@ import type { Permission } from "@fauward/internal-rbac";
 
 export type PillarId = "platform" | "revenue" | "customer" | "trust" | "gtm";
 
-export type BadgeKey = "tenant-count" | "dlq-depth" | "mrr" | "active-tenants" | "shipments-today" | "placeholder";
+export type BadgeKey = "tenant-count" | "dlq-depth" | "mrr" | "placeholder";
 
 /** live = meets the definition of done (architecture §12); preview = planned, not finished; deferred = not planned. */
 export type ServiceStatus = "live" | "preview" | "deferred";

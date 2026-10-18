@@ -28,8 +28,7 @@ apps/
 ├── tenant-portal/    React/Vite — tenant ops portal
 ├── agents/           React/Vite PWA — field agent mobile app
 ├── fauward-Go/       Field logistics app
-├── super-admin/      React/Vite — Fauward internal admin
-└── admin/            Admin app
+└── super-admin/      React/Vite — Fauward internal admin
 
 packages/
 ├── brand/            brand.css — design tokens

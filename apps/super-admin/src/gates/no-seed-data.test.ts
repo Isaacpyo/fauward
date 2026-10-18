@@ -3,11 +3,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 // ACC-TEN-10 gate: console service pages show API data only — no generated tenant ids (t_1, t_2…), seed arrays or
-// bulk-generated rows. Mock-only legacy components under components/admin are deleted in WP-1.6 and listed until then.
+// bulk-generated rows. The mock-only legacy components under components/admin were deleted in WP-1.6.
 
 const ROOT = path.resolve(__dirname, "..");
-const SCANNED = ["pillars", "shell", "components/service-kit"];
-const LEGACY_UNTIL_WP_1_6 = new Set(["components/admin/QueueMessageViewer.tsx"]);
+const SCANNED = ["pillars", "shell", "components"];
 const PATTERNS: Array<[RegExp, string]> = [
   [/["'`]t_\d+/, "generated tenant id (t_N)"],
   [/\b\w*[sS]eeds?\b[^=\n]*=\s*(\[|Array\.from)/, "seed array"],
@@ -27,10 +26,10 @@ export function findSeedData(source: string) {
 }
 
 describe("no seed data in console pages (ACC-TEN-10)", () => {
-  it("ACC-TEN-10 pillars, shell and the service kit contain no t_N ids, seed arrays or generated rows", () => {
+  it("ACC-TEN-10 pillars, shell and components contain no t_N ids, seed arrays or generated rows", () => {
     const offenders = SCANNED.flatMap((dir) => files(path.join(ROOT, dir)))
       .map((file) => [path.relative(ROOT, file).replaceAll("\\", "/"), findSeedData(fs.readFileSync(file, "utf8"))] as const)
-      .filter(([file, found]) => found.length > 0 && !LEGACY_UNTIL_WP_1_6.has(file))
+      .filter(([, found]) => found.length > 0)
       .map(([file, found]) => `${file}: ${found.join(", ")}`);
     expect(offenders).toEqual([]);
   });

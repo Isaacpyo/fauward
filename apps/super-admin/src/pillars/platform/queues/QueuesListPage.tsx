@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { QueueMessageViewer } from "@/components/admin/QueueMessageViewer";
 import { QueueTable } from "@/components/admin/QueueTable";
 import type { QueueRow } from "@/components/admin/QueueTable";
+import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { consoleApi as api } from "@/lib/console-api";
 
 type QueueStatsResponse = {
@@ -22,8 +22,6 @@ async function fetchQueues() {
 }
 
 export function QueuesListPage() {
-  const [selectedQueue, setSelectedQueue] = useState<string | undefined>(undefined);
-
   const query = useQuery({
     queryKey: ["admin-queues"],
     queryFn: fetchQueues,
@@ -44,8 +42,10 @@ export function QueuesListPage() {
   return (
     <div className="space-y-3">
       <h1 className="text-lg font-semibold text-[var(--color-text-primary)]">Queue Monitoring</h1>
-      <QueueTable rows={queueRows} onSelectQueue={setSelectedQueue} />
-      <QueueMessageViewer queueName={selectedQueue} />
+      <QueueTable rows={queueRows} />
+      <DegradedBanner variant="not-wired" fixedBy="WP-3.6">
+        Inspecting individual jobs (failed, waiting, delayed) needs the queue jobs endpoint, which arrives with queue operations in Phase 3.
+      </DegradedBanner>
     </div>
   );
 }

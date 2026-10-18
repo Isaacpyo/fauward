@@ -2,9 +2,7 @@ import { consoleApi as api } from "@/lib/console-api";
 import type { BadgeKey } from "@/pillars/_manifests";
 
 type TenantsResponse = {
-  meta?: {
-    total?: number;
-  };
+  total: number;
 };
 
 type QueuesResponse = {
@@ -25,7 +23,7 @@ export type BadgeResult = {
 
 export async function fetchTenantCountBadge(): Promise<BadgeResult> {
   const response = await api.get<TenantsResponse>("/tenants?limit=1");
-  return { label: String(response.data.meta?.total ?? 0), tone: "green" };
+  return { label: String(response.data.total), tone: "green" };
 }
 
 export async function fetchDlqDepthBadge(): Promise<BadgeResult> {

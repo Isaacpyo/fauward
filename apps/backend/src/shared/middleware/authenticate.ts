@@ -201,7 +201,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
 
     const isMfaRoute = path.startsWith('/api/v1/auth/mfa/');
-    const requiresMfa = role === 'SUPER_ADMIN' || path.startsWith('/api/v1/admin/');
+    // Tenant-JWT SUPER_ADMIN still reaches control-tower/tracking until WP-2.11 moves them to console auth.
+    const requiresMfa = role === 'SUPER_ADMIN';
     if (!isMfaRoute && requiresMfa && request.user?.mfaVerified !== true) {
       return reply.status(403).send({ error: 'MFA required', code: 'MFA_REQUIRED' });
     }

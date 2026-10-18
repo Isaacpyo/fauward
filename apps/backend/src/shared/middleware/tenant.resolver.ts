@@ -189,7 +189,7 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return systemContext();
   }
 
-  if (path.startsWith('/api/v1/platform') || path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/relay') || path.startsWith('/api/internal/')) {
+  if (path.startsWith('/api/v1/platform') || path.startsWith('/api/v1/relay') || path.startsWith('/api/internal/')) {
     return systemContext();
   }
 

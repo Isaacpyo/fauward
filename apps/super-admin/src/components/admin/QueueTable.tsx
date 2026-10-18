@@ -9,10 +9,9 @@ export type QueueRow = {
 
 type QueueTableProps = {
   rows: QueueRow[];
-  onSelectQueue: (name: string) => void;
 };
 
-export function QueueTable({ rows, onSelectQueue }: QueueTableProps) {
+export function QueueTable({ rows }: QueueTableProps) {
   return (
     <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-white">
       <table className="w-full min-w-[900px] text-xs">
@@ -28,11 +27,7 @@ export function QueueTable({ rows, onSelectQueue }: QueueTableProps) {
         <tbody>
           {rows.map((row) => (
             <tr key={row.name} className={row.dlqDepth > 0 ? "bg-red-50" : ""}>
-              <td className="px-3 py-2 font-mono">
-                <button type="button" className="underline" onClick={() => onSelectQueue(row.name)}>
-                  {row.name}
-                </button>
-              </td>
+              <td className="px-3 py-2 font-mono">{row.name}</td>
               <td className="px-3 py-2">{row.depth}</td>
               <td className="px-3 py-2">{row.processingRate}</td>
               <td className="px-3 py-2">{row.dlqDepth}</td>

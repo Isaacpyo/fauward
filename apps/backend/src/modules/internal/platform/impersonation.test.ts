@@ -331,20 +331,6 @@ describe('tenant audit attribution (D8)', () => {
   });
 });
 
-describe('legacy admin impersonation (S7)', () => {
-  it('ACC-IMP-5 the legacy /api/v1/admin impersonation route returns 410', async () => {
-    const app = Fastify();
-    openApps.push(app);
-    app.decorate('prisma', {} as never);
-    app.decorate('redis', {} as never);
-    const { registerSuperAdminRoutes } = await import('../../super-admin/super-admin.routes.js');
-    await registerSuperAdminRoutes(app);
-    const response = await app.inject({ method: 'POST', url: '/api/v1/admin/tenants/tenant_1/impersonate' });
-    expect(response.statusCode).toBe(410);
-    expect(response.json()).toMatchObject({ error: 'GONE' });
-  });
-});
-
 describe('platform.impersonation-expiry-sweep', () => {
   it('closes expired sessions with endedReason EXPIRED', async () => {
     const { sweepExpiredImpersonationSessions } = await import('../../../jobs/impersonation-expiry-sweep.js');
