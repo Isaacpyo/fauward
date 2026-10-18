@@ -4,6 +4,8 @@ import { authenticatePlatformSession } from '../../../middleware/authenticate-pl
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { mrrForSubscription } from '../../../services/revenue/mrr.service.js';
 import { resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
+import { loadConsoleContext } from '../../../middleware/require-console-permission.js';
+import { activityListQuery, listActivity } from '../shell/activity.routes.js';
 
 // customer.360 (WP-1.8): one endpoint per tab, each with its own permission, so a failing or forbidden tab never takes
 // the others down. Every query names the tenant (console requests run in system context, architecture §7). Counts are
@@ -218,5 +220,15 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
     return reply.send({ internalNotes: tenant.internalNotes ?? '', editPath: `/api/internal/tenants/${tenant.id}/internal-notes` });
+  });
+
+  // Activity tab (WP-2.1): this tenant's PlatformActivity, limited to the services the caller can read (D7).
+  app.get('/api/internal/customer360/:tenantId/activity', pre('customer.360.read'), async (request, reply) => {
+    const tenant = await tenantOr404(app, request, reply);
+    if (!tenant) return;
+    const parsed = activityListQuery.omit({ tenantId: true }).safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const context = await loadConsoleContext(request);
+    return reply.send(await listActivity(app, context, { ...parsed.data, tenantId: tenant.id }));
   });
 }

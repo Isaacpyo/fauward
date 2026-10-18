@@ -39,6 +39,14 @@ const config = {
   legacyWebhook: null
 };
 
+const activity = {
+  data: [
+    { id: "act_2", occurredAt: "2026-10-18T09:00:00.000Z", tenantId: "tenant_1", tenant: { id: "tenant_1", name: "Northwind Couriers", slug: "northwind" }, service: "customer.360", type: "shipment.attention", actorType: "TENANT_USER", actorId: null, actorLabel: "Field operator", subjectType: "shipment", subjectId: "ship_1", summary: "Shipment NWD-1 moved to exception", severity: "ATTENTION", consoleLink: null, metadata: {} },
+    { id: "act_1", occurredAt: "2026-10-17T09:00:00.000Z", tenantId: "tenant_1", tenant: { id: "tenant_1", name: "Northwind Couriers", slug: "northwind" }, service: "platform.tenants", type: "tenant.unsuspended", actorType: "STAFF", actorId: "staff_001", actorLabel: "Staff User", subjectType: "tenant", subjectId: "tenant_1", summary: "Suspension lifted", severity: "INFO", consoleLink: "/platform/tenants/tenant_1", metadata: {} }
+  ],
+  nextCursor: null
+};
+
 async function mock360(page: Page, options: { permissions?: string[]; failing?: string[] } = {}) {
   await page.route("**/api/internal/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
@@ -49,6 +57,7 @@ async function mock360(page: Page, options: { permissions?: string[]; failing?: 
     if (tab === "billing") return json(route, 200, billing);
     if (tab === "health") return json(route, 200, { latest: null, history: [] });
     if (tab === "config") return json(route, 200, config);
+    if (tab === "activity") return json(route, 200, activity);
     return json(route, 200, { data: [] });
   });
 }
@@ -95,4 +104,16 @@ test("ACC-C360-6 config is structured and shows secrets only as configured or no
   await expect(configView).toContainText("configured (hidden)");
   await expect(configView).toContainText("fw_live_ab12");
   await expect(configView).not.toContainText("{");
+});
+
+test("WP-2.1 the Activity tab lists the tenant's platform activity from the activity API", async ({ page }) => {
+  await mock360(page);
+  const request = page.waitForRequest((req) => new URL(req.url()).pathname === "/api/internal/customer360/tenant_1/activity");
+  await page.goto("/customer/360/tenant_1?tab=activity");
+  await request;
+  const rows = page.getByTestId("c360-activity-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText("Shipment NWD-1 moved to exception");
+  await expect(rows.first()).toContainText("ATTENTION");
+  await expect(page.getByRole("link", { name: "Suspension lifted" })).toHaveAttribute("href", "/platform/tenants/tenant_1");
 });

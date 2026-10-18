@@ -448,6 +448,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId,
             aggregateType: 'shipment',
             aggregateId: created.id,
             eventType: 'shipment.created',
@@ -859,6 +860,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId,
             aggregateType: 'shipment',
             aggregateId: shipment.id,
             eventType: 'shipment.status.updated',

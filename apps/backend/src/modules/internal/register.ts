@@ -6,6 +6,7 @@ import { registerInternalBillingRoutes } from './billing.routes.js';
 import { registerCustomer360Routes } from './customer/customer360.routes.js';
 import { registerInternalConsolePhaseRoutes } from './console-phases.routes.js';
 import { registerStaffNotificationRoutes } from './shell/notifications.routes.js';
+import { registerConsoleActivityRoutes } from './shell/activity.routes.js';
 import { registerConsoleMetricsRoutes } from './shell/metrics.routes.js';
 import { registerConsoleSearchRoutes } from './shell/search.routes.js';
 import { registerConsoleTenantRoutes } from './platform/tenants.routes.js';
@@ -34,5 +35,6 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerCustomer360Routes(app);
   await registerInternalConsolePhaseRoutes(app);
   await registerStaffNotificationRoutes(app);
+  await registerConsoleActivityRoutes(app);
   await registerMonitoringRoutes(app);
 }

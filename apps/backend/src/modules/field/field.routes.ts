@@ -266,6 +266,7 @@ async function publishFieldEvent(
 ) {
   await app.prisma.outboxEvent.create({
     data: {
+      tenantId: typeof input.payload.tenantId === 'string' ? input.payload.tenantId : null,
       aggregateType: 'FIELD_MUTATION',
       aggregateId: input.aggregateId,
       eventType: input.eventType,

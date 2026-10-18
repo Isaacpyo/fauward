@@ -44,7 +44,11 @@ const SESSION_ONLY_ROUTES = new Set([
   'POST /api/internal/notifications/staff/read-all',
   'POST /api/internal/notifications/staff/:id/read',
   'GET /api/internal/metrics/overview',
-  'GET /api/internal/search'
+  'GET /api/internal/search',
+  // D7 activity feed (WP-2.1): rows filtered by the caller's service read permissions (C60)
+  'GET /api/internal/activity',
+  'GET /api/internal/activity/summary',
+  'GET /api/internal/activity/stream'
 ]);
 /** Machine routes for the status dashboard / Python services, guarded by MONITORING_API_KEY (S8). */
 const MACHINE_ROUTES = new Set([

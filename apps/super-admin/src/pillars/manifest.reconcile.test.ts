@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { matchRoutes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { SERVICE_READ_PERMISSIONS } from "@fauward/internal-rbac";
 
 import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
@@ -105,6 +106,11 @@ describe("manifest reconciliation (D1)", () => {
       expect(routeByPath.get(service.route)?.element.type).toBe(ComingSoonRoute);
       expect(navigableServices(service.pillar).map((item) => item.id)).toContain(service.id);
     }
+  });
+
+  it("every service's requiredPermission matches the backend's activity visibility map (WP-2.1)", () => {
+    const manifest = Object.fromEntries(SERVICES.map((service) => [service.key, service.requiredPermission]));
+    expect(manifest).toEqual(SERVICE_READ_PERMISSIONS);
   });
 
   it("findServiceForPath maps concrete paths to their owning service", () => {

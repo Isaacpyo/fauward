@@ -211,6 +211,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId,
             aggregateType: 'shipment',
             aggregateId: shipment.id,
             eventType: 'shipment.status.updated',

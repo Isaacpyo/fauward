@@ -7,6 +7,7 @@ import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPa
 import { MoneyCell } from "@/components/service-kit/MoneyCell";
 import { consoleApi } from "@/lib/console-api";
 import { toConsoleApiError } from "@/lib/console-api-error";
+import { severityTone, useActivityFeed } from "@/lib/activity";
 import { C360_KEY, useC360 } from "./api";
 
 const card = "rounded-lg border border-[var(--color-border)] bg-white p-4";
@@ -423,10 +424,53 @@ export function NotesTab({ tenantId }: { tenantId: string }) {
   );
 }
 
-export function ActivityTab() {
+export function ActivityTab({ tenantId }: { tenantId: string }) {
+  const feed = useActivityFeed(`/customer360/${encodeURIComponent(tenantId)}/activity`);
+  if (feed.isLoading) return <p className="text-sm text-[var(--color-text-muted)]">Loading activity…</p>;
+  if (feed.isError) return <ConsoleApiErrorPanel error={feed.error} onRetry={() => void feed.refetch()} title="Unable to load activity" />;
+  const rows = feed.data?.pages.flatMap((page) => page.data) ?? [];
   return (
-    <p className={card} data-testid="c360-activity-pending">
-      The tenant&apos;s activity feed arrives with the platform activity API (WP-2.1). Until then, the Audit tab lists what the tenant and Fauward staff did.
-    </p>
+    <section className={card} data-testid="c360-activity">
+      {rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-text-muted)]">No activity recorded for this tenant in the services you can read.</p>
+      ) : (
+        <ul className="divide-y divide-[var(--color-border)]">
+          {rows.map((row) => (
+            <li key={row.id} className="flex items-start justify-between gap-3 py-2 text-sm" data-testid="c360-activity-row">
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {row.consoleLink ? (
+                    <Link to={row.consoleLink} className="hover:underline">
+                      {row.summary}
+                    </Link>
+                  ) : (
+                    row.summary
+                  )}
+                </p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  {row.actorLabel} · {row.service} · {row.type}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${severityTone[row.severity]}`}>{row.severity}</span>
+                <time className="text-xs text-[var(--color-text-muted)]" dateTime={row.occurredAt}>
+                  {when(row.occurredAt)}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {feed.hasNextPage ? (
+        <button
+          type="button"
+          onClick={() => void feed.fetchNextPage()}
+          disabled={feed.isFetchingNextPage}
+          className="mt-2 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+        >
+          {feed.isFetchingNextPage ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
+    </section>
   );
 }

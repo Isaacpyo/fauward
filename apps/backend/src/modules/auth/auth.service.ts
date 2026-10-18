@@ -240,18 +240,21 @@ export const authService = {
       await tx.outboxEvent.createMany({
         data: [
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.created',
             payload: { tenantId: tenant.id, slug: tenant.slug }
           },
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.verification_email.requested',
             payload: { tenantId: tenant.id, userId: user.id, email: user.email }
           },
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.subdomain.provision.requested',
