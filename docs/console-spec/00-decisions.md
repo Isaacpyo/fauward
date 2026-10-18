@@ -25,6 +25,9 @@ The re-audit's line references were spot-checked and hold. These findings differ
 | C13 | Architecture §9.1: env vars documented in `apps/backend/.env.example` | The repo has one `.env.example` at the root | New variables are documented in the root `.env.example` |
 | C14 | §2.6 backfill is the only plaintext path | Verify also accepts a legacy plaintext secret once and re-encrypts it on success, so a deploy before the backfill does not lock staff out | Backfill still required; verify path is belt-and-braces |
 | C15 | WP-0.1 rate limit 5/min per session on verify | `@fastify/rate-limit` keys before the session is authenticated | Key = session id from the (verified) access cookie, falling back to client IP |
+| C16 | WP-0.1/§2.5: `MfaStepUpModal` mounted in `ShellLayout` | `/admin/regions` (exit-criterion golden path) renders under the legacy `AdminLayout`, not `ShellLayout` | The modal is mounted once in `SuperAdminGuard`, the parent of both layouts |
+| C17 | WP-0.2: pages render `ConsoleApiError` when a query fails | react-query's default 3 retries with back-off kept 4xx failures in "loading" for ~7 s | Console `queryClient` retries only network/5xx errors (twice); 4xx render immediately |
+| C18 | WP-0.2: tests for the client | `apps/super-admin` had no unit-test runner | Added vitest + jsdom + Testing Library (`npm run test` in the workspace) |
 
 Add a row here whenever implementation finds the spec or audit wrong.
 

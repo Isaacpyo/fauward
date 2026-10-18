@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import { platformApi as api } from "@/lib/console-api";
 import type { BadgeKey } from "@/pillars/_manifests";
 
 type TenantsResponse = {

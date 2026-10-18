@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useOutletContext } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
-import { api } from "@/lib/api";
-import { internalApi } from "@/lib/internal-api";
+import { consoleApi as internalApi, platformApi as api } from "@/lib/console-api";
 import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
 import { PillarSidebar } from "@/shell/PillarSidebar";
 import { TopBar } from "@/shell/TopBar";

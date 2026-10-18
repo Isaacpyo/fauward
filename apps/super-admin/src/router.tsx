@@ -1,16 +1,16 @@
 import { Activity, BarChart3, Building2, ClipboardList, Gauge, Globe2, Inbox, ListChecks, LogOut, Logs, UserCog, Wallet } from "lucide-react";
-import { FormEvent, type ReactNode, useEffect, useState } from "react";
+import { type ReactNode } from "react";
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+
+import { LoginPage } from "@/auth/LoginPage";
+import { SuperAdminGuard } from "@/auth/SuperAdminGuard";
 
 import { RegionsPage } from "@/pages/admin/RegionsPage";
 import { StatusPage } from "@/pages/StatusPage";
 import { RelayPage } from "@/pages/admin/RelayPage";
 import { SupportAuditPage } from "@/pages/admin/SupportAuditPage";
 import { RelayNotificationCenter } from "@/components/admin/RelayNotificationCenter";
-import { api } from "@/lib/api";
-import { hasPlatformSessionHint } from "@/lib/auth";
-import { internalApi } from "@/lib/internal-api";
-import { buildPermissionContext, type PlatformSessionUser } from "@/lib/platform-session";
+import { consoleApi } from "@/lib/console-api";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
@@ -43,7 +43,7 @@ import { UserDetailPage } from "@/pillars/trust/iam/UserDetailPage";
 import { UsersListPage } from "@/pillars/trust/iam/UsersListPage";
 import { PillarDashboard } from "@/shell/PillarDashboard";
 import { ShellLayout } from "@/shell/ShellLayout";
-import { PermissionProvider, type Permission } from "@fauward/internal-rbac";
+import { type Permission } from "@fauward/internal-rbac";
 import { JITGate } from "@fauward/internal-ui";
 
 const navItems = [
@@ -60,188 +60,12 @@ const navItems = [
   { to: "/status", label: "Status", icon: Activity },
 ];
 
-const SUCCESSFUL_LOGIN_DELAY_MS = 1200;
-
-function wait(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function SuperAdminGuard() {
-  const location = useLocation();
-  const [status, setStatus] = useState<"loading" | "ok" | "denied">(
-    hasPlatformSessionHint() ? "loading" : "denied"
-  );
-  const [user, setUser] = useState<PlatformSessionUser | null>(null);
-
-  useEffect(() => {
-    if (!hasPlatformSessionHint()) {
-      setStatus("denied");
-      return;
-    }
-    api
-      .get("/auth/me")
-      .then(({ data }) => {
-        if (!Array.isArray(data?.user?.permissions)) {
-          setStatus("denied");
-          return;
-        }
-
-        setUser({
-          id: String(data.user.id),
-          email: String(data.user.email),
-          name: typeof data.user.name === "string" ? data.user.name : null,
-          role: typeof data.user.role === "string" ? data.user.role : null,
-          permissions: data.user.permissions.map(String)
-        });
-        setStatus("ok");
-      })
-      .catch(() => setStatus("denied"));
-  }, []);
-
-  if (status === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center gap-3 bg-[var(--color-surface-50)]">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
-        <p className="text-sm text-[var(--color-text-muted)]">Verifying session…</p>
-      </div>
-    );
-  }
-
-  if (status === "denied") {
-    return <Navigate to="/login" replace state={{ from: location }} />;
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  const permissionContext = buildPermissionContext(user);
-
-  return (
-    <PermissionProvider roles={permissionContext.roles} permissions={permissionContext.permissions}>
-      <Outlet context={{ user }} />
-    </PermissionProvider>
-  );
-}
-
-function LoginPage() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const { data } = await api.post("/auth/login", {
-        email: email.trim().toLowerCase(),
-        password,
-      });
-      // Reject tokens without platform permissions immediately; never grant UI access.
-      if (!Array.isArray(data.user?.permissions)) {
-        setError("Access denied - platform console permission required");
-        return;
-      }
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? "/";
-      setRedirecting(true);
-      await wait(SUCCESSFUL_LOGIN_DELAY_MS);
-      navigate(from, { replace: true });
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      setError(axiosErr.response?.data?.error ?? "Invalid credentials");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-surface-50)]">
-      {loading || redirecting ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
-          <div className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-white px-4 py-3 shadow-sm">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
-            <span className="text-sm font-medium text-[var(--color-text-primary)]">Signing in...</span>
-          </div>
-        </div>
-      ) : null}
-      <div className="w-full max-w-sm px-4">
-        <div className="rounded-xl border border-[var(--color-border)] bg-white p-8 shadow-sm">
-          <div className="mb-6 flex items-center gap-2.5">
-            <img src="/brand/logo-mark.png" alt="Fauward logo" className="h-10 w-10 shrink-0 object-contain" />
-            <div>
-              <p className="text-sm font-bold text-[var(--fauward-navy)]">Fauward</p>
-              <p className="text-xs text-[var(--color-text-muted)]">Super Admin</p>
-            </div>
-          </div>
-
-          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Sign in</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Internal access only.</p>
-
-          <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-[var(--color-text-primary)]" htmlFor="sa-email">
-                Email
-              </label>
-              <input
-                id="sa-email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
-                placeholder="platform-admin@example.com"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-[var(--color-text-primary)]" htmlFor="sa-password">
-                Password
-              </label>
-              <input
-                id="sa-password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full rounded-md border border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] focus:ring-1 focus:ring-[var(--fauward-navy)]"
-                placeholder="••••••••"
-              />
-            </div>
-            {error ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-            ) : null}
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[var(--fauward-navy)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
-          <p className="mt-5 text-center text-xs text-[var(--color-text-muted)]">
-            Need help?{" "}
-            <a href="mailto:support@fauward.com" className="font-semibold text-[var(--fauward-navy)] hover:underline">
-              Contact support
-            </a>
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function SignOutButton() {
   const navigate = useNavigate();
 
   async function handleSignOut() {
     try {
-      await api.post("/auth/logout");
+      await consoleApi.post("/auth/logout");
     } catch {
       // Best-effort
     } finally {
@@ -339,100 +163,6 @@ function AdminLayout() {
   );
 }
 
-type NotificationLog = {
-  id: string;
-  tenantId: string;
-  channel: string;
-  event: string;
-  status: string;
-  error?: string | null;
-  createdAt: string;
-};
-
-function LogsPanel({ onClose }: { onClose: () => void }) {
-  const [logs, setLogs] = useState<NotificationLog[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api
-      .get<{ logs: NotificationLog[] }>("/logs")
-      .then((r) => setLogs(r.data.logs ?? []))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const statusColour: Record<string, string> = {
-    SENT: "text-green-600",
-    QUEUED: "text-amber-600",
-    FAILED: "text-red-600",
-  };
-
-  return (
-    <>
-      {/* backdrop */}
-      <div
-        className="fixed inset-0 z-40 bg-black/20 backdrop-blur-[1px]"
-        onClick={onClose}
-      />
-      {/* panel */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-[480px] flex-col border-l border-[var(--color-border)] bg-white shadow-2xl">
-        {/* header */}
-        <div className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] px-4">
-          <div className="flex items-center gap-2">
-            <Logs size={16} className="text-[var(--color-text-muted)]" />
-            <span className="text-sm font-semibold text-[var(--color-text-primary)]">Notification Logs</span>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-50)] hover:text-[var(--color-text-primary)]"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* body */}
-        <div className="flex-1 overflow-y-auto">
-          {loading ? (
-            <div className="flex h-32 items-center justify-center">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-200 border-t-[var(--fauward-navy)]" />
-            </div>
-          ) : logs.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No logs found.</p>
-          ) : (
-            <ul className="divide-y divide-[var(--color-border)]">
-              {logs.map((log) => (
-                <li key={log.id} className="px-4 py-3 hover:bg-[var(--color-surface-50)]">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate font-mono text-xs font-semibold text-[var(--color-text-primary)]">
-                        {log.event}
-                      </p>
-                      <p className="mt-0.5 font-mono text-[11px] text-[var(--color-text-muted)]">
-                        {log.channel} · {log.tenantId.slice(0, 8)}…
-                      </p>
-                      {log.error ? (
-                        <p className="mt-1 truncate font-mono text-[11px] text-red-600">{log.error}</p>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className={`font-mono text-[11px] font-semibold ${statusColour[log.status] ?? "text-[var(--color-text-muted)]"}`}>
-                        {log.status}
-                      </span>
-                      <p className="mt-0.5 font-mono text-[10px] text-[var(--color-text-muted)]">
-                        {new Date(log.createdAt).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function LogsPage() {
   return null;
 }
@@ -447,7 +177,7 @@ function ForbiddenRoute() {
 }
 
 async function requestJitAccess(permission: Permission, reason: string) {
-  await internalApi.post("/jit/requests", { permission, reason, durationMinutes: 60 });
+  await consoleApi.post("/jit/requests", { permission, reason, durationMinutes: 60 });
 }
 
 function PermissionRoute({ permission, children }: { permission: Permission; children: ReactNode }) {

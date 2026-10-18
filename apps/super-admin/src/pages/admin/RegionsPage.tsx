@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock3, Globe2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { api } from "@/lib/api";
+import { platformApi as api } from "@/lib/console-api";
 
 type RegionChangeStatus = "PENDING" | "APPROVED" | "REJECTED";
 

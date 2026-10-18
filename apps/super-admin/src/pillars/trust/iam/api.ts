@@ -1,4 +1,4 @@
-import { internalApi } from "@/lib/internal-api";
+import { consoleApi as internalApi } from "@/lib/console-api";
 
 export type StaffStatus = "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
 
@@ -97,6 +97,6 @@ export async function fetchPermissionInventory() {
 
 // Enrolment is self-service at login; admins can only reset another person's MFA (dangerous: fresh MFA + reason).
 export async function resetStaffMfa(id: string, reason: string) {
-  const response = await internalApi.post<{ id: string; mfaEnabled: false; sessionsRevokedAt: string }>(`/iam/users/${id}/mfa/reset`, { reason });
+  const response = await internalApi.post<{ id: string; mfaEnabled: false; sessionsRevokedAt: string }>(`/iam/users/${id}/mfa/reset`, { reason }, { idempotent: true });
   return response.data;
 }

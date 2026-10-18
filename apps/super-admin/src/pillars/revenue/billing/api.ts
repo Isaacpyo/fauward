@@ -1,4 +1,4 @@
-import { internalApi } from "@/lib/internal-api";
+import { consoleApi as internalApi } from "@/lib/console-api";
 
 export type Invoice = {
   id: string;
