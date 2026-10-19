@@ -17,6 +17,7 @@ import { TenantCloseError, closeTenant } from '../../../services/tenant-close.se
 import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.js';
 import { REGIONS } from '../../../config/regions.js';
 import { RegionChangeError, decideRegionChange, presentRegionRequest } from '../../../services/region-change.service.js';
+import { aiLimitBody, presentAiLimit, setTenantAiLimit } from '../../../services/ai-limit.service.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
 
@@ -186,6 +187,17 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     });
     await invalidateTenantEntitlements(app.redis, id);
     return reply.send({ limits: after });
+  });
+
+  // L16 (WP-2.10): staff set the tenant's AI budget/request limits; the gateway enforces them on the next run.
+  app.put('/api/internal/tenants/:id/ai-limit', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = aiLimitBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const limit = await setTenantAiLimit(app, request, tenant, parsed.data);
+    return reply.send({ limit: presentAiLimit(limit) });
   });
 
   app.patch(

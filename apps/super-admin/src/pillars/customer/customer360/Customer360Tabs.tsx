@@ -5,10 +5,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { MoneyCell } from "@/components/service-kit/MoneyCell";
+import { ActionDialog } from "@/components/service-kit/ActionDialog";
+import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { consoleApi } from "@/lib/console-api";
 import { toConsoleApiError } from "@/lib/console-api-error";
 import { severityTone, useActivityFeed } from "@/lib/activity";
-import { C360_KEY, useC360 } from "./api";
+import { C360_KEY, useC360, type C360Ai } from "./api";
 
 const card = "rounded-lg border border-[var(--color-border)] bg-white p-4";
 const th = "py-1 text-left text-xs font-semibold text-[var(--color-text-muted)]";
@@ -242,26 +244,128 @@ export function HealthTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+function limitInput(value: number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/** L16 (WP-2.10): staff set the tenant's AI budget/request limits; dangerous (reason + fresh MFA); tenant admins are told. */
+function AiLimitDialog({ tenantId, data, open, onClose }: { tenantId: string; data: C360Ai; open: boolean; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [budget, setBudget] = useState("");
+  const [flash, setFlash] = useState("");
+  const [pro, setPro] = useState("");
+  const [features, setFeatures] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    setBudget(data.limit?.monthlyBudgetUsd ?? "");
+    setFlash(limitInput(data.limit?.flashRequestLimit));
+    setPro(limitInput(data.limit?.proRequestLimit));
+    setFeatures(data.limit?.featuresEnabled ?? []);
+  }, [open, data.limit]);
+  const toLimit = (value: string) => (value.trim() === "" ? null : Number(value.trim()));
+  return (
+    <ActionDialog
+      open={open}
+      dangerous
+      title="Set AI limit"
+      description={`This month: ${data.currentMonth.costUsd} USD over ${data.currentMonth.requests} requests. The gateway refuses runs once a limit is reached; the tenant's admins are told.`}
+      confirmLabel="Save AI limit"
+      validate={() => {
+        if (budget.trim() !== "" && !/^\d{1,10}(\.\d{1,2})?$/.test(budget.trim())) return "Budget must be a USD amount with up to 2 decimals.";
+        if ([flash, pro].some((value) => value.trim() !== "" && !/^\d+$/.test(value.trim()))) return "Request limits must be whole numbers.";
+        return null;
+      }}
+      onSubmit={async (reason) => {
+        await consoleApi.put(`/tenants/${encodeURIComponent(tenantId)}/ai-limit`, {
+          monthlyBudgetUsd: budget.trim() === "" ? null : budget.trim(),
+          flashRequestLimit: toLimit(flash),
+          proRequestLimit: toLimit(pro),
+          featuresEnabled: features,
+          reason
+        });
+        await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "ai", tenantId] });
+      }}
+      onClose={onClose}
+    >
+      <div className="grid gap-3 text-sm">
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Monthly budget in USD (empty = none)</span>
+          <input aria-label="Monthly budget (USD)" value={budget} onChange={(event) => setBudget(event.target.value)} inputMode="decimal" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Standard requests per month (empty = none)</span>
+          <input aria-label="Standard requests per month" value={flash} onChange={(event) => setFlash(event.target.value)} inputMode="numeric" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Advanced requests per month (empty = none)</span>
+          <input aria-label="Advanced requests per month" value={pro} onChange={(event) => setPro(event.target.value)} inputMode="numeric" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <fieldset>
+          <legend className="text-xs font-semibold text-[var(--color-text-muted)]">Allowed features (none selected = all)</legend>
+          <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto text-xs">
+            {data.featureKeys.map((key) => (
+              <label key={key} className="flex items-center gap-1">
+                <input type="checkbox" checked={features.includes(key)} onChange={(event) => setFeatures((previous) => (event.target.checked ? [...previous, key] : previous.filter((item) => item !== key)))} />
+                {key}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    </ActionDialog>
+  );
+}
+
 export function AiTab({ tenantId }: { tenantId: string }) {
   const ai = useC360(tenantId, "ai");
+  const [editing, setEditing] = useState(false);
   return (
     <TabQuery query={ai} label="AI usage">
       {(data) => (
         <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card} data-testid="c360-ai-limit">
+            <h2 className="text-sm font-semibold">AI limit</h2>
+            <p className="mt-1 text-sm">
+              This month ({data.currentMonth.month}): {data.currentMonth.costUsd} USD · {data.currentMonth.requests} requests
+            </p>
+            {data.limit ? (
+              <dl className="mt-2 grid grid-cols-2 gap-1 text-xs">
+                <dt className="text-[var(--color-text-muted)]">Monthly budget</dt>
+                <dd>{data.limit.monthlyBudgetUsd === null ? "None" : `${data.limit.monthlyBudgetUsd} USD`}</dd>
+                <dt className="text-[var(--color-text-muted)]">Standard requests</dt>
+                <dd>{data.limit.flashRequestLimit ?? "None"}</dd>
+                <dt className="text-[var(--color-text-muted)]">Advanced requests</dt>
+                <dd>{data.limit.proRequestLimit ?? "None"}</dd>
+                <dt className="text-[var(--color-text-muted)]">Features</dt>
+                <dd>{data.limit.featuresEnabled.length === 0 ? "All" : data.limit.featuresEnabled.join(", ")}</dd>
+                <dt className="text-[var(--color-text-muted)]">Last set</dt>
+                <dd>
+                  {when(data.limit.updatedAt)}
+                  {data.limit.reason ? ` · ${data.limit.reason}` : ""}
+                </dd>
+              </dl>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">No AI limit set for this tenant.</p>
+            )}
+            <PermissionButton permission="platform.tenants.write" onClick={() => setEditing(true)} className="mt-3 rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-semibold disabled:opacity-50">
+              Set AI limit
+            </PermissionButton>
+            <AiLimitDialog tenantId={tenantId} data={data} open={editing} onClose={() => setEditing(false)} />
+          </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">Usage by month and feature</h2>
             {data.usage.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No AI usage in the last 6 months.</p> : null}
             <ul className="mt-2 text-xs">
               {data.usage.map((row) => (
                 <li key={row.id}>
-                  {row.month} · {row.feature} · {row.model}: {row.requestCount} requests, {row.tokenCount} tokens
+                  {row.month} · {row.feature} · {row.model}: {row.requestCount} requests, {row.tokenCount} tokens, {row.costUsd.toFixed(2)} USD
                 </li>
               ))}
             </ul>
           </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">Agent runs ({data.runCount})</h2>
-            <p className="text-xs text-[var(--color-text-muted)]">{data.limit ? `Budget ${data.limit.monthlyBudgetUsd ?? "—"} USD/month` : "No AI limit set for this tenant."}</p>
+            {data.runs.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No agent runs yet.</p> : null}
             <ul className="mt-2 text-xs">
               {data.runs.map((run) => (
                 <li key={run.id}>

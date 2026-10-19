@@ -65,7 +65,7 @@ export function tenantListWhere(query: TenantListQuery, now = new Date()): Prism
   return { AND: and };
 }
 
-type DirectoryDb = Pick<PrismaClient, 'tenant' | 'tenantPlanOverride' | 'tenantHealthScore' | 'user' | 'pricingOverride' | 'customContract' | 'currencyRate'>;
+type DirectoryDb = Pick<PrismaClient, 'tenant' | 'tenantPlanOverride' | 'tenantHealthScore' | 'tenantAiUsage' | 'user' | 'pricingOverride' | 'customContract' | 'currencyRate'>;
 
 export async function listTenants(db: DirectoryDb, query: TenantListQuery, now = new Date()) {
   const where = tenantListWhere(query, now);
@@ -87,16 +87,19 @@ export async function listTenants(db: DirectoryDb, query: TenantListQuery, now =
   const page = hasMore ? rows.slice(0, query.limit) : rows;
   const ids = page.map((tenant) => tenant.id);
 
-  const [overrides, scores, staffCounts] = await Promise.all([
+  const [overrides, scores, staffCounts, aiSpend] = await Promise.all([
     db.tenantPlanOverride.findMany({ where: { tenantId: { in: ids }, ...activeOverrideWhere(now) }, orderBy: { createdAt: 'desc' }, select: { tenantId: true, plan: true } }),
     db.tenantHealthScore.findMany({ where: { tenantId: { in: ids } }, orderBy: { computedAt: 'desc' }, select: { tenantId: true, score: true, computedAt: true } }),
-    db.user.groupBy({ by: ['tenantId'], where: { tenantId: { in: ids }, isActive: true, role: { notIn: [...STAFF_ROLES_EXCLUDED] } }, _count: { _all: true } })
+    db.user.groupBy({ by: ['tenantId'], where: { tenantId: { in: ids }, isActive: true, role: { notIn: [...STAFF_ROLES_EXCLUDED] } }, _count: { _all: true } }),
+    // L16: AI spend this month per tenant (USD; metered per call by the LLM gateway).
+    db.tenantAiUsage.groupBy({ by: ['tenantId'], where: { tenantId: { in: ids }, month: monthKey(now) }, _sum: { costUsd: true } })
   ]);
   const overrideByTenant = new Map<string, string>();
   for (const row of overrides) if (!overrideByTenant.has(row.tenantId)) overrideByTenant.set(row.tenantId, row.plan);
   const scoreByTenant = new Map<string, number>();
   for (const row of scores) if (!scoreByTenant.has(row.tenantId)) scoreByTenant.set(row.tenantId, row.score);
   const staffByTenant = new Map(staffCounts.map((row) => [row.tenantId, row._count._all]));
+  const aiSpendByTenant = new Map(aiSpend.map((row) => [row.tenantId, (row._sum.costUsd ?? 0).toFixed(2)]));
 
   const data = await Promise.all(
     page.map(async (tenant) => ({
@@ -113,6 +116,7 @@ export async function listTenants(db: DirectoryDb, query: TenantListQuery, now =
       mrrContribution: await mrrForSubscription(db, tenant, tenant.subscription, { now }),
       shipmentsThisMonth: tenant._count.shipments,
       staffCount: staffByTenant.get(tenant.id) ?? 0,
+      aiSpendThisMonthUsd: aiSpendByTenant.get(tenant.id) ?? '0.00',
       healthScore: scoreByTenant.get(tenant.id) ?? null
     }))
   );

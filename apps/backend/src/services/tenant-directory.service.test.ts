@@ -28,6 +28,7 @@ function directoryDb(rows: ReturnType<typeof tenantRow>[], extra: Record<string,
     tenantPlanOverride: { findMany: vi.fn(async () => [{ tenantId: 't_a', plan: 'PRO' }]) },
     tenantHealthScore: { findMany: vi.fn(async () => [{ tenantId: 't_b', score: 64, computedAt: NOW }]) },
     user: { groupBy: vi.fn(async () => [{ tenantId: 't_a', _count: { _all: 4 } }]) },
+    tenantAiUsage: { groupBy: vi.fn(async () => [{ tenantId: 't_a', _sum: { costUsd: 4.205 } }]) },
     pricingOverride: { findMany: vi.fn(async () => []) },
     customContract: { findFirst: vi.fn(async () => null) },
     currencyRate: { findUnique: vi.fn(async () => null) },
@@ -57,11 +58,12 @@ describe('tenant directory (platform.tenants, WP-1.2)', () => {
     expect(db.tenant.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: { id: 't_b' }, skip: 1, take: 3 }));
   });
 
-  it('rows carry effective plan, staff count, health score or null, shipments this month and MRR from the plan catalogue', async () => {
+  it('rows carry effective plan, staff count, health score or null, shipments this month, AI spend this month (ACC-L16) and MRR from the plan catalogue', async () => {
     const page = await listTenants(directoryDb([tenantRow('t_a'), tenantRow('t_b', { subscription: { plan: 'PRO', billingCycle: 'ANNUAL', status: 'ACTIVE' }, plan: 'PRO' })]) as never, tenantListQuery.parse({}), NOW);
     expect(page.data[0]).toMatchObject({ id: 't_a', plan: 'STARTER', effectivePlan: 'PRO', staffCount: 4, healthScore: null, shipmentsThisMonth: 7, mrrContribution: { amount: '29.00', currency: 'GBP', source: 'plan' } });
     // PRO annual = 780 / 12
-    expect(page.data[1]).toMatchObject({ id: 't_b', staffCount: 0, healthScore: 64, mrrContribution: { amount: '65.00', currency: 'GBP' } });
+    expect(page.data[0].aiSpendThisMonthUsd).toBe('4.21');
+    expect(page.data[1]).toMatchObject({ id: 't_b', staffCount: 0, aiSpendThisMonthUsd: '0.00', healthScore: 64, mrrContribution: { amount: '65.00', currency: 'GBP' } });
   });
 
   it('ACC-TEN-2 invalid plan/status filters are rejected and plan values use enum casing', () => {

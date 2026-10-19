@@ -65,6 +65,23 @@ type CompletionClient = {
   };
 };
 
+/** A run refused for the tenant's budget or request limit (L16). Reported through the listener set at app start. */
+export type AiLimitReachedEvent = { tenantId: string; feature: string; code: 'AI_BUDGET_EXCEEDED' | 'AI_LIMIT_EXCEEDED'; model?: LLMModel };
+type AiLimitReachedListener = (event: AiLimitReachedEvent) => Promise<unknown>;
+let aiLimitReachedListener: AiLimitReachedListener | null = null;
+
+/** app.ts wires this to `reportAiLimitReached`; the gateway itself has no Fastify instance. */
+export function setAiLimitReachedListener(listener: AiLimitReachedListener | null) {
+  aiLimitReachedListener = listener;
+}
+
+/** Fire-and-forget: reporting never changes the gateway's answer. */
+export function emitAiLimitReached(event: AiLimitReachedEvent) {
+  const listener = aiLimitReachedListener;
+  if (!listener) return;
+  listener(event).catch(() => undefined);
+}
+
 function monthKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
@@ -246,13 +263,16 @@ export class LLMGatewayService {
     const usage = await this.prisma.tenantAiUsage?.findMany?.({ where: { tenantId, month } }) ?? [];
     const totalCost = usage.reduce((sum: number, row: { costUsd?: number }) => sum + Number(row.costUsd ?? 0), 0);
     if (limit.monthlyBudgetUsd !== null && limit.monthlyBudgetUsd !== undefined && totalCost >= Number(limit.monthlyBudgetUsd)) {
+      emitAiLimitReached({ tenantId, feature: task, code: 'AI_BUDGET_EXCEEDED' });
       throw httpError(402, { error: 'AI_BUDGET_EXCEEDED' });
     }
     const modelRequests = usage.filter((row: { model?: string }) => row.model === model).reduce((sum: number, row: { requestCount?: number }) => sum + Number(row.requestCount ?? 0), 0);
     if (model === 'deepseek-v4-flash' && limit.flashRequestLimit !== null && limit.flashRequestLimit !== undefined && modelRequests >= limit.flashRequestLimit) {
+      emitAiLimitReached({ tenantId, feature: task, code: 'AI_LIMIT_EXCEEDED', model });
       throw httpError(429, { error: 'AI_LIMIT_EXCEEDED', model, limit: 'flashRequestLimit' });
     }
     if (model === 'deepseek-v4-pro' && limit.proRequestLimit !== null && limit.proRequestLimit !== undefined && modelRequests >= limit.proRequestLimit) {
+      emitAiLimitReached({ tenantId, feature: task, code: 'AI_LIMIT_EXCEEDED', model });
       throw httpError(429, { error: 'AI_LIMIT_EXCEEDED', model, limit: 'proRequestLimit' });
     }
   }

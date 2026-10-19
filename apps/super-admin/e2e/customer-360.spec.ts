@@ -117,3 +117,36 @@ test("WP-2.1 the Activity tab lists the tenant's platform activity from the acti
   await expect(rows.first()).toContainText("ATTENTION");
   await expect(page.getByRole("link", { name: "Suspension lifted" })).toHaveAttribute("href", "/platform/tenants/tenant_1");
 });
+
+test("ACC-L16-1 the AI tab shows this month's spend and sets the AI limit with a reason (PUT /tenants/:id/ai-limit)", async ({ page }) => {
+  await mock360(page);
+  let limit: Record<string, unknown> | null = null;
+  const puts: unknown[] = [];
+  await page.route("**/api/internal/customer360/tenant_1/ai", (route) =>
+    json(route, 200, {
+      usage: [{ id: "u1", month: "2026-10", model: "deepseek-v4-flash", feature: "agent_ask", requestCount: 7, tokenCount: 900, costUsd: 4.2 }],
+      runs: [],
+      runCount: 0,
+      limit,
+      currentMonth: { month: "2026-10", costUsd: "4.20", requests: 7 },
+      featureKeys: ["agent_ask", "agent_sweep"]
+    })
+  );
+  await page.route("**/api/internal/tenants/tenant_1/ai-limit", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    puts.push(body);
+    limit = { monthlyBudgetUsd: body.monthlyBudgetUsd, flashRequestLimit: body.flashRequestLimit, proRequestLimit: body.proRequestLimit, featuresEnabled: body.featuresEnabled, updatedAt: "2026-10-19T08:00:00.000Z", updatedByPlatformUserId: "staff_001", reason: body.reason };
+    return json(route, 200, { limit });
+  });
+  await page.goto("/customer/360/tenant_1?tab=ai");
+  const panel = page.getByTestId("c360-ai-limit");
+  await expect(panel).toContainText("4.20 USD · 7 requests");
+  await expect(panel).toContainText("No AI limit set for this tenant.");
+  await panel.getByRole("button", { name: "Set AI limit" }).click();
+  await page.getByLabel("Monthly budget (USD)").fill("4.00");
+  await page.getByLabel(/Reason/).fill("Budget agreed with the customer");
+  await page.getByRole("button", { name: "Save AI limit" }).click();
+  await expect(panel).toContainText("4.00 USD");
+  await expect(panel).toContainText("Budget agreed with the customer");
+  expect(puts).toEqual([{ monthlyBudgetUsd: "4.00", flashRequestLimit: null, proRequestLimit: null, featuresEnabled: [], reason: "Budget agreed with the customer" }]);
+});

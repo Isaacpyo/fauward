@@ -1878,10 +1878,14 @@ model TenantAiLimit {
   id                String   @id @default(cuid())
   tenantId          String   @unique
   tenant            Tenant   @relation(fields: [tenantId], references: [id])
-  monthlyBudgetUsd  Float?
+  monthlyBudgetUsd  Decimal? @db.Decimal(12, 2)
   flashRequestLimit Int?
   proRequestLimit   Int?
   featuresEnabled   String[]
+  // WP-2.10 (L16): who set the limit from the console, and why.
+  updatedAt               DateTime @default(now()) @updatedAt
+  updatedByPlatformUserId String?
+  reason                  String?
 }
 
 model AiAgentRun {

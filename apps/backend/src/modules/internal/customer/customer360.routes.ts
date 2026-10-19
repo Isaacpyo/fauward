@@ -6,6 +6,7 @@ import { mrrForSubscription } from '../../../services/revenue/mrr.service.js';
 import { resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
 import { loadConsoleContext } from '../../../middleware/require-console-permission.js';
 import { activityListQuery, listActivity } from '../shell/activity.routes.js';
+import { AI_FEATURE_KEYS, presentAiLimit } from '../../../services/ai-limit.service.js';
 
 // customer.360 (WP-1.8): one endpoint per tab, each with its own permission, so a failing or forbidden tab never takes
 // the others down. Every query names the tenant (console requests run in system context, architecture §7). Counts are
@@ -163,7 +164,14 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       app.prisma.aiAgentRun.count({ where: { tenantId: tenant.id } }),
       app.prisma.tenantAiLimit.findUnique({ where: { tenantId: tenant.id } })
     ]);
-    return reply.send({ usage, runs, runCount, limit });
+    const thisMonth = monthKeys(1)[0];
+    const monthRows = usage.filter((row) => row.month === thisMonth);
+    const currentMonth = {
+      month: thisMonth,
+      costUsd: monthRows.reduce((sum, row) => sum + row.costUsd, 0).toFixed(2),
+      requests: monthRows.reduce((sum, row) => sum + row.requestCount, 0)
+    };
+    return reply.send({ usage, runs, runCount, limit: presentAiLimit(limit), currentMonth, featureKeys: AI_FEATURE_KEYS });
   });
 
   app.get('/api/internal/customer360/:tenantId/audit', pre('trust.audit.read'), async (request, reply) => {

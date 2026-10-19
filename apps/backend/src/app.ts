@@ -26,6 +26,8 @@ import { registerTenantSearchRoutes } from './modules/search/search.routes.js';
 import { registerDriverRoutes } from './modules/driver/driver.routes.js';
 import { registerAgentRoutes as registerFieldAgentRoutes } from './modules/agents/agent.routes.js';
 import { registerAgentRoutes as registerFauwardAgentRoutes } from './modules/agent/agent.routes.js';
+import { setAiLimitReachedListener } from './shared/services/llm-gateway.service.js';
+import { reportAiLimitReached } from './services/ai-limit.service.js';
 import { registerUsersRoutes } from './modules/users/users.routes.js';
 import { registerNotificationsRoutes } from './modules/notifications/notifications.routes.js';
 import { registerReturnsRoutes } from './modules/returns/returns.routes.js';
@@ -260,6 +262,10 @@ export async function buildApp() {
   await registerShipmentPermissionRoutes(app);
   await registerFieldAgentRoutes(app);
   await registerFauwardAgentRoutes(app);
+  // L16: a run refused for a budget/request limit is reported once per tenant per day (activity + notifications).
+  setAiLimitReachedListener((event) =>
+    reportAiLimitReached(app, event).catch((err: unknown) => app.log.error({ err, tenantId: event.tenantId }, 'Failed to report AI limit reached'))
+  );
   await registerUsersRoutes(app);
   await registerNotificationsRoutes(app);
   await registerReturnsRoutes(app);

@@ -134,6 +134,7 @@ export function TenantsListPage() {
                 <th className="px-3 py-2 text-right">MRR</th>
                 <th className="px-3 py-2 text-right">Shipments (month)</th>
                 <th className="px-3 py-2 text-right">Staff</th>
+                <th className="px-3 py-2 text-right">AI (month, USD)</th>
                 <th className="px-3 py-2 text-right">Health</th>
                 <th className="px-3 py-2">Created</th>
                 <th className="px-3 py-2">Actions</th>
@@ -163,6 +164,7 @@ export function TenantsListPage() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.shipmentsThisMonth}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.staffCount}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{row.aiSpendThisMonthUsd}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{row.healthScore ?? <span className="text-xs text-[var(--color-text-muted)]">Not yet scored</span>}</td>
                   <td className="px-3 py-2 text-xs">{new Date(row.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>

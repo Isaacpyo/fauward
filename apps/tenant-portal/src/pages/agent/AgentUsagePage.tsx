@@ -23,11 +23,11 @@ function pickActiveQuota(usage: AgentUsage): Quota | null {
   if (!usage.limit) return null;
   const { monthlyBudgetUsd, flashRequestLimit, proRequestLimit } = usage.limit;
 
-  if (monthlyBudgetUsd !== null && monthlyBudgetUsd > 0) {
+  if (monthlyBudgetUsd !== null && Number(monthlyBudgetUsd) > 0) {
     return {
-      label: "Monthly AI budget",
+      label: `Monthly AI budget (${monthlyBudgetUsd} USD)`,
       used: Number(usage.ai.totalCostUsd.toFixed(2)),
-      total: Number(monthlyBudgetUsd.toFixed(2))
+      total: Number(monthlyBudgetUsd)
     };
   }
   if (flashRequestLimit !== null && flashRequestLimit > 0) {

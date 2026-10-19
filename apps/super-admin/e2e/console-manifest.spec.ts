@@ -11,7 +11,7 @@ async function mockBackend(page: Page) {
       const search = url.searchParams.get("search") ?? "";
       const row = (id: string, name: string, slug: string, status: string, plan: string) => ({
         id, name, slug, status, plan, effectivePlan: plan, customDomain: null, region: "uk_europe", createdAt: "2026-09-01T09:00:00.000Z", closedAt: null,
-        mrrContribution: { amount: "0.00", currency: "GBP" }, shipmentsThisMonth: 0, staffCount: 1, healthScore: null
+        mrrContribution: { amount: "0.00", currency: "GBP" }, shipmentsThisMonth: 0, staffCount: 1, aiSpendThisMonthUsd: "0.00", healthScore: null
       });
       const tenants = [row("tenant_northwind", "Northwind Couriers", "northwind", "ACTIVE", "PRO"), row("tenant_harbour", "Harbour Freight", "harbour", "TRIALING", "STARTER")].filter((tenant) =>
         tenant.name.toLowerCase().includes(search.toLowerCase())

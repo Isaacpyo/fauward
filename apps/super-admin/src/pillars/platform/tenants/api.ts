@@ -23,6 +23,8 @@ export type TenantListRow = {
   mrrContribution: Money;
   shipmentsThisMonth: number;
   staffCount: number;
+  /** USD spent on AI this month (2 decimals). */
+  aiSpendThisMonthUsd: string;
   healthScore: number | null;
 };
 

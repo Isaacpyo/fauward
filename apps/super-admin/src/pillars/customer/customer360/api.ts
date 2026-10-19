@@ -54,7 +54,21 @@ export type C360Ai = {
   usage: Array<{ id: string; month: string; model: string; feature: string; requestCount: number; tokenCount: number; costUsd: number }>;
   runs: Array<{ id: string; agentType: string; status: string; stage: string | null; scannedCount: number; flaggedCount: number; proposedCount: number; durationMs: number | null; createdAt: string }>;
   runCount: number;
-  limit: { monthlyBudgetUsd: number | null; flashRequestLimit: number | null; proRequestLimit: number | null; featuresEnabled: string[] } | null;
+  limit: C360AiLimit | null;
+  /** Spend this month (USD, 2 decimals as a string) and request count. */
+  currentMonth: { month: string; costUsd: string; requests: number };
+  /** Feature keys a limit may allow (none selected = all). */
+  featureKeys: string[];
+};
+
+export type C360AiLimit = {
+  monthlyBudgetUsd: string | null;
+  flashRequestLimit: number | null;
+  proRequestLimit: number | null;
+  featuresEnabled: string[];
+  updatedAt: string;
+  updatedByPlatformUserId: string | null;
+  reason: string | null;
 };
 
 export type C360Audit = {

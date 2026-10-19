@@ -20,6 +20,7 @@ const northwind = {
   mrrContribution: { amount: "29.00", currency: "GBP", source: "plan" },
   shipmentsThisMonth: 412,
   staffCount: 6,
+  aiSpendThisMonthUsd: "12.40",
   healthScore: null
 };
 
@@ -106,6 +107,7 @@ test("ACC-TEN-1 ACC-TEN-9 the list renders API tenants; the name is a TenantChip
   await expect(row).toContainText("PRO");
   await expect(row).toContainText("billing STARTER");
   await expect(row).toContainText("Not yet scored");
+  await expect(row).toContainText("12.40"); // ACC-L16: AI spend this month
   await expect(row.getByTestId("tenant-chip")).toHaveAttribute("href", `/customer/360/${northwind.id}`);
 
   await page.getByLabel("Search tenants").fill("northwind.test");
