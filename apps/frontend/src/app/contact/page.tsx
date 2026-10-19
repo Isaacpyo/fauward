@@ -132,7 +132,7 @@ export default function ContactPage() {
             ))}
           </div>
           <p className="mt-6 text-xs text-gray-500">
-            Fauward Ltd is registered in England &amp; Wales. Registered office address available on request.
+            Fauward is a product of Vitalos Technologies Limited, registered in England &amp; Wales (company number 16696895). Registered office address available on request.
           </p>
         </div>
       </section>

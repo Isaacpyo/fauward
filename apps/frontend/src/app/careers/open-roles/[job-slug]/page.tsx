@@ -1,11 +1,14 @@
 import CareersJobListingPage from "@/components/careers/CareersJobListingPage";
+import { getCareersConfig } from "@/lib/careers-jobs";
 
 export default function JobListingRoute({ params }: { params: { "job-slug": string } }) {
+  const { jobsSheetId, appsScriptUrl } = getCareersConfig();
+
   return (
     <CareersJobListingPage
       jobSlug={params["job-slug"]}
-      jobsSheetId={process.env.VITE_JOBS_SHEET_ID}
-      appsScriptUrl={process.env.VITE_APPS_SCRIPT_URL}
+      jobsSheetId={jobsSheetId}
+      appsScriptUrl={appsScriptUrl}
     />
   );
 }

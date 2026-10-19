@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     prod_api_url: str = Field(default="", alias="PROD_API_URL")
     prod_frontend_url: str = Field(default="", alias="PROD_FRONTEND_URL")
     prod_tenant_portal_url: str = Field(default="", alias="PROD_TENANT_PORTAL_URL")
+    public_tracking_url_base: str = Field(default="https://track.fauward.com", alias="PUBLIC_TRACKING_URL_BASE")
     prod_super_admin_url: str = Field(default="", alias="PROD_SUPER_ADMIN_URL")
     prod_fauward_go_url: str = Field(default="", alias="PROD_FAUWARD_GO_URL")
     prod_python_api_url: str = Field(default="", alias="PROD_PYTHON_API_URL")

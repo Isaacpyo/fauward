@@ -64,12 +64,13 @@ function completion(content: unknown, tokens = 12) {
 const schema = z.object({ confidence: z.number(), answer: z.string() });
 
 describe('LLMGatewayService', () => {
-  it('routes all 17 tasks to the expected model', () => {
-    expect(Object.keys(MODEL_ROUTING)).toHaveLength(17);
+  it('routes all 18 tasks to the expected model', () => {
+    expect(Object.keys(MODEL_ROUTING)).toHaveLength(18);
     expect(MODEL_ROUTING.relay_classify).toBe('deepseek-v4-flash');
     expect(MODEL_ROUTING.relay_escalation_analysis).toBe('deepseek-v4-pro');
     expect(MODEL_ROUTING.tenant_health_summary).toBe('deepseek-v4-pro');
     expect(MODEL_ROUTING.webhook_error_summary).toBe('deepseek-v4-flash');
+    expect(MODEL_ROUTING.agent_ask).toBe('deepseek-v4-flash');
   });
 
   it('Zod schema mismatch throws and does not return partial result', async () => {

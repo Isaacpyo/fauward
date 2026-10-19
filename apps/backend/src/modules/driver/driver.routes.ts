@@ -8,6 +8,7 @@ import {
   type CodCollectionPayload
 } from '../shipments/shipment-events.const.js';
 import { enqueueAgentEvent } from '../agent/agent.queue.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -331,18 +332,23 @@ export async function registerDriverRoutes(app: FastifyInstance) {
       return shipmentEvent;
     });
 
-    void enqueueAgentEvent(app, {
-      eventId: `failed-delivery-${shipment.id}-${event.id}`,
-      type: 'failed_delivery',
-      tenantId,
-      shipmentId: shipment.id,
-      payload: {
-        newStatus: 'FAILED_DELIVERY',
-        previousStatus: shipment.status,
-        reason: payload.reason,
-        source: 'DRIVER_APP'
-      }
-    });
+    fireAndForget(
+      enqueueAgentEvent(app, {
+        eventId: `failed-delivery-${shipment.id}-${event.id}`,
+        type: 'failed_delivery',
+        tenantId,
+        shipmentId: shipment.id,
+        payload: {
+          newStatus: 'FAILED_DELIVERY',
+          previousStatus: shipment.status,
+          reason: payload.reason,
+          source: 'DRIVER_APP'
+        }
+      }),
+      request.log,
+      'enqueueAgentEvent failed',
+      { shipmentId: shipment.id }
+    );
 
     reply.send({ success: true });
   });

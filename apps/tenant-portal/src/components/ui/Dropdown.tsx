@@ -9,6 +9,7 @@ export type DropdownItem = {
   icon?: ReactNode;
   onSelect?: () => void;
   destructive?: boolean;
+  disabled?: boolean;
 };
 
 type DropdownProps = {
@@ -31,10 +32,12 @@ export function Dropdown({ trigger, items, align = "end", className }: DropdownP
           {items.map((item) => (
             <RadixDropdown.Item
               key={item.key}
-              onSelect={item.onSelect}
+              onSelect={item.disabled ? (event) => event.preventDefault() : item.onSelect}
+              disabled={item.disabled}
               className={cn(
                 "flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm outline-none",
-                item.destructive ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-100"
+                item.destructive ? "text-red-600 hover:bg-red-50" : "text-gray-700 hover:bg-gray-100",
+                item.disabled && "cursor-not-allowed opacity-60 hover:bg-transparent"
               )}
             >
               {item.icon}

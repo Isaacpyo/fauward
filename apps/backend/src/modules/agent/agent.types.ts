@@ -15,13 +15,16 @@ export type AgentRunStatus =
   | 'already_processed'
   | 'failed';
 
-export interface AgentEvent {
+// `type` (not `interface`) so it satisfies the BullMQ queue's
+// `Record<string, unknown>` payload constraint — interfaces lack an implicit
+// index signature and are not assignable to it.
+export type AgentEvent = {
   eventId: string;
   type: AgentEventType;
   tenantId: string;
   shipmentId?: string;
   payload?: Record<string, unknown>;
-}
+};
 
 export interface ActionRecord {
   tool: string;

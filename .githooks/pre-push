@@ -1,0 +1,19 @@
+#!/bin/sh
+# Iron-clad gate: do not let code that fails typecheck or lint leave this machine.
+#
+# Runs the backend `verify` (tsc --noEmit + eslint). The lint step enforces the
+# void-guard rule that bans unhandled fire-and-forget promises — the exact bug
+# class that crash-looped the server. CI re-runs the full cross-workspace gate
+# on every PR; this is the fast local pre-flight.
+#
+# Genuine emergency bypass: git push --no-verify
+echo "▶ pre-push: verifying backend (typecheck + lint)…"
+npm run verify --workspace=apps/backend
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "✖ pre-push blocked: backend 'verify' failed (see errors above)."
+  echo "  Fix them, or bypass in an emergency with: git push --no-verify"
+  exit 1
+fi
+echo "✓ pre-push: backend verify passed."
+exit 0

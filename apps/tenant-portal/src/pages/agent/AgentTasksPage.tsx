@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
+import { AskAgentToggleButton } from "@/components/agent-chat/AskAgentToggleButton";
 import { ActionConfirmDialog, type ActionConfirmKind } from "./ActionConfirmDialog";
 import { classifyAction, verbsForAction } from "./agent-actions.rules";
 import { actionIcon, actionSummary, actionTitle } from "./agent-tasks.format";
@@ -210,14 +211,17 @@ export function AgentTasksPage() {
       title="Tasks"
       description="Fauward Agent watches for failed deliveries and runs checks on demand. Anything risky lands here for your approval."
       actions={
-        <Button
-          leftIcon={<Play className="h-4 w-4" />}
-          onClick={handleRunAgent}
-          disabled={buttonDisabled}
-          loading={startSweep.isPending}
-        >
-          {buttonLabel}
-        </Button>
+        <>
+          <AskAgentToggleButton />
+          <Button
+            leftIcon={<Play className="h-4 w-4" />}
+            onClick={handleRunAgent}
+            disabled={buttonDisabled}
+            loading={startSweep.isPending}
+          >
+            {buttonLabel}
+          </Button>
+        </>
       }
     >
       <div className="mx-auto max-w-3xl space-y-5">
