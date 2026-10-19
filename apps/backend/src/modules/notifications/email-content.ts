@@ -84,6 +84,7 @@ const CONTENT: Record<EmailTemplateKey, Content> = {
   api_key_revoked_by_fauward: { subject: () => 'Fauward revoked one of your API keys', lines: (d) => [`API key ${str(d, 'keyPrefix')} was revoked by Fauward.`, `Reason: ${str(d, 'reason')}`] },
   ai_limit_changed: { subject: () => 'Your AI usage limit changed', lines: (d) => [str(d, 'summary') || 'Fauward changed the AI usage limit for your workspace.'] },
   ai_limit_reached: { subject: () => 'Your workspace reached its AI usage limit', lines: (d) => [`Your workspace reached its ${str(d, 'what', 'AI usage limit')}.`, 'AI features stop until next month or until the limit is raised. Reply to Fauward support to change it.'] },
+  exception_escalation_update: { subject: (d) => (str(d, 'status') === 'resolved' ? 'Fauward resolved your escalated exception' : 'Fauward replied on your escalated exception'), lines: (d) => [str(d, 'subject'), str(d, 'reply') || null, 'See Exceptions in your Fauward workspace.'] },
   feedback_status_changed: { subject: (d) => `Update on "${str(d, 'title', 'your feedback')}"`, lines: (d) => [`Status: ${str(d, 'status')}.`, str(d, 'comment') || null] },
   trial_extension_decided: { subject: (d) => `Trial extension ${str(d, 'decision', 'decided').toLowerCase()}`, lines: (d) => [str(d, 'summary') || null] },
   incident_update: { subject: (d) => `Incident update: ${str(d, 'title')}`, lines: (d) => [str(d, 'body') || null, link(d, 'Status')] },

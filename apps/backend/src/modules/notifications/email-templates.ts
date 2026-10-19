@@ -46,6 +46,7 @@ export const EMAIL_TEMPLATES = {
   api_key_revoked_by_fauward: 'api_key_revoked_by_fauward',
   ai_limit_changed: 'ai_limit_changed',
   ai_limit_reached: 'ai_limit_reached',
+  exception_escalation_update: 'exception_escalation_update',
   feedback_status_changed: 'feedback_status_changed',
   trial_extension_decided: 'trial_extension_decided',
   incident_update: 'incident_update',

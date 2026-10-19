@@ -19,6 +19,7 @@ import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPa
 import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
 import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
 import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/customer/feedback/FeedbackPages";
+import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
@@ -110,7 +111,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key/audit", element: <OpsRoute permission="platform.flags.read" title="Flag Audit" description="Local audit of per-tenant LaunchDarkly override changes." endpoint="/flags/:key/audit" /> },
   { path: "/platform/releases", element: <OpsRoute permission="platform.flags.read" title="Releases" description="Current deployed versions and release workflow links." endpoint="/releases" /> },
-  { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }]} /> },
+  { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }, { label: "Tenant escalations", to: "/platform/incidents/escalations" }]} /> },
+  { path: "/platform/incidents/escalations", element: <PermissionRoute permission="platform.incidents.read">
+                <EscalationsPage />
+              </PermissionRoute> },
   { path: "/platform/incidents/runbooks", element: <OpsRoute permission="platform.incidents.read" title="Incident Runbooks" description="Markdown runbook library for incident responders." endpoint="/incidents/runbooks" /> },
   { path: "/platform/incidents/:id", element: <OpsRoute permission="platform.incidents.read" title="Incident Detail" description="Incident timeline and tenant impact mapping." endpoint="/incidents/:id" /> },
   { path: "/platform/incidents/:id/postmortem", element: <OpsRoute permission="platform.incidents.read" title="Postmortem" description="Postmortem link and incident closure context." endpoint="/incidents/:id" /> },

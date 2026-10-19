@@ -1999,10 +1999,33 @@ model ExceptionCase {
   resolvedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  // L15 (WP-2.11): the tenant escalates to Fauward; staff assign, reply and resolve the escalation.
+  escalatedAt        DateTime?
+  escalatedByUserId  String?
+  escalationReason   String?
+  platformAssigneeId String?
+  platformResolvedAt DateTime?
+  escalationReplies  ExceptionEscalationReply[]
 
   @@index([tenantId, status])
   @@index([tenantId, shipmentId, status])
+  @@index([escalatedAt])
   @@map("exception_cases")
+}
+
+/// L15 (WP-2.11): a Fauward staff reply on an escalated exception; always visible to the tenant.
+model ExceptionEscalationReply {
+  id             String        @id @default(cuid())
+  tenantId       String
+  exceptionId    String
+  exception      ExceptionCase @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+  platformUserId String
+  authorName     String
+  body           String
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId, exceptionId, createdAt])
+  @@map("exception_escalation_replies")
 }
 
 model SlaPolicy {

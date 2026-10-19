@@ -19,7 +19,8 @@ import {
   Settings,
   Users,
   Wallet,
-  Lightbulb
+  Lightbulb,
+  TriangleAlert
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -117,6 +118,13 @@ export const navItems: NavItem[] = [
     icon: Package,
     feature: "shipments",
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF", "CUSTOMER_ADMIN", "CUSTOMER_USER"]
+  },
+  {
+    to: "/exceptions",
+    label: "Exceptions",
+    icon: TriangleAlert,
+    feature: "shipments",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
   },
   {
     to: "/fauward-go",

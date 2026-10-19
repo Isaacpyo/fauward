@@ -9,7 +9,7 @@ import type { Permission } from '@fauward/internal-rbac';
 type Staff = { id: string; permissions: Permission[] };
 const STAFF: Record<string, Staff> = {
   pu_cs: { id: 'pu_cs', permissions: ['customer.360.read', 'platform.tenants.read'] },
-  pu_support: { id: 'pu_support', permissions: ['customer.360.read', 'customer.support.read', 'platform.tenants.read'] }
+  pu_support: { id: 'pu_support', permissions: ['customer.360.read', 'customer.support.read', 'platform.tenants.read', 'platform.incidents.read'] }
 };
 
 vi.mock('../../../middleware/authenticate-platform-session.js', () => ({
@@ -296,6 +296,30 @@ describe('activity SSE stream (WP-2.1)', () => {
     const supportTypes = support.events.filter((event) => event.event === 'activity').map((event) => (JSON.parse(event.data) as { type: string }).type);
     expect(supportTypes.sort()).toEqual(['tenant.suspended', 'ticket.created']);
     expect(JSON.parse(support.events.find((event) => event.event === 'activity')!.data).tenant).toEqual({ id: 'tenant_a', name: 'Northwind', slug: 'northwind' });
+
+    cs.close();
+    support.close();
+    await until(() => hub.size === 0);
+  });
+
+  it('ACC-L15-1 a tenant escalation (platform.incidents) reaches a console client with platform.incidents.read and no other', async () => {
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    const cs = await openStream(port, 'pu_cs');
+    const support = await openStream(port, 'pu_support');
+    await until(() => cs.events.some((event) => event.event === 'ready') && support.events.some((event) => event.event === 'ready'));
+
+    const { activityHubFor } = await import('./activity.routes.js');
+    const hub = activityHubFor(app);
+    const escalation = await seed({ service: 'platform.incidents', type: 'exception.escalated', tenantId: 'tenant_a' });
+    const suspension = await seed({ service: 'platform.tenants', type: 'tenant.suspended', tenantId: 'tenant_a' });
+    await hub.dispatch(escalation.id);
+    await hub.dispatch(suspension.id);
+
+    await until(() => support.events.filter((event) => event.event === 'activity').length === 2 && cs.events.some((event) => event.event === 'activity'));
+    const typesOf = (client: typeof cs) => client.events.filter((event) => event.event === 'activity').map((event) => (JSON.parse(event.data) as { type: string }).type);
+    expect(typesOf(support).sort()).toEqual(['exception.escalated', 'tenant.suspended']);
+    expect(typesOf(cs)).toEqual(['tenant.suspended']);
 
     cs.close();
     support.close();

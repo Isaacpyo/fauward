@@ -12,6 +12,7 @@ import { registerConsoleSearchRoutes } from './shell/search.routes.js';
 import { registerConsoleTenantRoutes } from './platform/tenants.routes.js';
 import { registerConsoleImpersonationRoutes } from './platform/impersonation.routes.js';
 import { registerConsoleOperationsRoutes } from './platform/operations.routes.js';
+import { registerConsoleEscalationRoutes } from './platform/escalations.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
@@ -30,6 +31,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleTenantRoutes(app);
   await registerConsoleImpersonationRoutes(app);
   await registerConsoleOperationsRoutes(app);
+  await registerConsoleEscalationRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleSearchRoutes(app);
   await registerConsoleCommsRoutes(app);

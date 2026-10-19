@@ -39,7 +39,6 @@ import { registerRatingRoutes } from './modules/rating/rating.routes.js';
 import { registerShippingRulesRoutes } from './modules/shipping-rules/shipping-rules.routes.js';
 import { registerCustomsRoutes } from './modules/customs/customs.routes.js';
 import { registerExceptionsRoutes } from './modules/exceptions/exceptions.routes.js';
-import { registerControlTowerRoutes } from './modules/control-tower/control-tower.routes.js';
 import { startStuckShipmentDetector } from './modules/control-tower/stuck-shipment.detector.js';
 import { registerFleetRoutes } from './modules/fleet/fleet.routes.js';
 import { registerLabelRoutes } from './modules/documents/label.routes.js';
@@ -47,7 +46,6 @@ import { registerShippingLabelRoutes } from './modules/documents/shipping-label.
 import { registerDocumentsRoutes } from './modules/documents/documents.routes.js';
 import { registerPublicTrackingRoutes } from './modules/tracking/tracking.public.routes.js';
 import { registerTenantTrackingRoutes } from './modules/tracking/tracking.tenant.routes.js';
-import { registerPlatformTrackingRoutes } from './modules/tracking/tracking.platform.routes.js';
 import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.js';
 import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.realtime.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
@@ -246,7 +244,6 @@ export async function buildApp() {
   await registerTenantHealthRoutes(app);
   await registerPublicTrackingRoutes(app);
   await registerTenantTrackingRoutes(app);
-  await registerPlatformTrackingRoutes(app);
   await registerGoTrackingRoutes(app);
   await registerRealtimeTrackingRoutes(app);
   await registerApiKeyRoutes(app);
@@ -278,7 +275,6 @@ export async function buildApp() {
   await registerShippingRulesRoutes(app);
   await registerCustomsRoutes(app);
   await registerExceptionsRoutes(app);
-  await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
   await registerImpersonationExchangeRoutes(app);
   await registerConsoleRoutes(app);

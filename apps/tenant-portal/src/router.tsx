@@ -30,6 +30,7 @@ import { TicketsListPage } from "@/pages/support/TicketsListPage";
 import { TicketDetailPage } from "@/pages/support/TicketDetailPage";
 import { HelpTicketsPage } from "@/pages/help/HelpTicketsPage";
 import { MyFeedbackPage } from "@/pages/help/MyFeedbackPage";
+import { ExceptionsPage } from "@/pages/exceptions/ExceptionsPage";
 import { HelpTicketDetailPage } from "@/pages/help/HelpTicketDetailPage";
 import { ActivityTimelinePage } from "@/pages/activity/ActivityTimelinePage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
@@ -166,6 +167,7 @@ function WorkspaceRoutes() {
       <Route path="help/tickets" element={<HelpTicketsPage />} />
       <Route path="help/tickets/:id" element={<HelpTicketDetailPage />} />
       <Route path="help/feedback" element={<MyFeedbackPage />} />
+      <Route path="exceptions" element={<ExceptionsPage />} />
       <Route path="activity" element={<ActivityTimelinePage />} />
       <Route path="activity/notifications" element={<NotificationsInboxPage />} />
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
