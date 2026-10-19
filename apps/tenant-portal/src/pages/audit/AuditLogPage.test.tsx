@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -33,5 +33,22 @@ describe("tenant audit log (D8)", () => {
     expect(rows[0]).not.toHaveTextContent("admin@northwind.test");
     expect(rows[1]).toHaveTextContent("admin@northwind.test");
     expect(get).toHaveBeenCalledWith("/v1/audit-log", { params: { page: 1, limit: 50 } });
+  });
+});
+
+describe("tenant audit log path (WP-2.16)", () => {
+  it("ACC-L17-1 the page reads the registered /v1/audit-log route and shows an error state, not a blank page, on failure", async () => {
+    get.mockReset();
+    get.mockRejectedValue(new Error("Request failed with status code 500"));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <AuditLogPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/v1/audit-log", { params: { page: 1, limit: 50 } }));
+    expect(await screen.findByRole("button", { name: /retry|try again/i })).toBeInTheDocument();
   });
 });

@@ -3,7 +3,7 @@ import type { PlatformAuditLog, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireConsolePermission } from '../../middleware/require-console-permission.js';
+import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
 import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
@@ -38,6 +38,28 @@ const exportBody = z.object({
 });
 
 export type AuditFilters = { [K in keyof typeof filterShape]?: string };
+
+// L17 (WP-2.16): search over tenants' own AuditLog. A tenant is required unless the caller may export audit data.
+const tenantEventsQuery = z.object({
+  tenantId: z.string().trim().min(1).optional(),
+  action: z.string().trim().min(1).optional(),
+  actorType: z.enum(['USER', 'API_KEY', 'IMPERSONATOR', 'SYSTEM']).optional(),
+  resourceType: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional()
+});
+
+export function tenantEventsWhere(filters: z.infer<typeof tenantEventsQuery>): Prisma.AuditLogWhereInput {
+  return {
+    ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
+    ...(filters.action ? { action: insensitive(filters.action) } : {}),
+    ...(filters.actorType ? { actorType: filters.actorType } : {}),
+    ...(filters.resourceType ? { resourceType: filters.resourceType } : {}),
+    ...(filters.from || filters.to ? { timestamp: { ...(filters.from ? { gte: new Date(filters.from) } : {}), ...(filters.to ? { lte: new Date(filters.to) } : {}) } } : {})
+  };
+}
 
 const insensitive = (value: string) => ({ contains: value, mode: 'insensitive' as const });
 
@@ -94,6 +116,41 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
     const data = page.map((row) => ({ ...row, targetTenant: row.targetTenantId ? byId.get(row.targetTenantId) ?? null : null }));
     return reply.send({ data, total, nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null });
+  });
+
+  app.get('/api/internal/audit/tenant-events', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
+    const parsed = tenantEventsQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const query = parsed.data;
+    if (!query.tenantId && !(await consoleUserHas(request, 'trust.audit.export'))) {
+      return reply.status(400).send({ error: 'TENANT_REQUIRED', message: 'Choose a tenant. Searching every tenant needs trust.audit.export.' });
+    }
+    const where = tenantEventsWhere(query);
+    const rows = await app.prisma.auditLog.findMany({
+      where,
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        tenantId: true,
+        actorId: true,
+        actorType: true,
+        action: true,
+        resourceType: true,
+        resourceId: true,
+        timestamp: true,
+        metadata: true,
+        actor: { select: { email: true } },
+        tenant: { select: { id: true, name: true, slug: true } }
+      }
+    });
+    const hasMore = rows.length > query.limit;
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    return reply.send({
+      data: page.map((row) => ({ ...row, timestamp: row.timestamp.toISOString(), actorLabel: row.actorType === 'IMPERSONATOR' ? 'Fauward staff (via impersonation)' : row.actor?.email ?? row.actorType })),
+      nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null
+    });
   });
 
   app.get('/api/internal/audit/entries/:id', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {

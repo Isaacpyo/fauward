@@ -49,6 +49,7 @@ import { AuditExportPage } from "@/pillars/trust/audit/AuditExportPage";
 import { AuditIntegrityPage } from "@/pillars/trust/audit/AuditIntegrityPage";
 import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
 import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
+import { TenantAuditEventsPage } from "@/pillars/trust/audit/TenantAuditEventsPage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
 import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
 import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
@@ -262,6 +263,9 @@ export const consoleRoutes: ConsoleRoute[] = [
               </PermissionRoute> },
   { path: "/trust/audit", element: <PermissionRoute permission="trust.audit.read">
                 <AuditLogPage />
+              </PermissionRoute> },
+  { path: "/trust/audit/tenant-events", element: <PermissionRoute permission="trust.audit.read">
+                <TenantAuditEventsPage />
               </PermissionRoute> },
   { path: "/trust/audit/timeline", element: <PermissionRoute permission="trust.audit.read">
                 <AuditTimelinePage />
