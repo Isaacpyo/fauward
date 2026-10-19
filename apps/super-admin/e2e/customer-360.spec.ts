@@ -33,7 +33,7 @@ const config = {
   branding: { brandName: null },
   domains: { slug: "northwind", customDomain: null },
   notifications: null,
-  payments: { gateway: "STRIPE", gatewayKeyConfigured: true, currency: "GBP" },
+  payments: { activeProvider: "STRIPE", currency: "GBP", gateways: [{ provider: "STRIPE", mode: "LIVE", enabled: true, status: "FAILED", secretConfigured: true, lastVerifiedAt: null, lastError: "STRIPE returned 401: Invalid API Key", updatedAt: "2026-10-18T09:00:00.000Z" }] },
   apiKeys: [{ id: "key_1", name: "ERP", keyPrefix: "fw_live_ab12", scopes: [], isActive: true, isSandbox: false, createdAt: "2026-01-01T00:00:00.000Z", lastUsedAt: null, expiresAt: null }],
   webhooks: [],
   legacyWebhook: null
@@ -102,6 +102,9 @@ test("ACC-C360-6 config is structured and shows secrets only as configured or no
   await page.goto("/customer/360/tenant_1?tab=config");
   const configView = page.getByTestId("c360-config");
   await expect(configView).toContainText("configured (hidden)");
+  // ACC-L11-2: gateway state and the last error, never keys.
+  await expect(page.getByTestId("c360-gateways")).toContainText("STRIPE · live · FAILED");
+  await expect(page.getByTestId("c360-gateways")).toContainText("Invalid API Key");
   await expect(configView).toContainText("fw_live_ab12");
   await expect(configView).not.toContainText("{");
 });

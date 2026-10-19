@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../../queues/queues.js';
@@ -6,6 +7,13 @@ import { dlqNotificationQueue } from '../../notifications/notifications.worker.j
 import { dlqOutboxQueue } from '../../../queues/outbox.worker.js';
 import { dlqWebhookQueue } from '../../../queues/webhook.worker.js';
 import { webhooksService } from '../../webhooks/webhooks.service.js';
+import { presentConsoleGateway } from '../../../services/tenant-payment-gateway.service.js';
+
+const gatewayListQuery = z.object({
+  status: z.enum(['UNVERIFIED', 'VERIFIED', 'FAILED', 'DISABLED']).optional(),
+  provider: z.string().min(1).optional(),
+  tenantId: z.string().min(1).optional()
+});
 
 // platform.queues, platform.health and dead-lettered webhook deliveries (moved from /api/v1/platform in WP-1.1).
 
@@ -47,6 +55,19 @@ export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
     await app.redis.ping();
     const redisLatencyMs = Date.now() - startedRedis;
     return reply.send({ dbLatencyMs, redisLatencyMs, uptimeSeconds: Math.floor(process.uptime()) });
+  });
+
+  // L11 (WP-2.12): tenant payment gateways across tenants — provider, mode, status, last error; never secrets.
+  app.get('/api/internal/integrations/tenant-gateways', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
+    const parsed = gatewayListQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const rows = await app.prisma.tenantPaymentGateway.findMany({
+      where: { ...(parsed.data.status ? { status: parsed.data.status } : {}), ...(parsed.data.provider ? { provider: parsed.data.provider.toUpperCase() } : {}), ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) },
+      include: { tenant: { select: { id: true, name: true, slug: true } } },
+      orderBy: [{ updatedAt: 'desc' }],
+      take: 500
+    });
+    return reply.send({ data: rows.map((row) => ({ id: row.id, tenant: row.tenant, ...presentConsoleGateway(row) })) });
   });
 
   // Dead-lettered tenant webhook deliveries across tenants (was GET /api/v1/platform/webhooks/failures, tenant SUPER_ADMIN).

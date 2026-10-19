@@ -1,28 +1,12 @@
 import type { PrismaClient, Tenant } from '@prisma/client';
 import { resolveTenantEntitlements } from '../../services/tenant-entitlements.service.js';
+import { hasVerifiedGateway } from '../../services/tenant-payment-gateway.service.js';
 
 function getCurrentMonth(): string {
   const d = new Date();
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
-}
-
-function hasConnectedPaymentGateway(rawValue?: string | null) {
-  if (!rawValue) return false;
-
-  try {
-    const parsed = JSON.parse(rawValue) as {
-      providers?: Record<string, { enabled?: boolean } | undefined>;
-    };
-    const providers = Object.values(parsed.providers ?? {});
-    if (providers.length === 0) {
-      return false;
-    }
-    return providers.some((provider) => provider?.enabled);
-  } catch {
-    return rawValue.trim().length > 0;
-  }
 }
 
 export const usageService = {
@@ -82,8 +66,8 @@ export const usageService = {
   },
 
   async getOnboarding(prisma: PrismaClient, tenant: Tenant) {
-    const [settings, shipmentCount, staffCount] = await Promise.all([
-      prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id } }),
+    const [paymentConnected, shipmentCount, staffCount] = await Promise.all([
+      hasVerifiedGateway(prisma, tenant.id),
       prisma.shipment.count(),
       prisma.user.count({ where: { tenantId: tenant.id, role: { notIn: ['CUSTOMER_ADMIN', 'CUSTOMER_USER'] } } })
     ]);
@@ -93,7 +77,8 @@ export const usageService = {
       colourSet: tenant.primaryColor !== '#0D1F3C',
       firstShipmentCreated: shipmentCount > 0,
       staffInvited: staffCount > 1,
-      paymentConnected: hasConnectedPaymentGateway(settings?.paymentGatewayKey),
+      // A verified gateway (or an enabled offline method), not a saved key (WP-2.12).
+      paymentConnected,
       customDomain: tenant.customDomainStatus === 'ACTIVE',
       apiKeyGenerated: false
     };

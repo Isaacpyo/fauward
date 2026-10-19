@@ -7,6 +7,7 @@ import { resolveTenantEntitlements } from '../../../services/tenant-entitlements
 import { loadConsoleContext } from '../../../middleware/require-console-permission.js';
 import { activityListQuery, listActivity } from '../shell/activity.routes.js';
 import { AI_FEATURE_KEYS, presentAiLimit } from '../../../services/ai-limit.service.js';
+import { presentConsoleGateway } from '../../../services/tenant-payment-gateway.service.js';
 
 // customer.360 (WP-1.8): one endpoint per tab, each with its own permission, so a failing or forbidden tab never takes
 // the others down. Every query names the tenant (console requests run in system context, architecture §7). Counts are
@@ -213,8 +214,9 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
     const since30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [settings, apiKeys, webhooks] = await Promise.all([
+    const [settings, gateways, apiKeys, webhooks] = await Promise.all([
       app.prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id } }),
+      app.prisma.tenantPaymentGateway.findMany({ where: { tenantId: tenant.id }, orderBy: { provider: 'asc' } }),
       app.prisma.apiKey.findMany({ where: { tenantId: tenant.id }, select: { id: true, name: true, keyPrefix: true, scopes: true, isActive: true, isSandbox: true, createdAt: true, lastUsedAt: true, expiresAt: true }, orderBy: { createdAt: 'desc' } }),
       app.prisma.webhookEndpoint.findMany({ where: { tenantId: tenant.id }, select: { id: true, url: true, events: true, isActive: true, createdAt: true }, orderBy: { createdAt: 'desc' } })
     ]);
@@ -229,7 +231,8 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       notifications: settings
         ? { notificationEmail: settings.notificationEmail, emailFromName: settings.emailFromName, emailReplyTo: settings.emailReplyTo, customEmailDomain: settings.customEmailDomain, opsEmailRecipients: settings.opsEmailRecipients, notifyOnStaffAccess: settings.notifyOnStaffAccess }
         : null,
-      payments: settings ? { gateway: settings.paymentGateway, gatewayKeyConfigured: Boolean(settings.paymentGatewayKey), currency: settings.currency } : null,
+      // L11 (WP-2.12): provider, mode, status and last error only — never keys or bank details (ACC-L11-2).
+      payments: { activeProvider: settings?.paymentGateway ?? null, currency: settings?.currency ?? tenant.defaultCurrency, gateways: gateways.map(presentConsoleGateway) },
       apiKeys,
       webhooks: webhooks.map((hook, index) => ({ ...hook, failuresLast30Days: failures[index], secretConfigured: true })),
       legacyWebhook: settings ? { url: settings.webhookUrl, secretConfigured: Boolean(settings.webhookSecret) } : null

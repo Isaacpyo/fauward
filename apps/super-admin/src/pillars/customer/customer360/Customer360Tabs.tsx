@@ -483,7 +483,22 @@ export function ConfigTab({ tenantId }: { tenantId: string }) {
           <ConfigList title="Branding" values={data.branding} />
           <ConfigList title="Domains" values={data.domains} />
           <ConfigList title="Notifications" values={data.notifications} />
-          <ConfigList title="Payments" values={data.payments ? { gateway: data.payments.gateway, currency: data.payments.currency, "gateway key": data.payments.gatewayKeyConfigured ? "configured (hidden)" : "not configured" } : null} />
+          <section className={card} data-testid="c360-gateways">
+            <h2 className="text-sm font-semibold">Payment gateways</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Default {data.payments.activeProvider ?? "—"} · {data.payments.currency}
+            </p>
+            {data.payments.gateways.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No gateway set up.</p> : null}
+            <ul className="mt-2 space-y-1 text-xs">
+              {data.payments.gateways.map((gateway) => (
+                <li key={gateway.provider}>
+                  <span className="font-semibold">{gateway.provider}</span> · {gateway.mode.toLowerCase()} · {gateway.enabled ? gateway.status : "disabled"} · key {gateway.secretConfigured ? "configured (hidden)" : "not configured"}
+                  {gateway.lastVerifiedAt ? ` · verified ${when(gateway.lastVerifiedAt)}` : ""}
+                  {gateway.lastError ? <span className="block text-red-700">{gateway.lastError}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">API keys and webhooks</h2>
             <ul className="mt-2 text-xs">

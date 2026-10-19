@@ -436,6 +436,7 @@ model Tenant {
   customsDeclarations           CustomsDeclaration[]
   tenantAiUsages                TenantAiUsage[]
   tenantAiLimit                 TenantAiLimit?
+  paymentGateways               TenantPaymentGateway[]
   aiAgentRuns                   AiAgentRun[]
   agentActions                  AgentAction[]
   agentConversations            AgentConversation[]
@@ -653,6 +654,33 @@ model TenantFeatureOverride {
 
   @@index([tenantId, featureKey, revokedAt])
   @@map("tenant_feature_overrides")
+}
+
+/// L11 (WP-2.12): a tenant's own payment gateway for collecting from its customers (not Fauward billing). Secrets are
+/// field-encrypted (v1:...) and never leave the API; the console sees provider, mode, status and the last error only.
+model TenantPaymentGateway {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider                String // STRIPE|PAYSTACK|FLUTTERWAVE|BANK_TRANSFER|COD
+  mode                    String    @default("LIVE") // TEST|LIVE (from the secret key prefix)
+  enabled                 Boolean   @default(false)
+  publicKey               String?
+  secretKeyEncrypted      String?
+  webhookSecretEncrypted  String?
+  encryptionKeyEncrypted  String?
+  /// Non-secret settings: Stripe account id, merchant email, bank details, COD remittance rules.
+  config                  Json      @default("{}")
+  status                  String    @default("UNVERIFIED") // UNVERIFIED|VERIFIED|FAILED|DISABLED
+  lastVerifiedAt          DateTime?
+  lastError               String?
+  updatedByUserId         String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([tenantId, provider])
+  @@index([status])
+  @@map("tenant_payment_gateways")
 }
 
 model TenantSettings {

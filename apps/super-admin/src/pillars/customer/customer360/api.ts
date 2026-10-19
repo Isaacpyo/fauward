@@ -61,6 +61,8 @@ export type C360Ai = {
   featureKeys: string[];
 };
 
+export type C360Gateway = { provider: string; mode: string; enabled: boolean; status: string; secretConfigured: boolean; lastVerifiedAt: string | null; lastError: string | null; updatedAt: string };
+
 export type C360AiLimit = {
   monthlyBudgetUsd: string | null;
   flashRequestLimit: number | null;
@@ -87,7 +89,8 @@ export type C360Config = {
   branding: Record<string, string | null>;
   domains: Record<string, string | null>;
   notifications: Record<string, string | boolean | string[] | null> | null;
-  payments: { gateway: string; gatewayKeyConfigured: boolean; currency: string } | null;
+  /** L11 (WP-2.12): tenant payment gateways — state only, never keys. */
+  payments: { activeProvider: string | null; currency: string; gateways: C360Gateway[] };
   apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null }>;
   webhooks: Array<{ id: string; url: string; events: string[]; isActive: boolean; createdAt: string; failuresLast30Days: number }>;
   legacyWebhook: { url: string | null; secretConfigured: boolean } | null;
