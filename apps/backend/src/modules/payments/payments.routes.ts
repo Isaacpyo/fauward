@@ -1,3 +1,4 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { handleStripeSubscriptionEvent, tenantForStripeInvoice } from '../../services/subscription.service.js';
 import { PaymentStatus } from '@prisma/client';
@@ -376,6 +377,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
           }
 
         });
+        if (payment.invoiceId) await markOnboardingStep({ prisma: app.prisma, redis: app.redis, log: app.log }, payment.tenantId, 'FIRST_PAID_INVOICE');
         await notifyCustomer(app, {
           tenantId: payment.tenantId,
           userId: payment.customerId,

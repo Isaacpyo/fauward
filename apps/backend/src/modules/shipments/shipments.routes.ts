@@ -1,3 +1,4 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma, PaymentStatus, ShipmentStatus } from '@prisma/client';
 
@@ -634,6 +635,8 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       if (idempotency.type === 'new') {
         await storeIdempotencyResult(request, idempotency.key, 201, response);
       }
+      // L7 (WP-2.17): a real shipment completes the onboarding step (stamped once).
+      await markOnboardingStep({ prisma: app.prisma, redis: app.redis, log: request.log }, tenantId, 'FIRST_SHIPMENT');
 
       reply.status(201).send(response);
     }

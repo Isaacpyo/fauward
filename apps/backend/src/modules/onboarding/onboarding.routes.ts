@@ -1,9 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
+import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
+import { staffActor } from '../../services/platform-activity.service.js';
+import { ONBOARDING_STEPS, NudgeError, nudgeTenant, onboardingChecklist, onboardingFunnel, stuckTenants } from '../../services/onboarding.service.js';
 
-const ONBOARDING_STEPS = ['BRANDING', 'TEAM', 'PAYMENT', 'FIRST_SHIPMENT', 'GO_LIVE'] as const;
+// customer.onboarding (L7, WP-2.17). The tenant reads its checklist; steps are stamped only by the events that prove
+// them (there is no "mark step done" endpoint any more). The console sees the funnel and stuck tenants and can nudge.
+
+const funnelQuery = z.object({ cohort: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'cohort must be YYYY-MM').optional() });
+const stuckQuery = z.object({ stuckAt: z.enum(ONBOARDING_STEPS).optional(), stuckDays: z.coerce.number().int().min(1).max(365).default(7) });
 
 function tenantIdFrom(request: FastifyRequest, reply: FastifyReply) {
   const tenantId = request.tenant?.id;
@@ -14,99 +22,42 @@ function tenantIdFrom(request: FastifyRequest, reply: FastifyReply) {
   return tenantId;
 }
 
-function normalizeSteps(value: unknown): Record<string, boolean> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  const record = value as Record<string, unknown>;
-  return Object.fromEntries(ONBOARDING_STEPS.map((step) => [step, record[step] === true]));
-}
-
 export async function registerOnboardingRoutes(app: FastifyInstance) {
-  async function getTenantOnboarding(request: FastifyRequest, reply: FastifyReply) {
+  async function getChecklist(request: FastifyRequest, reply: FastifyReply) {
     const tenantId = tenantIdFrom(request, reply);
     if (!tenantId) return;
-    const tenant = await app.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { onboardingSteps: true, onboardingCompletedAt: true, createdAt: true }
-    });
-    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-
-    reply.send({
-      steps: normalizeSteps(tenant.onboardingSteps),
-      completedAt: tenant.onboardingCompletedAt,
-      signedUpAt: tenant.createdAt
-    });
+    const checklist = await onboardingChecklist(app.prisma, tenantId);
+    if (!checklist) return reply.status(404).send({ error: 'Tenant not found' });
+    return reply.send(checklist);
   }
 
-  app.get('/api/v1/tenants/me/onboarding', { preHandler: [authenticate] }, getTenantOnboarding);
-  app.get('/api/v1/tenant/onboarding/steps', { preHandler: [authenticate] }, getTenantOnboarding);
+  app.get('/api/v1/onboarding/checklist', { preHandler: [authenticate] }, getChecklist);
+  app.get('/api/v1/tenants/me/onboarding', { preHandler: [authenticate] }, getChecklist);
 
-  app.post('/api/v1/tenants/me/onboarding/steps', { preHandler: [authenticate] }, async (request, reply) => {
-    const tenantId = tenantIdFrom(request, reply);
-    if (!tenantId) return;
-    const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
-      ? (request.body as Record<string, unknown>)
-      : {};
-    const step = typeof body.step === 'string' ? body.step.trim().toUpperCase() : '';
-    if (!ONBOARDING_STEPS.includes(step as (typeof ONBOARDING_STEPS)[number])) {
-      return reply.status(400).send({ error: 'Invalid onboarding step' });
-    }
-
-    const tenant = await app.prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: { onboardingSteps: true, onboardingCompletedAt: true }
-    });
-    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
-
-    const steps = { ...normalizeSteps(tenant.onboardingSteps), [step]: true };
-    const completed = ONBOARDING_STEPS.every((name) => steps[name]);
-    const updated = await app.prisma.tenant.update({
-      where: { id: tenantId },
-      data: {
-        onboardingSteps: steps,
-        onboardingCompletedAt: completed && !tenant.onboardingCompletedAt ? new Date() : tenant.onboardingCompletedAt
-      },
-      select: { onboardingSteps: true, onboardingCompletedAt: true }
-    });
-
-    reply.send({ steps: normalizeSteps(updated.onboardingSteps), completedAt: updated.onboardingCompletedAt });
+  app.get('/api/internal/onboarding/funnel', { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.onboarding.read')] }, async (request, reply) => {
+    const parsed = funnelQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    return reply.send(await onboardingFunnel(app, parsed.data.cohort));
   });
 
-  app.get(
-    '/api/internal/onboarding/funnel',
-    { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.onboarding.read')] },
-    async (_request, reply) => {
-      const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-      const tenants = await app.prisma.tenant.findMany({
-        where: { createdAt: { gte: since } },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          createdAt: true,
-          onboardingSteps: true,
-          onboardingCompletedAt: true
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 250
-      });
-      const rows = tenants.map((tenant) => ({
-        tenantId: tenant.id,
-        tenantName: tenant.name,
-        tenantSlug: tenant.slug,
-        signedUpAt: tenant.createdAt,
-        steps: normalizeSteps(tenant.onboardingSteps),
-        completedAt: tenant.onboardingCompletedAt,
-        daysActive: Math.max(0, Math.floor((Date.now() - tenant.createdAt.getTime()) / (24 * 60 * 60 * 1000)))
-      }));
-      const completedCount = rows.filter((row) => row.completedAt).length;
-      reply.send({
-        data: rows,
-        metrics: {
-          total: rows.length,
-          completed: completedCount,
-          conversionRate: rows.length ? completedCount / rows.length : 0
-        }
-      });
+  app.get('/api/internal/onboarding/tenants', { preHandler: [authenticatePlatformSession, requireConsolePermission('customer.onboarding.read')] }, async (request, reply) => {
+    const parsed = stuckQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    return reply.send({ data: await stuckTenants(app, parsed.data) });
+  });
+
+  app.post(
+    '/api/internal/onboarding/tenants/:id/nudge',
+    { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('customer.success.write')] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const actor = staffActor(request);
+      try {
+        return reply.send(await nudgeTenant(app, id, { actorType: 'STAFF', actorId: actor.actorId ?? null, actorLabel: actor.actorLabel }));
+      } catch (error) {
+        if (error instanceof NudgeError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+        throw error;
+      }
     }
   );
 }

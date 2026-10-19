@@ -31,9 +31,11 @@ afterEach(async () => {
 });
 
 describe('shipment create → usage + outbox + activity (ACC-TP-1)', () => {
-  it('ACC-TP-1 POST /v1/shipments creates the row, increments usage once and projects one shipment.created activity', async () => {
+  it('ACC-TP-1 ACC-ONB-2 POST /v1/shipments creates the row, increments usage once, projects one shipment.created activity and stamps FIRST_SHIPMENT', async () => {
     const outbox: Array<Record<string, unknown>> = [];
     const usage: Array<Record<string, unknown>> = [];
+    const onboarding: Array<Record<string, unknown>> = [];
+    const onboardingActivity: Array<Record<string, unknown>> = [];
     const tx = {
       shipment: { create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ship_1', estimatedDelivery: null, ...data })), update: vi.fn() },
       shipmentItem: { createMany: vi.fn(async () => ({ count: 1 })) },
@@ -50,6 +52,12 @@ describe('shipment create → usage + outbox + activity (ACC-TP-1)', () => {
     app.decorate('prisma', {
       shippingRule: { findMany: vi.fn(async () => []) },
       user: { findMany: vi.fn(async () => []) },
+      // Onboarding (WP-2.17): the first real shipment stamps FIRST_SHIPMENT.
+      tenant: {
+        findUnique: vi.fn(async () => ({ id: 'tenant_a', name: 'Northwind', onboardingSteps: {}, onboardingCompletedAt: null })),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { onboarding.push(data); return {}; })
+      },
+      platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => { onboardingActivity.push(create); return { id: 'act_onb', ...create }; }) },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx))
     } as never);
     app.decorate('authenticate', async (request: { user?: unknown }) => {
@@ -79,6 +87,9 @@ describe('shipment create → usage + outbox + activity (ACC-TP-1)', () => {
     expect(usage[0]).toMatchObject({ update: { shipments: { increment: 1 } }, create: { tenantId: 'tenant_a', shipments: 1 } });
     expect(outbox).toHaveLength(1);
     expect(outbox[0]).toMatchObject({ tenantId: 'tenant_a', eventType: 'shipment.created', aggregateId: 'ship_1' });
+    // ACC-ONB-2: the real shipment completes its onboarding step and emits the step activity.
+    expect(onboarding).toEqual([{ onboardingSteps: { FIRST_SHIPMENT: expect.any(String) } }]);
+    expect(onboardingActivity).toEqual([expect.objectContaining({ type: 'onboarding.step_completed', tenantId: 'tenant_a' })]);
 
     const { activityForOutboxEvent } = await import('../../services/outbox-activity-map.js');
     const activity = activityForOutboxEvent({ id: 'obx_1', createdAt: new Date(), ...(outbox[0] as { eventType: string; aggregateId: string; tenantId: string; payload: never }) });

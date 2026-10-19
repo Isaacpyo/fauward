@@ -1,6 +1,5 @@
 import type { PrismaClient, Tenant } from '@prisma/client';
 import { resolveTenantEntitlements } from '../../services/tenant-entitlements.service.js';
-import { hasVerifiedGateway } from '../../services/tenant-payment-gateway.service.js';
 
 function getCurrentMonth(): string {
   const d = new Date();
@@ -63,30 +62,5 @@ export const usageService = {
         percent
       }
     };
-  },
-
-  async getOnboarding(prisma: PrismaClient, tenant: Tenant) {
-    const [paymentConnected, shipmentCount, staffCount] = await Promise.all([
-      hasVerifiedGateway(prisma, tenant.id),
-      prisma.shipment.count(),
-      prisma.user.count({ where: { tenantId: tenant.id, role: { notIn: ['CUSTOMER_ADMIN', 'CUSTOMER_USER'] } } })
-    ]);
-
-    const checklist = {
-      logoUploaded: !!tenant.logoUrl,
-      colourSet: tenant.primaryColor !== '#0D1F3C',
-      firstShipmentCreated: shipmentCount > 0,
-      staffInvited: staffCount > 1,
-      // A verified gateway (or an enabled offline method), not a saved key (WP-2.12).
-      paymentConnected,
-      customDomain: tenant.customDomainStatus === 'ACTIVE',
-      apiKeyGenerated: false
-    };
-
-    const values = Object.values(checklist);
-    const completeCount = values.filter(Boolean).length;
-    const percentComplete = Math.round((completeCount / values.length) * 100);
-
-    return { ...checklist, percentComplete };
   }
 };

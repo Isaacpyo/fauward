@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { decryptField, encryptField } from './crypto/field-encryption.js';
 import { recordAndPublishActivity, type ActivityInput } from './platform-activity.service.js';
 import { notifyTenantAdmins } from './platform-notifier.service.js';
+import { markOnboardingStep } from './onboarding.service.js';
 
 // L11 (WP-2.12): a tenant's own payment gateways (collecting from its customers; separate from Fauward billing).
 // Secrets are field-encrypted at rest and never returned by any route — the tenant sees "set / not set", the console
@@ -152,6 +153,7 @@ export async function saveTenantGateway(app: FastifyInstance, tenantId: string, 
     updatedByUserId: actor.userId
   };
   const row = await app.prisma.tenantPaymentGateway.upsert({ where: { tenantId_provider: { tenantId, provider } }, update: data, create: { tenantId, provider, ...data } });
+  if (row.status === 'VERIFIED') await markOnboardingStep(activityDeps(app), tenantId, 'GATEWAY_VERIFIED');
   await recordAndPublishActivity(activityDeps(app), {
     ...gatewayActivity(tenantId, provider, row.id),
     type: 'gateway.configured',
@@ -211,6 +213,7 @@ export async function testTenantGateway(app: FastifyInstance, tenantId: string, 
     summary: result.ok ? `${provider} gateway verified (${row.mode.toLowerCase()})` : `${provider} gateway verification failed: ${result.error}`,
     severity: result.ok ? 'INFO' : 'ATTENTION'
   });
+  if (result.ok) await markOnboardingStep(activityDeps(app), tenantId, 'GATEWAY_VERIFIED');
   if (!result.ok) {
     await notifyTenantAdmins(app, {
       tenantId,

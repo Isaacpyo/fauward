@@ -378,6 +378,8 @@ model Tenant {
   purgeAfter         DateTime?
   onboardingSteps    Json         @default("{}")
   onboardingCompletedAt DateTime?
+  /// WP-2.17: last onboarding nudge from the console (one per 7 days).
+  onboardingNudgedAt    DateTime?
   internalNotes      String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt

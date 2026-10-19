@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
 import { recordActivity, recordAndPublishActivity, staffActor, type ActivityInput } from './platform-activity.service.js';
 import { notifyTenantAdmins } from './platform-notifier.service.js';
+import { markOnboardingStep } from './onboarding.service.js';
 
 // L13 (WP-2.15): tenant team events for the console (invites, joins, role changes, suspensions) and Fauward's
 // security lock. A locked user cannot sign in, refresh or call the API (401 USER_LOCKED) until staff unlock them;
@@ -19,7 +20,7 @@ export function assertNotLocked(user: { lockedAt: Date | null }) {
   if (user.lockedAt) throw new UserLockedError();
 }
 
-type SignInDb = Pick<PrismaClient, 'user' | 'platformActivity'>;
+type SignInDb = Pick<PrismaClient, 'user' | 'platformActivity' | 'tenant'>;
 
 /**
  * Every successful sign-in stamps `lastLogin` (C360, health score, NPS eligibility read it). The first sign-in of an
@@ -42,6 +43,7 @@ export async function recordSignIn(db: SignInDb, user: { id: string; tenantId: s
       consoleLink: `/customer/360/${user.tenantId}?tab=people`,
       dedupeKey: `user.joined:${user.id}`
     });
+    await markOnboardingStep({ prisma: db }, user.tenantId, 'TEAMMATE_JOINED');
   }
 }
 

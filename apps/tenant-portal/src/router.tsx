@@ -22,7 +22,6 @@ import { CreateShipmentPage } from "@/pages/shipments/CreateShipmentPage";
 import { TrackingLookupPage } from "@/pages/tracking/TrackingLookupPage";
 import { TrackingResultPage } from "@/pages/tracking/TrackingResultPage";
 import { OnboardingPage } from "@/pages/onboarding/OnboardingPage";
-import { useTenantStore } from "@/stores/useTenantStore";
 import { TeamPage } from "@/pages/team/TeamPage";
 import { ReturnsListPage } from "@/pages/returns/ReturnsListPage";
 import { ReturnDetailPage } from "@/pages/returns/ReturnDetailPage";
@@ -73,7 +72,6 @@ import { setTenantSlug } from "@/lib/auth";
 function AuthGuard() {
   const location = useLocation();
   const { isLoading, user } = useAuth();
-  const tenant = useTenantStore((state) => state.tenant);
 
   if (isLoading && !user) {
     return (
@@ -87,13 +85,8 @@ function AuthGuard() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  const tenantPathMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const onboardingPath = tenantPathMatch ? `/t/${tenantPathMatch[1]}/onboarding` : "/onboarding";
-
-  if (tenant?.onboarding_complete === false && location.pathname !== onboardingPath) {
-    return <Navigate to={onboardingPath} replace />;
-  }
-
+  // Unfinished onboarding no longer traps the user on /onboarding (WP-2.17): its steps are completed by doing the
+  // real things elsewhere in the portal; the dashboard checklist links to them.
   return <Outlet />;
 }
 

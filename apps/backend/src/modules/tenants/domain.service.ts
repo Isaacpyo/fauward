@@ -1,3 +1,4 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import { randomBytes } from 'node:crypto';
 import { Prisma, type PrismaClient, type Tenant } from '@prisma/client';
 import { tenantStorage, runWithTenantContext } from '../../context/tenant.context.js';
@@ -281,6 +282,8 @@ export class DomainService {
         return row;
       })
     );
+    // L7 (WP-2.17): a verified custom domain completes its onboarding step.
+    if (nextStatus === 'ACTIVE' && previous !== 'ACTIVE') await markOnboardingStep({ prisma }, tenantId, 'DOMAIN_VERIFIED');
 
     return {
       status: nextStatus,

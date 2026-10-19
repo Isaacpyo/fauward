@@ -12,6 +12,7 @@ import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
 import { AnnouncementsPage } from "@/pillars/customer/comms/AnnouncementsPage";
+import { OnboardingFunnelPage, StuckTenantsPage } from "@/pillars/customer/onboarding/OnboardingPages";
 import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
 import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
 import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
@@ -237,7 +238,12 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/comms/delivery-log", element: <PermissionRoute permission="customer.comms.read">
                 <DeliveryLogPage />
               </PermissionRoute> },
-  { path: "/customer/onboarding", element: <OpsRoute permission="customer.onboarding.read" title="Onboarding Tracker" description="Activation funnel for recently created tenants." endpoint="/onboarding/funnel" /> },
+  { path: "/customer/onboarding", element: <PermissionRoute permission="customer.onboarding.read">
+                <OnboardingFunnelPage />
+              </PermissionRoute> },
+  { path: "/customer/onboarding/stuck", element: <PermissionRoute permission="customer.onboarding.read">
+                <StuckTenantsPage />
+              </PermissionRoute> },
   { path: "/customer/qbr", element: <OpsRoute permission="customer.qbr.read" title="QBR Center" description="Quarterly business review calendar and generated decks." endpoint="/qbr" related={[{ label: "Templates", to: "/customer/qbr/templates" }]} /> },
   { path: "/customer/qbr/templates", element: <OpsRoute permission="customer.qbr.read" title="QBR Templates" description="HTML/CSS deck templates by customer segment." endpoint="/qbr/templates" /> },
   { path: "/customer/qbr/:tenantId", element: <OpsRoute permission="customer.qbr.read" title="Tenant QBR" description="Generated QBR decks and export status for one tenant." endpoint="/qbr/:tenantId" /> },

@@ -15,6 +15,7 @@ import {
 import { Link } from "react-router-dom";
 
 import { DashboardChecklist } from "@/components/onboarding/DashboardChecklist";
+import { useOnboardingChecklist } from "@/components/onboarding/checklist-api";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Badge } from "@/components/ui/Badge";
@@ -116,10 +117,6 @@ type StaffRow = {
 
 type StaffAnalyticsResponse = {
   data: StaffRow[];
-};
-
-type OnboardingResponse = {
-  paymentConnected?: boolean;
 };
 
 type ShipmentsMetaResponse = {
@@ -476,13 +473,8 @@ export function TenantDashboardPage() {
     refetchInterval: 60_000
   });
 
-  const onboardingQuery = useQuery({
-    queryKey: ["dashboard-onboarding-state"],
-    queryFn: () => fetchJson<OnboardingResponse>("/v1/tenant/onboarding"),
-    enabled: hasApiSession,
-    retry: false,
-    refetchInterval: 60_000
-  });
+  // The server checklist (WP-2.17) is the only source for what is set up.
+  const onboardingQuery = useOnboardingChecklist(hasApiSession);
 
   const overview = overviewQuery.data;
   const shipmentAnalyticsToday = shipmentAnalyticsTodayQuery.data;
@@ -677,17 +669,8 @@ export function TenantDashboardPage() {
 
         <div className="grid gap-6 xl:grid-cols-[1.45fr,0.95fr]">
           <div className="space-y-6">
-            {tenant?.onboarding_complete === false && !dashboardChecklistDismissed ? (
-              <DashboardChecklist
-                state={{
-                  brandConfigured: Boolean(tenant?.name),
-                  firstShipmentCreated: (overview?.totals.shipments.value ?? 0) > 0,
-                  teamInvited: (staff?.length ?? 0) > 1,
-                  paymentsConnected: onboardingQuery.data?.paymentConnected ?? false,
-                  domainConfigured: Boolean(tenant?.domain)
-                }}
-                onDismiss={() => setDashboardChecklistDismissed(true)}
-              />
+            {onboardingQuery.data && !onboardingQuery.data.completedAt && !dashboardChecklistDismissed ? (
+              <DashboardChecklist checklist={onboardingQuery.data} onDismiss={() => setDashboardChecklistDismissed(true)} />
             ) : null}
 
             <SectionCard
