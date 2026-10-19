@@ -3,6 +3,7 @@ import { isAxiosError } from "axios";
 
 import { api } from "@/lib/api";
 import { useAppStore } from "@/stores/useAppStore";
+import { StaffAccessEmailSetting } from "@/components/staff-access/StaffAccess";
 
 export type StaffAccessSession = {
   id: string;
@@ -47,6 +48,7 @@ export function StaffAccessTab() {
         <h2 className="text-base font-semibold text-gray-900">Staff access</h2>
         <p className="text-sm text-gray-600">Fauward support opens your workspace only with a recorded reason. Read-only sessions cannot change anything.</p>
       </div>
+      <StaffAccessEmailSetting />
       {rows.length === 0 ? (
         <p className="text-sm text-gray-600">Fauward staff have not accessed this workspace.</p>
       ) : (

@@ -5,6 +5,7 @@ import { FailedPaymentBanner } from "@/components/billing/FailedPaymentBanner";
 import { LimitReachedBanner } from "@/components/billing/LimitReachedBanner";
 import { SaveOfferBanner } from "@/components/billing/SaveOfferBanner";
 import { NpsPrompt } from "@/components/feedback/NpsPrompt";
+import { StaffAccessActiveBanner } from "@/components/staff-access/StaffAccess";
 import { SuspendedOverlay } from "@/components/billing/SuspendedOverlay";
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { UsageWarningBanner } from "@/components/billing/UsageWarningBanner";
@@ -62,6 +63,7 @@ export function AppShell() {
           </>
         ) : null}
         <ImpersonationBanner />
+        <StaffAccessActiveBanner />
         <AnnouncementBanner />
         <NpsPrompt enabled={Boolean(summary) && !suspended} />
 

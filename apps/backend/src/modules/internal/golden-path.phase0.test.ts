@@ -94,6 +94,7 @@ function createWorld(passwordHash: string) {
       findMany: vi.fn(async () => [])
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    tenantSettings: { findUnique: vi.fn(async () => null) },
     platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `act_${String(create.type)}`, ...create })) },
     platformImpersonationSession: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
