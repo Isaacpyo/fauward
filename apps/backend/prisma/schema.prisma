@@ -2181,10 +2181,32 @@ model PlatformAnnouncement {
   publishedAt DateTime  @default(now())
   expiresAt   DateTime?
   createdBy   String
+  // L8 (WP-2.14): edits/archive propagate to tenants; alsoEmail sends one email per targeted tenant admin.
+  updatedAt   DateTime  @default(now()) @updatedAt
+  archivedAt  DateTime?
+  alsoEmail   Boolean   @default(false)
+  receipts    AnnouncementReceipt[]
 
   @@index([targetAll, publishedAt])
   @@index([expiresAt])
   @@map("platform_announcements")
+}
+
+/// L8 (WP-2.14): one row per user per announcement; each action stamps its own column once.
+model AnnouncementReceipt {
+  id             String               @id @default(uuid())
+  announcementId String
+  announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  tenantId       String
+  userId         String
+  viewedAt       DateTime             @default(now())
+  dismissedAt    DateTime?
+  ctaClickedAt   DateTime?
+
+  @@unique([announcementId, userId])
+  @@index([announcementId])
+  @@index([tenantId])
+  @@map("announcement_receipts")
 }
 
 // ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────

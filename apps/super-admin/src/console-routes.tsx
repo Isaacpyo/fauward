@@ -11,6 +11,7 @@ import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
 import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
+import { AnnouncementsPage } from "@/pillars/customer/comms/AnnouncementsPage";
 import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
 import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
 import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
@@ -229,7 +230,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/success/playbooks", element: <OpsRoute permission="customer.success.read" title="CS Playbooks" description="Health-triggered customer success playbooks." endpoint="/success/playbooks" /> },
   { path: "/customer/success/playbooks/:id/runs", element: <OpsRoute permission="customer.success.read" title="Playbook Runs" description="Sequential playbook execution status for tenant workflows." endpoint="/success/playbooks/:id/runs" /> },
   { path: "/customer/success/health-scoring", element: <OpsRoute permission="customer.success.read" title="Health Scoring" description="Weighted model configuration for nightly health scoring." endpoint="/success/health-scoring" /> },
-  { path: "/customer/comms", element: <OpsRoute permission="customer.comms.read" title="Communications Hub" description="Tenant-facing announcements and incident notices." endpoint="/announcements" primaryAction="New announcement" related={[{ label: "Delivery log", to: "/customer/comms/delivery-log" }]} /> },
+  { path: "/customer/comms", element: <PermissionRoute permission="customer.comms.read">
+                <AnnouncementsPage />
+              </PermissionRoute> },
   { path: "/customer/comms/delivery-log", element: <PermissionRoute permission="customer.comms.read">
                 <DeliveryLogPage />
               </PermissionRoute> },

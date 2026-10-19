@@ -48,6 +48,7 @@ export const EMAIL_TEMPLATES = {
   ai_limit_reached: 'ai_limit_reached',
   exception_escalation_update: 'exception_escalation_update',
   gateway_verification_failed: 'gateway_verification_failed',
+  platform_announcement: 'platform_announcement',
   feedback_status_changed: 'feedback_status_changed',
   trial_extension_decided: 'trial_extension_decided',
   incident_update: 'incident_update',

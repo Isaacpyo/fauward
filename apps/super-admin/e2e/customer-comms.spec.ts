@@ -89,3 +89,42 @@ test("WP-2.2 staff without customer.comms.read see the access-denied state", asy
   await expect(page.getByText(/customer\.comms\.read/).first()).toBeVisible();
   await expect(page.getByTestId("delivery-log-row")).toHaveCount(0);
 });
+
+test("ACC-COM-5 ACC-L8-1 New announcement opens a working dialog with an audience preview; the list shows receipts", async ({ page }) => {
+  const posts: unknown[] = [];
+  const rows: Array<Record<string, unknown>> = [
+    { id: "ann_1", type: "MAINTENANCE", title: "Saturday maintenance", body: "02:00 UTC", targetAll: true, tenantIds: [], planTiers: [], cta: null, dismissible: true, publishedAt: "2026-10-18T09:00:00.000Z", expiresAt: null, archivedAt: null, alsoEmail: false, state: "ACTIVE", receipts: { viewed: 12, dismissed: 4, ctaClicked: 0 } }
+  ];
+  await page.route("**/api/internal/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace("/api/internal", "");
+    const method = route.request().method();
+    if (path === "/auth/me") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(ROOT_PERMISSIONS)) });
+    if (path === "/announcements/audience-preview") {
+      const plans = url.searchParams.get("planTiers");
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(plans === "PRO" ? { tenants: 3, users: 41 } : { tenants: 10, users: 120 }) });
+    }
+    if (path === "/announcements" && method === "POST") {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      posts.push(body);
+      rows.unshift({ ...body, id: "ann_2", publishedAt: "2026-10-19T09:00:00.000Z", archivedAt: null, state: "ACTIVE", receipts: { viewed: 0, dismissed: 0, ctaClicked: 0 } });
+      return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(rows[0]) });
+    }
+    if (path === "/announcements") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: rows }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
+  });
+
+  await page.goto("/customer/comms");
+  await expect(page.getByTestId("announcement-receipts").first()).toHaveText("12 viewed · 4 dismissed · 0 clicked");
+  await page.getByRole("button", { name: "New announcement" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Title").fill("Pro webinar");
+  await dialog.getByLabel("Message").fill("Join us on Thursday");
+  await dialog.getByLabel("Audience").selectOption("plans");
+  await dialog.getByLabel("PRO").check();
+  await expect(dialog.getByTestId("audience-preview")).toHaveText("Reaches 3 tenant(s), 41 user(s).");
+  await dialog.getByRole("button", { name: "Publish" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("announcement-row").first()).toContainText("Pro webinar");
+  expect(posts).toEqual([{ type: "INFO", title: "Pro webinar", body: "Join us on Thursday", targetAll: false, tenantIds: [], planTiers: ["PRO"], cta: null, dismissible: true, expiresAt: null, alsoEmail: false }]);
+});
