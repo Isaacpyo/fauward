@@ -54,6 +54,7 @@ export const EMAIL_TEMPLATES = {
   incident_update: 'incident_update',
   onboarding_nudge: 'onboarding_nudge',
   user_locked_by_fauward: 'user_locked_by_fauward',
+  user_unlocked_by_fauward: 'user_unlocked_by_fauward',
   billing_payment_failed: 'billing_payment_failed',
   billing_final_warning: 'billing_final_warning',
   billing_account_cancelled: 'billing_account_cancelled',

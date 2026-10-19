@@ -1,3 +1,4 @@
+import { USER_LOCKED_MESSAGE } from '../../services/tenant-user-lifecycle.service.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'crypto';
 import { currentRequestActor } from '../../context/request-actor.context.js';
@@ -180,10 +181,14 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },
-      select: { isActive: true }
+      select: { isActive: true, lockedAt: true }
     });
     if (!user?.isActive) {
       return reply.status(401).send({ error: 'Account suspended', code: 'USER_SUSPENDED' });
+    }
+    // Fauward's security lock (WP-2.15) ends the user's own tokens at once; staff impersonation is separate.
+    if (user.lockedAt && request.user?.mode !== 'IMPERSONATION') {
+      return reply.status(401).send({ error: 'USER_LOCKED', code: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
     }
 
     if (role !== 'SUPER_ADMIN') {

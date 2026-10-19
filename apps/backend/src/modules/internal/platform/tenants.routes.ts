@@ -19,6 +19,7 @@ import { REGIONS } from '../../../config/regions.js';
 import { RegionChangeError, decideRegionChange, presentRegionRequest } from '../../../services/region-change.service.js';
 import { aiLimitBody, presentAiLimit, setTenantAiLimit } from '../../../services/ai-limit.service.js';
 import { presentApiKey, revokeApiKey } from '../../../services/api-key-revocation.service.js';
+import { UserLockError, setUserLock } from '../../../services/tenant-user-lifecycle.service.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
 
@@ -138,7 +139,7 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
             }
           : {})
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, createdAt: true, invitedBy: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, createdAt: true, invitedBy: true, lockedAt: true, lockedReason: true },
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
       take: 100
     });
@@ -221,6 +222,29 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     });
     return reply.send({ key: presentApiKey(result.key) });
   });
+
+  // L13 (WP-2.15): lock a tenant user during a security incident (401 USER_LOCKED everywhere) and unlock them.
+  for (const action of ['lock', 'unlock'] as const) {
+    app.post(`/api/internal/tenants/:id/users/:userId/${action}`, { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const reason = reasonOf(request) ?? '';
+      try {
+        const user = await setUserLock(app, request, { tenantId: id, userId, lock: action === 'lock', reason });
+        await writePlatformAuditLog(app.prisma, {
+          ...platformAuditActor(request),
+          actorType: 'PLATFORM_USER',
+          action: action === 'lock' ? 'TENANT_USER_LOCKED' : 'TENANT_USER_UNLOCKED',
+          targetTenantId: id,
+          reason,
+          metadata: { userId }
+        });
+        return reply.send({ user: { id: user.id, email: user.email, lockedAt: user.lockedAt?.toISOString() ?? null, lockedReason: user.lockedReason } });
+      } catch (error) {
+        if (error instanceof UserLockError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+        throw error;
+      }
+    });
+  }
 
   app.patch(
     '/api/internal/tenants/:id/internal-notes',

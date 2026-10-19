@@ -175,3 +175,30 @@ test("ACC-L9-1 staff revoke a tenant API key from Config with a reason (dangerou
   await expect(key.getByRole("button", { name: "Revoke" })).toHaveCount(0);
   expect(revokes).toEqual([{ reason: "Key leaked in a public repo" }]);
 });
+
+test("ACC-L13-1 People shows status, invite state, MFA and last sign-in; staff lock a user with a reason", async ({ page }) => {
+  await mock360(page);
+  let locked = false;
+  const locks: unknown[] = [];
+  await page.route("**/api/internal/customer360/tenant_1/people", (route) =>
+    json(route, 200, {
+      total: 1,
+      users: [{ id: "u_ops", email: "ops@northwind.test", firstName: "Olu", lastName: "Ops", role: "TENANT_STAFF", isActive: true, mfaEnabled: false, lastLogin: "2026-10-18T07:30:00.000Z", invitedBy: "u_admin", createdAt: "2026-09-01T00:00:00.000Z", lockedAt: locked ? "2026-10-19T09:00:00.000Z" : null, lockedReason: locked ? "Credentials in a phishing kit" : null, status: locked ? "LOCKED" : "ACTIVE", invited: true, joined: true }]
+    })
+  );
+  await page.route("**/api/internal/tenants/tenant_1/users/u_ops/lock", async (route) => {
+    locks.push(route.request().postDataJSON());
+    locked = true;
+    return json(route, 200, { user: { id: "u_ops" } });
+  });
+  await page.goto("/customer/360/tenant_1?tab=people");
+  const person = page.getByTestId("c360-person");
+  await expect(person).toContainText("Invited · joined");
+  await person.getByRole("button", { name: "Lock" }).click();
+  await page.getByLabel(/Reason/).fill("Credentials in a phishing kit");
+  await page.getByRole("button", { name: "Lock user" }).click();
+  await expect(person).toContainText("Locked");
+  await expect(person).toContainText("Credentials in a phishing kit");
+  await expect(person.getByRole("button", { name: "Unlock" })).toBeVisible();
+  expect(locks).toEqual([{ reason: "Credentials in a phishing kit" }]);
+});

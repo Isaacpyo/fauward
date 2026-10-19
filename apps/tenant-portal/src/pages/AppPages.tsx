@@ -51,6 +51,9 @@ function getLoginErrorMessage(message: string) {
   if (message === "Internal Server Error") {
     return "Invalid email or password.";
   }
+  if (message === "USER_LOCKED") {
+    return "This account is locked by Fauward. Contact your workspace admin.";
+  }
   return message;
 }
 

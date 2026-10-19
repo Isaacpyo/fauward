@@ -8,6 +8,7 @@ import { verifyFirebaseIdToken } from './firebase-token.js';
 import { enqueueEmail } from '../notifications/notifications.service.js';
 import { config } from '../../config/index.js';
 import { isReservedSlug } from '../tenants/reserved-slugs.js';
+import { assertNotLocked, recordSignIn } from '../../services/tenant-user-lifecycle.service.js';
 import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
 
 type RegisterPayload = {
@@ -310,6 +311,8 @@ export const authService = {
     if (!ok) {
       throw new Error('Invalid credentials');
     }
+    // Checked after the password so a lock reveals nothing to someone without it (WP-2.15).
+    assertNotLocked(user);
 
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) {
@@ -319,6 +322,7 @@ export const authService = {
     if (tenant.closedAt) {
       throw new Error('TENANT_CLOSED');
     }
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -381,11 +385,13 @@ export const authService = {
     if (!user) {
       throw new Error('No Fauward account is linked to this Google email');
     }
+    assertNotLocked(user);
 
     const tenant = await prisma.tenant.findUnique({ where: { id: resolvedTenantId } });
     if (!tenant) {
       throw new Error('Tenant not found');
     }
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -434,7 +440,7 @@ export const authService = {
     const [user, tenant] = await Promise.all([
       prisma.user.findUnique({
         where: { id: decoded.sub },
-        select: { id: true, email: true, role: true, tenantId: true, isActive: true }
+        select: { id: true, email: true, role: true, tenantId: true, isActive: true, lockedAt: true }
       }),
       prisma.tenant.findUnique({
         where: { id: decoded.tenantId },
@@ -445,6 +451,7 @@ export const authService = {
     if (!user || !tenant || !user.isActive || user.tenantId !== tenant.id) {
       throw new Error('Invalid refresh token');
     }
+    assertNotLocked(user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -530,6 +537,8 @@ export const authService = {
     if (!user || !tenant) {
       throw new Error('Invalid email-link token');
     }
+    assertNotLocked(user);
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },

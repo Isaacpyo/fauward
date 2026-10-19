@@ -1,3 +1,4 @@
+import { USER_LOCKED_MESSAGE } from '../../services/tenant-user-lifecycle.service.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { authService } from './auth.service.js';
 import {
@@ -57,6 +58,9 @@ export const authController = {
       const result = await authService.login(payload, request.server.prisma, tenantId);
       reply.send(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'USER_LOCKED') {
+        return reply.status(401).send({ error: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
+      }
       if (error instanceof Error && error.message === 'TENANT_CLOSED') {
         return reply.status(403).send({ error: 'TENANT_CLOSED', message: 'This workspace has been closed.' });
       }
@@ -69,6 +73,9 @@ export const authController = {
       const result = await authService.firebaseLogin(payload, request.server.prisma, request.tenant?.id);
       reply.send(result);
     } catch (error) {
+      if (error instanceof Error && error.message === 'USER_LOCKED') {
+        return reply.status(401).send({ error: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
+      }
       const message = error instanceof Error ? error.message : 'Google sign-in failed';
       reply.status(401).send({ error: message });
     }
@@ -95,7 +102,10 @@ export const authController = {
     try {
       const result = await authService.consumeEmailLink(payload as { email: string; token: string }, request.server.prisma);
       reply.send(result);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'USER_LOCKED') {
+        return reply.status(401).send({ error: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
+      }
       reply.status(401).send({ error: 'Invalid email-link token' });
     }
   },
@@ -104,7 +114,10 @@ export const authController = {
     try {
       const result = await authService.refresh(payload, request.server.prisma);
       reply.send(result);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'USER_LOCKED') {
+        return reply.status(401).send({ error: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
+      }
       reply.status(401).send({ error: 'Invalid refresh token' });
     }
   },

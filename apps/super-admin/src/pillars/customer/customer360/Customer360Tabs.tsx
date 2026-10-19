@@ -416,6 +416,32 @@ export function AuditTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+/** L13 (WP-2.15): lock a user during a security incident (their sessions end at once) or unlock them; dangerous. */
+function UserLockButton({ tenantId, userId, email, locked }: { tenantId: string; userId: string; email: string; locked: boolean }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const action = locked ? "unlock" : "lock";
+  return (
+    <>
+      <PermissionButton permission="platform.tenants.write" onClick={() => setOpen(true)} className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-semibold disabled:opacity-50">
+        {locked ? "Unlock" : "Lock"}
+      </PermissionButton>
+      <ActionDialog
+        open={open}
+        dangerous
+        title={`${locked ? "Unlock" : "Lock"} ${email}`}
+        description={locked ? "They can sign in again. The tenant's admins are told." : "They are signed out everywhere and cannot sign in until unlocked. The tenant's admins are told your reason."}
+        confirmLabel={locked ? "Unlock user" : "Lock user"}
+        onSubmit={async (reason) => {
+          await consoleApi.post(`/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/${action}`, { reason });
+          await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "people", tenantId] });
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function PeopleTab({ tenantId }: { tenantId: string }) {
   const people = useC360(tenantId, "people");
   return (
@@ -429,20 +455,29 @@ export function PeopleTab({ tenantId }: { tenantId: string }) {
                 <th className={th}>User</th>
                 <th className={th}>Role</th>
                 <th className={th}>Status</th>
+                <th className={th}>Invite</th>
                 <th className={th}>MFA</th>
                 <th className={th}>Last sign-in</th>
+                <th className={th} />
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
               {data.users.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} data-testid="c360-person">
                   <td className="py-1">
                     {[user.firstName, user.lastName].filter(Boolean).join(" ") || "—"} <span className="block font-mono text-xs text-[var(--color-text-muted)]">{user.email}</span>
                   </td>
                   <td className="py-1 text-xs">{user.role}</td>
-                  <td className="py-1 text-xs">{user.isActive ? "Active" : "Inactive"}</td>
+                  <td className="py-1 text-xs">
+                    {user.status === "LOCKED" ? <span className="font-semibold text-red-700">Locked</span> : user.status === "ACTIVE" ? "Active" : "Suspended"}
+                    {user.lockedReason ? <span className="block text-[var(--color-text-muted)]">{user.lockedReason}</span> : null}
+                  </td>
+                  <td className="py-1 text-xs">{user.invited ? (user.joined ? "Invited · joined" : "Invited · not joined") : "—"}</td>
                   <td className="py-1 text-xs">{user.mfaEnabled ? "On" : "Off"}</td>
                   <td className="py-1 text-xs">{when(user.lastLogin)}</td>
+                  <td className="py-1 text-right">
+                    <UserLockButton tenantId={tenantId} userId={user.id} email={user.email} locked={user.status === "LOCKED"} />
+                  </td>
                 </tr>
               ))}
             </tbody>

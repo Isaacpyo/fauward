@@ -203,11 +203,20 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
         where: { tenantId: tenant.id },
         orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
         take: 200,
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, invitedBy: true, createdAt: true }
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, invitedBy: true, createdAt: true, lockedAt: true, lockedReason: true }
       }),
       app.prisma.user.count({ where: { tenantId: tenant.id } })
     ]);
-    return reply.send({ users, total });
+    // L13 (WP-2.15): status, invited/joined (an invited user has joined once they signed in), MFA, last login, lock.
+    return reply.send({
+      users: users.map((user) => ({
+        ...user,
+        status: user.lockedAt ? 'LOCKED' : user.isActive ? 'ACTIVE' : 'SUSPENDED',
+        invited: Boolean(user.invitedBy),
+        joined: user.invitedBy ? user.lastLogin !== null : true
+      })),
+      total
+    });
   });
 
   app.get('/api/internal/customer360/:tenantId/config', pre('platform.tenants.read'), async (request, reply) => {

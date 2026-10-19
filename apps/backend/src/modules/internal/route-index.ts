@@ -249,6 +249,8 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/tenants/:id/plan-overrides',
   'POST /api/internal/tenants/:id/suspend',
   'POST /api/internal/tenants/:id/unsuspend',
+  'POST /api/internal/tenants/:id/users/:userId/lock',
+  'POST /api/internal/tenants/:id/users/:userId/unlock',
   'POST /api/internal/tenants/region-requests/:id/decision',
   'POST /api/internal/trials/extensions/:id/approve',
   'PUT /api/internal/tenants/:id/ai-limit'

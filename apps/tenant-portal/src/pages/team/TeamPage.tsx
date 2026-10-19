@@ -25,6 +25,9 @@ type TeamUser = {
   isActive: boolean;
   createdAt: string;
   lastLogin?: string | null;
+  /** Set when Fauward locked the account during a security incident (WP-2.15). */
+  lockedAt?: string | null;
+  lockedReason?: string | null;
 };
 
 type AccessCodeIssued = {
@@ -212,9 +215,14 @@ export function TeamPage() {
               <TableCell>{member.phone ?? "—"}</TableCell>
               <TableCell>{formatRoleLabel(member.role)}</TableCell>
               <TableCell>
-                <Badge variant={member.isActive ? "success" : "warning"}>
-                  {member.isActive ? "Active" : "Suspended"}
-                </Badge>
+                {member.lockedAt ? (
+                  <span data-testid="member-locked">
+                    <Badge variant="danger">Locked by Fauward</Badge>
+                    {member.lockedReason ? <span className="mt-1 block text-xs text-gray-600">{member.lockedReason}</span> : null}
+                  </span>
+                ) : (
+                  <Badge variant={member.isActive ? "success" : "warning"}>{member.isActive ? "Active" : "Suspended"}</Badge>
+                )}
               </TableCell>
               <TableCell>{new Date(member.createdAt).toLocaleDateString()}</TableCell>
               <TableCell>{member.lastLogin ? new Date(member.lastLogin).toLocaleString() : "Never"}</TableCell>

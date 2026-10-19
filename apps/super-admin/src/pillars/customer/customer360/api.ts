@@ -80,7 +80,7 @@ export type C360Audit = {
 };
 
 export type C360People = {
-  users: Array<{ id: string; email: string; firstName: string | null; lastName: string | null; role: string; isActive: boolean; mfaEnabled: boolean; lastLogin: string | null; invitedBy: string | null; createdAt: string }>;
+  users: Array<{ id: string; email: string; firstName: string | null; lastName: string | null; role: string; isActive: boolean; mfaEnabled: boolean; lastLogin: string | null; invitedBy: string | null; createdAt: string; lockedAt: string | null; lockedReason: string | null; status: "ACTIVE" | "SUSPENDED" | "LOCKED"; invited: boolean; joined: boolean }>;
   total: number;
 };
 

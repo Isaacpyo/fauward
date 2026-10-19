@@ -91,6 +91,7 @@ const CONTENT: Record<EmailTemplateKey, Content> = {
   trial_extension_decided: { subject: (d) => `Trial extension ${str(d, 'decision', 'decided').toLowerCase()}`, lines: (d) => [str(d, 'summary') || null] },
   incident_update: { subject: (d) => `Incident update: ${str(d, 'title')}`, lines: (d) => [str(d, 'body') || null, link(d, 'Status')] },
   onboarding_nudge: { subject: () => 'Finish setting up your Fauward workspace', lines: (d) => [`Next step: ${str(d, 'step', 'complete your setup')}.`, link(d, 'Continue setup')] },
+  user_unlocked_by_fauward: { subject: () => 'Fauward unlocked a user in your workspace', lines: (d) => [`${str(d, 'userEmail', 'A user')} can sign in again.`, `Reason: ${str(d, 'reason')}`] },
   user_locked_by_fauward: { subject: () => 'Fauward locked a user in your workspace', lines: (d) => [`${str(d, 'userEmail', 'A user')} was locked by Fauward.`, `Reason: ${str(d, 'reason')}`] },
   billing_payment_failed: { subject: () => 'Your Fauward payment failed', lines: (d) => [`Fauward could not collect payment for ${workspace(d)}.`, 'Update your payment details in Settings → Billing to avoid interruption.'] },
   billing_final_warning: { subject: () => 'Final notice: update your Fauward payment details', lines: (d) => [`Payment for ${workspace(d)} has failed again. The workspace stays suspended until it is paid.`] },

@@ -1,3 +1,4 @@
+import { recordTeamEvent } from '../../services/tenant-user-lifecycle.service.js';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { UserRole } from '@prisma/client';
@@ -188,7 +189,9 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           lastName: true,
           isActive: true,
           createdAt: true,
-          lastLogin: true
+          lastLogin: true,
+          lockedAt: true,
+          lockedReason: true
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -204,7 +207,10 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           lastName: user.lastName,
           isActive: user.isActive,
           createdAt: user.createdAt,
-          lastLogin: user.lastLogin
+          lastLogin: user.lastLogin,
+          // Locked by Fauward during a security incident (WP-2.15); admins see why.
+          lockedAt: user.lockedAt,
+          lockedReason: user.lockedReason
         }))
       });
     }
@@ -295,6 +301,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
         accessCode: temporaryPassword,
         isReset: false
       });
+      await recordTeamEvent(app, request, 'user.invited', user, `${user.email} invited as ${user.role}`);
 
       reply.status(201).send({
         id: user.id,
@@ -416,6 +423,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
 
         return result;
       });
+      if (target.role !== nextRole) await recordTeamEvent(app, request, 'user.role_changed', target, `${target.email}: ${target.role} → ${nextRole}`);
 
       reply.send(updated);
     }
@@ -530,7 +538,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
 
       const target = await app.prisma.user.findFirst({
         where: { id, tenantId },
-        select: { id: true, role: true }
+        select: { id: true, role: true, email: true, tenantId: true }
       });
       if (!target) return reply.status(404).send({ error: 'User not found' });
 
@@ -551,6 +559,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           }
         })
       ]);
+      await recordTeamEvent(app, request, 'user.suspended', target, `${target.email} suspended by the workspace`);
 
       reply.send({ success: true });
     }

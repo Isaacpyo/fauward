@@ -757,6 +757,10 @@ model User {
   mfaSecret      String?
   lastLogin      DateTime?
   invitedBy      String?
+  // L13 (WP-2.15): Fauward staff can lock an account during a security incident (401 USER_LOCKED until unlocked).
+  lockedAt               DateTime?
+  lockedReason           String?
+  lockedByPlatformUserId String?
   ssoProvider    String?
   ssoSubject     String?
   createdAt      DateTime      @default(now())

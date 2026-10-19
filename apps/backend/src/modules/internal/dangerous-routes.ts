@@ -22,6 +22,9 @@ export const DANGEROUS_ROUTES = [
   // L16 AI limit (WP-2.10), L9 API key revoke (WP-2.13)
   { method: 'PUT', url: '/api/internal/tenants/:id/ai-limit' },
   { method: 'POST', url: '/api/internal/tenants/:id/api-keys/:keyId/revoke' },
+  // L13 user lock (WP-2.15)
+  { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/lock' },
+  { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/unlock' },
   // platform.integrations: webhook replay (WP-2.13)
   { method: 'POST', url: '/api/internal/integrations/webhooks/deliveries/:id/replay' },
   // platform.flags (WP-1.4 native overrides)
