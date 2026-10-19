@@ -20,6 +20,7 @@ import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPag
 import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
 import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/customer/feedback/FeedbackPages";
 import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
+import { WebhookFailuresPage } from "@/pillars/platform/integrations/WebhookFailuresPage";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
@@ -122,7 +123,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
   { path: "/platform/integrations", element: <OpsRoute permission="platform.integrations.read" title="Integration Health" description="Third-party provider status, credentials and webhook delivery health." endpoint="/integrations" related={[{ label: "Credentials", to: "/platform/integrations/credentials" }, { label: "Webhooks", to: "/platform/integrations/webhooks" }]} /> },
   { path: "/platform/integrations/credentials", element: <OpsRoute permission="platform.integrations.read" title="Integration Credentials" description="Credential metadata shared with the secret rotation tracker." endpoint="/integrations/credentials" /> },
-  { path: "/platform/integrations/webhooks", element: <OpsRoute permission="platform.integrations.read" title="Webhook Health" description="Outbound webhook delivery attempts, retries and failures." endpoint="/integrations/webhooks" /> },
+  { path: "/platform/integrations/webhooks", element: <PermissionRoute permission="platform.integrations.read">
+                <WebhookFailuresPage />
+              </PermissionRoute> },
   { path: "/platform/integrations/:provider", element: <OpsRoute permission="platform.integrations.read" title="Provider Detail" description="Provider health detail and recent status." endpoint="/integrations/:provider" /> },
   { path: "/platform/impersonation", element: <PermissionRoute permission="platform.impersonation.start">
                 <ImpersonationCenterPage />

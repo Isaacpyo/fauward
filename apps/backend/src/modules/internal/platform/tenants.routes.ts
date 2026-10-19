@@ -18,6 +18,7 @@ import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.j
 import { REGIONS } from '../../../config/regions.js';
 import { RegionChangeError, decideRegionChange, presentRegionRequest } from '../../../services/region-change.service.js';
 import { aiLimitBody, presentAiLimit, setTenantAiLimit } from '../../../services/ai-limit.service.js';
+import { presentApiKey, revokeApiKey } from '../../../services/api-key-revocation.service.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
 
@@ -198,6 +199,27 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
     const limit = await setTenantAiLimit(app, request, tenant, parsed.data);
     return reply.send({ limit: presentAiLimit(limit) });
+  });
+
+  // L9 (WP-2.13): revoke a compromised tenant API key at once; the tenant's admins are told why.
+  app.post('/api/internal/tenants/:id/api-keys/:keyId/revoke', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+    const { id, keyId } = request.params as { id: string; keyId: string };
+    const reason = reasonOf(request) ?? '';
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const staff = request.platform!.user;
+    const result = await revokeApiKey(app, { tenantId: tenant.id, keyId, reason, actor: { type: 'STAFF', id: staff.id, label: staff.name ?? staff.email } });
+    if (!result) return reply.status(404).send({ error: 'NOT_FOUND', message: 'API key not found for this tenant' });
+    if (!result.changed) return reply.status(409).send({ error: 'ALREADY_REVOKED', message: 'This key is already revoked' });
+    await writePlatformAuditLog(app.prisma, {
+      ...platformAuditActor(request),
+      actorType: 'PLATFORM_USER',
+      action: 'TENANT_API_KEY_REVOKED',
+      targetTenantId: tenant.id,
+      reason,
+      metadata: { keyId, keyPrefix: result.key.keyPrefix }
+    });
+    return reply.send({ key: presentApiKey(result.key) });
   });
 
   app.patch(

@@ -473,6 +473,31 @@ function ConfigList({ title, values }: { title: string; values: Record<string, u
   );
 }
 
+/** L9 (WP-2.13): revoke a compromised key at once (dangerous); the tenant's admins are told the reason. */
+function RevokeApiKeyButton({ tenantId, keyId, keyPrefix }: { tenantId: string; keyId: string; keyPrefix: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <PermissionButton permission="platform.tenants.write" onClick={() => setOpen(true)} className="ml-2 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-semibold disabled:opacity-50">
+        Revoke
+      </PermissionButton>
+      <ActionDialog
+        open={open}
+        dangerous
+        title={`Revoke API key ${keyPrefix}…`}
+        description="The key stops working immediately. The tenant's admins get your reason in-app and by email."
+        confirmLabel="Revoke key"
+        onSubmit={async (reason) => {
+          await consoleApi.post(`/tenants/${encodeURIComponent(tenantId)}/api-keys/${encodeURIComponent(keyId)}/revoke`, { reason });
+          await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "config", tenantId] });
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function ConfigTab({ tenantId }: { tenantId: string }) {
   const config = useC360(tenantId, "config");
   return (
@@ -503,8 +528,9 @@ export function ConfigTab({ tenantId }: { tenantId: string }) {
             <h2 className="text-sm font-semibold">API keys and webhooks</h2>
             <ul className="mt-2 text-xs">
               {data.apiKeys.map((key) => (
-                <li key={key.id}>
-                  <span className="font-mono">{key.keyPrefix}…</span> {key.name ?? ""} · {key.isActive ? "active" : "revoked"} · last used {when(key.lastUsedAt)}
+                <li key={key.id} data-testid="c360-api-key">
+                  <span className="font-mono">{key.keyPrefix}…</span> {key.name ?? ""} · {key.isActive ? "active" : key.revokedByType === "STAFF" ? `revoked by Fauward${key.revokedReason ? `: ${key.revokedReason}` : ""}` : "revoked"} · last used {when(key.lastUsedAt)}
+                  {key.isActive ? <RevokeApiKeyButton tenantId={tenantId} keyId={key.id} keyPrefix={key.keyPrefix} /> : null}
                 </li>
               ))}
               {data.webhooks.map((hook) => (

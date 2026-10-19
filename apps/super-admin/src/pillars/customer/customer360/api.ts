@@ -91,7 +91,7 @@ export type C360Config = {
   notifications: Record<string, string | boolean | string[] | null> | null;
   /** L11 (WP-2.12): tenant payment gateways — state only, never keys. */
   payments: { activeProvider: string | null; currency: string; gateways: C360Gateway[] };
-  apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null }>;
+  apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null; revokedAt: string | null; revokedByType: string | null; revokedReason: string | null }>;
   webhooks: Array<{ id: string; url: string; events: string[]; isActive: boolean; createdAt: string; failuresLast30Days: number }>;
   legacyWebhook: { url: string | null; secretConfigured: boolean } | null;
 };

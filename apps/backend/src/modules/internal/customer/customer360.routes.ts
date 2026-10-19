@@ -217,7 +217,7 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     const [settings, gateways, apiKeys, webhooks] = await Promise.all([
       app.prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id } }),
       app.prisma.tenantPaymentGateway.findMany({ where: { tenantId: tenant.id }, orderBy: { provider: 'asc' } }),
-      app.prisma.apiKey.findMany({ where: { tenantId: tenant.id }, select: { id: true, name: true, keyPrefix: true, scopes: true, isActive: true, isSandbox: true, createdAt: true, lastUsedAt: true, expiresAt: true }, orderBy: { createdAt: 'desc' } }),
+      app.prisma.apiKey.findMany({ where: { tenantId: tenant.id }, select: { id: true, name: true, keyPrefix: true, scopes: true, isActive: true, isSandbox: true, createdAt: true, lastUsedAt: true, expiresAt: true, revokedAt: true, revokedByType: true, revokedReason: true }, orderBy: { createdAt: 'desc' } }),
       app.prisma.webhookEndpoint.findMany({ where: { tenantId: tenant.id }, select: { id: true, url: true, events: true, isActive: true, createdAt: true }, orderBy: { createdAt: 'desc' } })
     ]);
     const failures = await Promise.all(

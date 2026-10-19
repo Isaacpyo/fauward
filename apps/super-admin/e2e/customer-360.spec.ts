@@ -153,3 +153,25 @@ test("ACC-L16-1 the AI tab shows this month's spend and sets the AI limit with a
   await expect(panel).toContainText("Budget agreed with the customer");
   expect(puts).toEqual([{ monthlyBudgetUsd: "4.00", flashRequestLimit: null, proRequestLimit: null, featuresEnabled: [], reason: "Budget agreed with the customer" }]);
 });
+
+test("ACC-L9-1 staff revoke a tenant API key from Config with a reason (dangerous)", async ({ page }) => {
+  await mock360(page);
+  const revokes: unknown[] = [];
+  let revoked = false;
+  await page.route("**/api/internal/customer360/tenant_1/config", (route) =>
+    json(route, 200, { ...config, apiKeys: [{ ...config.apiKeys[0], isActive: !revoked, revokedAt: revoked ? "2026-10-19T09:00:00.000Z" : null, revokedByType: revoked ? "STAFF" : null, revokedReason: revoked ? "Key leaked in a public repo" : null }] })
+  );
+  await page.route("**/api/internal/tenants/tenant_1/api-keys/key_1/revoke", async (route) => {
+    revokes.push(route.request().postDataJSON());
+    revoked = true;
+    return json(route, 200, { key: { id: "key_1", isActive: false } });
+  });
+  await page.goto("/customer/360/tenant_1?tab=config");
+  const key = page.getByTestId("c360-api-key");
+  await key.getByRole("button", { name: "Revoke" }).click();
+  await page.getByLabel(/Reason/).fill("Key leaked in a public repo");
+  await page.getByRole("button", { name: "Revoke key" }).click();
+  await expect(key).toContainText("revoked by Fauward: Key leaked in a public repo");
+  await expect(key.getByRole("button", { name: "Revoke" })).toHaveCount(0);
+  expect(revokes).toEqual([{ reason: "Key leaked in a public repo" }]);
+});

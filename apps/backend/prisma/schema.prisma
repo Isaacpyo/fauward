@@ -1710,6 +1710,11 @@ model ApiKey {
   isActive            Boolean   @default(true)
   expiresAt           DateTime?
   createdAt           DateTime  @default(now())
+  // L9 (WP-2.13): who revoked the key (the tenant or Fauward staff) and why; the tenant sees Fauward's reason.
+  revokedAt           DateTime?
+  revokedByType       String? // TENANT_USER|STAFF
+  revokedById         String?
+  revokedReason       String?
 
   usageEvents ApiUsageRecord[]
 

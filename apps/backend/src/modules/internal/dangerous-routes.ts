@@ -19,6 +19,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'PATCH', url: '/api/internal/tenants/:id/limits' },
   { method: 'POST', url: '/api/internal/tenants/:id/close' },
   { method: 'DELETE', url: '/api/internal/tenants/:id/feature-overrides/:overrideId' },
+  // L16 AI limit (WP-2.10), L9 API key revoke (WP-2.13)
+  { method: 'PUT', url: '/api/internal/tenants/:id/ai-limit' },
+  { method: 'POST', url: '/api/internal/tenants/:id/api-keys/:keyId/revoke' },
+  // platform.integrations: webhook replay (WP-2.13)
+  { method: 'POST', url: '/api/internal/integrations/webhooks/deliveries/:id/replay' },
   // platform.flags (WP-1.4 native overrides)
   { method: 'POST', url: '/api/internal/flags/:key/overrides' },
   { method: 'DELETE', url: '/api/internal/flags/:key/overrides/:id' },
