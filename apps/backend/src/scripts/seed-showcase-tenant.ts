@@ -216,7 +216,9 @@ async function wipeShowcaseTenant(tenantId: string) {
   // Delete every model scoped to this tenant (or to its users/shipments) in repeated passes until FK order resolves.
   const targets: Array<{ name: string; where: Record<string, unknown> }> = [];
   for (const model of Prisma.dmmf.datamodel.models) {
-    if (model.name === 'Tenant') continue;
+    // Drivers, users and the tenant go last in one transaction: an open portal's Fleet page
+    // re-creates a Driver for every driver user, which would otherwise block the user delete.
+    if (model.name === 'Tenant' || model.name === 'User' || model.name === 'Driver') continue;
     const fields = new Set(model.fields.filter((f) => f.kind === 'scalar').map((f) => f.name));
     if (fields.has('tenantId')) targets.push({ name: model.name, where: { tenantId } });
     else if (fields.has('shipmentId') && shipmentIds.length) targets.push({ name: model.name, where: { shipmentId: { in: shipmentIds } } });
@@ -238,7 +240,11 @@ async function wipeShowcaseTenant(tenantId: string) {
     pending = failed;
   }
   if (pending.length) throw new Error(`Could not clear: ${pending.map((p) => p.name).join(', ')}`);
-  await prisma.tenant.delete({ where: { id: tenantId } });
+  await prisma.$transaction([
+    prisma.driver.deleteMany({ where: { tenantId } }),
+    prisma.user.deleteMany({ where: { tenantId } }),
+    prisma.tenant.delete({ where: { id: tenantId } })
+  ]);
 }
 
 // ---------------------------------------------------------------------------
