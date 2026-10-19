@@ -55,6 +55,8 @@ function buildApp(roleOverride = 'TENANT_DRIVER') {
     inAppNotification: { createMany: vi.fn().mockResolvedValue({}) },
     user: { findMany: vi.fn().mockResolvedValue([]) },
     outboxEvent: { create: vi.fn().mockResolvedValue({}) },
+    // POD storage usage (WP-2.18).
+    usageRecord: { upsert: vi.fn(async () => ({})) },
     $transaction: vi.fn(async (cb: any) => {
       if (typeof cb === 'function') return cb(prisma);
       return Promise.all(cb);
@@ -204,6 +206,8 @@ describe('POST /api/v1/driver/pod', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'DELIVERED' }) })
     );
     expect(ctx.prisma.shipmentEvent.create).toHaveBeenCalledTimes(1);
+    // L19: the inline photo and signature count toward this month's storage, in bytes.
+    expect(ctx.prisma.usageRecord.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId_month: { tenantId: 'tenant-1', month: expect.any(String) } }, update: { storageBytes: { increment: expect.any(BigInt) } } }));
   });
 });
 

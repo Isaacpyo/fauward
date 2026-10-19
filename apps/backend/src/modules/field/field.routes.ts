@@ -1,3 +1,4 @@
+import { recordStorageBytes } from '../../services/usage-storage.service.js';
 import { createHash, randomUUID } from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Prisma, Shipment, UserRole } from '@prisma/client';
@@ -660,6 +661,8 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
     const recipientName = typeof payload.recipientName === 'string' ? payload.recipientName : undefined;
     const otpCode = typeof payload.otpCode === 'string' ? payload.otpCode : undefined;
     const notes = typeof payload.notes === 'string' ? payload.notes : undefined;
+    // Files go straight to object storage from the device; their sizes count when the app reports them (L19).
+    const reportedBytes = Array.isArray(payload.fileSizes) ? payload.fileSizes.filter((size): size is number => typeof size === 'number' && Number.isFinite(size) && size > 0).reduce((sum, size) => sum + size, 0) : 0;
     const nextShipmentStatus = mapShipmentStatusForStage(stage, 'completed');
 
     if (photoRefs.length > 0 || signatureRef) {
@@ -685,6 +688,7 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
             : [])
         ]
       });
+      await recordStorageBytes(app.prisma, tenantId, reportedBytes);
     }
 
     await app.prisma.shipment.update({

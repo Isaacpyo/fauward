@@ -1872,6 +1872,8 @@ model UsageRecord {
   smsSent    Int      @default(0)
   emailsSent Int      @default(0)
   storageMb  Int      @default(0)
+  /// L19 (WP-2.18): bytes of documents and proof-of-delivery files stored this month (storageMb is not written).
+  storageBytes BigInt  @default(0)
   updatedAt  DateTime @updatedAt
 
   @@unique([tenantId, month])

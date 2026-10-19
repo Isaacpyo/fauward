@@ -1,3 +1,4 @@
+import { dataUrlBytes, recordStorageBytes } from '../../services/usage-storage.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma, PaymentStatus } from '@prisma/client';
 
@@ -166,15 +167,19 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
     await app.prisma.$transaction(async (tx) => {
       if (assets.length > 0) {
+        // Inline (data URL) proof-of-delivery files count toward the tenant's storage (L19).
+        const sized = assets.map((asset) => ({ ...asset, fileSize: dataUrlBytes(asset.fileUrl) }));
         await tx.podAsset.createMany({
-          data: assets.map((asset) => ({
+          data: sized.map((asset) => ({
             tenantId,
             shipmentId: shipment.id,
             type: asset.type,
             fileUrl: asset.fileUrl,
+            fileSize: asset.fileSize,
             capturedBy: userId
           }))
         });
+        await recordStorageBytes(tx, tenantId, sized.reduce((sum, asset) => sum + (asset.fileSize ?? 0), 0));
       }
 
       await tx.shipment.update({

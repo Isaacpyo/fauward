@@ -13,6 +13,10 @@ import { dispatchNpsSurveys, npsHealthComponent } from '../services/feedback.ser
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
+import { runWithTenantContext } from '../context/tenant.context.js';
+import { systemContext } from '../shared/middleware/tenant.resolver.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../services/platform-activity.service.js';
+import { monthKey } from '../services/usage-storage.service.js';
 
 type ScheduledJobData = Record<string, unknown>;
 
@@ -27,7 +31,12 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string) {
+/** Health bands used for playbook triggers and the `health.score_changed` activity (L19). */
+export function healthBand(score: number) {
+  return score < 45 ? 'AT_RISK' : score >= 80 ? 'HEALTHY' : 'NEUTRAL';
+}
+
+export async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string) {
   const now = new Date();
   const [
     tenant,
@@ -41,7 +50,12 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     apiKeys,
     webhooks,
     previous,
-    nps
+    nps,
+    returns30,
+    customs30,
+    documents30,
+    usageMonth,
+    aiMonth
   ] = await Promise.all([
     app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, customDomain: true } }),
     app.prisma.user.findMany({ where: { tenantId, isActive: true }, select: { lastLogin: true } }),
@@ -54,7 +68,13 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     app.prisma.apiKey.count({ where: { tenantId, isActive: true } }),
     app.prisma.webhookEndpoint.count({ where: { tenantId, isActive: true } }),
     app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
-    npsHealthComponent(app.prisma, tenantId, now)
+    npsHealthComponent(app.prisma, tenantId, now),
+    // L19 (WP-2.18): usage inputs recorded with every score; WP-3.3 decides their weights.
+    app.prisma.returnRequest.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
+    app.prisma.customsDeclaration.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
+    app.prisma.shipmentDocument.count({ where: { tenantId, generatedAt: { gte: daysAgo(30) } } }),
+    app.prisma.usageRecord.findUnique({ where: { tenantId_month: { tenantId, month: monthKey(now) } } }),
+    app.prisma.tenantAiUsage.aggregate({ where: { tenantId, month: monthKey(now) }, _sum: { requestCount: true, costUsd: true } })
   ]);
 
   const recentLogins = users.filter((user) => user.lastLogin && user.lastLogin >= daysAgo(30)).length;
@@ -90,10 +110,43 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
         featureBreadth: { score: featureScore, apiKeys, webhooks, customDomain: Boolean(tenant?.customDomain) },
         paymentHealth: { score: paymentScore, failedPayments },
         ticketSentimentVolume: { score: ticketScore, openTickets, negativeTickets },
-        nps: { score: npsScore, source: nps.source, responses: nps.responses, value: nps.nps }
+        nps: { score: npsScore, source: nps.source, responses: nps.responses, value: nps.nps },
+        inputs: {
+          returns30,
+          customsDeclarations30: customs30,
+          documents30,
+          month: monthKey(now),
+          apiCalls: usageMonth?.apiCalls ?? 0,
+          emailsSent: usageMonth?.emailsSent ?? 0,
+          smsSent: usageMonth?.smsSent ?? 0,
+          storageBytes: Number(usageMonth?.storageBytes ?? 0),
+          aiRequests: aiMonth._sum.requestCount ?? 0,
+          aiCostUsd: Number((aiMonth._sum.costUsd ?? 0).toFixed(2))
+        }
       }
     }
   });
+
+  const band = healthBand(score);
+  const previousBand = previous ? healthBand(previous.score) : null;
+  if (previousBand && previousBand !== band) {
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'customer.success',
+        type: 'health.score_changed',
+        tenantId,
+        ...SYSTEM_ACTOR,
+        subjectType: 'tenant',
+        subjectId: tenantId,
+        summary: `Health ${previous!.score} → ${score} (${previousBand.replace('_', ' ').toLowerCase()} → ${band.replace('_', ' ').toLowerCase()})`,
+        severity: band === 'AT_RISK' ? 'ATTENTION' : 'INFO',
+        consoleLink: `/customer/360/${tenantId}?tab=health`,
+        metadata: { from: previous!.score, to: score, fromBand: previousBand, toBand: band },
+        dedupeKey: `health.score_changed:${row.id}`
+      }
+    );
+  }
 
   const triggers: string[] = [];
   if (score < 45 && (!previous || previous.score >= 45)) triggers.push('health_below_45');
@@ -254,11 +307,15 @@ export async function startScheduledWorker(app: FastifyInstance) {
       }
 
       if (job.name === 'customer.health-scoring') {
-        const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
-        for (const tenant of tenants) {
-          await computeAndStoreHealthScore(app, tenant.id);
-        }
-        app.log.info({ count: tenants.length }, 'Scheduled customer health scoring finished');
+        // Reads tenant-scoped models for every tenant: system context (workers have no request context).
+        const count = await runWithTenantContext(systemContext(), async () => {
+          const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
+          for (const tenant of tenants) {
+            await computeAndStoreHealthScore(app, tenant.id);
+          }
+          return tenants.length;
+        });
+        app.log.info({ count }, 'Scheduled customer health scoring finished');
         return;
       }
 
