@@ -17,6 +17,7 @@ import { triggerTrackingNotifications } from './tracking-notification.service.js
 import { triggerTrackingWebhooks } from './tracking-webhook.service.js';
 import { emitTrackingStatusUpdate } from './tracking.websocket.js';
 import { legacyToTrackingStatus } from './tracking-status-mapper.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
 
 export async function recordTrackingEvent(
   app: FastifyInstance,
@@ -44,23 +45,33 @@ export async function recordTrackingEvent(
     const status = event.status as TrackingStatus;
     const customerStatus = CUSTOMER_STATUS_MAP[status] ?? status;
 
-    void triggerTrackingNotifications(app, {
-      tenantId: event.tenantId,
-      shipmentId: event.shipmentId,
-      trackingNumber: event.trackingNumber,
-      status,
-      plan
-    });
+    fireAndForget(
+      triggerTrackingNotifications(app, {
+        tenantId: event.tenantId,
+        shipmentId: event.shipmentId,
+        trackingNumber: event.trackingNumber,
+        status,
+        plan
+      }),
+      app.log,
+      'triggerTrackingNotifications failed',
+      { shipmentId: event.shipmentId }
+    );
 
-    void triggerTrackingWebhooks(app, {
-      tenantId: event.tenantId,
-      shipmentId: event.shipmentId,
-      trackingNumber: event.trackingNumber,
-      status,
-      eventId: event.id,
-      occurredAt: event.occurredAt,
-      customerStatus
-    });
+    fireAndForget(
+      triggerTrackingWebhooks(app, {
+        tenantId: event.tenantId,
+        shipmentId: event.shipmentId,
+        trackingNumber: event.trackingNumber,
+        status,
+        eventId: event.id,
+        occurredAt: event.occurredAt,
+        customerStatus
+      }),
+      app.log,
+      'triggerTrackingWebhooks failed',
+      { shipmentId: event.shipmentId }
+    );
   }
 
   return eventId;

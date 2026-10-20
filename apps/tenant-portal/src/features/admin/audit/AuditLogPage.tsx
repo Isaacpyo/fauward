@@ -9,7 +9,7 @@ export function AuditLogPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['audit-log', page],
-    queryFn: () => api.get(`/audit-log?page=${page}&limit=50`).then(r => r.data)
+    queryFn: () => api.get(`/v1/audit-log?page=${page}&limit=50`).then(r => r.data)
   });
 
   if (isLoading) return <PageSpinner />;

@@ -37,6 +37,7 @@ import { registerControlTowerRoutes } from './modules/control-tower/control-towe
 import { startStuckShipmentDetector } from './modules/control-tower/stuck-shipment.detector.js';
 import { registerFleetRoutes } from './modules/fleet/fleet.routes.js';
 import { registerLabelRoutes } from './modules/documents/label.routes.js';
+import { registerShippingLabelRoutes } from './modules/documents/shipping-label.routes.js';
 import { registerDocumentsRoutes } from './modules/documents/documents.routes.js';
 import { registerPublicTrackingRoutes } from './modules/tracking/tracking.public.routes.js';
 import { registerTenantTrackingRoutes } from './modules/tracking/tracking.tenant.routes.js';
@@ -275,6 +276,7 @@ export async function buildApp() {
   await registerInternalConsolePhaseRoutes(app);
   await registerSuperAdminRoutes(app);
   await registerLabelRoutes(app);
+  await registerShippingLabelRoutes(app);
   await registerDocumentsRoutes(app);
 
   await registerRoutingRoutes(app);

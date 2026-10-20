@@ -43,7 +43,7 @@ function getPreviousRange(dateFrom: Date, dateTo: Date) {
   const duration = dateTo.getTime() - dateFrom.getTime();
   return {
     dateFrom: new Date(dateFrom.getTime() - duration),
-    dateTo: new Date(dateTo.getTime() - 1)
+    dateTo: new Date(dateFrom.getTime() - 1)
   };
 }
 

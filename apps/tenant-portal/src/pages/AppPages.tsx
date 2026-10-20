@@ -27,6 +27,7 @@ import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { clearTokens, createDevTestSession, isDevTestEmail, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { getFirebaseAuthErrorMessage, signInWithGoogle } from "@/lib/firebase";
+import { resolvePathTenantSlug } from "@/lib/tenantResolver";
 import { formatPlanLabel, hasPlanAccess, type Plan } from "@/lib/plan-features";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -478,7 +479,17 @@ export function LoginPage() {
         return;
       }
 
-      const { data } = await api.post("/v1/auth/login", { email, password });
+      // Same email can exist in several tenants; on hosts without a tenant subdomain (e.g. localhost)
+      // the backend needs ?tenant= to pick one. Take it from /login?tenant=<slug> or the /t/<slug> page we came from.
+      const fromPathname = (location?.state as { from?: { pathname: string } })?.from?.pathname;
+      const tenantHint =
+        new URLSearchParams(location?.search ?? "").get("tenant")?.trim().toLowerCase() ||
+        (fromPathname ? resolvePathTenantSlug(fromPathname) : null);
+      const { data } = await api.post(
+        "/v1/auth/login",
+        { email, password },
+        tenantHint ? { params: { tenant: tenantHint } } : undefined
+      );
       setTokens(data.accessToken, data.refreshToken, data.tenantSlug);
       const from = (location?.state as { from?: { pathname: string } })?.from?.pathname ?? `/t/${data.tenantSlug}`;
       setRedirecting(true);

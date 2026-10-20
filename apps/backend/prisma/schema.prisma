@@ -411,6 +411,8 @@ model Tenant {
   tenantAiLimit                 TenantAiLimit?
   aiAgentRuns                   AiAgentRun[]
   agentActions                  AgentAction[]
+  agentConversations            AgentConversation[]
+  agentMessages                 AgentMessage[]
   shipmentPermissionRequests    ShipmentPermissionRequest[]
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
@@ -1816,6 +1818,38 @@ model AgentAction {
 
   @@index([tenantId, status])
   @@map("agent_actions")
+}
+
+model AgentConversation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdBy String                          // request.user.sub
+  title     String                          // first ~80 chars of opening question
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  AgentMessage[]
+
+  @@index([tenantId, archived, updatedAt])
+  @@map("agent_conversations")
+}
+
+model AgentMessage {
+  id                String            @id @default(cuid())
+  tenantId          String                              // denormalized → every query tenant-scoped, no join
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
+  conversationId    String
+  conversation      AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role              String                              // 'user' | 'assistant'
+  content           String
+  status            String?                             // assistant: 'answered'|'cannot_answer'|'error'|'proposed'
+  toolsUsed         Json?                               // assistant: [{name,args,result}]
+  proposedActionIds String[]          @default([])      // P2: AgentAction ids this message created
+  createdAt         DateTime          @default(now())
+
+  @@index([tenantId, conversationId, createdAt])
+  @@map("agent_messages")
 }
 
 model ShipmentPermissionRequest {

@@ -49,6 +49,14 @@ const config: Config = {
         fauwardPopIn: {
           from: { opacity: "0", transform: "scale(0.6)" },
           to: { opacity: "1", transform: "scale(1)" }
+        },
+        fauwardSlideInRight: {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" }
+        },
+        fauwardSlideOutRight: {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(100%)" }
         }
       },
       animation: {
@@ -56,7 +64,9 @@ const config: Config = {
         "fauward-fade-out": "fauwardFadeOut 120ms ease-in",
         "fauward-zoom-in": "fauwardZoomIn 160ms cubic-bezier(0.16, 1, 0.3, 1)",
         "fauward-zoom-out": "fauwardZoomOut 120ms ease-in",
-        "fauward-pop-in": "fauwardPopIn 200ms cubic-bezier(0.16, 1, 0.3, 1)"
+        "fauward-pop-in": "fauwardPopIn 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "fauward-slide-in-right": "fauwardSlideInRight 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "fauward-slide-out-right": "fauwardSlideOutRight 180ms ease-in"
       }
     }
   },

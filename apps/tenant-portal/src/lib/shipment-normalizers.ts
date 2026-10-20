@@ -155,6 +155,19 @@ function cityFromAddress(value: unknown): string {
   );
 }
 
+// Compact "City, CC" / "City" / "CC" for list-row chips. Falls back to the
+// full address string only when neither city nor country is present.
+function addressToCityCountry(value: unknown): string {
+  const record = asRecord(value);
+  if (!record) return addressToString(value);
+  const city = asString(record.city).trim();
+  const country = asString(record.country).trim();
+  if (city && country) return `${city}, ${country}`;
+  if (city) return city;
+  if (country) return country;
+  return addressToString(value);
+}
+
 function userNameFromRecord(value: unknown): string {
   const record = asRecord(value);
   if (!record) {
@@ -268,8 +281,11 @@ export function normalizeShipmentListItem(input: unknown, index = 0): ShipmentLi
       || asString(shipment?.customerName)
       || asString(organisation?.name)
       || "Customer",
-    origin: asString(shipment?.origin) || addressToString(originAddress),
-    destination: asString(shipment?.destination) || addressToString(destinationAddress),
+    // List rows show the route in a tight column — keep it to "City, CC"
+    // instead of the full address blob. The detail page still uses the long
+    // form via addressToString.
+    origin: asString(shipment?.origin) || addressToCityCountry(originAddress),
+    destination: asString(shipment?.destination) || addressToCityCountry(destinationAddress),
     route_id: asString(shipment?.route_id) || asString(shipment?.routeId) || undefined,
     route_name:
       asString(shipment?.route_name)
