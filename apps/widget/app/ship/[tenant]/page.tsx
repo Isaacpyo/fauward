@@ -1,9 +1,11 @@
 import type { CSSProperties } from "react";
 import type { Metadata } from "next";
 import { getTenantBySlugOrHistory } from "@fauward/tenant-db";
+import { headers } from "next/headers";
 import { notFound, permanentRedirect } from "next/navigation";
 
 import CreateShipmentForm from "@/components/shipments/CreateShipmentForm";
+import { isShipHost } from "@/lib/hostRules";
 import { buildTenantConfig } from "@/lib/shipmentTenantConfig";
 import { signWidgetToken } from "@/lib/widgetToken";
 
@@ -44,7 +46,12 @@ export default async function HostedShipmentPage({ params }: PageProps) {
   if (!result) notFound();
 
   if ("redirectToSlug" in result) {
-    permanentRedirect(`/ship/${result.redirectToSlug}`);
+    // Under ship.fauward.com the user sees bare /<slug> in the URL bar (middleware
+    // rewrites it to /ship/<slug> internally). Redirecting to /ship/<slug> here would
+    // become ship.fauward.com/ship/<slug>, which the middleware would then try to
+    // rewrite to /ship/ship/<slug> and 404. Stay on the bare-slug form for that host.
+    const onShipHost = isShipHost(headers().get("host"));
+    permanentRedirect(onShipHost ? `/${result.redirectToSlug}` : `/ship/${result.redirectToSlug}`);
   }
 
   const { tenant } = result;
