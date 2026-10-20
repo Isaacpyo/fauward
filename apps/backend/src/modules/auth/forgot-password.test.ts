@@ -37,4 +37,13 @@ describe('forgot password (C61)', () => {
     expect(result).toEqual({ success: true });
     expect(queueAdd).not.toHaveBeenCalled();
   });
+
+  it('a queue failure gets the same answer as an unknown email, and is logged', async () => {
+    queueAdd.mockRejectedValueOnce(new Error('queue down'));
+    const log = { error: vi.fn() };
+    const prisma = prismaWith({ id: 'u_1', email: 'ada@northwind.test' });
+    const result = await authService.forgotPassword({ email: 'ada@northwind.test' }, prisma as never, 'tenant_a', log);
+    expect(result).toEqual({ success: true });
+    expect(log.error).toHaveBeenCalledWith(expect.objectContaining({ template: 'password_reset', userId: 'u_1' }), 'Sign-in email not queued');
+  });
 });
