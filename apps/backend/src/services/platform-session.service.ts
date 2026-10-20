@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import type { PlatformRole } from '@prisma/client';
 import { config } from '../config/index.js';
-import { permissionsForPlatformRole } from './platform-permission.service.js';
 
 export const PLATFORM_ACCESS_COOKIE = 'fw_platform_access';
 export const PLATFORM_REFRESH_COOKIE = 'fw_platform_refresh';
@@ -19,6 +18,9 @@ export type PlatformJwtClaims = {
   mfaVerifiedAt: string | null;
   iss: 'fauward-platform';
   aud: 'fauward-platform-admin';
+  /** Registered claims added by jsonwebtoken (seconds since epoch). */
+  iat?: number;
+  exp?: number;
 };
 
 export type PlatformRefreshClaims = {
@@ -50,7 +52,8 @@ export function signPlatformAccessToken(payload: {
       actorType: 'PLATFORM_USER',
       tenantId: 'system',
       role: payload.role,
-      permissions: payload.permissions ?? permissionsForPlatformRole(payload.role),
+      // Staff permissions only (D2); never derived from the legacy PlatformRole.
+      permissions: payload.permissions ?? [],
       sessionId: payload.sessionId,
       mfaVerifiedAt: payload.mfaVerifiedAt?.toISOString() ?? null
     },

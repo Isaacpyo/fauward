@@ -226,12 +226,20 @@ export const webhooksService = {
       where: {
         deadLetteredAt: { not: null }
       },
-      include: {
+      // State only: payloads and response bodies stay in the tenant's own delivery log.
+      select: {
+        id: true,
+        eventType: true,
+        status: true,
+        responseCode: true,
+        attemptCount: true,
+        deadLetteredAt: true,
+        createdAt: true,
         endpoint: { select: { id: true, url: true, tenantId: true } },
         tenant: { select: { id: true, name: true, slug: true } }
       },
       orderBy: { deadLetteredAt: 'desc' },
-      take: 200
+      take: 100
     });
   }
 };

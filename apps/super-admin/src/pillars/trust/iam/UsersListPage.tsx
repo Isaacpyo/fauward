@@ -2,6 +2,10 @@ import { DenseTable, EmptyState } from "@fauward/internal-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { usePermission } from "@fauward/internal-rbac";
+
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { createStaffUser, fetchStaffRoles, fetchStaffUsers, type StaffUser } from "./api";
 import { MfaStatusPill, RoleBadge, UserAvatar } from "./components";
 
@@ -9,13 +13,16 @@ export function UsersListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "", roleId: "EXECUTIVE", reason: "Phase 1 staff onboarding" });
+  const canWrite = usePermission("trust.iam.write") === true;
+  const [form, setForm] = useState({ name: "", email: "", password: "", roleId: "EXECUTIVE", reason: "" });
+  const [created, setCreated] = useState<string | null>(null);
   const usersQuery = useQuery({ queryKey: ["staff-users", search], queryFn: () => fetchStaffUsers({ search: search || undefined }) });
   const rolesQuery = useQuery({ queryKey: ["staff-roles"], queryFn: fetchStaffRoles });
   const createMutation = useMutation({
     mutationFn: createStaffUser,
-    onSuccess: () => {
-      setForm({ name: "", email: "", password: "", roleId: "EXECUTIVE", reason: "Phase 1 staff onboarding" });
+    onSuccess: (user) => {
+      setCreated(`${user.email} created. They enrol MFA at first sign-in.`);
+      setForm({ name: "", email: "", password: "", roleId: "EXECUTIVE", reason: "" });
       void queryClient.invalidateQueries({ queryKey: ["staff-users"] });
     }
   });
@@ -29,21 +36,24 @@ export function UsersListPage() {
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">Directory, session posture and role assignments for Fauward staff.</p>
       </header>
 
-      <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
-        <div className="grid gap-3 lg:grid-cols-[1fr,1fr,1fr,180px]">
+      <section className="rounded-lg border border-[var(--color-border)] bg-white p-4" aria-label="Add staff user">
+        {!canWrite ? <p className="mb-3 text-xs text-[var(--color-text-muted)]">Adding staff requires trust.iam.write.</p> : null}
+        <fieldset disabled={!canWrite} className="grid gap-3 lg:grid-cols-[1fr,1fr,1fr,180px]">
           <input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm" placeholder="Name" />
           <input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm" placeholder="Email" />
           <input value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm" placeholder="Temporary password" type="password" />
           <select value={form.roleId} onChange={(event) => setForm({ ...form, roleId: event.target.value })} className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm">
             {roles.map((role) => <option key={role.id} value={role.id}>{role.id}</option>)}
           </select>
-        </div>
+        </fieldset>
         <div className="mt-3 flex items-center justify-between gap-3">
-          <input value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm" placeholder="Audit reason" />
-          <button type="button" className="rounded-md bg-[var(--fauward-navy)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={createMutation.isPending} onClick={() => createMutation.mutate({ name: form.name, email: form.email, password: form.password, roleIds: [form.roleId], reason: form.reason })}>
-            Add staff user
-          </button>
+          <input disabled={!canWrite} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm" placeholder="Audit reason" />
+          <PermissionButton permission="trust.iam.write" className="rounded-md bg-[var(--fauward-navy)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={createMutation.isPending || !form.name || !form.email || !form.password} onClick={() => { setCreated(null); createMutation.mutate({ name: form.name, email: form.email, password: form.password, roleIds: [form.roleId], reason: form.reason }); }}>
+            {createMutation.isPending ? "Adding..." : "Add staff user"}
+          </PermissionButton>
         </div>
+        {createMutation.isError ? <div className="mt-3"><ConsoleApiErrorPanel error={createMutation.error} title="Could not add staff user" /></div> : null}
+        {created ? <p role="status" className="mt-3 text-sm text-green-700">{created}</p> : null}
       </section>
 
       <div className="flex justify-end">

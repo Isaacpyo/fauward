@@ -1,3 +1,4 @@
+import { dataUrlBytes, recordStorageBytes } from '../../services/usage-storage.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma, PaymentStatus } from '@prisma/client';
 
@@ -8,6 +9,8 @@ import {
   type CodCollectionPayload
 } from '../shipments/shipment-events.const.js';
 import { enqueueAgentEvent } from '../agent/agent.queue.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -164,15 +167,19 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
     await app.prisma.$transaction(async (tx) => {
       if (assets.length > 0) {
+        // Inline (data URL) proof-of-delivery files count toward the tenant's storage (L19).
+        const sized = assets.map((asset) => ({ ...asset, fileSize: dataUrlBytes(asset.fileUrl) }));
         await tx.podAsset.createMany({
-          data: assets.map((asset) => ({
+          data: sized.map((asset) => ({
             tenantId,
             shipmentId: shipment.id,
             type: asset.type,
             fileUrl: asset.fileUrl,
+            fileSize: asset.fileSize,
             capturedBy: userId
           }))
         });
+        await recordStorageBytes(tx, tenantId, sized.reduce((sum, asset) => sum + (asset.fileSize ?? 0), 0));
       }
 
       await tx.shipment.update({
@@ -214,7 +221,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         let paymentId = shipment.payment?.id;
         if (paymentId) {
           await tx.payment.update({
-            where: { id: paymentId },
+            where: { kind: 'TENANT_CUSTOMER', id: paymentId },
             data: {
               status: PaymentStatus.COMPLETED,
               amount: cod.amount,
@@ -226,6 +233,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         } else {
           const newPayment = await tx.payment.create({
             data: {
+              kind: 'TENANT_CUSTOMER',
               tenantId,
               shipmentId: shipment.id,
               customerId: shipment.customerId,
@@ -242,14 +250,14 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
         if (shipment.invoice?.id) {
           const paidAggregate = await tx.payment.aggregate({
-            where: { tenantId, invoiceId: shipment.invoice.id, status: PaymentStatus.COMPLETED },
+            where: { kind: 'TENANT_CUSTOMER', tenantId, invoiceId: shipment.invoice.id, status: PaymentStatus.COMPLETED },
             _sum: { amount: true }
           });
           const paidAmount = Number(paidAggregate._sum.amount ?? 0);
           const invoiceTotal = Number(shipment.invoice.total ?? 0);
           const nextStatus = paidAmount >= invoiceTotal ? 'PAID' : 'PARTIALLY_PAID';
           await tx.invoice.update({
-            where: { id: shipment.invoice.id },
+            where: { kind: 'TENANT_CUSTOMER', id: shipment.invoice.id },
             data: {
               status: nextStatus,
               paidAt: nextStatus === 'PAID' ? new Date() : shipment.invoice.paidAt
@@ -318,31 +326,34 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          userId: shipment.customerId ?? undefined,
-          channel: 'EMAIL',
-          event: 'failed_delivery',
-          status: 'QUEUED'
-        }
-      });
-
       return shipmentEvent;
     });
 
-    void enqueueAgentEvent(app, {
-      eventId: `failed-delivery-${shipment.id}-${event.id}`,
-      type: 'failed_delivery',
+    await notifyCustomer(app, {
       tenantId,
-      shipmentId: shipment.id,
-      payload: {
-        newStatus: 'FAILED_DELIVERY',
-        previousStatus: shipment.status,
-        reason: payload.reason,
-        source: 'DRIVER_APP'
-      }
+      userId: shipment.customerId,
+      organisationId: shipment.organisationId,
+      template: 'failed_delivery',
+      data: { trackingNumber: shipment.trackingNumber, reason: payload.reason }
     });
+
+    fireAndForget(
+      enqueueAgentEvent(app, {
+        eventId: `failed-delivery-${shipment.id}-${event.id}`,
+        type: 'failed_delivery',
+        tenantId,
+        shipmentId: shipment.id,
+        payload: {
+          newStatus: 'FAILED_DELIVERY',
+          previousStatus: shipment.status,
+          reason: payload.reason,
+          source: 'DRIVER_APP'
+        }
+      }),
+      request.log,
+      'enqueueAgentEvent failed',
+      { shipmentId: shipment.id }
+    );
 
     reply.send({ success: true });
   });

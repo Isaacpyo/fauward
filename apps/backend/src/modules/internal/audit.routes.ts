@@ -1,79 +1,202 @@
 import type { FastifyInstance } from 'fastify';
+import type { PlatformAuditLog, Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
+import { dangerous } from '../../middleware/dangerous.js';
 import { verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
-import { writeAudit } from '@fauward/internal-audit';
-import type { PlatformAuditClient } from '@fauward/internal-audit';
+import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
+import { writeInternalAudit } from './internal-audit.js';
 
-function jsonToCsv(rows: Array<Record<string, unknown>>) {
-  const headers = ['id', 'createdAt', 'actorEmail', 'actorRole', 'action', 'targetType', 'targetId', 'reason', 'hash'];
-  const escape = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-  return [headers.join(','), ...rows.map((row) => headers.map((header) => escape(row[header])).join(','))].join('\n');
+// trust.audit (WP-1.9): server-filtered, cursor-paginated platform audit log; export is a dangerous action and is itself
+// audited. The hash chain has two schemes until WP-5.1, so /verify reports what the current verifier finds.
+
+export const AUDIT_EXPORT_MAX_ROWS = 10_000;
+
+const filterShape = {
+  actor: z.string().trim().min(1).optional(),
+  action: z.string().trim().min(1).optional(),
+  targetType: z.string().trim().min(1).optional(),
+  targetId: z.string().trim().min(1).optional(),
+  tenantId: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  q: z.string().trim().min(1).optional()
+};
+
+const listQuery = z.object({
+  ...filterShape,
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional()
+});
+
+const exportBody = z.object({
+  ...filterShape,
+  format: z.enum(['csv', 'json']).default('json'),
+  reason: z.string().trim().min(1)
+});
+
+export type AuditFilters = { [K in keyof typeof filterShape]?: string };
+
+// L17 (WP-2.16): search over tenants' own AuditLog. A tenant is required unless the caller may export audit data.
+const tenantEventsQuery = z.object({
+  tenantId: z.string().trim().min(1).optional(),
+  action: z.string().trim().min(1).optional(),
+  actorType: z.enum(['USER', 'API_KEY', 'IMPERSONATOR', 'SYSTEM']).optional(),
+  resourceType: z.string().trim().min(1).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional()
+});
+
+export function tenantEventsWhere(filters: z.infer<typeof tenantEventsQuery>): Prisma.AuditLogWhereInput {
+  return {
+    ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
+    ...(filters.action ? { action: insensitive(filters.action) } : {}),
+    ...(filters.actorType ? { actorType: filters.actorType } : {}),
+    ...(filters.resourceType ? { resourceType: filters.resourceType } : {}),
+    ...(filters.from || filters.to ? { timestamp: { ...(filters.from ? { gte: new Date(filters.from) } : {}), ...(filters.to ? { lte: new Date(filters.to) } : {}) } } : {})
+  };
+}
+
+const insensitive = (value: string) => ({ contains: value, mode: 'insensitive' as const });
+
+/** Every filter narrows the set (AND); actor and free text each match any of their columns (OR within). */
+export function auditWhere(filters: AuditFilters): Prisma.PlatformAuditLogWhereInput {
+  const and: Prisma.PlatformAuditLogWhereInput[] = [];
+  if (filters.actor) and.push({ OR: [{ actorEmail: insensitive(filters.actor) }, { actorId: filters.actor }] });
+  if (filters.action) and.push({ action: insensitive(filters.action) });
+  if (filters.targetType) and.push({ targetType: filters.targetType });
+  if (filters.targetId) and.push({ OR: [{ targetId: insensitive(filters.targetId) }, { targetUserId: filters.targetId }] });
+  if (filters.tenantId) and.push({ targetTenantId: filters.tenantId });
+  if (filters.from || filters.to) {
+    and.push({ createdAt: { ...(filters.from ? { gte: new Date(filters.from) } : {}), ...(filters.to ? { lte: new Date(filters.to) } : {}) } });
+  }
+  if (filters.q) {
+    and.push({
+      OR: [{ actorEmail: insensitive(filters.q) }, { action: insensitive(filters.q) }, { targetId: insensitive(filters.q) }, { targetTenantId: filters.q }, { reason: insensitive(filters.q) }]
+    });
+  }
+  return and.length > 0 ? { AND: and } : {};
+}
+
+function pickFilters(input: AuditFilters): AuditFilters {
+  return Object.fromEntries(Object.keys(filterShape).flatMap((key) => (input[key as keyof AuditFilters] ? [[key, input[key as keyof AuditFilters]]] : [])));
+}
+
+const CSV_HEADERS = ['id', 'createdAt', 'actorType', 'actorId', 'actorEmail', 'actorRole', 'action', 'targetType', 'targetId', 'targetTenantId', 'targetUserId', 'reason', 'previousHash', 'hash'] as const;
+
+export function auditRowsToCsv(rows: PlatformAuditLog[]) {
+  const escape = (value: unknown) => `"${(value instanceof Date ? value.toISOString() : String(value ?? '')).replaceAll('"', '""')}"`;
+  return [CSV_HEADERS.join(','), ...rows.map((row) => CSV_HEADERS.map((header) => escape(row[header])).join(','))].join('\n');
 }
 
 export async function registerInternalAuditRoutes(app: FastifyInstance) {
-  app.get('/api/internal/audit/entries', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.audit.read')] }, async (request, reply) => {
-    const query = request.query as { actor?: string; action?: string; targetType?: string; targetId?: string; from?: string; to?: string; q?: string; page?: string; limit?: string };
-    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50)));
-    const page = Math.max(1, Number(query.page ?? 1));
-    const where = {
-      actorEmail: query.actor ? { contains: query.actor, mode: 'insensitive' as const } : undefined,
-      action: query.action ? { contains: query.action, mode: 'insensitive' as const } : undefined,
-      targetType: query.targetType || undefined,
-      targetId: query.targetId ? { contains: query.targetId, mode: 'insensitive' as const } : undefined,
-      createdAt: query.from || query.to ? { gte: query.from ? new Date(query.from) : undefined, lte: query.to ? new Date(query.to) : undefined } : undefined,
-      OR: query.q
-        ? [
-            { actorEmail: { contains: query.q, mode: 'insensitive' as const } },
-            { action: { contains: query.q, mode: 'insensitive' as const } },
-            { targetId: { contains: query.q, mode: 'insensitive' as const } },
-            { reason: { contains: query.q, mode: 'insensitive' as const } }
-          ]
-        : undefined
-    };
-    const [data, total] = await Promise.all([
-      app.prisma.platformAuditLog.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit }),
+  app.get('/api/internal/audit/entries', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
+    const parsed = listQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const query = parsed.data;
+    const where = auditWhere(query);
+    const [rows, total] = await Promise.all([
+      app.prisma.platformAuditLog.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
+      }),
       app.prisma.platformAuditLog.count({ where })
     ]);
-    reply.send({ data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } });
+    const hasMore = rows.length > query.limit;
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    // Tenant names for TenantChip; tenants are looked up by the ids on this page only.
+    const tenantIds = [...new Set(page.flatMap((row) => (row.targetTenantId ? [row.targetTenantId] : [])))];
+    const tenants = tenantIds.length > 0 ? await app.prisma.tenant.findMany({ where: { id: { in: tenantIds } }, select: { id: true, name: true, slug: true } }) : [];
+    const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+    const data = page.map((row) => ({ ...row, targetTenant: row.targetTenantId ? byId.get(row.targetTenantId) ?? null : null }));
+    return reply.send({ data, total, nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null });
   });
 
-  app.get('/api/internal/audit/entries/:id', { preHandler: [authenticatePlatformSession, requireInternalPermission('trust.audit.read')] }, async (request, reply) => {
+  app.get('/api/internal/audit/tenant-events', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
+    const parsed = tenantEventsQuery.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const query = parsed.data;
+    if (!query.tenantId && !(await consoleUserHas(request, 'trust.audit.export'))) {
+      return reply.status(400).send({ error: 'TENANT_REQUIRED', message: 'Choose a tenant. Searching every tenant needs trust.audit.export.' });
+    }
+    const where = tenantEventsWhere(query);
+    const rows = await app.prisma.auditLog.findMany({
+      where,
+      orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        tenantId: true,
+        actorId: true,
+        actorType: true,
+        action: true,
+        resourceType: true,
+        resourceId: true,
+        timestamp: true,
+        metadata: true,
+        actor: { select: { email: true } },
+        tenant: { select: { id: true, name: true, slug: true } }
+      }
+    });
+    const hasMore = rows.length > query.limit;
+    const page = hasMore ? rows.slice(0, query.limit) : rows;
+    return reply.send({
+      data: page.map((row) => ({ ...row, timestamp: row.timestamp.toISOString(), actorLabel: row.actorType === 'IMPERSONATOR' ? 'Fauward staff (via impersonation)' : row.actor?.email ?? row.actorType })),
+      nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null
+    });
+  });
+
+  app.get('/api/internal/audit/entries/:id', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const entry = await app.prisma.platformAuditLog.findUnique({ where: { id } });
-    if (!entry) return reply.status(404).send({ error: 'Audit entry not found' });
-    reply.send(entry);
+    if (!entry) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Audit entry not found' });
+    return reply.send(entry);
   });
 
-  app.post('/api/internal/audit/export', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.export')] }, async (request, reply) => {
-    const body = request.body as { from?: string; to?: string; format?: 'csv' | 'json'; reason?: string };
+  app.post('/api/internal/audit/export', { preHandler: dangerous('trust.audit.export') }, async (request, reply) => {
+    const parsed = exportBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    const body = parsed.data;
+    const filters = pickFilters(body);
     const rows = await app.prisma.platformAuditLog.findMany({
-      where: { createdAt: body.from || body.to ? { gte: body.from ? new Date(body.from) : undefined, lte: body.to ? new Date(body.to) : undefined } : undefined },
-      orderBy: { createdAt: 'asc' },
-      take: 10_000
+      where: auditWhere(filters),
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: AUDIT_EXPORT_MAX_ROWS + 1
     });
-    await writeAudit(app.prisma as unknown as PlatformAuditClient, {
-      actor_id: request.platform!.user.id,
-      actor_email: request.platform!.user.email,
-      actor_role: request.platform!.user.role,
-      action: 'audit.export',
-      target_type: 'audit_log',
-      target_id: `${body.from ?? 'begin'}:${body.to ?? 'now'}`,
-      before: null,
-      after: { rows: rows.length, format: body.format ?? 'json' },
-      reason: body.reason ?? null,
-      ip_address: request.ip,
-      session_id: request.platform!.session.id,
-      jit_session_id: null,
-      user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null
-    });
-    const content = body.format === 'csv' ? jsonToCsv(rows as unknown as Array<Record<string, unknown>>) : JSON.stringify(rows, null, 2);
-    reply.send({ url: `data:${body.format === 'csv' ? 'text/csv' : 'application/json'};base64,${Buffer.from(content).toString('base64')}`, format: body.format ?? 'json', rows: rows.length });
+    const truncated = rows.length > AUDIT_EXPORT_MAX_ROWS;
+    const exported = truncated ? rows.slice(0, AUDIT_EXPORT_MAX_ROWS) : rows;
+    // Written after the read, so the export never contains its own row.
+    const range = `${filters.from ?? 'begin'}:${filters.to ?? 'now'}`;
+    await writeInternalAudit(request, 'audit.export', 'audit_log', range, null, { filters, format: body.format, rows: exported.length, truncated }, body.reason);
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'trust.audit',
+        type: 'audit.exported',
+        tenantId: filters.tenantId ?? null,
+        ...staffActor(request),
+        subjectType: 'audit_log',
+        subjectId: range,
+        summary: `${request.platform!.user.email} exported ${exported.length} audit entries as ${body.format.toUpperCase()}`,
+        severity: 'ATTENTION',
+        consoleLink: '/trust/audit',
+        metadata: { filters, format: body.format, rows: exported.length, truncated }
+      }
+    );
+    const content = body.format === 'csv' ? auditRowsToCsv(exported) : JSON.stringify(exported, null, 2);
+    const mime = body.format === 'csv' ? 'text/csv' : 'application/json';
+    return reply.send({ url: `data:${mime};base64,${Buffer.from(content).toString('base64')}`, format: body.format, rows: exported.length, truncated, maxRows: AUDIT_EXPORT_MAX_ROWS });
   });
 
-  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('trust.audit.export')] }, async (_request, reply) => {
+  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('trust.audit.export')] }, async (_request, reply) => {
     const result = await verifyPlatformAuditChain(app.prisma);
-    reply.send({ ...result, verifiedAt: new Date().toISOString() });
+    return reply.send({ ...result, verifiedAt: new Date().toISOString() });
   });
 }

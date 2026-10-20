@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { api } from "@/lib/api";
 import { normalizePodResponse, normalizeShipmentDetail } from "@/lib/shipment-normalizers";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
+import { usePrintShippingLabel } from "@/hooks/usePrintShippingLabel";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 import type { ShipmentState } from "@/types/domain";
@@ -147,6 +148,9 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
   const [workflowNotes, setWorkflowNotes] = useState("");
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [assignDriverOpen, setAssignDriverOpen] = useState(false);
+
+  const { printLabel, isPendingFor } = usePrintShippingLabel();
+  const isLabelPending = isPendingFor(shipmentId);
 
   const shipmentQuery = useQuery({
     queryKey: ["shipment-workspace", shipmentId],
@@ -380,6 +384,22 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
                 <Button size="sm" variant="secondary" onClick={() => setAssignDriverOpen(true)}>
                   Assign field operator
                 </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={isLabelPending}
+                  aria-label="Print shipping label"
+                  onClick={() => printLabel(shipment.id)}
+                  leftIcon={
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="6 9 6 2 18 2 18 9" />
+                      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                      <rect x="6" y="14" width="12" height="8" />
+                    </svg>
+                  }
+                >
+                  Print label
+                </Button>
                 <Button size="sm" variant="secondary" asChild>
                   <Link to={`/shipments/${encodeURIComponent(shipment.tracking_number ?? shipment.id)}`}>Open full page</Link>
                 </Button>
@@ -554,13 +574,13 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
 
                 {visitedTabs.has("documents") ? (
                   <TabsContent value="documents">
-                    <DocumentsPanel documents={documents} onDocumentsChange={setDocuments} />
+                    <DocumentsPanel documents={documents} />
                   </TabsContent>
                 ) : null}
 
                 {visitedTabs.has("notes") ? (
                   <TabsContent value="notes">
-                    <NotesPanel notes={notes} onNotesChange={setNotes} canWrite />
+                    <NotesPanel notes={notes} />
                   </TabsContent>
                 ) : null}
               </Tabs>

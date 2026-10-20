@@ -45,12 +45,15 @@ try {
       name,
       role,
       passwordHash,
-      status: 'ACTIVE'
+      status: 'ACTIVE',
+      // No MFA here: the user enrols an authenticator app at first console login.
+      mfaEnabled: false
     },
     select: { id: true, email: true, role: true }
   });
 
   console.log(`Created platform user ${user.email} (${user.role}) with id ${user.id}.`);
+  console.log('Next step: sign in to the console. You will be asked to enrol an authenticator app (TOTP) before anything else works.');
 } finally {
   await prisma.$disconnect();
 }

@@ -22,6 +22,9 @@ function buildApp(tenantOverrides: Record<string, unknown> = {}) {
   ];
 
   const prisma = {
+    // requireFeature reads entitlements (WP-1.4): no plan or feature overrides here.
+    tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    tenantFeatureOverride: { findMany: vi.fn(async () => []) },
     agentAction: {
       findMany: vi.fn().mockImplementation(async ({ where }: any) => {
         return agentActions.filter((a) => {

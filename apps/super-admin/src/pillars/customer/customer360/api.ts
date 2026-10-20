@@ -1,48 +1,122 @@
-import { internalApi } from "@/lib/internal-api";
+import { useQuery } from "@tanstack/react-query";
 
-export type Customer360 = {
-  tenant: {
-    id: string;
-    name: string;
-    slug: string;
-    logoUrl: string | null;
-    plan: string;
-    status: string;
-    defaultCurrency: string;
-    internalNotes: string | null;
-    onboardingSteps?: Record<string, boolean>;
-    onboardingCompletedAt?: string | null;
-    users: Array<{ id: string; email: string; name: string | null; role: string; lastLoginAt: string | null }>;
-    shipments: Array<{ id: string; status: string; createdAt: string; trackingNumber?: string | null }>;
-    invoices: Array<{ id: string; invoiceNumber: string; status: string; total: string; currency: string; createdAt: string }>;
-    notificationLogs: Array<{ id: string; event: string; status: string; createdAt: string }>;
-    auditLogs: Array<{ id: string; action: string; resourceType: string | null; timestamp: string }>;
-  };
-  metrics: { shipmentCount: number; invoiceCount: number; userCount: number; notificationCount: number; supportTicketCount: number; healthScore: number };
-  usage: {
-    shipmentStatusBreakdown: Array<{ status: string; _count: { id: number } }>;
-    apiUsage?: {
-      keys: Array<{ id: string; name: string | null; lastUsedAt: string | null; monthlyRequestCount: number; isSandbox: boolean; scopes: string[] }>;
-      totalRequestsThisMonth: number;
-      averagePerDay: number;
-    };
-  };
-  tickets: Array<Record<string, unknown>>;
-  health: { score: number; trend?: string; factors: string[] | Record<string, unknown> };
-  dunning?: { events: Array<Record<string, unknown>> };
-  incidents?: { impacts: Array<Record<string, unknown>> };
-  contracts?: Array<Record<string, unknown>>;
-  pipeline?: Array<Record<string, unknown>>;
-  attribution?: Array<Record<string, unknown>>;
-  featureFlagOverrides?: Array<{ id: string; flagKey: string; value: unknown; actorId: string; createdAt: string }>;
+import { consoleApi as internalApi } from "@/lib/console-api";
+
+// customer.360 (WP-1.8): one query per tab, each against its own endpoint and permission (catalogue → customer.360).
+
+type Money = { amount: string; currency: string; source?: string; note?: string };
+
+export type C360Summary = {
+  identity: { id: string; name: string; slug: string; customDomain: string | null; region: string; createdAt: string };
+  status: string;
+  closedAt: string | null;
+  plan: { billingPlan: string; effectivePlan: string; planOverride: { id: string; plan: string; reason: string; expiresAt: string | null } | null };
+  activeSuspensions: Array<{ id: string; source: string; category: string; publicReason: string | null; createdAt: string }>;
+  mrr: Money;
+  subscription: { plan: string; billingCycle: string; status: string; currentPeriodEnd: string | null } | null;
+  lastLoginAt: string | null;
+  health: { score: number; trend: string; computedAt: string } | null;
+  kycStatus: string;
+  activeStaff: number;
+  openTickets: number;
 };
 
-export async function fetchCustomer360(tenantId: string) {
-  const response = await internalApi.get<Customer360>(`/customer/360/${tenantId}`);
-  return response.data;
-}
+export type C360Usage = {
+  months: Array<{ month: string; shipments: number; apiCalls: number; smsSent: number; emailsSent: number }>;
+  limits: { maxStaff: number; maxShipmentsPm: number; maxOrganisations: number; apiRateLimit: number };
+  limitsSource: "plan" | "tenant";
+  current: { shipmentsThisMonth: number; staff: number };
+  shipmentsTotal: number;
+  api: { keys: Array<{ id: string; name: string | null; keyPrefix: string; isActive: boolean; lastUsedAt: string | null; monthlyRequestCount: number }>; callsLast30Days: number; errorsLast30Days: number };
+};
 
-export async function updateCustomerNotes(tenantId: string, internalNotes: string) {
-  const response = await internalApi.patch<{ internalNotes: string }>(`/customer/360/${tenantId}/notes`, { internalNotes, reason: "Customer 360 note update" });
-  return response.data;
+export type C360Billing = {
+  subscription: { plan: string; billingCycle: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; stripeLinked: boolean } | null;
+  invoices: Array<{ id: string; invoiceNumber: string; status: string; total: string; currency: string; dueDate: string | null; createdAt: string }>;
+  invoiceCount: number;
+  payments: Array<{ id: string; amount: string; currency: string; status: string; method: string | null; createdAt: string; invoiceId: string | null }>;
+  dunning: Array<{ id: string; eventType: string; attempt: number; createdAt: string; invoiceId: string | null }>;
+  saveOffers: Array<{ id: string; discount: string; status: string; expiresAt: string; createdAt: string }>;
+};
+
+export type C360Tickets = {
+  audience: "PLATFORM" | "END_CUSTOMER";
+  tickets: Array<{ id: string; ticketNumber: string; subject: string; category: string; priority: string; status: string; audience: string; lastMessageAt: string | null; createdAt: string; updatedAt: string }>;
+  total: number;
+  byStatus: Record<string, number>;
+  endCustomer: { total: number; open: number };
+  audienceTracked: boolean;
+};
+
+export type C360Health = { latest: { score: number; trend: string; factors: unknown; computedAt: string } | null; history: Array<{ score: number; computedAt: string }> };
+
+export type C360Ai = {
+  usage: Array<{ id: string; month: string; model: string; feature: string; requestCount: number; tokenCount: number; costUsd: number }>;
+  runs: Array<{ id: string; agentType: string; status: string; stage: string | null; scannedCount: number; flaggedCount: number; proposedCount: number; durationMs: number | null; createdAt: string }>;
+  runCount: number;
+  limit: C360AiLimit | null;
+  /** Spend this month (USD, 2 decimals as a string) and request count. */
+  currentMonth: { month: string; costUsd: string; requests: number };
+  /** Feature keys a limit may allow (none selected = all). */
+  featureKeys: string[];
+};
+
+export type C360Gateway = { provider: string; mode: string; enabled: boolean; status: string; secretConfigured: boolean; lastVerifiedAt: string | null; lastError: string | null; updatedAt: string };
+
+export type C360AiLimit = {
+  monthlyBudgetUsd: string | null;
+  flashRequestLimit: number | null;
+  proRequestLimit: number | null;
+  featuresEnabled: string[];
+  updatedAt: string;
+  updatedByPlatformUserId: string | null;
+  reason: string | null;
+};
+
+export type C360Audit = {
+  tenantAudit: Array<{ id: string; action: string; actorType: string; actorId: string | null; resourceType: string | null; resourceId: string | null; timestamp: string }>;
+  nextCursor: string | null;
+  platformAudit: Array<{ id: string; action: string; actorEmail: string | null; reason: string | null; createdAt: string }>;
+};
+
+export type C360People = {
+  users: Array<{ id: string; email: string; firstName: string | null; lastName: string | null; role: string; isActive: boolean; mfaEnabled: boolean; lastLogin: string | null; invitedBy: string | null; createdAt: string; lockedAt: string | null; lockedReason: string | null; status: "ACTIVE" | "SUSPENDED" | "LOCKED"; invited: boolean; joined: boolean }>;
+  total: number;
+};
+
+export type C360Config = {
+  general: Record<string, string | boolean | null>;
+  branding: Record<string, string | null>;
+  domains: Record<string, string | null>;
+  notifications: Record<string, string | boolean | string[] | null> | null;
+  /** L11 (WP-2.12): tenant payment gateways — state only, never keys. */
+  payments: { activeProvider: string | null; currency: string; gateways: C360Gateway[] };
+  apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null; revokedAt: string | null; revokedByType: string | null; revokedReason: string | null }>;
+  webhooks: Array<{ id: string; url: string; events: string[]; isActive: boolean; createdAt: string; failuresLast30Days: number }>;
+  legacyWebhook: { url: string | null; secretConfigured: boolean } | null;
+};
+
+export type C360Notes = { internalNotes: string; editPath: string };
+
+type TabData = {
+  summary: C360Summary;
+  usage: C360Usage;
+  billing: C360Billing;
+  tickets: C360Tickets;
+  health: C360Health;
+  ai: C360Ai;
+  audit: C360Audit;
+  people: C360People;
+  config: C360Config;
+  notes: C360Notes;
+};
+
+export const C360_KEY = ["customer.360"] as const;
+
+export function useC360<K extends keyof TabData>(tenantId: string, resource: K, enabled = true) {
+  return useQuery({
+    queryKey: [...C360_KEY, resource, tenantId],
+    queryFn: async () => (await internalApi.get<TabData[K]>(`/customer360/${encodeURIComponent(tenantId)}/${resource}`)).data,
+    enabled: enabled && tenantId.length > 0
+  });
 }

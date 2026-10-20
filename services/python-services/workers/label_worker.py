@@ -1,3 +1,8 @@
+# LEGACY: parallel label pipeline. Active flow lives in workers/pdf_worker.py
+# (type="shipping_label") + api/pdf.py POST /pdf/shipments/{id}/label, which
+# writes into the `documents` table and snapshots into `documents.metadata`.
+# This worker still backs the Node `GeneratedLabel` / LabelsPage flow and is
+# kept untouched here pending a later consolidation task.
 import asyncio
 import base64
 import io

@@ -35,12 +35,6 @@ export const apiKeyService = {
       orderBy: { createdAt: 'desc' }
     });
   },
-  async revoke(prisma: PrismaClient, tenantId: string, id: string) {
-    return prisma.apiKey.update({
-      where: { id, tenantId },
-      data: { isActive: false }
-    });
-  },
   async usage(prisma: PrismaClient, tenantId: string) {
     const dayKey = (value: Date) => value.toISOString().slice(0, 10);
     const [keys, usageRecords] = await Promise.all([

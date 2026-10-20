@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { getDevTestSession, getDevTestSessionSnapshot, hasDevTestSession, updateDevTestSessionProfile } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 type ProfileResponse = {
   id: string;
@@ -263,9 +264,14 @@ export function ProfileTab() {
         <p className="mt-1 text-sm text-gray-600">
           {profile?.mfaEnabled ? "MFA is enabled for this account." : "MFA is currently disabled for this account."}
         </p>
-        <Button type="button" variant="secondary" size="sm" className="mt-3" disabled>
-          TOTP setup flow available in auth module
-        </Button>
+        {/* Tenant-user MFA is outside the console rebuild (WP-2.0); tracked in docs/implementation-status.md. */}
+        <Tooltip content="Coming soon">
+          <span className="mt-3 inline-block" tabIndex={0}>
+            <Button type="button" variant="secondary" size="sm" disabled>
+              Set up authenticator app
+            </Button>
+          </span>
+        </Tooltip>
       </div>
 
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}

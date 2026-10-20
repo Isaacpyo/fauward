@@ -1,5 +1,7 @@
+import { USER_LOCKED_MESSAGE } from '../../services/tenant-user-lifecycle.service.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'crypto';
+import { currentRequestActor } from '../../context/request-actor.context.js';
 
 function monthKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -19,17 +21,23 @@ function hasWriteScope(scopes: string[], path: string) {
   return scopes.some((scope) => scope.endsWith(':write'));
 }
 
+const IMPERSONATION_EXIT_PATHS = new Set(['/api/v1/tenant/impersonation/exit', '/api/v1/tenants/me/impersonation/exit']);
+
 function isReadMethod(method: string) {
   return ['GET', 'HEAD', 'OPTIONS'].includes(method);
 }
 
 function isSuspendedTenantAllowedPath(method: string, path: string) {
-  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/payments/billing-status'].includes(path)) {
+  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/tenants/me/suspension', '/api/v1/tenants/me/entitlements', '/api/v1/payments/billing-status'].includes(path)) {
     return true;
   }
   if (method === 'GET' && (path === '/api/v1/tenant/announcements' || path === '/api/v1/tenants/me/announcements' || path === '/api/v1/tenants/me/health')) {
     return true;
   }
+  if (method === 'POST' && /^\/api\/v1\/tenants\/me\/suspension-appeal\/[^/]+\/reply$/.test(path)) return true;
+  // A DUNNING suspension is cleared by paying: billing summary, the Stripe portal and save offers stay reachable (WP-2.7).
+  if (method === 'GET' && path === '/api/v1/tenants/me/billing/summary') return true;
+  if (method === 'POST' && (path === '/api/v1/tenants/me/billing/portal-session' || /^\/api\/v1\/tenants\/me\/save-offers\/[^/]+\/redeem$/.test(path))) return true;
   return method === 'POST' && [
     '/api/v1/tenant/impersonation/exit',
     '/api/v1/tenants/me/impersonation/exit',
@@ -153,16 +161,34 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     if (request.user?.mode === 'IMPERSONATION') {
       const sessionId = request.user.impersonationSessionId;
       const active = sessionId ? await request.server.redis.get(`platform:impersonation:${sessionId}`) : null;
-      if (!active) {
+      if (!sessionId || !active) {
         return reply.status(401).send({ error: 'Impersonation session expired', code: 'IMPERSONATION_EXPIRED' });
       }
+      // The session row is authoritative: revoked or ended sessions stop working even before the Redis key expires.
+      const session = await request.server.prisma.platformImpersonationSession.findUnique({
+        where: { id: sessionId },
+        select: { platformUserId: true, targetTenantId: true, scopes: true, revokedAt: true, endedAt: true, expiresAt: true }
+      });
+      if (!session || session.revokedAt || session.endedAt || session.expiresAt <= new Date() || session.targetTenantId !== tenantId) {
+        return reply.status(401).send({ error: 'Impersonation session expired', code: 'IMPERSONATION_EXPIRED' });
+      }
+      // Read-only unless the session was started with the `write` scope (S6, D8).
+      if (!isReadMethod(request.method) && !IMPERSONATION_EXIT_PATHS.has(path) && !session.scopes.includes('write')) {
+        return reply.status(403).send({ error: 'IMPERSONATION_READ_ONLY', message: 'This staff session is read-only.' });
+      }
+      const actor = currentRequestActor();
+      if (actor) actor.impersonation = { sessionId, platformUserId: session.platformUserId };
     }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },
-      select: { isActive: true }
+      select: { isActive: true, lockedAt: true }
     });
     if (!user?.isActive) {
       return reply.status(401).send({ error: 'Account suspended', code: 'USER_SUSPENDED' });
+    }
+    // Fauward's security lock (WP-2.15) ends the user's own tokens at once; staff impersonation is separate.
+    if (user.lockedAt && request.user?.mode !== 'IMPERSONATION') {
+      return reply.status(401).send({ error: 'USER_LOCKED', code: 'USER_LOCKED', message: USER_LOCKED_MESSAGE });
     }
 
     if (role !== 'SUPER_ADMIN') {
@@ -184,7 +210,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
 
     const isMfaRoute = path.startsWith('/api/v1/auth/mfa/');
-    const requiresMfa = role === 'SUPER_ADMIN' || path.startsWith('/api/v1/admin/');
+    // Tenant-JWT SUPER_ADMIN still reaches control-tower/tracking until WP-2.11 moves them to console auth.
+    const requiresMfa = role === 'SUPER_ADMIN';
     if (!isMfaRoute && requiresMfa && request.user?.mfaVerified !== true) {
       return reply.status(403).send({ error: 'MFA required', code: 'MFA_REQUIRED' });
     }

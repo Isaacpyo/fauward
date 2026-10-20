@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { Tenant } from '@prisma/client';
 import { config } from '../../config/index.js';
 import type { TenantContext } from '../../context/tenant.context.js';
+import { loadRequestEntitlements } from './entitlements.js';
 
 function normalizeHost(host: string) {
   return host.split(':')[0].toLowerCase();
@@ -41,6 +42,7 @@ const PUBLIC_PATHS = new Set([
   '/api/v1/auth/mfa/validate',
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
+  '/api/v1/auth/impersonation/exchange',
   '/api/v1/tenant/region-change-requests/dev',
   '/api/v1/payments/webhook/stripe'
 ]);
@@ -52,7 +54,7 @@ const SYSTEM_PATHS = new Set([
   '/version'
 ]);
 
-function systemContext(): TenantContext {
+export function systemContext(): TenantContext {
   return {
     tenantId: 'system',
     tenantSlug: 'system',
@@ -187,7 +189,7 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return systemContext();
   }
 
-  if (path.startsWith('/api/v1/platform') || path.startsWith('/api/v1/admin') || path.startsWith('/api/v1/relay') || path.startsWith('/api/internal/')) {
+  if (path.startsWith('/api/v1/platform') || path.startsWith('/api/v1/relay') || path.startsWith('/api/internal/')) {
     return systemContext();
   }
 
@@ -227,6 +229,10 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
     return null;
   }
 
+  if (tenant.closedAt) {
+    reply.status(410).send({ error: 'Workspace closed', code: 'TENANT_CLOSED' });
+    return null;
+  }
   if (tenant.status === 'CANCELLED') {
     reply.status(410).send({ error: 'Account cancelled', code: 'TENANT_CANCELLED' });
     return null;
@@ -234,5 +240,17 @@ export async function tenantResolver(req: FastifyRequest, reply: FastifyReply): 
 
   req.tenant = tenant;
 
-  return tenantContext(tenant);
+  // The context carries the override-aware plan and features (WP-1.4). A failure here is not fatal: requireFeature and
+  // requirePlan load entitlements themselves.
+  const context = tenantContext(tenant);
+  try {
+    const entitlements = await loadRequestEntitlements(req);
+    if (entitlements) {
+      context.effectivePlan = entitlements.effectivePlan;
+      context.features = Object.fromEntries(Object.entries(entitlements.features).map(([key, value]) => [key, value.enabled]));
+    }
+  } catch (err) {
+    req.log.warn({ err, tenantId: tenant.id }, 'Could not load tenant entitlements for the request context');
+  }
+  return context;
 }

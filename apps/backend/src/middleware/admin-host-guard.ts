@@ -3,8 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 const DEFAULT_ADMIN_ROUTE_PREFIXES = [
   '/admin',
   '/api/internal',
-  '/api/v1/platform',
-  '/api/v1/admin'
+  '/api/v1/platform'
 ];
 
 type AdminHostGuardOptions = {

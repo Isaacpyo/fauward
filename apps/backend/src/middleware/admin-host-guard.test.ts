@@ -13,7 +13,6 @@ function buildGuardedApp(enabled = true) {
   app.get('/admin/auth/login', async () => ({ route: 'admin-auth' }));
   app.get('/api/internal/audit/entries', async () => ({ route: 'internal-audit' }));
   app.get('/api/v1/platform/auth/me', async () => ({ route: 'platform-auth' }));
-  app.get('/api/v1/admin/tenants', async () => ({ route: 'legacy-admin' }));
   app.get('/api/v1/tenant/me', async () => ({ route: 'tenant' }));
 
   return app;
@@ -29,16 +28,14 @@ describe('admin host guard', () => {
     expect(isAdminRoutePath('/admin/auth/login')).toBe(true);
     expect(isAdminRoutePath('/api/internal/audit/entries?limit=10')).toBe(true);
     expect(isAdminRoutePath('/api/v1/platform/auth/me')).toBe(true);
-    expect(isAdminRoutePath('/api/v1/admin/tenants')).toBe(true);
-    expect(isAdminRoutePath('/api/v1/administrator')).toBe(false);
+    expect(isAdminRoutePath('/api/v1/platformer')).toBe(false);
     expect(isAdminRoutePath('/api/v1/tenant/me')).toBe(false);
   });
 
   it.each([
     '/admin/auth/login',
     '/api/internal/audit/entries',
-    '/api/v1/platform/auth/me',
-    '/api/v1/admin/tenants'
+    '/api/v1/platform/auth/me'
   ])('returns 404 for %s on the tenant hostname', async (url) => {
     const app = buildGuardedApp();
 
@@ -87,11 +84,11 @@ describe('admin host guard', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/api/v1/admin/tenants',
+      url: '/api/v1/platform/auth/me',
       headers: { host: 'acme.fauward.com' }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ route: 'legacy-admin' });
+    expect(response.json()).toEqual({ route: 'platform-auth' });
   });
 });

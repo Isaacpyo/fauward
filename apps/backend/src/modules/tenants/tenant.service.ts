@@ -1,19 +1,16 @@
 import type { FastifyRequest } from 'fastify';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, TenantSettings } from '@prisma/client';
 import { brandingService, type BrandingPayload } from './branding.service.js';
 import { domainService } from './domain.service.js';
 import { planService } from './plan.service.js';
 import { usageService } from './usage.service.js';
+import { markOnboardingStep, onboardingChecklist } from '../../services/onboarding.service.js';
 
-function serializePaymentIntegrations(
-  paymentGatewayKey?: string,
-  paymentIntegrations?: unknown
-) {
-  if (paymentIntegrations !== undefined) {
-    return JSON.stringify(paymentIntegrations);
-  }
-
-  return paymentGatewayKey;
+/** Settings as the tenant sees them: gateway keys live in TenantPaymentGateway (WP-2.12) and secrets never leave the API. */
+function publicSettings(settings: TenantSettings | null) {
+  if (!settings) return null;
+  const { webhookSecret, ...rest } = settings;
+  return { ...rest, paymentGatewayKey: undefined, webhookSecretSet: Boolean(webhookSecret) };
 }
 
 export const tenantService = {
@@ -58,7 +55,7 @@ export const tenantService = {
       billingPlan: tenant.plan,
       activePlanOverride: planOverride,
       featureFlags,
-      settings
+      settings: publicSettings(settings)
     };
   },
   updateBranding: async (req: FastifyRequest, payload: BrandingPayload) => {
@@ -68,6 +65,7 @@ export const tenantService = {
     const before = await brandingService.getBrandingSnapshot(req.server.prisma, tenant.id);
     const updated = await brandingService.updateBranding(req.server.prisma, tenant.id, payload);
     const after = await brandingService.getBrandingSnapshot(req.server.prisma, tenant.id);
+    await markOnboardingStep({ prisma: req.server.prisma, redis: req.server.redis, log: req.log }, tenant.id, 'BRANDING_SET');
 
     const diff: Record<string, { before: unknown; after: unknown }> = {};
     (Object.keys(after) as Array<keyof typeof after>).forEach((key) => {
@@ -100,39 +98,28 @@ export const tenantService = {
       currency?: string;
       notificationEmail?: string;
       smsEnabled?: boolean;
-      paymentGateway?: string;
-      paymentGatewayKey?: string;
-      paymentIntegrations?: unknown;
     }
   ) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
 
-    const serializedPaymentIntegrations = serializePaymentIntegrations(
-      payload.paymentGatewayKey,
-      payload.paymentIntegrations
-    );
-
-    return req.server.prisma.tenantSettings.upsert({
+    const settings = await req.server.prisma.tenantSettings.upsert({
       where: { tenantId: tenant.id },
       create: {
         tenantId: tenant.id,
         timezone: payload.timezone ?? tenant.timezone,
         currency: payload.currency ?? tenant.defaultCurrency,
         notificationEmail: payload.notificationEmail,
-        smsEnabled: payload.smsEnabled ?? false,
-        paymentGateway: payload.paymentGateway ?? 'STRIPE',
-        paymentGatewayKey: serializedPaymentIntegrations
+        smsEnabled: payload.smsEnabled ?? false
       },
       update: {
         timezone: payload.timezone,
         currency: payload.currency,
         notificationEmail: payload.notificationEmail,
-        smsEnabled: payload.smsEnabled,
-        paymentGateway: payload.paymentGateway,
-        paymentGatewayKey: serializedPaymentIntegrations
+        smsEnabled: payload.smsEnabled
       }
     });
+    return publicSettings(settings);
   },
   setDomain: async (req: FastifyRequest, domain: string) => {
     const tenant = req.tenant;
@@ -158,7 +145,7 @@ export const tenantService = {
   getOnboarding: async (req: FastifyRequest) => {
     const tenant = req.tenant;
     if (!tenant) throw new Error('Tenant context required');
-    return usageService.getOnboarding(req.server.prisma, tenant);
+    return onboardingChecklist(req.server.prisma, tenant.id);
   },
   getPlanFeatures: async (req: FastifyRequest) => {
     const tenant = req.tenant;

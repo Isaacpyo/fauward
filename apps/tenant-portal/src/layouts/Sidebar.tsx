@@ -13,6 +13,7 @@ import {
   hasPlanAccess,
   type Plan
 } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 
@@ -23,8 +24,7 @@ type SidebarProps = {
 const NAV_GROUPS: { label: string; paths: string[] }[] = [
   { label: "Operations", paths: ["/", "/shipments", "/fauward-go", "/operations", "/operations/live-map", "/fleet"] },
   { label: "Business", paths: ["/crm", "/finance", "/analytics", "/pricing", "/returns"] },
-  { label: "Admin", paths: ["/team", "/activity", "/support", "/reports", "/settings", "/developer"] },
-  { label: "Customer", paths: ["/book"] },
+  { label: "Admin", paths: ["/team", "/activity", "/support", "/help/tickets", "/help/feedback", "/reports", "/settings", "/developer"] },
 ];
 
 function getGroupLabel(to: string): string | null {
@@ -57,10 +57,10 @@ export function Sidebar({ mobile = false }: SidebarProps) {
   const location = useLocation();
   const tabParam = new URLSearchParams(location.search).get("tab");
 
-  const currentPlan = user?.plan;
+  const access = useFeatureAccess();
   const visibleItems = navItems.filter((item) => {
     if (!user || !item.roles.includes(user.role)) return false;
-    return hasFeatureAccess(currentPlan, item.feature) || item.showWhenLocked;
+    return access.hasFeature(item.feature) || item.showWhenLocked;
   });
 
   const activeParent =
@@ -105,7 +105,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
           const groupLabel = (!sidebarCollapsed || mobile) ? getGroupLabel(item.to) : null;
           const showGroup = groupLabel && !seenGroups.has(groupLabel);
           if (showGroup) seenGroups.add(groupLabel);
-          const locked = !hasFeatureAccess(currentPlan, item.feature);
+          const locked = !access.hasFeature(item.feature);
           const minimumPlan = getFeatureMinimumPlan(item.feature);
           const hasChildren = Boolean(item.children?.length);
           const isExpanded = hasChildren && expandedParent === item.to;
@@ -191,7 +191,7 @@ export function Sidebar({ mobile = false }: SidebarProps) {
                   {item.children!.map((child) => {
                     const childActive = isChildActive(child, location.pathname, tabParam);
                     const childLocked = child.minimumPlan
-                      ? !hasPlanAccess(currentPlan, child.minimumPlan as Plan)
+                      ? !access.hasPlan(child.minimumPlan as Plan)
                       : false;
                     return (
                       <li key={child.to}>

@@ -1,8 +1,10 @@
+import { recordTeamEvent } from '../../services/tenant-user-lifecycle.service.js';
 import { randomBytes } from 'crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { UserRole } from '@prisma/client';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
+import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
 import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
@@ -71,6 +73,9 @@ function roleFromString(value?: string): UserRole | null {
   }
   return null;
 }
+
+/** End-customer roles do not use staff seats. */
+const CUSTOMER_ROLES = new Set<UserRole>(['CUSTOMER_ADMIN', 'CUSTOMER_USER']);
 
 export async function registerUsersRoutes(app: FastifyInstance) {
   app.get('/api/v1/users/me', { preHandler: [authenticate] }, async (request, reply) => {
@@ -184,7 +189,9 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           lastName: true,
           isActive: true,
           createdAt: true,
-          lastLogin: true
+          lastLogin: true,
+          lockedAt: true,
+          lockedReason: true
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -200,7 +207,10 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           lastName: user.lastName,
           isActive: user.isActive,
           createdAt: user.createdAt,
-          lastLogin: user.lastLogin
+          lastLogin: user.lastLogin,
+          // Locked by Fauward during a security incident (WP-2.15); admins see why.
+          lockedAt: user.lockedAt,
+          lockedReason: user.lockedReason
         }))
       });
     }
@@ -237,6 +247,18 @@ export async function registerUsersRoutes(app: FastifyInstance) {
       const existing = await app.prisma.user.findFirst({ where: { tenantId, email } });
       if (existing) {
         return reply.status(409).send({ error: 'User with this email already exists' });
+      }
+
+      // Staff seats are capped by the effective limit (plan, or the limit Fauward staff set — WP-1.2, ACC-TEN-8).
+      if (!CUSTOMER_ROLES.has(role)) {
+        const entitlements = await loadRequestEntitlements(request);
+        const limit = entitlements?.limits.maxStaff ?? -1;
+        if (limit !== -1) {
+          const current = await app.prisma.user.count({ where: { tenantId, isActive: true, role: { notIn: [...CUSTOMER_ROLES] } } });
+          if (current >= limit) {
+            return reply.status(403).send({ error: 'LIMIT_REACHED', code: 'LIMIT_REACHED', limit, current, message: `This workspace has used all ${limit} staff seats.` });
+          }
+        }
       }
 
       const temporaryPassword = generateAccessCode();
@@ -279,6 +301,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
         accessCode: temporaryPassword,
         isReset: false
       });
+      await recordTeamEvent(app, request, 'user.invited', user, `${user.email} invited as ${user.role}`);
 
       reply.status(201).send({
         id: user.id,
@@ -400,6 +423,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
 
         return result;
       });
+      if (target.role !== nextRole) await recordTeamEvent(app, request, 'user.role_changed', target, `${target.email}: ${target.role} → ${nextRole}`);
 
       reply.send(updated);
     }
@@ -514,7 +538,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
 
       const target = await app.prisma.user.findFirst({
         where: { id, tenantId },
-        select: { id: true, role: true }
+        select: { id: true, role: true, email: true, tenantId: true }
       });
       if (!target) return reply.status(404).send({ error: 'User not found' });
 
@@ -535,6 +559,7 @@ export async function registerUsersRoutes(app: FastifyInstance) {
           }
         })
       ]);
+      await recordTeamEvent(app, request, 'user.suspended', target, `${target.email} suspended by the workspace`);
 
       reply.send({ success: true });
     }

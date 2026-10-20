@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
 import { UsageMeter } from "@/components/shared/UsageMeter";
 import { PageShell } from "@/layouts/PageShell";
+import { AskAgentToggleButton } from "@/components/agent-chat/AskAgentToggleButton";
 
 function humaniseType(type: string): string {
   const spaced = type.replaceAll("_", " ");
@@ -22,11 +23,11 @@ function pickActiveQuota(usage: AgentUsage): Quota | null {
   if (!usage.limit) return null;
   const { monthlyBudgetUsd, flashRequestLimit, proRequestLimit } = usage.limit;
 
-  if (monthlyBudgetUsd !== null && monthlyBudgetUsd > 0) {
+  if (monthlyBudgetUsd !== null && Number(monthlyBudgetUsd) > 0) {
     return {
-      label: "Monthly AI budget",
+      label: `Monthly AI budget (${monthlyBudgetUsd} USD)`,
       used: Number(usage.ai.totalCostUsd.toFixed(2)),
-      total: Number(monthlyBudgetUsd.toFixed(2))
+      total: Number(monthlyBudgetUsd)
     };
   }
   if (flashRequestLimit !== null && flashRequestLimit > 0) {
@@ -45,6 +46,7 @@ export function AgentUsagePage() {
     <PageShell
       title="Usage"
       description="AI consumption and plan limits for Fauward Agent this month."
+      actions={<AskAgentToggleButton />}
     >
       {isLoading && (
         <div className="space-y-4">

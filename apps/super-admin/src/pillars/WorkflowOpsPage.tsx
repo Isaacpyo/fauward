@@ -4,7 +4,9 @@ import { Send, ShieldCheck } from "lucide-react";
 import { FormEvent, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { internalApi } from "@/lib/internal-api";
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { consoleApi as internalApi } from "@/lib/console-api";
+import { apiErrorMessage } from "@/lib/console-api-error";
 
 type WorkflowOpsPageProps = {
   title: string;
@@ -37,12 +39,8 @@ type WorkflowAction = {
 const WORKFLOW_PREFIXES = [
   "/dunning",
   "/incidents",
-  "/support",
   "/announcements",
   "/success",
-  "/jit",
-  "/compliance",
-  "/safety",
   "/flags",
   "/security",
   "/kyc",
@@ -127,7 +125,7 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
       {
         id: "save-offer",
         label: "Issue Save Offer",
-        description: "Create an approved save-the-customer offer for a tenant.",
+        description: "Create a save-the-customer offer for a tenant. It stays pending until approved.",
         method: "post",
         path: () => "/dunning/save-offers",
         fields: [
@@ -137,6 +135,18 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Save offer" }
         ],
         payload: (values) => ({ tenantId: values.tenantId, discount: numeric(values.discount), expiresAt: values.expiresAt || undefined, reason: values.reason })
+      },
+      {
+        id: "approve-save-offer",
+        label: "Approve Save Offer",
+        description: "Approve a pending offer: generates the code the tenant redeems in Billing (fresh MFA and a reason).",
+        method: "post",
+        path: (values) => `/dunning/save-offers/${encodeURIComponent(values.offerId)}/approve`,
+        fields: [
+          { name: "offerId", label: "Save offer ID", required: true },
+          { name: "reason", label: "Reason", type: "textarea", required: true }
+        ],
+        payload: (values) => ({ reason: values.reason })
       }
     ];
   }
@@ -156,25 +166,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "notes", label: "Notes", type: "textarea" }
         ],
         payload: (values) => ({ tenantId: values.tenantId, impactLevel: values.impactLevel, notes: values.notes })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/support")) {
-    return [
-      {
-        id: "ticket",
-        label: "Create Linked Ticket",
-        description: "Create a tenant-linked Zendesk ticket record from the console.",
-        method: "post",
-        path: () => "/support/tickets",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "subject", label: "Subject", required: true },
-          { name: "priority", label: "Priority", type: "select", options: ["normal", "high", "urgent"], defaultValue: "normal" },
-          { name: "requesterEmail", label: "Requester Email" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, subject: values.subject, priority: values.priority, requesterEmail: values.requesterEmail })
       }
     ];
   }
@@ -232,142 +223,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "CS playbook" }
         ],
         payload: (values) => ({ name: values.name, trigger: values.trigger, steps: [{ type: "notify_csm", status: "PENDING" }], reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/jit")) {
-    return [
-      {
-        id: "request",
-        label: "Request Elevated Access",
-        description: "Create a JIT request with reason and bounded duration.",
-        method: "post",
-        path: () => "/jit/requests",
-        fields: [
-          { name: "permission", label: "Permission", required: true },
-          { name: "durationMinutes", label: "Duration Minutes", type: "number", defaultValue: "60" },
-          { name: "hardwareKeyAssertion", label: "Hardware Key Assertion" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ permission: values.permission, durationMinutes: numeric(values.durationMinutes), hardwareKeyAssertion: values.hardwareKeyAssertion || undefined, reason: values.reason })
-      },
-      {
-        id: "approve",
-        label: "Approve Request",
-        description: "Approve a pending JIT request. Self-approval is blocked by the backend.",
-        method: "post",
-        path: (values) => `/jit/requests/${encodeURIComponent(values.requestId)}/approve`,
-        fields: [
-          { name: "requestId", label: "Request ID", required: true },
-          { name: "notes", label: "Notes", type: "textarea" }
-        ],
-        payload: (values) => ({ notes: values.notes })
-      },
-      {
-        id: "revoke",
-        label: "Revoke Session",
-        description: "Revoke an active elevated session immediately.",
-        method: "post",
-        path: (values) => `/jit/sessions/${encodeURIComponent(values.requestId)}/revoke`,
-        fields: [
-          { name: "requestId", label: "Session ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "JIT revoked" }
-        ],
-        payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/compliance")) {
-    return [
-      {
-        id: "transition",
-        label: "Advance DSAR",
-        description: "Move a DSAR through the audited workflow state machine.",
-        method: "patch",
-        path: (values) => `/compliance/dsar/${encodeURIComponent(values.dsarId)}`,
-        fields: [
-          { name: "dsarId", label: "DSAR ID", required: true },
-          { name: "status", label: "Next Status", type: "select", options: ["IDENTITY_VERIFIED", "DATA_GATHERED", "REVIEWED", "RESPONSE_DRAFTED", "APPROVED", "DELIVERED", "CLOSED"], defaultValue: "IDENTITY_VERIFIED" },
-          { name: "notes", label: "Notes", type: "textarea" }
-        ],
-        payload: (values) => ({ status: values.status, notes: values.notes })
-      },
-      {
-        id: "hold",
-        label: "Create Legal Hold",
-        description: "Create a hold that blocks tenant deletion and erasure completion.",
-        method: "post",
-        path: () => "/compliance/legal-hold",
-        fields: [
-          { name: "tenantId", label: "Tenant ID" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId || null, reason: values.reason, scope: { source: "console" } })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/safety")) {
-    return [
-      {
-        id: "flag",
-        label: "Flag Tenant",
-        description: "Create a manual trust and safety fraud signal.",
-        method: "post",
-        path: () => "/safety/fraud",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "severity", label: "Severity", type: "select", options: ["LOW", "MEDIUM", "HIGH"], defaultValue: "MEDIUM" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, severity: values.severity, reason: values.reason, signalType: "manual_flag" })
-      },
-      {
-        id: "decision",
-        label: "Resolve Signal",
-        description: "Suspend, dismiss, or escalate a fraud signal.",
-        method: "post",
-        path: (values) => `/safety/fraud/${encodeURIComponent(values.signalId)}/decision`,
-        fields: [
-          { name: "signalId", label: "Signal ID", required: true },
-          { name: "decision", label: "Decision", type: "select", options: ["suspend", "dismiss", "escalate"], defaultValue: "dismiss" },
-          { name: "reason", label: "Reason", type: "textarea" }
-        ],
-        payload: (values) => ({ decision: values.decision, reason: values.reason })
-      },
-      {
-        id: "appeal",
-        label: "Review Appeal",
-        description: "Approve or reject a tenant suspension appeal.",
-        method: "patch",
-        path: (values) => `/safety/appeals/${encodeURIComponent(values.appealId)}`,
-        fields: [
-          { name: "appealId", label: "Appeal ID", required: true },
-          { name: "status", label: "Decision", type: "select", options: ["APPROVED", "REJECTED"], defaultValue: "APPROVED" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ status: values.status, reason: values.reason, reviewNote: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/flags")) {
-    return [
-      {
-        id: "override",
-        label: "Set Tenant Override",
-        description: "Write a LaunchDarkly tenant override and Fauward audit entry.",
-        method: "post",
-        path: (values, resolved) => `/flags/${encodeURIComponent(values.flagKey || resolved.split("/")[2] || "")}/overrides`,
-        fields: [
-          { name: "flagKey", label: "Flag Key", required: true },
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "value", label: "Value", defaultValue: "true" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Tenant override" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, value: values.value === "true" ? true : values.value === "false" ? false : values.value, reason: values.reason })
       }
     ];
   }
@@ -588,8 +443,7 @@ function ActionPanel({ actions, resolvedEndpoint }: { actions: WorkflowAction[];
       void queryClient.invalidateQueries({ queryKey: ["internal-ops", resolvedEndpoint] });
     },
     onError: (error) => {
-      const response = error && typeof error === "object" && "response" in error ? (error as { response?: { data?: { error?: string } } }).response : undefined;
-      setResult(response?.data?.error ?? "Workflow action failed");
+      setResult(apiErrorMessage(error, "Workflow action failed"));
     }
   });
 
@@ -717,7 +571,7 @@ export function WorkflowOpsPage({ title, description, endpoint, primaryAction, r
       ) : null}
 
       {query.isLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading...</p> : null}
-      {query.isError ? <EmptyState title="Unable to load" message="The service endpoint returned an error or is not configured for this environment." /> : null}
+      {query.isError ? <ConsoleApiErrorPanel error={query.error} onRetry={() => void query.refetch()} /> : null}
       {!query.isLoading && !query.isError && rows.length === 0 ? <EmptyState title="No records" message="No records matched this operational view yet." /> : null}
 
       {rows.length > 0 ? (

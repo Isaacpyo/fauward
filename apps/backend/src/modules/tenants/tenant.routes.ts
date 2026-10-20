@@ -4,13 +4,26 @@ import { tenantController } from './tenant.controller.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
 import { config } from '../../config/index.js';
-import { createRegionChangeRequest } from '../regions/region-change-requests.store.js';
+import { REGIONS } from '../../config/regions.js';
+import { RegionChangeError, presentRegionRequest, requestRegionChange } from '../../services/region-change.service.js';
 import { registerDomainRoutes } from './domain.routes.js';
 import { registerTenantSlugRoutes } from './slug.routes.js';
+import { registerPaymentGatewayRoutes } from './payment-gateways.routes.js';
+import { registerStaffAccessRoutes } from './staff-access.routes.js';
+import { registerTenantPlatformInvoiceRoutes } from './platform-invoices.routes.js';
+import { registerPlanChangeRoutes } from './plan-change.routes.js';
+import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
 export async function registerTenantRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/me', { preHandler: [authenticate] }, tenantController.me);
   app.get('/api/v1/tenants/me', { preHandler: [authenticate] }, tenantController.me);
+  // What the tenant may use right now (WP-1.4): effective plan, plan override, features with their source, limits.
+  // The portal's PlanGate reads this instead of the static plan table.
+  app.get('/api/v1/tenants/me/entitlements', { preHandler: [authenticate] }, async (request, reply) => {
+    const entitlements = await loadRequestEntitlements(request);
+    if (!entitlements) return reply.status(400).send({ error: 'Tenant context required' });
+    return reply.send(entitlements);
+  });
   app.patch(
     '/api/v1/tenant/branding',
     { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] },
@@ -25,9 +38,10 @@ export async function registerTenantRoutes(app: FastifyInstance) {
       return reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId ?? ''}` });
     }
 
+    const now = new Date();
     await app.prisma.platformImpersonationSession.updateMany({
-      where: { id: sessionId, targetTenantId: tenantId, revokedAt: null },
-      data: { revokedAt: new Date() }
+      where: { id: sessionId, targetTenantId: tenantId, revokedAt: null, endedAt: null },
+      data: { revokedAt: now, endedAt: now, endedReason: 'LOGOUT' }
     });
     await app.redis.del(`platform:impersonation:${sessionId}`);
     reply.send({ redirectUrl: `https://admin.${config.platformDomain}/platform/tenants/${tenantId}` });
@@ -38,56 +52,38 @@ export async function registerTenantRoutes(app: FastifyInstance) {
 
   await registerDomainRoutes(app);
   await registerTenantSlugRoutes(app);
+  await registerStaffAccessRoutes(app);
+  await registerPaymentGatewayRoutes(app);
+  await registerTenantPlatformInvoiceRoutes(app);
+  await registerPlanChangeRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
   app.get('/api/v1/tenant/onboarding', { preHandler: [authenticate] }, tenantController.onboarding);
   app.get('/api/v1/tenant/plan-features', { preHandler: [authenticate] }, tenantController.planFeatures);
 
-  app.post('/api/v1/tenant/region-change-requests', { preHandler: [authenticate] }, async (request, reply) => {
-    const tenant = request.tenant;
-    if (!tenant) return reply.status(400).send({ error: 'Tenant context required' });
-
-    const { requestedRegion } = request.body as { requestedRegion?: string };
-    if (!requestedRegion) return reply.status(400).send({ error: 'requestedRegion is required' });
-
-    const regionRequest = createRegionChangeRequest({
-      tenantId: tenant.id,
-      tenantName: tenant.name,
-      tenantSlug: tenant.slug,
-      currentRegion: tenant.region,
-      requestedRegion,
-      requestedBy: request.user?.email ?? 'Tenant user'
-    });
-
-    reply.status(201).send({ request: regionRequest });
+  // L5 (WP-2.6): current region, the regions on offer and this tenant's latest request.
+  app.get('/api/v1/tenant/region-change-requests', { preHandler: [authenticate] }, async (request, reply) => {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+    const [tenant, latest] = await Promise.all([
+      app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { region: true } }),
+      app.prisma.regionChangeRequest.findFirst({ where: { tenantId }, orderBy: { createdAt: 'desc' } })
+    ]);
+    return reply.send({ current: tenant?.region ?? null, regions: REGIONS, latest: latest ? presentRegionRequest(latest) : null });
   });
 
-  app.post('/api/v1/tenant/region-change-requests/dev', async (request, reply) => {
-    if (config.nodeEnv === 'production') {
-      return reply.status(404).send({ error: 'Not found' });
+  app.post('/api/v1/tenant/region-change-requests', { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] }, async (request, reply) => {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+    const { requestedRegion } = (request.body ?? {}) as { requestedRegion?: unknown };
+    if (typeof requestedRegion !== 'string' || !requestedRegion) return reply.status(400).send({ error: 'VALIDATION', message: 'requestedRegion is required' });
+    try {
+      const regionRequest = await requestRegionChange(app, request, { tenantId, requestedRegion, userId: request.user?.sub ?? 'unknown', actorLabel: request.user?.email ?? 'Tenant admin' });
+      return reply.status(201).send({ request: regionRequest });
+    } catch (error) {
+      if (error instanceof RegionChangeError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
     }
-
-    const payload = request.body as {
-      tenantId?: string;
-      tenantName?: string;
-      tenantSlug?: string;
-      currentRegion?: string;
-      requestedRegion?: string;
-      requestedBy?: string;
-    };
-
-    if (!payload.requestedRegion) return reply.status(400).send({ error: 'requestedRegion is required' });
-
-    const regionRequest = createRegionChangeRequest({
-      tenantId: payload.tenantId ?? `dev_${payload.tenantSlug ?? 'tenant'}`,
-      tenantName: payload.tenantName ?? 'Development tenant',
-      tenantSlug: payload.tenantSlug ?? 'development-tenant',
-      currentRegion: payload.currentRegion ?? 'global',
-      requestedRegion: payload.requestedRegion,
-      requestedBy: payload.requestedBy ?? 'Development user'
-    });
-
-    reply.status(201).send({ request: regionRequest });
   });
 
   app.get('/api/v1/tenant/email-templates', { preHandler: [authenticate] }, async (request, reply) => {

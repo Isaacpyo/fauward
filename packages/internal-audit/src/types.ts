@@ -27,6 +27,8 @@ export interface AuditEntry {
 export type AuditWriteInput = Omit<AuditEntry, 'id' | 'timestamp' | 'hash' | 'prev_hash'> & {
   actor_email?: string | null;
   user_agent?: string | null;
+  /** Tenant a non-tenant target belongs to (e.g. a support ticket), so tenant filters and Customer 360 find the row. */
+  target_tenant_id?: string | null;
 };
 
 export type PlatformAuditRow = {

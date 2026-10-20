@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { SystemMetrics } from "@/components/admin/SystemMetrics";
-import { api } from "@/lib/api";
+import { consoleApi as api } from "@/lib/console-api";
 
 type HealthPayload = {
   dbLatencyMs: number;

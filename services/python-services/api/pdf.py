@@ -11,10 +11,12 @@ from services.pdf_jobs import (
     FAILED_QUEUE_ERROR,
     QueuePublishError,
     fetch_document_for_auth,
+    latest_completed_label,
     log_pdf_generation_audit,
     queue_pdf_generation,
     status_response,
     tenant_rate_limit_key,
+    verify_shipment_for_tenant,
 )
 from workers import publish_job
 
@@ -47,6 +49,51 @@ async def pdf_status(
 ) -> dict[str, Any]:
     row = await fetch_document_for_auth(job_id, auth)
     return status_response(row, auth)
+
+
+@router.post("/shipments/{shipment_id}/label")
+@limiter.limit("30/minute")
+@limiter.limit("120/hour", key_func=tenant_rate_limit_key)
+async def generate_shipping_label(
+    request: Request,
+    shipment_id: str,
+    auth: Annotated[AuthContext, Depends(require_bearer_token)],
+    regenerate: bool = False,
+) -> dict[str, Any]:
+    # Three-branch contract (frontend depends on this shape):
+    #   1. regenerate=false + a COMPLETED label exists → return it with signed_url
+    #   2. regenerate=false + no COMPLETED label yet  → queue, return QUEUED with signed_url=null
+    #   3. regenerate=true                            → always queue, return QUEUED with signed_url=null
+    # Caller branches on `signed_url is not None`: open it, otherwise poll job_id.
+    await verify_shipment_for_tenant(auth.tenant_id, shipment_id)
+
+    if not regenerate:
+        existing = await latest_completed_label(auth.tenant_id, shipment_id)
+        if existing is not None:
+            return {
+                "document_id": str(existing["id"]),
+                "job_id": str(existing["id"]),
+                "status": "COMPLETED",
+                "signed_url": f"/pdf/download/{existing['id']}",
+            }
+
+    payload = PdfGenerateRequest.model_validate(
+        {"tenantId": auth.tenant_id, "type": "shipping_label", "shipmentId": shipment_id}
+    )
+    try:
+        response = await queue_pdf_generation(payload=payload, auth=auth, publisher=publish_job)
+    except QueuePublishError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"jobId": exc.job_id, "error": FAILED_QUEUE_ERROR},
+        ) from exc
+    await log_pdf_generation_audit(auth=auth, payload=payload, job_id=response["jobId"], request=request)
+    return {
+        "document_id": response["jobId"],
+        "job_id": response["jobId"],
+        "status": response["status"],
+        "signed_url": None,
+    }
 
 
 @router.get("/download/{job_id}")

@@ -6,18 +6,11 @@ import { motion } from 'framer-motion';
 import {
   AlertTriangle,
   ArrowRight,
-  BriefcaseBusiness,
   Camera,
   Check,
-  Home,
   MapPin,
-  Navigation,
   QrCode,
-  RefreshCw,
-  Search,
-  Settings,
   ShieldCheck,
-  Signal,
   Smartphone,
   WifiOff,
   type LucideIcon,
@@ -31,13 +24,6 @@ type Feature = {
   text: string;
 };
 
-type AppStat = {
-  label: string;
-  value: string;
-  helper: string;
-  tone: string;
-};
-
 const FEATURES: Feature[] = [
   { icon: QrCode,        text: 'QR scan for collection and delivery confirmation' },
   { icon: ShieldCheck,   text: 'OTP verification before releasing a shipment' },
@@ -45,13 +31,6 @@ const FEATURES: Feature[] = [
   { icon: WifiOff,       text: 'Offline-first — works with no signal, syncs when back online' },
   { icon: MapPin,        text: 'GPS location updates throughout the route' },
   { icon: AlertTriangle, text: 'Failed delivery reason capture and escalation' },
-];
-
-const APP_STATS: AppStat[] = [
-  { label: 'Assigned', value: '18', helper: 'open stops', tone: 'from-white to-slate-50' },
-  { label: 'Queued', value: '7', helper: 'offline-safe updates', tone: 'from-white to-blue-50' },
-  { label: 'Verified', value: '42', helper: 'matched shipment scans', tone: 'from-white to-emerald-50' },
-  { label: 'POD', value: '11', helper: 'drafts awaiting upload', tone: 'from-white to-amber-50' },
 ];
 
 const headerContainer = {
@@ -72,156 +51,24 @@ const headerItem = {
   },
 };
 
-function PhoneNavItem({
-  icon: Icon,
-  label,
-  active = false,
-}: {
-  icon: LucideIcon;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <div
-      className={`flex min-h-[48px] items-center justify-center gap-1.5 rounded-2xl px-2 text-[0.64rem] font-bold uppercase tracking-[0.16em] ${
-        active ? 'bg-[#0d1f3c] text-white shadow-sm' : 'text-stone-500'
-      }`}
-    >
-      <Icon size={13} />
-      <span>{label}</span>
-    </div>
-  );
-}
-
 function PhoneMockup() {
   return (
-    <div className="relative mx-auto w-full max-w-[560px]">
-      <motion.div
-        className="absolute -left-2 top-16 hidden w-40 rounded-xl border border-white/10 bg-white/[0.07] p-3 text-white shadow-xl backdrop-blur lg:block xl:-left-8"
-        initial={{ opacity: 0, x: 16, y: 8 }}
-        whileInView={{ opacity: 1, x: 0, y: 0 }}
-        viewport={{ once: true, amount: 0.4 }}
-        transition={{ delay: 0.45, duration: 0.55, ease: EASE }}
-      >
-        <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-blue-200">
-          <Navigation size={12} />
-          Route live
-        </div>
-        <p className="mt-2 text-xl font-bold">24 stops</p>
-        <p className="mt-1 text-xs leading-snug text-blue-100/70">3 depots, 2 return pickups, 91% SLA cover.</p>
-      </motion.div>
-
-      <motion.div
-        className="absolute -right-2 bottom-24 hidden w-44 rounded-xl border border-white/10 bg-white/[0.07] p-3 text-white shadow-xl backdrop-blur lg:block xl:-right-8"
-        initial={{ opacity: 0, x: -16, y: 8 }}
-        whileInView={{ opacity: 1, x: 0, y: 0 }}
-        viewport={{ once: true, amount: 0.4 }}
-        transition={{ delay: 0.58, duration: 0.55, ease: EASE }}
-      >
-        <div className="flex items-center gap-2 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-emerald-200">
-          <Signal size={12} />
-          Sync health
-        </div>
-        <p className="mt-2 text-xl font-bold">1.8s</p>
-        <p className="mt-1 text-xs leading-snug text-blue-100/70">Average replay after operators reconnect.</p>
-      </motion.div>
-
-      <motion.div
-        className="relative z-10 mx-auto w-full max-w-[342px] rounded-[2rem] border border-white/15 bg-slate-950/40 p-2 shadow-[0_28px_90px_-32px_rgba(0,0,0,0.85)]"
-        initial={{ opacity: 0, scale: 0.94, y: 28 }}
-        whileInView={{ opacity: 1, scale: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.8, ease: EASE }}
-      >
-        <div className="overflow-hidden rounded-[1.6rem] border border-slate-200 bg-[#f4f5f7]">
-          <div className="flex min-h-[660px] flex-col p-3">
-            <div className="rounded-[1.45rem] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <Image
-                      src="/brand/logo-mark.png"
-                      alt=""
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 object-contain"
-                    />
-                    <div>
-                      <p className="font-mono text-[1.05rem] font-bold leading-none tracking-[0.08em] text-[#0d1f3c]">
-                        FAUWARD GO
-                      </p>
-                      <p className="mt-1 text-[0.64rem] font-bold uppercase tracking-[0.22em] text-blue-600">
-                        Mobile execution
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-sm text-stone-600">Quick Ship - Field Operator</p>
-                </div>
-                <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-[0.14em] text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  Online
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-[1.45rem] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <p className="text-[0.66rem] font-bold uppercase tracking-[0.24em] text-stone-500">
-                  Search assigned jobs
-                </p>
-                <RefreshCw size={15} className="text-[#0d1f3c]" />
-              </div>
-              <div className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-xs text-stone-400">
-                <Search size={14} />
-                <span>Search by reference number or name</span>
-              </div>
-              <div className="mt-3 flex h-11 items-center justify-center rounded-2xl bg-[#0d1f3c] text-sm font-bold text-white">
-                Search
-              </div>
-              <div className="mt-3 flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-sm font-bold text-[#0d1f3c]">
-                <QrCode size={16} />
-                Scan QR code
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {APP_STATS.map((stat, index) => (
-                <motion.div
-                  key={stat.label}
-                  className={`rounded-[1.35rem] border border-slate-200 bg-gradient-to-br ${stat.tone} p-4 shadow-sm`}
-                  initial={{ opacity: 0, y: 14 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, amount: 0.25 }}
-                  transition={{ delay: 0.3 + index * 0.08, duration: 0.45, ease: EASE }}
-                >
-                  <p className="text-[0.64rem] font-bold uppercase tracking-[0.22em] text-stone-500">
-                    {stat.label}
-                  </p>
-                  <p className="mt-3 text-3xl font-bold leading-none text-[#0d1f3c]">{stat.value}</p>
-                  <p className="mt-3 min-h-[32px] text-xs leading-snug text-stone-600">{stat.helper}</p>
-                </motion.div>
-              ))}
-            </div>
-
-            <div className="mt-4 rounded-[1.35rem] border border-blue-200 bg-blue-50 p-4 shadow-sm">
-              <p className="text-[0.64rem] font-bold uppercase tracking-[0.22em] text-[#0d1f3c]">Verification</p>
-              <h3 className="mt-2 text-base font-bold leading-snug text-[#0d1f3c]">
-                Scan shipment, package, or label
-              </h3>
-              <p className="mt-2 text-xs text-slate-700">Live scanner plus manual fallback.</p>
-            </div>
-
-            <div className="mt-auto pt-3">
-              <div className="grid grid-cols-3 gap-1 rounded-[1.4rem] border border-slate-200 bg-white p-2 shadow-sm">
-                <PhoneNavItem icon={Home} label="Home" active />
-                <PhoneNavItem icon={BriefcaseBusiness} label="Jobs" />
-                <PhoneNavItem icon={Settings} label="Settings" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    </div>
+    <motion.div
+      className="relative mx-auto w-full max-w-[520px]"
+      initial={{ opacity: 0, scale: 0.94, y: 28 }}
+      whileInView={{ opacity: 1, scale: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.3 }}
+      transition={{ duration: 0.8, ease: EASE }}
+    >
+      <Image
+        src="/images/screens/fauward-go-app.png"
+        alt="Fauward Go mobile app home screen showing assigned jobs, queued offline updates, verified scans, proof-of-delivery drafts and a QR scan shortcut"
+        width={1086}
+        height={1448}
+        sizes="(min-width: 1024px) 520px, 100vw"
+        className="h-auto w-full rounded-3xl shadow-[0_28px_90px_-32px_rgba(0,0,0,0.85)]"
+      />
+    </motion.div>
   );
 }
 

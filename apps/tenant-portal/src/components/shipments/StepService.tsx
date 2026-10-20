@@ -1,6 +1,14 @@
-import { Switch } from "@/components/ui/Switch";
-import type { ShipmentWizardData } from "@/components/shipments/wizard-types";
+import { useQuery } from "@tanstack/react-query";
+
+import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
+import {
+  quoteRequest,
+  SERVICE_TIERS,
+  type ShipmentQuote,
+  type ShipmentWizardData
+} from "@/components/shipments/wizard-types";
 
 type StepServiceProps = {
   data: ShipmentWizardData;
@@ -8,36 +16,72 @@ type StepServiceProps = {
   errors?: string[];
 };
 
-const serviceOptions: Array<{
-  tier: ShipmentWizardData["serviceTier"];
-  eta: string;
-  price: number;
-}> = [
-  { tier: "Standard", eta: "2-4 days", price: 12 },
-  { tier: "Express", eta: "Next day", price: 26 },
-  { tier: "Same Day", eta: "Within 8 hours", price: 42 }
-];
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+}
 
-export function calculateServicePrice(data: ShipmentWizardData) {
-  const base = serviceOptions.find((option) => option.tier === data.serviceTier)?.price ?? 12;
-  const insuranceFee = data.insurance ? 4.5 : 0;
-  const subtotal = base * Math.max(1, Number(data.quantity || 1));
-  const fees = insuranceFee;
-  const total = subtotal + fees;
-  return { subtotal, fees, total };
+/** Live quote from the pricing engine for the selected tier; the shipment is priced by the same engine on create. */
+export function useShipmentQuote(data: ShipmentWizardData) {
+  const body = quoteRequest(data);
+  return useQuery({
+    queryKey: ["shipment-quote", body],
+    queryFn: async () => (await api.post<ShipmentQuote>("/v1/pricing/calculate", body)).data,
+    enabled: body.weightKg > 0,
+    staleTime: 60_000,
+    retry: false
+  });
+}
+
+export function QuoteSummary({ data }: { data: ShipmentWizardData }) {
+  const quote = useShipmentQuote(data);
+
+  if (quote.isLoading) return <p className="text-sm text-gray-500">Calculating price…</p>;
+  if (quote.isError) {
+    return (
+      <p className="text-sm text-red-700" role="alert">
+        {apiErrorMessage(quote.error, "The price could not be calculated.")} The shipment is priced when it is created.
+      </p>
+    );
+  }
+  if (!quote.data) return <p className="text-sm text-gray-500">Enter the package weight to see a price.</p>;
+
+  const { breakdown, subtotal, taxRate, taxAmount, total, currency } = quote.data;
+  return (
+    <dl className="space-y-2 text-sm text-gray-700" data-testid="shipment-quote">
+      {breakdown.map((row, index) => (
+        <div key={`${row.label}-${index}`} className="flex items-center justify-between">
+          <dt>{row.label}</dt>
+          <dd>{formatMoney(row.amount, currency)}</dd>
+        </div>
+      ))}
+      <div className="flex items-center justify-between">
+        <dt>Subtotal</dt>
+        <dd>{formatMoney(subtotal, currency)}</dd>
+      </div>
+      {taxAmount > 0 ? (
+        <div className="flex items-center justify-between">
+          <dt>Tax ({taxRate}%)</dt>
+          <dd>{formatMoney(taxAmount, currency)}</dd>
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between border-t border-gray-200 pt-2 text-base font-semibold text-gray-900">
+        <dt>Total</dt>
+        <dd>{formatMoney(total, currency)}</dd>
+      </div>
+    </dl>
+  );
 }
 
 export function StepService({ data, onChange, errors = [] }: StepServiceProps) {
-  const pricing = calculateServicePrice(data);
-
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-3">
-        {serviceOptions.map((option) => (
+        {SERVICE_TIERS.map((option) => (
           <button
             type="button"
             key={option.tier}
             onClick={() => onChange({ ...data, serviceTier: option.tier })}
+            aria-pressed={data.serviceTier === option.tier}
             className={cn(
               "rounded-lg border bg-white p-4 text-left",
               data.serviceTier === option.tier
@@ -45,42 +89,15 @@ export function StepService({ data, onChange, errors = [] }: StepServiceProps) {
                 : "border-gray-200 hover:border-gray-300"
             )}
           >
-            <h3 className="text-base font-semibold text-gray-900">{option.tier}</h3>
-            <p className="mt-1 text-sm text-gray-600">{option.eta}</p>
-            <p className="mt-3 text-lg font-semibold text-gray-900">£{option.price.toFixed(2)}</p>
+            <h3 className="text-base font-semibold text-gray-900">{option.label}</h3>
+            <p className="mt-1 text-xs text-gray-500">Priced by your rate cards</p>
           </button>
         ))}
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
-        <label className="flex min-h-[44px] items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-800">Insurance</p>
-            <p className="text-xs text-gray-500">Add shipment insurance for £4.50</p>
-          </div>
-          <Switch
-            checked={data.insurance}
-            onCheckedChange={(checked) => onChange({ ...data, insurance: checked })}
-          />
-        </label>
-      </div>
-
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Pricing summary</h3>
-        <dl className="mt-3 space-y-2 text-sm text-gray-700">
-          <div className="flex items-center justify-between">
-            <dt>Subtotal</dt>
-            <dd>£{pricing.subtotal.toFixed(2)}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt>Fees</dt>
-            <dd>£{pricing.fees.toFixed(2)}</dd>
-          </div>
-          <div className="flex items-center justify-between border-t border-gray-200 pt-2 text-base font-semibold text-gray-900">
-            <dt>Total</dt>
-            <dd>£{pricing.total.toFixed(2)}</dd>
-          </div>
-        </dl>
+        <h3 className="mb-3 text-sm font-semibold text-gray-900">Price</h3>
+        <QuoteSummary data={data} />
       </div>
 
       {errors.length > 0 ? (

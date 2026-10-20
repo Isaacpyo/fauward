@@ -40,11 +40,17 @@ function buildApp(roleOverride = 'TENANT_ADMIN', userOverride?: any) {
         ? vi.fn().mockResolvedValue(null)
         : vi.fn().mockResolvedValue(userOverride ?? defaultUser),
       findMany: vi.fn().mockResolvedValue([defaultUser]),
+      count: vi.fn().mockResolvedValue(1),
       create: txMock.user.create,
       update: vi.fn().mockImplementation(async ({ data }: any) => ({ ...defaultUser, ...data }))
     },
     auditLog: txMock.auditLog,
     notificationLog: txMock.notificationLog,
+    // Entitlements (WP-1.4/1.2): no overrides, so the PRO plan's 15 staff seats apply.
+    tenantPlanOverride: { findFirst: vi.fn().mockResolvedValue(null) },
+    tenantFeatureOverride: { findMany: vi.fn().mockResolvedValue([]) },
+    // Team events go to the console activity stream (WP-2.15).
+    platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: 'act_1', ...create })) },
     $transaction: vi.fn(async (cb: any) => {
       if (typeof cb === 'function') return cb(txMock);
       return Promise.all(cb);
@@ -56,7 +62,7 @@ function buildApp(roleOverride = 'TENANT_ADMIN', userOverride?: any) {
     req.user = { sub: 'user-1', role: roleOverride, tenantId: 'tenant-1' };
   });
   app.addHook('onRequest', (req, _reply, done) => {
-    (req as any).tenant = { id: 'tenant-1', slug: 'acme', plan: 'PRO' };
+    (req as any).tenant = { id: 'tenant-1', slug: 'acme', plan: 'PRO', maxStaff: 3, maxShipmentsPm: 300, maxOrganisations: 10, limitsOverriddenAt: tenantLimitsOverriddenAt };
     done();
   });
 
@@ -75,6 +81,8 @@ afterEach(async () => {
 // -----------------------------------------------------------------------------
 // GET /api/v1/users/me
 // -----------------------------------------------------------------------------
+
+let tenantLimitsOverriddenAt: Date | null = null;
 
 describe('GET /api/v1/users/me', () => {
   it('returns the profile of the authenticated user', async () => {
@@ -205,6 +213,30 @@ describe('GET /api/v1/users', () => {
 // -----------------------------------------------------------------------------
 
 describe('POST /api/v1/users/invite', () => {
+  it('ACC-TEN-8 once staff lower maxStaff below the current head-count, the next invite returns 403 LIMIT_REACHED', async () => {
+    tenantLimitsOverriddenAt = new Date();
+    const ctx = buildApp('TENANT_ADMIN');
+    apps.push(ctx);
+    ctx.prisma.user.findFirst = vi.fn().mockResolvedValue(null);
+    ctx.prisma.user.count = vi.fn().mockResolvedValue(4);
+    await registerUsersRoutes(ctx.app as never);
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/v1/users/invite', payload: { email: 'fifth@acme.com', role: 'TENANT_STAFF' } });
+    tenantLimitsOverriddenAt = null;
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'LIMIT_REACHED', limit: 3, current: 4 });
+    expect(ctx.prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('without staff-set limits the effective plan decides (PRO: 15 seats), so 4 staff can invite a fifth', async () => {
+    const ctx = buildApp('TENANT_ADMIN');
+    apps.push(ctx);
+    ctx.prisma.user.findFirst = vi.fn().mockResolvedValue(null);
+    ctx.prisma.user.count = vi.fn().mockResolvedValue(4);
+    await registerUsersRoutes(ctx.app as never);
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/v1/users/invite', payload: { email: 'fifth@acme.com', role: 'TENANT_STAFF' } });
+    expect(res.statusCode).toBe(201);
+  });
+
   it('creates user and logs staff_invite notification', async () => {
     const ctx = buildApp('TENANT_ADMIN');
     apps.push(ctx);
@@ -221,6 +253,8 @@ describe('POST /api/v1/users/invite', () => {
 
     expect(res.statusCode).toBe(201);
     expect(res.json().email).toBe('newstaff@acme.com');
+    // L13 (WP-2.15): the invite reaches the console activity stream.
+    expect(ctx.prisma.platformActivity.upsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ service: 'customer.360', type: 'user.invited', tenantId: 'tenant-1', subjectId: 'user-new' }) }));
     expect(sendEmailMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -269,5 +303,22 @@ describe('POST /api/v1/users/invite', () => {
 
     expect(res.statusCode).toBe(409);
     expect(ctx.prisma.user.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('team events (L13, WP-2.15)', () => {
+  it('a role change and a suspension record user.role_changed and user.suspended activity', async () => {
+    const ctx = buildApp('TENANT_ADMIN', { id: 'user-2', email: 'ops@acme.com', role: 'TENANT_STAFF', tenantId: 'tenant-1', isActive: true });
+    apps.push(ctx);
+    await registerUsersRoutes(ctx.app as never);
+    const role = await ctx.app.inject({ method: 'PATCH', url: '/api/v1/users/user-2/role', headers: { Authorization: 'Bearer token' }, payload: { role: 'TENANT_MANAGER' } });
+    expect(role.statusCode).toBe(200);
+    const suspend = await ctx.app.inject({ method: 'PATCH', url: '/api/v1/users/user-2/suspend', headers: { Authorization: 'Bearer token' } });
+    expect(suspend.statusCode).toBe(200);
+    const types = ctx.prisma.platformActivity.upsert.mock.calls.map(([args]) => (args as { create: { type: string; summary: string } }).create);
+    expect(types).toEqual([
+      expect.objectContaining({ type: 'user.role_changed', summary: 'ops@acme.com: TENANT_STAFF → TENANT_MANAGER' }),
+      expect.objectContaining({ type: 'user.suspended', summary: 'ops@acme.com suspended by the workspace' })
+    ]);
   });
 });

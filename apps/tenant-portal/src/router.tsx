@@ -5,18 +5,16 @@ import { useAuth } from "@/hooks/useAuth";
 import { AppShell } from "@/layouts/AppShell";
 import { PublicLayout } from "@/layouts/PublicLayout";
 import {
-  CrmDetailPage,
-  CrmPage,
   DashboardPage,
-  FinanceDetailPage,
   FinancePage,
   LoginPage,
   NotFoundPage,
-  PublicBookingPage,
   RegisterPage,
-  SettingsPage,
-  TeamPage as LegacyTeamPage
+  SettingsPage
 } from "@/pages/AppPages";
+import { CrmPage } from "@/pages/crm/CrmPage";
+import { CrmDetailPage } from "@/pages/crm/CrmDetailPage";
+import { FinanceInvoiceDetailPage } from "@/pages/finance/FinanceInvoiceDetailPage";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ShipmentsListPage } from "@/pages/shipments/ShipmentsListPage";
 import { ShipmentDetailPage } from "@/pages/shipments/ShipmentDetailPage";
@@ -24,12 +22,15 @@ import { CreateShipmentPage } from "@/pages/shipments/CreateShipmentPage";
 import { TrackingLookupPage } from "@/pages/tracking/TrackingLookupPage";
 import { TrackingResultPage } from "@/pages/tracking/TrackingResultPage";
 import { OnboardingPage } from "@/pages/onboarding/OnboardingPage";
-import { useTenantStore } from "@/stores/useTenantStore";
 import { TeamPage } from "@/pages/team/TeamPage";
 import { ReturnsListPage } from "@/pages/returns/ReturnsListPage";
 import { ReturnDetailPage } from "@/pages/returns/ReturnDetailPage";
 import { TicketsListPage } from "@/pages/support/TicketsListPage";
 import { TicketDetailPage } from "@/pages/support/TicketDetailPage";
+import { HelpTicketsPage } from "@/pages/help/HelpTicketsPage";
+import { MyFeedbackPage } from "@/pages/help/MyFeedbackPage";
+import { ExceptionsPage } from "@/pages/exceptions/ExceptionsPage";
+import { HelpTicketDetailPage } from "@/pages/help/HelpTicketDetailPage";
 import { ActivityTimelinePage } from "@/pages/activity/ActivityTimelinePage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
@@ -60,9 +61,10 @@ import { ShippingRulesPage } from "@/pages/shipping-rules/ShippingRulesPage";
 import { LabelsPage } from "@/pages/labels/LabelsPage";
 import { CustomsDeclarationPage } from "@/pages/customs/CustomsDeclarationPage";
 import { DeveloperPage } from "@/pages/developer/DeveloperPage";
-import { AuditLogPage } from "@/features/admin/audit/AuditLogPage";
+import { AuditLogPage } from "@/pages/audit/AuditLogPage";
 import { Button } from "@/components/ui/Button";
-import { formatPlanLabel, getFeatureMinimumPlan, hasFeatureAccess, type FeatureKey } from "@/lib/plan-features";
+import { formatPlanLabel, getFeatureMinimumPlan, type FeatureKey } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { useAppStore } from "@/stores/useAppStore";
 import { ImpersonateCallbackPage } from "@/pages/auth/ImpersonateCallbackPage";
 import { setTenantSlug } from "@/lib/auth";
@@ -70,7 +72,6 @@ import { setTenantSlug } from "@/lib/auth";
 function AuthGuard() {
   const location = useLocation();
   const { isLoading, user } = useAuth();
-  const tenant = useTenantStore((state) => state.tenant);
 
   if (isLoading && !user) {
     return (
@@ -84,13 +85,8 @@ function AuthGuard() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  const tenantPathMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const onboardingPath = tenantPathMatch ? `/t/${tenantPathMatch[1]}/onboarding` : "/onboarding";
-
-  if (tenant?.onboarding_complete === false && location.pathname !== onboardingPath) {
-    return <Navigate to={onboardingPath} replace />;
-  }
-
+  // Unfinished onboarding no longer traps the user on /onboarding (WP-2.17): its steps are completed by doing the
+  // real things elsewhere in the portal; the dashboard checklist links to them.
   return <Outlet />;
 }
 
@@ -99,10 +95,10 @@ function GuestGuard() {
 }
 
 function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children: ReactElement }) {
-  const user = useAppStore((state) => state.user);
+  const access = useFeatureAccess();
   const minimumPlan = getFeatureMinimumPlan(feature);
 
-  if (!hasFeatureAccess(user?.plan, feature)) {
+  if (!access.hasFeature(feature)) {
     return (
       <div className="p-6">
         <div className="rounded-2xl border border-amber-300 bg-amber-50 px-6 py-8">
@@ -111,7 +107,7 @@ function PlanFeatureRoute({ feature, children }: { feature: FeatureKey; children
           </p>
           <h1 className="mt-3 text-2xl font-semibold text-amber-950">Upgrade required</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-900">
-            This workspace is currently on the {formatPlanLabel(user?.plan ?? "starter")} plan. Upgrade to{" "}
+            This workspace is currently on the {formatPlanLabel(access.plan)} plan. Upgrade to{" "}
             {formatPlanLabel(minimumPlan)} or higher to use this feature.
           </p>
           <Button asChild className="mt-5">
@@ -151,10 +147,9 @@ function WorkspaceRoutes() {
       <Route path="crm" element={<CrmPage />} />
       <Route path="crm/:id" element={<CrmDetailPage />} />
       <Route path="finance" element={<FinancePage />} />
-      <Route path="finance/:id" element={<FinanceDetailPage />} />
+      <Route path="finance/:id" element={<FinanceInvoiceDetailPage />} />
       <Route path="analytics" element={<PlanFeatureRoute feature="analytics"><AnalyticsPage /></PlanFeatureRoute>} />
       <Route path="team" element={<TeamPage />} />
-      <Route path="team-legacy" element={<LegacyTeamPage />} />
       <Route path="settings" element={<SettingsPage />} />
       <Route path="profile" element={<Navigate to="settings?tab=profile" replace />} />
       <Route path="onboarding" element={<OnboardingPage />} />
@@ -162,6 +157,10 @@ function WorkspaceRoutes() {
       <Route path="returns/:id" element={<ReturnDetailPage />} />
       <Route path="support" element={<TicketsListPage />} />
       <Route path="support/:id" element={<TicketDetailPage />} />
+      <Route path="help/tickets" element={<HelpTicketsPage />} />
+      <Route path="help/tickets/:id" element={<HelpTicketDetailPage />} />
+      <Route path="help/feedback" element={<MyFeedbackPage />} />
+      <Route path="exceptions" element={<ExceptionsPage />} />
       <Route path="activity" element={<ActivityTimelinePage />} />
       <Route path="activity/notifications" element={<NotificationsInboxPage />} />
       <Route path="audit" element={<PlanFeatureRoute feature="auditLogs"><AuditLogPage /></PlanFeatureRoute>} />
@@ -204,7 +203,6 @@ export function AppRouter() {
       <Route element={<PublicLayout />}>
         <Route path="/track" element={<TrackingLookupPage />} />
         <Route path="/track/:number" element={<TrackingResultPage />} />
-        <Route path="/book" element={<PublicBookingPage />} />
       </Route>
 
       <Route path="/t/:tenantSlug/*" element={<TenantPathScope />}>

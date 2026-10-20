@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Printer } from "lucide-react";
 
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/Button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { formatDateTime } from "@/lib/utils";
+import { usePrintShippingLabel } from "@/hooks/usePrintShippingLabel";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { api } from "@/lib/api";
 import type { ShipmentListItem } from "@/types/shipment";
@@ -76,6 +77,8 @@ export function ShipmentTable({
   });
   const drivers = driversQuery.data ?? [];
 
+  const { printLabel, isPendingFor } = usePrintShippingLabel();
+
   const statusMutation = useMutation({
     mutationFn: async () => {
       if (!activeShipment || !nextStatus) return;
@@ -134,6 +137,7 @@ export function ShipmentTable({
         {shipments.map((shipment) => {
           const selected = selectedIds.includes(shipment.id);
           const canAssignInline = shipment.status === "PROCESSING" && !shipment.driver_name;
+          const labelPending = isPendingFor(shipment.id);
           return (
             <TableRow key={shipment.id} selected={selected || activeShipmentId === shipment.id} onClick={() => onOpenShipment(shipment)}>
               <TableCell>
@@ -222,7 +226,19 @@ export function ShipmentTable({
                         setNextStatus("");
                       }
                     },
-                    { key: "label", label: "Print label" }
+                    {
+                      key: "label",
+                      label: labelPending ? "Printing label…" : "Print label",
+                      icon: labelPending ? (
+                        <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+                          <path d="M12 2a10 10 0 0 1 10 10" />
+                        </svg>
+                      ) : (
+                        <Printer size={14} />
+                      ),
+                      disabled: labelPending,
+                      onSelect: () => printLabel(shipment.id)
+                    }
                   ]}
                 />
               </TableCell>

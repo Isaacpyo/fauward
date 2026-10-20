@@ -258,6 +258,25 @@ enum TicketPriority {
   URGENT
 }
 
+// D5: who a ticket is with — a tenant's own customer (END_CUSTOMER) or Fauward (PLATFORM).
+enum TicketAudience {
+  END_CUSTOMER
+  PLATFORM
+}
+
+enum MessageAuthorType {
+  TENANT_USER
+  END_CUSTOMER
+  STAFF
+  SYSTEM
+}
+
+enum MessageVisibility {
+  PUBLIC
+  TENANT_INTERNAL
+  STAFF_INTERNAL
+}
+
 enum TicketCategory {
   DELIVERY_ISSUE
   PAYMENT_ISSUE
@@ -350,8 +369,17 @@ model Tenant {
   maxStaff           Int          @default(3)
   maxShipmentsPm     Int          @default(300)
   maxOrganisations   Int          @default(10)
+  /// Set when Fauward staff set the limit columns above (WP-1.2). Until then the effective plan's limits apply
+  /// (the columns were never kept in step with plan changes).
+  limitsOverriddenAt DateTime?
+  /// Tenant closure (WP-1.2): a closed tenant is never reactivated (D3); data is kept until purgeAfter.
+  closedAt           DateTime?
+  closedReason       String?
+  purgeAfter         DateTime?
   onboardingSteps    Json         @default("{}")
   onboardingCompletedAt DateTime?
+  /// WP-2.17: last onboarding nudge from the console (one per 7 days).
+  onboardingNudgedAt    DateTime?
   internalNotes      String?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
@@ -395,6 +423,7 @@ model Tenant {
   weightDiscountTiers           WeightDiscountTier[]
   inAppNotifications            InAppNotification[]
   planOverrides                 TenantPlanOverride[]
+  featureOverrides              TenantFeatureOverride[]
   platformImpersonationSessions PlatformImpersonationSession[]
   trackingEvents                TrackingEvent[]
   trackingBreadcrumbs           TrackingBreadcrumb[]
@@ -409,13 +438,20 @@ model Tenant {
   customsDeclarations           CustomsDeclaration[]
   tenantAiUsages                TenantAiUsage[]
   tenantAiLimit                 TenantAiLimit?
+  paymentGateways               TenantPaymentGateway[]
   aiAgentRuns                   AiAgentRun[]
   agentActions                  AgentAction[]
+  agentConversations            AgentConversation[]
+  agentMessages                 AgentMessage[]
   shipmentPermissionRequests    ShipmentPermissionRequest[]
   exceptionCases                ExceptionCase[]
   slaPolicies                   SlaPolicy[]
   slugHistory                   TenantSlugHistory[]
   widgetDomains                 TenantWidgetDomain[]
+  regionChangeRequests          RegionChangeRequest[]
+  planChangeRequests            PlanChangeRequest[]
+  subscriptionEvents            SubscriptionEvent[]
+  feedbackItems                 FeedbackItem[]
 
   @@index([customDomainStatus])
   @@map("tenants")
@@ -457,6 +493,9 @@ model PlatformUser {
   status             PlatformUserStatus @default(ACTIVE)
   mfaEnabled         Boolean            @default(false)
   mfaSecretEncrypted String?
+  // TOTP enrolment in progress (field-encryption ciphertext); moved to mfaSecretEncrypted on confirm.
+  mfaPendingSecretEncrypted String?
+  mfaEnrolledAt             DateTime?
   lastLoginAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -571,10 +610,14 @@ model PlatformImpersonationSession {
   expiresAt      DateTime
   revokedAt      DateTime?
   createdAt      DateTime     @default(now())
+  exchangedAt    DateTime? // one-time exchange code redeemed by the tenant portal
+  endedAt        DateTime? // revoked, expired (sweeper) or logged out
+  endedReason    String? // REVOKED | EXPIRED | LOGOUT
 
   @@index([platformUserId])
   @@index([targetTenantId])
   @@index([expiresAt])
+  @@index([targetTenantId, createdAt])
   @@map("platform_impersonation_sessions")
 }
 
@@ -593,6 +636,53 @@ model TenantPlanOverride {
 
   @@index([tenantId, revokedAt, expiresAt])
   @@map("tenant_plan_overrides")
+}
+
+/// Per-tenant feature switch on top of the effective plan (WP-1.4). The native source of truth for flags (D9);
+/// read by resolveTenantEntitlements. The latest active row per featureKey wins.
+model TenantFeatureOverride {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id])
+  /// planService feature key, e.g. `apiAccess`
+  featureKey              String
+  enabled                 Boolean
+  reason                  String
+  expiresAt               DateTime?
+  createdByPlatformUserId String
+  revokedAt               DateTime?
+  revokedByPlatformUserId String?
+  createdAt               DateTime  @default(now())
+
+  @@index([tenantId, featureKey, revokedAt])
+  @@map("tenant_feature_overrides")
+}
+
+/// L11 (WP-2.12): a tenant's own payment gateway for collecting from its customers (not Fauward billing). Secrets are
+/// field-encrypted (v1:...) and never leave the API; the console sees provider, mode, status and the last error only.
+model TenantPaymentGateway {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider                String // STRIPE|PAYSTACK|FLUTTERWAVE|BANK_TRANSFER|COD
+  mode                    String    @default("LIVE") // TEST|LIVE (from the secret key prefix)
+  enabled                 Boolean   @default(false)
+  publicKey               String?
+  secretKeyEncrypted      String?
+  webhookSecretEncrypted  String?
+  encryptionKeyEncrypted  String?
+  /// Non-secret settings: Stripe account id, merchant email, bank details, COD remittance rules.
+  config                  Json      @default("{}")
+  status                  String    @default("UNVERIFIED") // UNVERIFIED|VERIFIED|FAILED|DISABLED
+  lastVerifiedAt          DateTime?
+  lastError               String?
+  updatedByUserId         String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@unique([tenantId, provider])
+  @@index([status])
+  @@map("tenant_payment_gateways")
 }
 
 model TenantSettings {
@@ -625,6 +715,7 @@ model TenantSettings {
   updatedAt                    DateTime @updatedAt
 
   @@map("tenant_settings")
+  notifyOnStaffAccess Boolean @default(true)
 }
 
 model Subscription {
@@ -668,6 +759,10 @@ model User {
   mfaSecret      String?
   lastLogin      DateTime?
   invitedBy      String?
+  // L13 (WP-2.15): Fauward staff can lock an account during a security incident (401 USER_LOCKED until unlocked).
+  lockedAt               DateTime?
+  lockedReason           String?
+  lockedByPlatformUserId String?
   ssoProvider    String?
   ssoSubject     String?
   createdAt      DateTime      @default(now())
@@ -1252,6 +1347,16 @@ model SupportTicket {
   priority     TicketPriority @default(NORMAL)
   status       TicketStatus   @default(OPEN)
   assignedTo   String?
+  audience     TicketAudience @default(END_CUSTOMER)
+  lastMessageAt         DateTime?
+  lastMessageAuthorType MessageAuthorType?
+  firstResponseAt       DateTime?
+  // Escalating an END_CUSTOMER ticket creates a PLATFORM ticket linked to it (both sides show the link).
+  linkedTicketId         String?
+  // Fauward assignee for PLATFORM tickets (a PlatformUser id).
+  assignedPlatformUserId String?
+  // Set by customer.support-sla-sweep the first time the ticket breaches its SLA (notifies once).
+  slaBreachedAt          DateTime?
   resolvedAt   DateTime?
   closedAt     DateTime?
   createdAt    DateTime       @default(now())
@@ -1261,11 +1366,14 @@ model SupportTicket {
   customer User?           @relation("TicketCustomer", fields: [customerId], references: [id])
   shipment Shipment?       @relation(fields: [shipmentId], references: [id])
   assignee User?           @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  linkedTicket SupportTicket?  @relation("TicketLink", fields: [linkedTicketId], references: [id], onDelete: SetNull)
+  linkedFrom   SupportTicket[] @relation("TicketLink")
   messages TicketMessage[]
 
   @@index([tenantId])
   @@index([status])
   @@index([assignedTo])
+  @@index([audience, status, lastMessageAt])
   @@map("support_tickets")
 }
 
@@ -1273,8 +1381,12 @@ model TicketMessage {
   id         String   @id @default(uuid())
   tenantId   String
   ticketId   String
-  authorId   String
+  // Tenant or end-customer User; null for STAFF (platformAuthorId) and SYSTEM messages (D5).
+  authorId   String?
+  authorType MessageAuthorType @default(TENANT_USER)
+  visibility MessageVisibility @default(PUBLIC)
   body       String
+  // Kept until 0062 (D5): isInternal → TENANT_INTERNAL, fromSA → authorType STAFF (backfill 0047-ticket-messages.ts).
   isInternal Boolean  @default(false)
   fromSA     Boolean  @default(false)
   platformAuthorId String?
@@ -1282,7 +1394,7 @@ model TicketMessage {
 
   tenant Tenant        @relation(fields: [tenantId], references: [id])
   ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
-  author User          @relation(fields: [authorId], references: [id])
+  author User?         @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([tenantId])
   @@index([ticketId])
@@ -1405,6 +1517,9 @@ model Invoice {
   paidAt         DateTime?
   voidedAt       DateTime?
   createdBy      String?
+  /// PLATFORM = Fauward billing the tenant; TENANT_CUSTOMER = the tenant billing its customers (D4).
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
+  stripeInvoiceId String?      @unique
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -1412,6 +1527,7 @@ model Invoice {
   creditNotes CreditNote[]
 
   @@index([tenantId])
+  @@index([kind, tenantId, createdAt])
   @@map("invoices")
 }
 
@@ -1432,6 +1548,7 @@ model Payment {
   gatewayResponse Json?
   idempotencyKey  String?       @unique
   refundedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  kind            LedgerKind    @default(TENANT_CUSTOMER)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1440,6 +1557,7 @@ model Payment {
 
   @@index([tenantId])
   @@index([tenantId, gatewayRef])
+  @@index([kind, tenantId, createdAt])
   @@map("payments")
 }
 
@@ -1453,9 +1571,13 @@ model Refund {
   reason      String?
   gatewayRef  String?
   idempotencyKey String? @unique
+  // PENDING_APPROVAL | PROCESSING | SUCCEEDED | FAILED | RECORDED_MANUAL | REJECTED (WP-0.6)
   status      String   @default("PENDING")
   initiatedBy String?
   createdAt   DateTime @default(now())
+  currency      String?
+  failureReason String?
+  kind          LedgerKind @default(TENANT_CUSTOMER)
 
   approvals RefundApproval[]
 
@@ -1493,10 +1615,17 @@ model CreditNote {
   currency       String        @default("GBP")
   reason         String?
   appliedTo      String?
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
   createdAt      DateTime      @default(now())
 
   @@index([tenantId])
   @@map("credit_notes")
+}
+
+/// Which ledger a billing row belongs to (D4).
+enum LedgerKind {
+  PLATFORM
+  TENANT_CUSTOMER
 }
 
 model CurrencyRate {
@@ -1587,6 +1716,11 @@ model ApiKey {
   isActive            Boolean   @default(true)
   expiresAt           DateTime?
   createdAt           DateTime  @default(now())
+  // L9 (WP-2.13): who revoked the key (the tenant or Fauward staff) and why; the tenant sees Fauward's reason.
+  revokedAt           DateTime?
+  revokedByType       String? // TENANT_USER|STAFF
+  revokedById         String?
+  revokedReason       String?
 
   usageEvents ApiUsageRecord[]
 
@@ -1696,20 +1830,33 @@ model CustomsDeclaration {
 // ─── PLATFORM: NOTIFICATIONS ──────────────────────────────────────────────────
 
 model NotificationLog {
-  id          String              @id @default(uuid())
-  tenantId    String
-  tenant      Tenant              @relation(fields: [tenantId], references: [id])
-  userId      String?
-  shipmentId  String?
-  channel     NotificationChannel
-  event       String
-  status      String              @default("QUEUED")
-  providerRef String?
-  error       String?
-  sentAt      DateTime?
-  createdAt   DateTime            @default(now())
+  id             String              @id @default(uuid())
+  // Null for Fauward staff notifications (PlatformNotifier.notifyStaff email, D6).
+  tenantId       String?
+  tenant         Tenant?             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  userId         String?
+  platformUserId String?
+  shipmentId     String?
+  channel        NotificationChannel
+  event          String
+  template       String?
+  // Email address or phone number; shown only in the console's sensitive delivery-log view.
+  recipient      String?
+  // BullMQ job id: one row per job however many attempts it takes (WP-2.2).
+  jobId          String?             @unique
+  attempts       Int                 @default(0)
+  // QUEUED | SENT | FAILED | SKIPPED | QUOTA_EXCEEDED
+  status         String              @default("QUEUED")
+  // SENDGRID | SMTP | TWILIO
+  provider       String?
+  providerRef    String?
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @default(now()) @updatedAt
 
   @@index([tenantId])
+  @@index([status, createdAt])
   @@map("notification_logs")
 }
 
@@ -1725,6 +1872,8 @@ model UsageRecord {
   smsSent    Int      @default(0)
   emailsSent Int      @default(0)
   storageMb  Int      @default(0)
+  /// L19 (WP-2.18): bytes of documents and proof-of-delivery files stored this month (storageMb is not written).
+  storageBytes BigInt  @default(0)
   updatedAt  DateTime @updatedAt
 
   @@unique([tenantId, month])
@@ -1770,10 +1919,14 @@ model TenantAiLimit {
   id                String   @id @default(cuid())
   tenantId          String   @unique
   tenant            Tenant   @relation(fields: [tenantId], references: [id])
-  monthlyBudgetUsd  Float?
+  monthlyBudgetUsd  Decimal? @db.Decimal(12, 2)
   flashRequestLimit Int?
   proRequestLimit   Int?
   featuresEnabled   String[]
+  // WP-2.10 (L16): who set the limit from the console, and why.
+  updatedAt               DateTime @default(now()) @updatedAt
+  updatedByPlatformUserId String?
+  reason                  String?
 }
 
 model AiAgentRun {
@@ -1818,6 +1971,38 @@ model AgentAction {
   @@map("agent_actions")
 }
 
+model AgentConversation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  createdBy String                          // request.user.sub
+  title     String                          // first ~80 chars of opening question
+  archived  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  messages  AgentMessage[]
+
+  @@index([tenantId, archived, updatedAt])
+  @@map("agent_conversations")
+}
+
+model AgentMessage {
+  id                String            @id @default(cuid())
+  tenantId          String                              // denormalized → every query tenant-scoped, no join
+  tenant            Tenant            @relation(fields: [tenantId], references: [id])
+  conversationId    String
+  conversation      AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role              String                              // 'user' | 'assistant'
+  content           String
+  status            String?                             // assistant: 'answered'|'cannot_answer'|'error'|'proposed'
+  toolsUsed         Json?                               // assistant: [{name,args,result}]
+  proposedActionIds String[]          @default([])      // P2: AgentAction ids this message created
+  createdAt         DateTime          @default(now())
+
+  @@index([tenantId, conversationId, createdAt])
+  @@map("agent_messages")
+}
+
 model ShipmentPermissionRequest {
   id                String   @id @default(cuid())
   tenantId          String
@@ -1855,10 +2040,33 @@ model ExceptionCase {
   resolvedAt  DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  // L15 (WP-2.11): the tenant escalates to Fauward; staff assign, reply and resolve the escalation.
+  escalatedAt        DateTime?
+  escalatedByUserId  String?
+  escalationReason   String?
+  platformAssigneeId String?
+  platformResolvedAt DateTime?
+  escalationReplies  ExceptionEscalationReply[]
 
   @@index([tenantId, status])
   @@index([tenantId, shipmentId, status])
+  @@index([escalatedAt])
   @@map("exception_cases")
+}
+
+/// L15 (WP-2.11): a Fauward staff reply on an escalated exception; always visible to the tenant.
+model ExceptionEscalationReply {
+  id             String        @id @default(cuid())
+  tenantId       String
+  exceptionId    String
+  exception      ExceptionCase @relation(fields: [exceptionId], references: [id], onDelete: Cascade)
+  platformUserId String
+  authorName     String
+  body           String
+  createdAt      DateTime      @default(now())
+
+  @@index([tenantId, exceptionId, createdAt])
+  @@map("exception_escalation_replies")
 }
 
 model SlaPolicy {
@@ -1905,9 +2113,12 @@ model OutboxEvent {
   payload       Json
   published     Boolean   @default(false)
   publishedAt   DateTime?
+  // Tenant the event belongs to (console activity projection, D7). Null for platform-level events.
+  tenantId      String?
   createdAt     DateTime  @default(now())
 
   @@index([published, createdAt])
+  @@index([tenantId, createdAt])
   @@map("outbox_events")
 }
 
@@ -1978,10 +2189,32 @@ model PlatformAnnouncement {
   publishedAt DateTime  @default(now())
   expiresAt   DateTime?
   createdBy   String
+  // L8 (WP-2.14): edits/archive propagate to tenants; alsoEmail sends one email per targeted tenant admin.
+  updatedAt   DateTime  @default(now()) @updatedAt
+  archivedAt  DateTime?
+  alsoEmail   Boolean   @default(false)
+  receipts    AnnouncementReceipt[]
 
   @@index([targetAll, publishedAt])
   @@index([expiresAt])
   @@map("platform_announcements")
+}
+
+/// L8 (WP-2.14): one row per user per announcement; each action stamps its own column once.
+model AnnouncementReceipt {
+  id             String               @id @default(uuid())
+  announcementId String
+  announcement   PlatformAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  tenantId       String
+  userId         String
+  viewedAt       DateTime             @default(now())
+  dismissedAt    DateTime?
+  ctaClickedAt   DateTime?
+
+  @@unique([announcementId, userId])
+  @@index([announcementId])
+  @@index([tenantId])
+  @@map("announcement_receipts")
 }
 
 // ─── ENTERPRISE: SSO ─────────────────────────────────────────────────────────
@@ -2042,6 +2275,11 @@ model SaveOffer {
   reason     String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  /// WP-2.7: generated on approval; the tenant redeems it once (Stripe coupon or a PLATFORM credit note).
+  code                 String?   @unique
+  redeemedAt           DateTime?
+  stripeCouponId       String?
+  redeemedCreditNoteId String?
 
   @@index([tenantId])
   @@index([status])
@@ -2215,6 +2453,12 @@ model DSARRequest {
   closedAt       DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  /// trust.compliance (WP-2.5): the tenant User matching requesterEmail (the data subject), set when gathering.
+  subjectUserId      String?
+  identityVerifiedAt DateTime?
+  erasureCompletedAt DateTime?
+  /// Set once by the overdue sweep (one ATTENTION activity + staff notification per request).
+  overdueAt          DateTime?
 
   transitions DSARTransition[]
 
@@ -2247,6 +2491,7 @@ model LegalHold {
   createdBy  String
   releasedBy String?
   releasedAt DateTime?
+  releaseReason String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -2266,10 +2511,168 @@ model ComplianceExport {
   requestedBy String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  /// Storage adapter that holds the bundle (POSTGRES = ExportBlob, id in s3Key).
+  storageProvider   String?
+  byteSize          Int?
+  sha256            String?
+  /// sha256 of the one-time download token; cleared when the bundle is downloaded.
+  downloadTokenHash String?
+  downloadedAt      DateTime?
+  error             String?
 
   @@index([tenantId, createdAt])
   @@index([status])
   @@map("compliance_exports")
+}
+
+/// Tenant feedback (customer.feedback, WP-2.8): NPS answers, feature requests (from the help page or a PlanGate),
+/// bugs and general feedback. Staff triage by status; status changes notify the requester.
+model FeedbackItem {
+  id                     String    @id @default(uuid())
+  tenantId               String
+  userId                 String
+  /// NPS | FEATURE_REQUEST | BUG | GENERAL
+  type                   String
+  /// NPS 0-10
+  score                  Int?
+  title                  String?
+  body                   String?
+  /// Set when raised from a PlanGate
+  featureKey             String?
+  /// IN_APP_SURVEY | HELP_MENU | PLAN_GATE | SUPPORT
+  source                 String
+  /// NEW | UNDER_REVIEW | PLANNED | SHIPPED | DECLINED | CLOSED
+  status                 String    @default("NEW")
+  assignedPlatformUserId String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  comments FeedbackComment[]
+
+  @@index([type, status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("feedback_items")
+}
+
+model FeedbackComment {
+  id              String   @id @default(uuid())
+  feedbackId      String
+  /// STAFF | TENANT_USER
+  authorType      String
+  authorId        String
+  body            String
+  visibleToTenant Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  feedback FeedbackItem @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+
+  @@index([feedbackId, createdAt])
+  @@map("feedback_comments")
+}
+
+/// In-app NPS prompt per user: `customer.nps-survey-dispatch` sets eligibleAt; answering or dismissing clears it and
+/// keeps the user out of the survey for 90 days.
+model NpsPromptState {
+  userId          String    @id
+  tenantId        String
+  eligibleAt      DateTime?
+  lastPromptedAt  DateTime?
+  dismissedAt     DateTime?
+  lastRespondedAt DateTime?
+
+  @@index([tenantId])
+  @@map("nps_prompt_states")
+}
+
+/// Plan change (L6, WP-2.7): MANUAL_APPROVAL requests wait for staff; STRIPE_CHECKOUT requests complete through the
+/// Stripe webhook. APPROVED is applied at once (status APPLIED). One open request per tenant.
+model PlanChangeRequest {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  fromPlan                String
+  toPlan                  String
+  billingCycle            String    @default("MONTHLY")
+  requestedByUserId       String
+  /// PENDING | APPROVED | REJECTED | APPLIED | CANCELLED | CHECKOUT_PENDING
+  status                  String    @default("PENDING")
+  /// STRIPE_CHECKOUT | STRIPE_UPDATE | MANUAL_APPROVAL
+  channel                 String
+  stripeCheckoutSessionId String?
+  decisionReason          String?
+  decidedByPlatformUserId String?
+  decidedAt               DateTime?
+  appliedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("plan_change_requests")
+}
+
+/// Subscription history (revenue.subscriptions, WP-2.7): every plan/status change with the MRR before and after.
+model SubscriptionEvent {
+  id          String   @id @default(uuid())
+  tenantId    String
+  /// CREATED | PLAN_CHANGED | STATUS_CHANGED | CANCELLED | REACTIVATED | TRIAL_EXTENDED
+  type        String
+  fromPlan    String?
+  toPlan      String?
+  fromStatus  String?
+  toStatus    String?
+  mrrBefore   Decimal? @db.Decimal(12, 2)
+  mrrAfter    Decimal? @db.Decimal(12, 2)
+  currency    String   @default("GBP")
+  /// STRIPE_WEBHOOK | CONSOLE | TENANT | SYSTEM | BACKFILL
+  source      String
+  /// Stripe event id for webhook-sourced rows: a redelivered webhook writes nothing new.
+  stripeEventId String? @unique
+  planChangeRequestId String?
+  occurredAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, occurredAt])
+  @@index([type, occurredAt])
+  @@map("subscription_events")
+}
+
+/// Tenant region change (L5, WP-2.6): requested in the tenant portal, decided in the console; APPROVED is applied to
+/// `Tenant.region` in the same transaction (status APPLIED). One PENDING request per tenant.
+model RegionChangeRequest {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  currentRegion           String
+  requestedRegion         String
+  requestedByUserId       String
+  /// PENDING | APPROVED | REJECTED | APPLIED | CANCELLED
+  status                  String    @default("PENDING")
+  decisionReason          String?
+  decidedByPlatformUserId String?
+  decidedAt               DateTime?
+  appliedAt               DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("region_change_requests")
+}
+
+/// Bundle bytes for the POSTGRES storage adapter (trust.compliance, WP-2.5).
+model ExportBlob {
+  id        String   @id @default(uuid())
+  tenantId  String?
+  bytes     Bytes
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@map("export_blobs")
 }
 
 model FraudSignal {
@@ -2277,11 +2680,16 @@ model FraudSignal {
   tenantId   String
   source     String
   signalType String
+  /// FRAUD | AUP — AUP reports are signals with category AUP (trust.safety, WP-2.4).
+  category   String   @default("FRAUD")
   severity   String   @default("MEDIUM")
   status     String   @default("OPEN")
   payload    Json?
   reviewedBy String?
+  /// DISMISS | WARN | SUSPEND
   decision   String?
+  decisionNote String?
+  decidedAt  DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -2290,18 +2698,33 @@ model FraudSignal {
   @@map("fraud_signals")
 }
 
+/// One cause of a tenant suspension (D3). Written only by services/tenant-suspension.service.ts; a tenant is ACTIVE again
+/// only when no ACTIVE record remains.
 model SuspensionRecord {
   id             String   @id @default(uuid())
   tenantId       String
+  /// Internal reason, visible to staff only.
   reason         String
+  /// Shown to the tenant in the suspension overlay.
+  publicReason   String?
+  /// PLATFORM | DUNNING | FRAUD | AUP | LEGAL | SYSTEM
+  source         String   @default("PLATFORM")
+  /// BILLING | FRAUD | AUP | SECURITY | LEGAL | OTHER
+  category       String   @default("OTHER")
   sourceSignalId String?
+  /// What caused it: Stripe invoice id, fraud signal id, …
+  sourceRef      String?
   suspendedBy    String
   liftedBy       String?
+  /// MANUAL | APPEAL | PAYMENT | EXPIRY
+  liftedVia      String?
+  liftReason     String?
   status         String   @default("ACTIVE")
   createdAt      DateTime @default(now())
   liftedAt       DateTime?
 
   @@index([tenantId, status])
+  @@index([source, status])
   @@map("suspension_records")
 }
 
@@ -2311,10 +2734,17 @@ model TenantAppeal {
   suspensionId String?
   message      String
   contactEmail String?
+  /// PENDING | INFO_REQUESTED | APPROVED | REJECTED (legacy rows may say OPEN)
   status       String   @default("OPEN")
   resolvedBy   String?
   resolution   String?
   reviewNote   String?
+  /// REQUEST_INFO: the question staff asked, and the tenant's answer (WP-2.4).
+  infoRequest     String?
+  infoRequestedAt DateTime?
+  tenantReply     String?
+  tenantRepliedAt DateTime?
+  decidedAt       DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -3010,4 +3440,54 @@ model ProofOfDelivery {
 
   @@index([tenantId, shipmentId])
   @@map("proof_of_delivery")
+}
+
+// ── Console activity and staff notifications (D6, D7 — WP-1.0) ──────────────
+
+enum ActivitySeverity {
+  INFO
+  ATTENTION
+  CRITICAL
+}
+
+/// One row per thing that happened that console staff may want to see. Written in the producer's transaction
+/// through recordActivity() (services/platform-activity.service.ts); dedupeKey makes producers idempotent.
+model PlatformActivity {
+  id          String           @id @default(uuid())
+  occurredAt  DateTime         @default(now())
+  tenantId    String?
+  service     String
+  type        String
+  actorType   String
+  actorId     String?
+  actorLabel  String
+  subjectType String
+  subjectId   String
+  summary     String
+  severity    ActivitySeverity @default(INFO)
+  consoleLink String?
+  metadata    Json             @default("{}")
+  dedupeKey   String           @unique
+
+  @@index([tenantId, occurredAt])
+  @@index([service, occurredAt])
+  @@index([severity, occurredAt])
+  @@map("platform_activity")
+}
+
+/// Console bell entries for one staff member (PlatformNotifier.notifyStaff).
+model StaffNotification {
+  id             String           @id @default(uuid())
+  platformUserId String
+  event          String
+  title          String
+  body           String?
+  link           String?
+  severity       ActivitySeverity @default(INFO)
+  tenantId       String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@index([platformUserId, readAt, createdAt])
+  @@map("staff_notifications")
 }

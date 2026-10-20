@@ -3,11 +3,12 @@ from fastapi import HTTPException
 
 import db
 from api.auth import AuthContext
-from models.pdf_schemas import PdfGenerateRequest
+from models.pdf_schemas import PdfDisplayOptions, PdfGenerateRequest
 from services.pdf_jobs import (
     QueuePublishError,
     build_pdf_data_from_shipment,
     fetch_document_for_auth,
+    latest_completed_label,
     queue_pdf_generation,
     status_response,
 )
@@ -193,6 +194,106 @@ def test_pdf_url_is_only_returned_for_completed_authorized_status():
 
     assert status_response(completed, auth("tenant_a"))["url"] == "/pdf/download/job_1"
     assert "url" not in status_response(queued, auth("tenant_a"))
+
+
+def test_shipping_label_field_bag_populates_all_label_fields():
+    data = build_pdf_data_from_shipment(
+        shipment={
+            "id": "shp_1",
+            "trackingNumber": "QU2605-96-H3T4-49053",
+            "serviceTier": "express",
+            "weightKg": "4.200",
+            "createdAt": "2026-05-25T17:13:00Z",
+            "referenceNumber": "REF-9001",
+            "originAddress": {"line1": "Nehru Place", "city": "New Delhi", "postcode": "110019", "country": "India"},
+            "destinationAddress": {
+                "name": "Leila Rashid",
+                "line1": "28 Dunford Drive",
+                "city": "Doncaster",
+                "postcode": "DN4 0GF",
+                "country": "United Kingdom",
+                "email": "leila.rashid@outlook.com",
+                "phone": "+44 7799 945678",
+            },
+        },
+        document_type="shipping_label",
+        options=PdfDisplayOptions(),
+        items=[{"quantity": 1, "lengthCm": "30", "widthCm": "20", "heightCm": "15", "isDangerous": True}],
+        tracking_url_base="https://track.fauward.com",
+    )
+
+    assert data["serviceTier"] == "EXPRESS"
+    assert data["weightKg"] == "4.2"
+    assert data["packageQuantity"] == 1
+    assert data["dimensions"] == "30 × 20 × 15 cm"
+    assert data["fragile"] is True
+    assert data["recipientName"] == "Leila Rashid"
+    assert data["recipientEmail"] == "leila.rashid@outlook.com"
+    assert data["recipientPhone"] == "+44 7799 945678"
+    assert data["referenceNumber"] == "REF-9001"
+    assert data["createdAt"] == "25 May 2026"
+    assert data["trackingUrl"] == "https://track.fauward.com/QU2605-96-H3T4-49053"
+
+
+def test_shipping_label_field_bag_degrades_when_optional_fields_missing():
+    data = build_pdf_data_from_shipment(
+        shipment={
+            "id": "shp_1",
+            "trackingNumber": "QU2605-96-H3T4-49053",
+            "originAddress": {"line1": "Origin"},
+            "destinationAddress": {"line1": "Dest"},
+        },
+        document_type="shipping_label",
+        options=PdfDisplayOptions(),
+        items=None,
+    )
+
+    # Optional fields are absent (not stringified "None") so the Jinja template's
+    # `{% if data.field %}` guards collapse the corresponding rows cleanly.
+    assert data.get("serviceTier") is None
+    assert data.get("dimensions") is None
+    assert data.get("packageQuantity") is None
+    assert data.get("fragile") is False
+    assert data.get("recipientEmail") is None
+    assert data.get("recipientPhone") is None
+    assert data.get("weightKg") is None
+    assert data.get("referenceNumber") is None
+
+
+def test_shipping_label_reference_falls_back_to_none_when_only_id():
+    # Don't echo the shipment id back as a reference — it's already in tracking.
+    data = build_pdf_data_from_shipment(
+        shipment={"id": "shp_1", "trackingNumber": "TRK", "reference": "shp_1"},
+        document_type="shipping_label",
+        options=PdfDisplayOptions(),
+    )
+    assert data.get("referenceNumber") is None
+
+
+@pytest.mark.asyncio
+async def test_latest_completed_label_returns_none_when_no_label_exists(monkeypatch):
+    async def fake_fetchrow(query, *args):
+        assert "type = 'shipping_label'" in query
+        assert "status = 'COMPLETED'" in query
+        assert args == ("tenant_a", "shp_1")
+        return None
+
+    monkeypatch.setattr(db, "fetchrow", fake_fetchrow)
+    assert await latest_completed_label("tenant_a", "shp_1") is None
+
+
+@pytest.mark.asyncio
+async def test_latest_completed_label_is_tenant_scoped(monkeypatch):
+    captured = {}
+
+    async def fake_fetchrow(query, *args):
+        captured["args"] = args
+        return {"id": "doc_1", "status": "COMPLETED", "metadata": {}, "url": "https://x/y.pdf"}
+
+    monkeypatch.setattr(db, "fetchrow", fake_fetchrow)
+    row = await latest_completed_label("tenant_a", "shp_1")
+    assert row is not None
+    assert captured["args"] == ("tenant_a", "shp_1")
 
 
 def test_request_data_options_cannot_override_trusted_shipment_fields():

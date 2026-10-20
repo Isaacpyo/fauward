@@ -6,7 +6,8 @@ import { useNavigate } from "react-router-dom";
 
 import { fetchBadge } from "@/lib/badges";
 import type { PlatformPermissionContext } from "@/lib/platform-session";
-import type { PillarManifest, PillarServiceManifest } from "@/pillars/_manifests";
+import { StatusPill } from "@/components/service-kit/StatusPill";
+import { navigableServices, type PillarManifest, type PillarServiceManifest } from "@/pillars/_manifests";
 
 type PillarOverviewBaseProps = {
   manifest: PillarManifest;
@@ -14,11 +15,14 @@ type PillarOverviewBaseProps = {
 };
 
 function StatusCell({ service }: { service: PillarServiceManifest }) {
+  const badgeKey = service.badgeKey;
   const query = useQuery({
-    queryKey: ["pillar-overview-status", service.id, service.badgeKey ?? "placeholder"],
-    queryFn: () => fetchBadge(service.badgeKey),
+    queryKey: ["pillar-overview-status", service.id, badgeKey ?? "none"],
+    queryFn: () => fetchBadge(badgeKey!),
+    enabled: Boolean(badgeKey),
     staleTime: 30_000
   });
+  if (!badgeKey) return null;
 
   const tone = query.data?.tone ?? "neutral";
   const className =
@@ -40,7 +44,7 @@ function StatusCell({ service }: { service: PillarServiceManifest }) {
 export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseProps) {
   const navigate = useNavigate();
   const permissionContext = usePermission() as PlatformPermissionContext;
-  const rows = manifest.services.filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
+  const rows = navigableServices(manifest).filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
 
   return (
     <div className="space-y-5">
@@ -73,7 +77,10 @@ export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseP
               <div className="flex min-w-0 items-center gap-2">
                 <row.icon size={16} className="shrink-0" style={{ color: manifest.accent }} />
                 <div className="min-w-0">
-                  <p className="truncate font-semibold text-[var(--color-text-primary)]">{row.name}</p>
+                  <p className="flex items-center gap-1.5 truncate font-semibold text-[var(--color-text-primary)]">
+                    {row.name}
+                    <StatusPill status={row.status} />
+                  </p>
                   <p className="truncate text-xs text-[var(--color-text-muted)]">{row.description}</p>
                 </div>
               </div>

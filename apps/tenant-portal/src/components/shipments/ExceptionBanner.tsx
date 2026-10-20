@@ -6,10 +6,12 @@ import type { ShipmentState } from "@/types/domain";
 type ExceptionBannerProps = {
   status: ShipmentState;
   reason?: string;
-  onAction: (action: "reattempt" | "return" | "contact" | "escalate") => void;
+  /** `tel:`/`mailto:` for the recipient; the contact action is hidden when the shipment has neither. */
+  contactHref?: string;
+  onAction: (action: "reattempt" | "return" | "escalate") => void;
 };
 
-export function ExceptionBanner({ status, reason, onAction }: ExceptionBannerProps) {
+export function ExceptionBanner({ status, reason, contactHref, onAction }: ExceptionBannerProps) {
   if (status !== "EXCEPTION" && status !== "FAILED_DELIVERY") {
     return null;
   }
@@ -41,9 +43,14 @@ export function ExceptionBanner({ status, reason, onAction }: ExceptionBannerPro
             <Button variant="secondary" size="sm" leftIcon={<ArrowRightLeft size={14} />} onClick={() => onAction("return")}>
               Return to Sender
             </Button>
-            <Button variant="secondary" size="sm" leftIcon={<PhoneCall size={14} />} onClick={() => onAction("contact")}>
-              Contact Customer
-            </Button>
+            {contactHref ? (
+              <Button variant="secondary" size="sm" asChild>
+                <a href={contactHref}>
+                  <PhoneCall size={14} />
+                  Contact Customer
+                </a>
+              </Button>
+            ) : null}
             <Button variant="secondary" size="sm" leftIcon={<Send size={14} />} onClick={() => onAction("escalate")}>
               Escalate
             </Button>

@@ -1,52 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Switch } from "@/components/ui/Switch";
-import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { Textarea } from "@/components/ui/Textarea";
 import { api } from "@/lib/api";
-import { getAccessToken } from "@/lib/auth";
-import { useAppStore } from "@/stores/useAppStore";
+import { apiErrorMessage } from "@/lib/api-error";
 import { useTenantStore } from "@/stores/useTenantStore";
+
+// L11 (WP-2.12): the tenant's own payment gateways (collecting from its customers; separate from Fauward billing).
+// Everything is saved through the API, secrets encrypted server-side; nothing is kept in the browser (S12). Secrets are
+// write-only: the API reports "set / not set" and an empty field keeps the saved value.
 
 type PaymentProvider = "STRIPE" | "PAYSTACK" | "FLUTTERWAVE" | "BANK_TRANSFER" | "COD";
 type PaymentRegion = "africa" | "europe" | "northAmerica" | "global";
+type GatewayStatus = "UNVERIFIED" | "VERIFIED" | "FAILED" | "DISABLED";
 
-type ProviderConfig = {
+export type TenantGateway = {
+  provider: PaymentProvider;
+  configured: boolean;
   enabled: boolean;
-  accountId?: string;
-  publicKey?: string;
-  publishableKey?: string;
-  secretKey?: string;
-  webhookSecret?: string;
-  encryptionKey?: string;
-  merchantEmail?: string;
-  bankName?: string;
-  accountName?: string;
-  accountNumber?: string;
-  sortCode?: string;
-  iban?: string;
-  instructions?: string;
-  remittanceWindowDays?: number;
-  currency?: string;
+  mode: "TEST" | "LIVE" | null;
+  publicKey: string | null;
+  config: Record<string, string | number | undefined>;
+  secretKeySet: boolean;
+  webhookSecretSet: boolean;
+  encryptionKeySet: boolean;
+  testable: boolean;
+  status: GatewayStatus;
+  lastVerifiedAt: string | null;
+  lastError: string | null;
+  updatedAt: string | null;
 };
+type GatewayList = { activeProvider: PaymentProvider | null; gateways: TenantGateway[] };
 
-type PaymentIntegrations = {
-  activeProvider: PaymentProvider;
-  providers: Record<PaymentProvider, ProviderConfig>;
-};
-
-type TenantSettingsResponse = {
-  settings?: {
-    paymentGateway?: PaymentProvider | null;
-    paymentGatewayKey?: string | null;
-  } | null;
-};
-
-const LOCAL_STORAGE_KEY = "fw_payment_integrations_draft";
+const KEY = ["tenant", "payment-gateways"];
 
 const providerLabels: Record<PaymentProvider, string> = {
   STRIPE: "Stripe",
@@ -57,11 +48,11 @@ const providerLabels: Record<PaymentProvider, string> = {
 };
 
 const providerDescriptions: Record<PaymentProvider, string> = {
-  STRIPE: "Tenant-owned Stripe account and API credentials for customer card payments.",
-  PAYSTACK: "Tenant Paystack credentials for card, bank, transfer, and mobile money payments.",
-  FLUTTERWAVE: "Tenant Flutterwave credentials for regional collections and gateway switching.",
+  STRIPE: "Your own Stripe account for customer card payments.",
+  PAYSTACK: "Your Paystack account for card, bank, transfer and mobile money payments.",
+  FLUTTERWAVE: "Your Flutterwave account for regional collections.",
   BANK_TRANSFER: "Offline settlement details for invoice-based or manual customer remittance.",
-  COD: "COD collection rules and remittance instructions for operations and finance."
+  COD: "Cash-on-delivery collection rules and remittance instructions for operations and finance."
 };
 
 const regionProviderMap: Record<PaymentRegion, PaymentProvider[]> = {
@@ -75,484 +66,204 @@ function inferPaymentRegion(input: { region?: string | null; currency?: string |
   const region = input.region?.toLowerCase() ?? "";
   const currency = input.currency?.toUpperCase() ?? "";
   const locale = input.locale?.toLowerCase() ?? "";
-
-  if (
-    region.includes("africa") ||
-    ["NGN", "GHS", "KES", "ZAR", "UGX", "TZS", "RWF", "XOF", "XAF"].includes(currency) ||
-    locale.includes("-ng") ||
-    locale.includes("-gh") ||
-    locale.includes("-ke") ||
-    locale.includes("-za")
-  ) {
-    return "africa";
-  }
-
-  if (
-    region.includes("europe") ||
-    region.includes("uk") ||
-    ["GBP", "EUR", "CHF", "SEK", "NOK", "DKK"].includes(currency)
-  ) {
-    return "europe";
-  }
-
-  if (region.includes("america") || ["USD", "CAD"].includes(currency) || locale.includes("-us") || locale.includes("-ca")) {
-    return "northAmerica";
-  }
-
+  if (region.includes("africa") || ["NGN", "GHS", "KES", "ZAR", "UGX", "TZS", "RWF", "XOF", "XAF"].includes(currency) || ["-ng", "-gh", "-ke", "-za"].some((suffix) => locale.includes(suffix))) return "africa";
+  if (region.includes("europe") || region.includes("uk") || ["GBP", "EUR", "CHF", "SEK", "NOK", "DKK"].includes(currency)) return "europe";
+  if (region.includes("america") || ["USD", "CAD"].includes(currency) || locale.includes("-us") || locale.includes("-ca")) return "northAmerica";
   return "global";
 }
 
-function regionLabel(region: PaymentRegion) {
-  if (region === "africa") return "Africa";
-  if (region === "europe") return "Europe";
-  if (region === "northAmerica") return "North America";
-  return "Global";
-}
-
-const defaultIntegrations: PaymentIntegrations = {
-  activeProvider: "STRIPE",
-  providers: {
-    STRIPE: {
-      enabled: false,
-      accountId: "",
-      publishableKey: "",
-      secretKey: "",
-      webhookSecret: ""
-    },
-    PAYSTACK: {
-      enabled: false,
-      publicKey: "",
-      secretKey: "",
-      merchantEmail: ""
-    },
-    FLUTTERWAVE: {
-      enabled: false,
-      publicKey: "",
-      secretKey: "",
-      encryptionKey: ""
-    },
-    BANK_TRANSFER: {
-      enabled: false,
-      bankName: "",
-      accountName: "",
-      accountNumber: "",
-      sortCode: "",
-      iban: "",
-      instructions: ""
-    },
-    COD: {
-      enabled: false,
-      remittanceWindowDays: 3,
-      instructions: ""
-    }
-  }
+const STATUS_BADGE: Record<GatewayStatus, { label: string; variant: "success" | "danger" | "warning" | "neutral" }> = {
+  VERIFIED: { label: "Verified", variant: "success" },
+  FAILED: { label: "Test failed", variant: "danger" },
+  UNVERIFIED: { label: "Not tested", variant: "warning" },
+  DISABLED: { label: "Disabled", variant: "neutral" }
 };
 
-function parseStoredIntegrations(
-  paymentGateway: PaymentProvider | null | undefined,
-  paymentGatewayKey: string | null | undefined
-): PaymentIntegrations {
-  if (!paymentGatewayKey) {
-    return {
-      ...defaultIntegrations,
-      activeProvider: paymentGateway ?? defaultIntegrations.activeProvider
-    };
-  }
+type SecretField = "secretKey" | "webhookSecret" | "encryptionKey";
+const SECRET_FIELDS: Record<PaymentProvider, Array<{ field: SecretField; label: string; setKey: "secretKeySet" | "webhookSecretSet" | "encryptionKeySet" }>> = {
+  STRIPE: [
+    { field: "secretKey", label: "Secret key", setKey: "secretKeySet" },
+    { field: "webhookSecret", label: "Webhook signing secret", setKey: "webhookSecretSet" }
+  ],
+  PAYSTACK: [{ field: "secretKey", label: "Secret key", setKey: "secretKeySet" }],
+  FLUTTERWAVE: [
+    { field: "secretKey", label: "Secret key", setKey: "secretKeySet" },
+    { field: "encryptionKey", label: "Encryption key", setKey: "encryptionKeySet" }
+  ],
+  BANK_TRANSFER: [],
+  COD: []
+};
+const PUBLIC_KEY_LABEL: Partial<Record<PaymentProvider, string>> = { STRIPE: "Publishable key", PAYSTACK: "Public key", FLUTTERWAVE: "Public key" };
+const CONFIG_FIELDS: Record<PaymentProvider, Array<{ key: string; label: string; multiline?: boolean; numeric?: boolean }>> = {
+  STRIPE: [{ key: "accountId", label: "Connected account ID" }],
+  PAYSTACK: [{ key: "merchantEmail", label: "Merchant email" }],
+  FLUTTERWAVE: [],
+  BANK_TRANSFER: [
+    { key: "bankName", label: "Bank name" },
+    { key: "accountName", label: "Account name" },
+    { key: "accountNumber", label: "Account number" },
+    { key: "sortCode", label: "Sort code / routing number" },
+    { key: "iban", label: "IBAN / SWIFT" },
+    { key: "instructions", label: "Customer payment instructions", multiline: true }
+  ],
+  COD: [
+    { key: "remittanceWindowDays", label: "Remittance window (days)", numeric: true },
+    { key: "instructions", label: "Instructions for field operators and finance", multiline: true }
+  ]
+};
 
-  try {
-    const parsed = JSON.parse(paymentGatewayKey) as Partial<PaymentIntegrations>;
-    return {
-      activeProvider: parsed.activeProvider ?? paymentGateway ?? defaultIntegrations.activeProvider,
-      providers: {
-        ...defaultIntegrations.providers,
-        ...(parsed.providers ?? {})
-      }
-    };
-  } catch {
-    return {
-      ...defaultIntegrations,
-      activeProvider: paymentGateway ?? "STRIPE",
-      providers: {
-        ...defaultIntegrations.providers,
-        STRIPE: {
-          ...defaultIntegrations.providers.STRIPE,
-          enabled: Boolean(paymentGatewayKey),
-          secretKey: paymentGatewayKey
-        }
-      }
-    };
-  }
+type Draft = { enabled: boolean; publicKey: string; config: Record<string, string>; secrets: Partial<Record<SecretField, string>>; removed: SecretField[] };
+
+function draftOf(gateway: TenantGateway): Draft {
+  const config: Record<string, string> = {};
+  for (const field of CONFIG_FIELDS[gateway.provider]) config[field.key] = gateway.config[field.key] === undefined ? "" : String(gateway.config[field.key]);
+  return { enabled: gateway.enabled, publicKey: gateway.publicKey ?? "", config, secrets: {}, removed: [] };
 }
 
-function readLocalDraft() {
-  if (typeof window === "undefined") {
-    return defaultIntegrations;
+function payloadOf(gateway: TenantGateway, draft: Draft) {
+  const config: Record<string, string | number> = {};
+  for (const field of CONFIG_FIELDS[gateway.provider]) {
+    const value = draft.config[field.key]?.trim() ?? "";
+    if (value === "") continue;
+    config[field.key] = field.numeric ? Number(value) : value;
   }
-
-  try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (!raw) return defaultIntegrations;
-    const parsed = JSON.parse(raw) as PaymentIntegrations;
-    return {
-      activeProvider: parsed.activeProvider ?? defaultIntegrations.activeProvider,
-      providers: {
-        ...defaultIntegrations.providers,
-        ...(parsed.providers ?? {})
-      }
-    };
-  } catch {
-    return defaultIntegrations;
+  const body: Record<string, unknown> = { enabled: draft.enabled, config };
+  if (PUBLIC_KEY_LABEL[gateway.provider] && draft.publicKey !== (gateway.publicKey ?? "")) body.publicKey = draft.publicKey.trim();
+  for (const { field } of SECRET_FIELDS[gateway.provider]) {
+    if (draft.removed.includes(field)) body[field] = "";
+    else if (draft.secrets[field]?.trim()) body[field] = draft.secrets[field]!.trim();
   }
+  return body;
 }
 
-function writeLocalDraft(integrations: PaymentIntegrations) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(integrations));
-}
+function GatewayCard({ gateway, isDefault }: { gateway: TenantGateway; isDefault: boolean }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<Draft>(() => draftOf(gateway));
+  useEffect(() => setDraft(draftOf(gateway)), [gateway]);
+  const refresh = () => queryClient.invalidateQueries({ queryKey: KEY });
+  const save = useMutation({
+    mutationFn: async () => (await api.put<TenantGateway>(`/v1/tenant/payment-gateways/${gateway.provider}`, payloadOf(gateway, draft))).data,
+    onSuccess: refresh
+  });
+  const test = useMutation({
+    mutationFn: async () => (await api.post<TenantGateway>(`/v1/tenant/payment-gateways/${gateway.provider}/test`)).data,
+    onSuccess: refresh
+  });
+  const status = STATUS_BADGE[gateway.status];
+  const label = providerLabels[gateway.provider];
 
-function ProviderSection({
-  title,
-  description,
-  enabled,
-  onEnabledChange,
-  children
-}: {
-  title: string;
-  description: string;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-  children: React.ReactNode;
-}) {
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-4">
+    <section className="rounded-xl border border-gray-200 bg-white p-4" data-testid={`gateway-${gateway.provider}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-base font-semibold text-gray-900">{title}</h4>
-          <p className="mt-1 text-sm text-gray-600">{description}</p>
+          <h4 className="text-base font-semibold text-gray-900">
+            {label}
+            {isDefault ? <span className="ml-2 text-xs font-medium text-gray-500">(default)</span> : null}
+          </h4>
+          <p className="mt-1 text-sm text-gray-600">{providerDescriptions[gateway.provider]}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={enabled ? "success" : "neutral"}>{enabled ? "Enabled" : "Disabled"}</Badge>
-          <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+          {gateway.configured ? <Badge variant={status.variant}>{status.label}</Badge> : <Badge variant="neutral">Not set up</Badge>}
+          {gateway.mode && gateway.testable ? <Badge variant="info">{gateway.mode === "TEST" ? "Test mode" : "Live mode"}</Badge> : null}
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <Switch checked={draft.enabled} onCheckedChange={(enabled) => setDraft((current) => ({ ...current, enabled }))} />
+            Enabled
+          </label>
         </div>
       </div>
-      <div className="mt-4 space-y-4">{children}</div>
+      {gateway.lastError ? <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">{gateway.lastError}</p> : null}
+      {gateway.lastVerifiedAt && gateway.status === "VERIFIED" ? <p className="mt-2 text-xs text-gray-500">Verified {new Date(gateway.lastVerifiedAt).toLocaleString()}</p> : null}
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {PUBLIC_KEY_LABEL[gateway.provider] ? (
+          <Input aria-label={`${label} ${PUBLIC_KEY_LABEL[gateway.provider]}`} placeholder={PUBLIC_KEY_LABEL[gateway.provider]} value={draft.publicKey} onChange={(event) => setDraft((current) => ({ ...current, publicKey: event.target.value }))} />
+        ) : null}
+        {SECRET_FIELDS[gateway.provider].map(({ field, label: fieldLabel, setKey }) => {
+          const isSet = gateway[setKey] && !draft.removed.includes(field);
+          return (
+            <div key={field} className="flex items-center gap-2">
+              <Input
+                type="password"
+                autoComplete="off"
+                aria-label={`${label} ${fieldLabel}`}
+                placeholder={isSet ? `${fieldLabel}: saved (leave blank to keep)` : fieldLabel}
+                value={draft.secrets[field] ?? ""}
+                onChange={(event) => setDraft((current) => ({ ...current, secrets: { ...current.secrets, [field]: event.target.value }, removed: current.removed.filter((item) => item !== field) }))}
+              />
+              {isSet ? (
+                <Button variant="secondary" onClick={() => setDraft((current) => ({ ...current, removed: [...current.removed, field], secrets: { ...current.secrets, [field]: "" } }))}>
+                  Remove
+                </Button>
+              ) : null}
+            </div>
+          );
+        })}
+        {CONFIG_FIELDS[gateway.provider].map((field) =>
+          field.multiline ? (
+            <Textarea key={field.key} aria-label={`${label} ${field.label}`} placeholder={field.label} className="md:col-span-2" value={draft.config[field.key] ?? ""} onChange={(event) => setDraft((current) => ({ ...current, config: { ...current.config, [field.key]: event.target.value } }))} />
+          ) : (
+            <Input key={field.key} type={field.numeric ? "number" : "text"} aria-label={`${label} ${field.label}`} placeholder={field.label} value={draft.config[field.key] ?? ""} onChange={(event) => setDraft((current) => ({ ...current, config: { ...current.config, [field.key]: event.target.value } }))} />
+          )
+        )}
+      </div>
+      {save.isError ? <p className="mt-2 text-sm text-red-700">{apiErrorMessage(save.error, `${label} could not be saved.`)}</p> : null}
+      {test.isError ? <p className="mt-2 text-sm text-red-700">{apiErrorMessage(test.error, "The connection test could not run.")}</p> : null}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        {gateway.testable ? (
+          <Button variant="secondary" onClick={() => test.mutate()} loading={test.isPending} disabled={test.isPending || !gateway.secretKeySet || !gateway.enabled} title={gateway.secretKeySet ? undefined : "Save a secret key first"}>
+            Test connection
+          </Button>
+        ) : null}
+        <Button onClick={() => save.mutate()} loading={save.isPending} disabled={save.isPending}>
+          Save {label}
+        </Button>
+      </div>
     </section>
   );
 }
 
 export function IntegrationsTab() {
-  const addToast = useAppStore((state) => state.addToast);
   const tenant = useTenantStore((state) => state.tenant);
-  const [subTab, setSubTab] = useState("payments");
-  const [integrations, setIntegrations] = useState<PaymentIntegrations>(() => readLocalDraft());
-  const hasToken = Boolean(getAccessToken());
-  const paymentRegion = inferPaymentRegion({
-    region: tenant?.region,
-    currency: tenant?.currency,
-    locale: tenant?.locale
+  const queryClient = useQueryClient();
+  const gateways = useQuery({ queryKey: KEY, queryFn: async () => (await api.get<GatewayList>("/v1/tenant/payment-gateways")).data });
+  const setDefault = useMutation({
+    mutationFn: async (activeProvider: PaymentProvider) => (await api.patch<GatewayList>("/v1/tenant/payment-gateways", { activeProvider })).data,
+    onSuccess: (data) => queryClient.setQueryData(KEY, data)
   });
-  const regionalProviders = regionProviderMap[paymentRegion];
-  const secondaryProviders = (Object.keys(defaultIntegrations.providers) as PaymentProvider[]).filter(
-    (provider) => !regionalProviders.includes(provider)
-  );
-
-  const tenantQuery = useQuery({
-    queryKey: ["tenant-settings-payment-integrations"],
-    queryFn: async () => (await api.get<TenantSettingsResponse>("/v1/tenant/me")).data,
-    enabled: hasToken,
-    retry: false
-  });
-
-  useEffect(() => {
-    if (!tenantQuery.data?.settings) {
-      return;
-    }
-
-    setIntegrations(
-      parseStoredIntegrations(
-        tenantQuery.data.settings.paymentGateway,
-        tenantQuery.data.settings.paymentGatewayKey
-      )
-    );
-  }, [tenantQuery.data]);
-
-  const saveMutation = useMutation({
-    mutationFn: async (payload: PaymentIntegrations) => {
-      if (!hasToken) {
-        writeLocalDraft(payload);
-        return;
-      }
-
-      await api.patch("/v1/tenant/settings", {
-        paymentGateway: payload.activeProvider,
-        paymentIntegrations: payload
-      });
-    },
-    onSuccess: () => {
-      writeLocalDraft(integrations);
-      addToast({
-        title: "Payment integrations saved",
-        description: hasToken
-          ? "Tenant payment collection settings were updated."
-          : "Saved locally for this demo session.",
-        variant: "success"
-      });
-    },
-    onError: (error) => {
-      const maybeAxios = error as { response?: { data?: { error?: string } }; message?: string };
-      addToast({
-        title: "Could not save payment integrations",
-        description: maybeAxios.response?.data?.error ?? maybeAxios.message ?? "Try again.",
-        variant: "error"
-      });
-    }
-  });
-
-  const connectedProviders = useMemo(
-    () => Object.entries(integrations.providers).filter(([, config]) => config.enabled).length,
-    [integrations.providers]
-  );
-
-  function updateProvider(provider: PaymentProvider, patch: Partial<ProviderConfig>) {
-    setIntegrations((current) => ({
-      ...current,
-      providers: {
-        ...current.providers,
-        [provider]: {
-          ...current.providers[provider],
-          ...patch
-        }
-      }
-    }));
-  }
-
-  function renderProviderFields(provider: PaymentProvider) {
-    const config = integrations.providers[provider];
-
-    if (provider === "STRIPE") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            value={config.accountId ?? ""}
-            onChange={(event) => updateProvider(provider, { accountId: event.target.value })}
-            placeholder="Connected account ID"
-          />
-          <Input
-            value={config.publishableKey ?? ""}
-            onChange={(event) => updateProvider(provider, { publishableKey: event.target.value })}
-            placeholder="Publishable key"
-          />
-          <Input
-            value={config.secretKey ?? ""}
-            onChange={(event) => updateProvider(provider, { secretKey: event.target.value })}
-            placeholder="Secret key"
-          />
-          <Input
-            value={config.webhookSecret ?? ""}
-            onChange={(event) => updateProvider(provider, { webhookSecret: event.target.value })}
-            placeholder="Webhook secret"
-          />
-        </div>
-      );
-    }
-
-    if (provider === "PAYSTACK") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            value={config.publicKey ?? ""}
-            onChange={(event) => updateProvider(provider, { publicKey: event.target.value })}
-            placeholder="Public key"
-          />
-          <Input
-            value={config.secretKey ?? ""}
-            onChange={(event) => updateProvider(provider, { secretKey: event.target.value })}
-            placeholder="Secret key"
-          />
-          <Input
-            value={config.merchantEmail ?? ""}
-            onChange={(event) => updateProvider(provider, { merchantEmail: event.target.value })}
-            placeholder="Merchant email"
-          />
-        </div>
-      );
-    }
-
-    if (provider === "FLUTTERWAVE") {
-      return (
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            value={config.publicKey ?? ""}
-            onChange={(event) => updateProvider(provider, { publicKey: event.target.value })}
-            placeholder="Public key"
-          />
-          <Input
-            value={config.secretKey ?? ""}
-            onChange={(event) => updateProvider(provider, { secretKey: event.target.value })}
-            placeholder="Secret key"
-          />
-          <Input
-            value={config.encryptionKey ?? ""}
-            onChange={(event) => updateProvider(provider, { encryptionKey: event.target.value })}
-            placeholder="Encryption key"
-          />
-        </div>
-      );
-    }
-
-    if (provider === "BANK_TRANSFER") {
-      return (
-        <div className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2">
-            <Input
-              value={config.bankName ?? ""}
-              onChange={(event) => updateProvider(provider, { bankName: event.target.value })}
-              placeholder="Bank name"
-            />
-            <Input
-              value={config.accountName ?? ""}
-              onChange={(event) => updateProvider(provider, { accountName: event.target.value })}
-              placeholder="Account name"
-            />
-            <Input
-              value={config.accountNumber ?? ""}
-              onChange={(event) => updateProvider(provider, { accountNumber: event.target.value })}
-              placeholder="Account number"
-            />
-            <Input
-              value={config.sortCode ?? ""}
-              onChange={(event) => updateProvider(provider, { sortCode: event.target.value })}
-              placeholder="Sort code / routing number"
-            />
-            <Input
-              value={config.iban ?? ""}
-              onChange={(event) => updateProvider(provider, { iban: event.target.value })}
-              placeholder="IBAN / SWIFT"
-            />
-          </div>
-          <Textarea
-            value={config.instructions ?? ""}
-            onChange={(event) => updateProvider(provider, { instructions: event.target.value })}
-            placeholder="Customer payment instructions shown on checkout or invoices"
-          />
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-3">
-        <Input
-          type="number"
-          value={String(config.remittanceWindowDays ?? 3)}
-          onChange={(event) => updateProvider(provider, { remittanceWindowDays: Number(event.target.value || 0) })}
-          placeholder="Remittance window in days"
-        />
-        <Textarea
-          value={config.instructions ?? ""}
-          onChange={(event) => updateProvider(provider, { instructions: event.target.value })}
-          placeholder="Instructions for field operators and finance on COD settlement handling"
-        />
-      </div>
-    );
-  }
-
-  function renderProviderSection(provider: PaymentProvider) {
-    return (
-      <ProviderSection
-        key={provider}
-        title={providerLabels[provider]}
-        description={providerDescriptions[provider]}
-        enabled={integrations.providers[provider].enabled}
-        onEnabledChange={(enabled) => updateProvider(provider, { enabled })}
-      >
-        {renderProviderFields(provider)}
-      </ProviderSection>
-    );
-  }
+  const paymentRegion = inferPaymentRegion({ region: tenant?.region, currency: tenant?.currency, locale: tenant?.locale });
+  const regional = regionProviderMap[paymentRegion];
+  const rows = gateways.data?.gateways ?? [];
+  const ordered = [...rows.filter((row) => regional.includes(row.provider)), ...rows.filter((row) => !regional.includes(row.provider))];
+  const enabled = rows.filter((row) => row.enabled);
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-blue-900">Tenant payment integrations</h3>
-            <p className="mt-1 text-sm text-blue-800">
-              This is the tenant&apos;s own connected gateway setup for collecting money from their customers. It is separate from Fauward subscription billing.
-            </p>
-          </div>
-          <Badge variant="primary">{connectedProviders} provider{connectedProviders === 1 ? "" : "s"} enabled</Badge>
-        </div>
+        <h3 className="text-base font-semibold text-blue-900">Payment integrations</h3>
+        <p className="mt-1 text-sm text-blue-800">Your own gateways for collecting money from your customers. This is separate from your Fauward subscription. Keys are stored encrypted and are never shown again.</p>
       </div>
-
-      <Tabs
-        value={subTab}
-        onValueChange={setSubTab}
-        items={[{ value: "payments", label: "Payments" }]}
-      >
-        <TabsContent value="payments" className="space-y-5">
+      {gateways.isError ? <ErrorState title="Payment integrations could not be loaded" description={apiErrorMessage(gateways.error, "The integrations service returned an error.")} onRetry={() => void gateways.refetch()} /> : null}
+      {gateways.isLoading ? <p className="text-sm text-gray-500">Loading payment integrations…</p> : null}
+      {gateways.data ? (
+        <>
           <section className="rounded-xl border border-gray-200 bg-white p-4">
             <h4 className="text-base font-semibold text-gray-900">Default customer payment method</h4>
-            <p className="mt-1 text-sm text-gray-600">
-              Choose which enabled provider should be treated as the default collection channel.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="info">{regionLabel(paymentRegion)} payment options</Badge>
-              <span className="text-xs text-gray-500">
-                Based on {tenant?.currency ?? "workspace currency"} and {tenant?.region ?? tenant?.locale ?? "tenant locale"}.
-              </span>
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              {[...regionalProviders, ...secondaryProviders].map((provider) => (
-                <button
-                  key={provider}
-                  type="button"
-                  onClick={() => setIntegrations((current) => ({ ...current, activeProvider: provider }))}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    integrations.activeProvider === provider
-                      ? "border-[var(--tenant-primary)] bg-[var(--tenant-primary)]/5"
-                      : "border-gray-200 bg-gray-50 hover:border-gray-300"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-gray-900">{provider.replaceAll("_", " ")}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {integrations.providers[provider].enabled ? "Enabled" : "Not enabled"}
-                  </p>
-                </button>
+            {enabled.length === 0 ? <p className="mt-1 text-sm text-gray-600">Enable and save a provider below to choose a default.</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {enabled.map((row) => (
+                <Button key={row.provider} variant={gateways.data.activeProvider === row.provider ? "primary" : "secondary"} onClick={() => setDefault.mutate(row.provider)} disabled={setDefault.isPending || gateways.data.activeProvider === row.provider}>
+                  {providerLabels[row.provider]}
+                </Button>
               ))}
             </div>
+            {setDefault.isError ? <p className="mt-2 text-sm text-red-700">{apiErrorMessage(setDefault.error, "The default could not be changed.")}</p> : null}
           </section>
-
           <div className="space-y-5">
-            <div>
-              <h4 className="mb-3 text-sm font-semibold text-gray-900">{regionLabel(paymentRegion)} providers</h4>
-              <div className="space-y-5">{regionalProviders.map((provider) => renderProviderSection(provider))}</div>
-            </div>
-            {secondaryProviders.length > 0 ? (
-              <div>
-                <h4 className="mb-3 text-sm font-semibold text-gray-900">Other available providers</h4>
-                <div className="space-y-5">{secondaryProviders.map((provider) => renderProviderSection(provider))}</div>
-              </div>
-            ) : null}
+            {ordered.map((row) => (
+              <GatewayCard key={row.provider} gateway={row} isDefault={gateways.data.activeProvider === row.provider} />
+            ))}
           </div>
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => setIntegrations(defaultIntegrations)}
-            >
-              Reset
-            </Button>
-            <Button
-              onClick={() => saveMutation.mutate(integrations)}
-              loading={saveMutation.isPending}
-            >
-              Save payment integrations
-            </Button>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </>
+      ) : null}
     </div>
   );
 }

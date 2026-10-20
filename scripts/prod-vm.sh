@@ -35,6 +35,24 @@ case $cmd in
       fi
     done
     vm "grep -qE '^REDIS_PASSWORD=.+' $ROOT/env/compose.env || { umask 077; printf 'REDIS_PASSWORD=%s\n' \$(openssl rand -hex 24) > $ROOT/env/compose.env; }"
+    # Values production generates for itself (never copied from Railway). Only filled when empty.
+    vm "bash -s" <<EOF
+set -e
+E=$ROOT/env
+set_if_empty() { # file key value
+  if grep -qE "^\$2=[[:space:]]*[^#[:space:]]" "\$E/\$1"; then return 0; fi   # has a value (not just a comment)
+  if grep -qE "^\$2=" "\$E/\$1"; then sed -i "s|^\$2=.*|\$2=\$3|" "\$E/\$1"; else printf '%s=%s\n' "\$2" "\$3" >> "\$E/\$1"; fi
+  echo "generated \$1: \$2"
+}
+kid=k\$(date -u +%Y)a
+set_if_empty backend.env FIELD_ENCRYPTION_ACTIVE_KEY_ID "\$kid"
+active=\$(grep -E '^FIELD_ENCRYPTION_ACTIVE_KEY_ID=' "\$E/backend.env" | cut -d= -f2)
+set_if_empty backend.env FIELD_ENCRYPTION_KEYS "{\"\$active\":\"\$(openssl rand -base64 32)\"}"
+set_if_empty backend.env MONITORING_API_KEY "\$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+mon=\$(grep -E '^MONITORING_API_KEY=' "\$E/backend.env" | cut -d= -f2)
+set_if_empty python.env MONITORING_API_KEY "\$mon"
+set_if_empty backend.env CONSOLE_URL https://admin.fauward.com
+EOF
     vm "umask 077 && cat > $ROOT/bin/prodctl.sh && chmod 700 $ROOT/bin/prodctl.sh" < deploy/oracle-prod/bin/prodctl.sh
     echo "init done. Fill in the env files: bash scripts/prod-vm.sh edit-env backend.env (and python.env, cloudflared.env)"
     ctl check-env || true

@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
 import { createConsumerGroup, readGroup, ackMessage } from '../modules/tracking/realtime/stream.service.js';
-import { emitTrackingRealtimeUpdate, emitEscalationUpdate } from '../modules/tracking/tracking.websocket.js';
+import { emitTrackingRealtimeUpdate } from '../modules/tracking/tracking.websocket.js';
+import { runWithTenantContext } from '../context/tenant.context.js';
+import { systemContext } from '../shared/middleware/tenant.resolver.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../services/platform-activity.service.js';
 
 const GROUP_NAME = 'ws-publisher';
 const CONSUMER_NAME = 'worker-1';
@@ -19,6 +22,33 @@ async function ensureEscalationGroup(redis: Redis): Promise<void> {
     if (err?.message?.includes('BUSYGROUP')) return;
     throw err;
   }
+}
+
+/**
+ * A shipment escalation flag (tracking escalation engine) becomes one ATTENTION activity on the console stream
+ * (platform.incidents), replacing the old cross-tenant `escalations:all` WebSocket room (WP-2.11). The dedupe key makes
+ * a redelivered stream entry harmless.
+ */
+export async function recordEscalationFlag(app: Pick<FastifyInstance, 'prisma' | 'redis' | 'log'>, fields: Record<string, string>) {
+  if (!fields.tenantId || !fields.shipmentId) return;
+  await runWithTenantContext(systemContext(), () =>
+    recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'platform.incidents',
+        type: 'shipment.escalation_flagged',
+        tenantId: fields.tenantId,
+        ...SYSTEM_ACTOR,
+        subjectType: 'shipment',
+        subjectId: fields.shipmentId,
+        summary: `Shipment ${fields.trackingNumber ?? fields.shipmentId} flagged for escalation (${fields.reason ?? 'rule'})`,
+        severity: 'ATTENTION',
+        consoleLink: `/customer/360/${fields.tenantId}?tab=activity`,
+        metadata: { reason: fields.reason ?? null, trackingNumber: fields.trackingNumber ?? null, flaggedAt: fields.flaggedAt ?? null },
+        dedupeKey: `shipment.escalation_flagged:${fields.shipmentId}:${fields.flaggedAt ?? ''}`
+      }
+    )
+  );
 }
 
 export async function startWsPublisherWorker(app: FastifyInstance): Promise<void> {
@@ -81,13 +111,7 @@ export async function startWsPublisherWorker(app: FastifyInstance): Promise<void
             for (let i = 0; i < fieldsArray.length; i += 2) {
               fields[fieldsArray[i]] = fieldsArray[i + 1];
             }
-            emitEscalationUpdate({
-              tenantId: fields.tenantId,
-              shipmentId: fields.shipmentId,
-              trackingNumber: fields.trackingNumber,
-              reason: fields.reason,
-              flaggedAt: fields.flaggedAt,
-            });
+            await recordEscalationFlag(app, fields);
             await redis.xack('escalations:stream', 'escalations-publisher', id);
           }
         }

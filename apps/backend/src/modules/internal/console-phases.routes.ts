@@ -1,14 +1,17 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
+import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
-import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
+import { approveSaveOffer, SaveOfferError } from '../../services/save-offer.service.js';
 import { writeInternalAudit } from './internal-audit.js';
+import { dangerous } from '../../middleware/dangerous.js';
+import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
+import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -36,33 +39,18 @@ type WebhookHmacOptions = {
   webhookIdHeaderNames?: string[];
 };
 
-const DSAR_STATES = [
-  'RECEIVED',
-  'IDENTITY_VERIFIED',
-  'DATA_GATHERED',
-  'REVIEWED',
-  'RESPONSE_DRAFTED',
-  'APPROVED',
-  'DELIVERED',
-  'CLOSED'
-];
-
 function readPre(permission: Permission) {
-  return [authenticatePlatformSession, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requireConsolePermission(permission)];
 }
 
 function writePre(permission: Permission) {
-  return [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission(permission)];
 }
 
 function bodyObject(request: FastifyRequest): Record<string, unknown> {
   return request.body && typeof request.body === 'object' && !Array.isArray(request.body)
     ? (request.body as Record<string, unknown>)
     : {};
-}
-
-function queryObject(request: FastifyRequest): Record<string, string | undefined> {
-  return request.query && typeof request.query === 'object' ? (request.query as Record<string, string | undefined>) : {};
 }
 
 function delegate(app: FastifyInstance, name: string): Delegate {
@@ -275,19 +263,6 @@ function optionalJson(value: unknown) {
   return value === undefined ? null : value;
 }
 
-function assertPermissionValue(value: unknown): Permission | null {
-  return typeof value === 'string' && (PERMISSIONS as readonly string[]).includes(value) ? (value as Permission) : null;
-}
-
-async function requireNoActiveLegalHold(app: FastifyInstance, tenantId: string | undefined | null, reply: FastifyReply) {
-  const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
-  if (hold) {
-    reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId, holdId: hold.id });
-    return false;
-  }
-  return true;
-}
-
 async function listWithMeta(model: Delegate, args: unknown = {}) {
   const data = await model.findMany(args);
   return { data };
@@ -325,35 +300,31 @@ async function updateAndAudit(
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerDunning(app);
   registerIncidents(app);
-  registerSupport(app);
   registerSuccess(app);
-  registerJit(app);
-  registerCompliance(app);
-  registerSafety(app);
   registerFlags(app);
   registerSecrets(app);
   registerSecurity(app);
   registerKyc(app);
   registerIntegrations(app);
   registerTax(app);
-  registerSubscriptions(app);
   registerContracts(app);
   registerQbr(app);
   registerGtm(app);
 }
 
+// Dunning is about Fauward billing tenants: every ledger query here is kind PLATFORM (D4).
 function registerDunning(app: FastifyInstance) {
   app.get('/api/internal/dunning/failed-payments', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
     const [payments, overdueInvoices] = await Promise.all([
       app.prisma.payment.findMany({
-        where: { status: 'FAILED' },
+        where: { kind: 'PLATFORM', status: 'FAILED' },
         include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, invoice: true },
         orderBy: { updatedAt: 'desc' },
         take: 100
       }),
       app.prisma.invoice.findMany({
-        where: { status: 'OVERDUE' },
-        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: true },
+        where: { kind: 'PLATFORM', status: 'OVERDUE' },
+        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: { where: { kind: 'PLATFORM' } } },
         orderBy: { dueDate: 'asc' },
         take: 100
       })
@@ -366,25 +337,31 @@ function registerDunning(app: FastifyInstance) {
     const [events, saveOffers, invoices] = await Promise.all([
       delegate(app, 'dunningEvent').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100 }),
       delegate(app, 'saveOffer').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      app.prisma.invoice.findMany({ where: { tenantId }, include: { payments: true }, orderBy: { createdAt: 'desc' }, take: 30 })
+      app.prisma.invoice.findMany({ where: { kind: 'PLATFORM', tenantId }, include: { payments: { where: { kind: 'PLATFORM' } } }, orderBy: { createdAt: 'desc' }, take: 30 })
     ]);
     reply.send({ events, saveOffers, invoices });
   });
 
   app.post('/api/internal/dunning/retry/:invoiceId', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
     const { invoiceId } = request.params as { invoiceId: string };
-    const invoice = await app.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { tenant: true } });
+    const invoice = await app.prisma.invoice.findUnique({ where: { kind: 'PLATFORM', id: invoiceId }, include: { tenant: true } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
     const attempt = await delegate(app, 'dunningEvent').count({ where: { invoiceId, eventType: 'manual_retry' } });
     if (attempt >= 3) {
-      const before = invoice.tenant;
-      const after = await app.prisma.tenant.update({ where: { id: invoice.tenantId }, data: { status: 'SUSPENDED' } });
+      // D3 caller 2: the retry limit suspends through the one suspension path.
+      const result = await suspendTenant(app, {
+        tenantId: invoice.tenantId,
+        source: 'DUNNING',
+        category: 'BILLING',
+        reason: `Dunning retry limit exceeded for invoice ${invoice.invoiceNumber ?? invoiceId}`,
+        actor: staffSuspensionActor(request),
+        sourceRef: invoiceId
+      });
       await delegate(app, 'dunningEvent').create({
         data: { tenantId: invoice.tenantId, invoiceId, eventType: 'suspended_after_max_retries', attempt: attempt + 1, actorId: actorId(request) }
       });
-      await writeInternalAudit(request, 'dunning.tenant.suspend_after_retry_limit', 'tenant', invoice.tenantId, before, after, 'Dunning retry limit exceeded');
-      return reply.send({ suspended: true, attempt: attempt + 1, tenant: after });
+      return reply.send({ suspended: true, attempt: attempt + 1, suspension: result.record, tenant: result.tenant });
     }
 
     const event = await createAndAudit(
@@ -406,12 +383,25 @@ function registerDunning(app: FastifyInstance) {
     const offer = await createAndAudit(
       request,
       delegate(app, 'saveOffer'),
-      { tenantId, discount, expiresAt: dateValue(body.expiresAt, inDays(14)), status: 'APPROVED', approvedBy: actorId(request), reason: stringValue(body.reason, 'Save offer') },
+      // WP-2.7: created PENDING; a second, dangerous step approves it and generates the code the tenant redeems.
+      { tenantId, discount, expiresAt: dateValue(body.expiresAt, inDays(14)), status: 'PENDING', reason: stringValue(body.reason, 'Save offer') },
       'dunning.save_offer.issue',
       'save_offer',
       stringValue(body.reason, 'Save offer')
     );
     reply.status(201).send(offer);
+  });
+
+  app.post('/api/internal/dunning/save-offers/:id/approve', { preHandler: dangerous('revenue.dunning.write') }, async (request, reply) => {
+    const { id } = request.params as RequestWithId;
+    try {
+      const offer = await approveSaveOffer(app, request, { id, reason: stringValue(bodyObject(request).reason) });
+      await writeInternalAudit(request, 'dunning.save_offer.approve', 'save_offer', id, { status: 'PENDING' }, { status: offer.status, code: offer.code }, stringValue(bodyObject(request).reason), { targetTenantId: offer.tenantId });
+      return reply.send({ offer });
+    } catch (error) {
+      if (error instanceof SaveOfferError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/dunning/save-offers', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
@@ -519,139 +509,6 @@ function registerIncidents(app: FastifyInstance) {
   });
 }
 
-function registerSupport(app: FastifyInstance) {
-  app.get('/api/internal/support/tickets', { preHandler: readPre('customer.support.read') }, async (request, reply) => {
-    const query = queryObject(request);
-    const tenantId = query.tenantId;
-    const data = await app.prisma.supportTicket.findMany({
-      where: tenantId ? { tenantId } : undefined,
-      orderBy: { updatedAt: 'desc' },
-      take: 100,
-      include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        customer: { select: { id: true, email: true, firstName: true, lastName: true } },
-        messages: { orderBy: { createdAt: 'asc' }, take: 5 }
-      }
-    });
-    reply.send({ data });
-  });
-
-  app.post('/api/internal/support/tickets', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const author = await app.prisma.user.findFirst({
-      where: {
-        tenantId,
-        isActive: true,
-        ...(stringValue(body.requesterEmail) ? { email: stringValue(body.requesterEmail).toLowerCase() } : {})
-      },
-      orderBy: { createdAt: 'asc' }
-    });
-    const fallbackAuthor = author ?? await app.prisma.user.findFirst({
-      where: { tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true },
-      orderBy: { createdAt: 'asc' }
-    });
-    if (!fallbackAuthor) return reply.status(400).send({ error: 'No active tenant user available for ticket authoring' });
-
-    const count = await app.prisma.supportTicket.count({ where: { tenantId } });
-    const ticket = await app.prisma.supportTicket.create({
-      data: {
-        tenantId,
-        ticketNumber: `SA-${Date.now()}-${String(count + 1).padStart(4, '0')}`,
-        customerId: fallbackAuthor.id,
-        subject: stringValue(body.subject, 'Tenant support request'),
-        category: stringValue(body.category, 'OTHER') as never,
-        priority: stringValue(body.priority, 'NORMAL').toUpperCase() as never,
-        messages: {
-          create: {
-            tenantId,
-            authorId: fallbackAuthor.id,
-            body: stringValue(body.message, stringValue(body.body, 'Support ticket created from the Super Admin console.')),
-            fromSA: true,
-            platformAuthorId: actorId(request)
-          }
-        }
-      },
-      include: { messages: true }
-    });
-    await writeInternalAudit(request, 'support.ticket.create', 'support_ticket', ticket.id, null, ticket, stringValue(body.reason, 'Created support ticket'));
-    reply.status(201).send(ticket);
-  });
-
-  app.get('/api/internal/support/tickets/:id', { preHandler: readPre('customer.support.read') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const ticket = await app.prisma.supportTicket.findUnique({
-      where: { id },
-      include: {
-        tenant: { select: { id: true, name: true, slug: true } },
-        customer: { select: { id: true, email: true, firstName: true, lastName: true } },
-        assignee: { select: { id: true, email: true, firstName: true, lastName: true } },
-        messages: { orderBy: { createdAt: 'asc' }, include: { author: { select: { id: true, email: true, firstName: true, lastName: true } } } }
-      }
-    });
-    if (!ticket) return reply.status(404).send({ error: 'Support ticket not found' });
-    reply.send(ticket);
-  });
-
-  app.patch('/api/internal/support/tickets/:id', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const before = await app.prisma.supportTicket.findUnique({ where: { id } });
-    if (!before) return reply.status(404).send({ error: 'Support ticket not found' });
-    const after = await app.prisma.supportTicket.update({
-      where: { id },
-      data: {
-        status: stringValue(body.status, before.status) as never,
-        priority: stringValue(body.priority, before.priority).toUpperCase() as never,
-        assignedTo: stringValue(body.assignedTo) || undefined
-      }
-    });
-    await writeInternalAudit(request, 'support.ticket.update', 'support_ticket', id, before, after, stringValue(body.reason, 'Support ticket update'));
-    reply.send(after);
-  });
-
-  app.post('/api/internal/support/tickets/:id/reply', { preHandler: writePre('customer.support.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const text = stringValue(body.body, stringValue(body.message));
-    if (!text) return reply.status(400).send({ error: 'body is required' });
-    const ticket = await app.prisma.supportTicket.findUnique({ where: { id } });
-    if (!ticket) return reply.status(404).send({ error: 'Support ticket not found' });
-    const author = ticket.customerId
-      ? await app.prisma.user.findFirst({ where: { id: ticket.customerId, tenantId: ticket.tenantId } })
-      : await app.prisma.user.findFirst({ where: { tenantId: ticket.tenantId, role: { in: ['TENANT_ADMIN', 'TENANT_MANAGER'] }, isActive: true }, orderBy: { createdAt: 'asc' } });
-    if (!author) return reply.status(400).send({ error: 'No tenant user available for reply authoring' });
-
-    const message = await app.prisma.ticketMessage.create({
-      data: {
-        tenantId: ticket.tenantId,
-        ticketId: ticket.id,
-        authorId: author.id,
-        body: text,
-        isInternal: body.isInternal === true,
-        fromSA: true,
-        platformAuthorId: actorId(request)
-      }
-    });
-    await app.prisma.notificationLog.create({ data: { tenantId: ticket.tenantId, channel: 'EMAIL', event: 'support_ticket_reply_from_sa', status: 'QUEUED' } });
-    await writeInternalAudit(request, 'support.ticket.reply', 'support_ticket', id, ticket, message, stringValue(body.reason, 'Support ticket reply'));
-    reply.status(201).send(message);
-  });
-
-  app.get('/api/internal/support/sla', { preHandler: readPre('customer.support.read') }, async (_request, reply) => {
-    const open = await app.prisma.supportTicket.findMany({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } }, orderBy: { updatedAt: 'asc' }, take: 100 });
-    reply.send({ data: open });
-  });
-
-  app.get('/api/internal/support/macros', { preHandler: readPre('customer.support.read') }, async (_request, reply) => {
-    const vendor = vendorUnavailable('zendesk');
-    if (vendor) return reply.send({ data: [], vendor });
-    const data = await vendorJson<unknown>('zendesk', '/macros.json');
-    reply.send({ data, vendor: null });
-  });
-}
-
 function registerSuccess(app: FastifyInstance) {
   app.get('/api/internal/success', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
     const latest = await delegate(app, 'tenantHealthScore').findMany({ orderBy: { computedAt: 'desc' }, take: 100 });
@@ -729,259 +586,6 @@ function registerSuccess(app: FastifyInstance) {
   });
 }
 
-function registerJit(app: FastifyInstance) {
-  app.post('/api/internal/jit/requests', { preHandler: writePre('trust.jit.request') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const permission = assertPermissionValue(body.permission);
-    const reason = stringValue(body.reason);
-    const durationMinutes = Math.min(240, Math.max(1, numberValue(body.durationMinutes, 60)));
-    if (!permission || !reason) return reply.status(400).send({ error: 'permission and reason are required' });
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    const rootRequest = permission === 'trust.iam.root' || body.rootRequest === true;
-    const expectedHardwareAssertion = process.env.DEV_HARDWARE_KEY_ASSERTION ?? 'dev-hardware-key';
-    const hardwareKeyVerified = !rootRequest || stringValue(body.hardwareKeyAssertion) === expectedHardwareAssertion;
-    if (rootRequest && !hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
-    const jit = await createAndAudit(
-      request,
-      delegate(app, 'jitAccessRequest'),
-      {
-        requesterPlatformUserId: actorId(request),
-        requesterStaffId: context.staff.id,
-        permission,
-        reason,
-        durationMinutes,
-        rootRequest,
-        hardwareKeyVerified,
-        status: 'PENDING'
-      },
-      'jit.request.create',
-      'jit_request',
-      reason
-    );
-    reply.status(201).send(jit);
-  });
-
-  app.get('/api/internal/jit/requests/pending', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } }));
-  });
-
-  app.post('/api/internal/jit/requests/:id/approve', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const jitModel = delegate(app, 'jitAccessRequest');
-    const approvalModel = delegate(app, 'jitAccessApproval');
-    const before = await jitModel.findUnique({ where: { id } }) as { requesterPlatformUserId?: string; rootRequest?: boolean; durationMinutes?: number; hardwareKeyVerified?: boolean } | null;
-    if (!before) return reply.status(404).send({ error: 'JIT request not found' });
-    if (before.requesterPlatformUserId === actorId(request)) return reply.status(403).send({ error: 'Self approval is not allowed' });
-    if (before.rootRequest && !before.hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
-    await approvalModel.upsert({
-      where: { requestId_approverPlatformUserId: { requestId: id, approverPlatformUserId: actorId(request) } },
-      create: { requestId: id, approverPlatformUserId: actorId(request), decision: 'APPROVED', notes: stringValue(body.notes) || null },
-      update: { decision: 'APPROVED', notes: stringValue(body.notes) || null }
-    });
-    const approvals = await approvalModel.count({ where: { requestId: id, decision: 'APPROVED' } });
-    const required = before.rootRequest ? 2 : 1;
-    const after = approvals >= required
-      ? await jitModel.update({ where: { id }, data: { status: 'APPROVED', expiresAt: new Date(Date.now() + (before.durationMinutes ?? 60) * 60 * 1000) } })
-      : await jitModel.findUnique({ where: { id } });
-    await writeInternalAudit(request, 'jit.request.approve', 'jit_request', id, before, after, stringValue(body.notes, 'JIT approval'));
-    reply.send({ approvals, required, request: after });
-  });
-
-  app.post('/api/internal/jit/requests/:id/deny', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { status: 'DENIED', deniedReason: stringValue(body.reason, 'Denied') }, 'jit.request.deny', 'jit_request', stringValue(body.reason, 'Denied'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/jit/sessions/active', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { expiresAt: 'asc' } }));
-  });
-
-  app.get('/api/internal/jit/sessions/my', { preHandler: readPre('trust.jit.request') }, async (request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), {
-      where: { requesterPlatformUserId: actorId(request), status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { expiresAt: 'asc' }
-    }));
-  });
-
-  app.post('/api/internal/jit/sessions/:id/revoke', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { revokedAt: new Date(), status: 'REVOKED' }, 'jit.session.revoke', 'jit_request', stringValue(bodyObject(request).reason, 'JIT revoked'));
-    reply.send(after);
-  });
-}
-
-function registerCompliance(app: FastifyInstance) {
-  app.post('/api/internal/compliance/dsar', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    const requesterEmail = stringValue(body.requesterEmail);
-    if (!tenantId || !requesterEmail) return reply.status(400).send({ error: 'tenantId and requesterEmail are required' });
-    const dsar = await createAndAudit(
-      request,
-      delegate(app, 'dSARRequest'),
-      { tenantId, requesterEmail, requestType: stringValue(body.requestType, 'ACCESS'), status: 'RECEIVED', notes: stringValue(body.notes), dueAt: inDays(30) },
-      'compliance.dsar.create',
-      'dsar_request',
-      stringValue(body.reason, 'DSAR intake')
-    );
-    reply.status(201).send(dsar);
-  });
-
-  app.get('/api/internal/compliance/dsar', { preHandler: readPre('trust.compliance.dsar.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'dSARRequest'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.patch('/api/internal/compliance/dsar/:id', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const next = stringValue(body.status);
-    if (!DSAR_STATES.includes(next)) return reply.status(400).send({ error: 'Invalid DSAR state' });
-    const model = delegate(app, 'dSARRequest');
-    const before = await model.findUnique({ where: { id } }) as { status?: string; tenantId?: string; requestType?: string } | null;
-    if (!before) return reply.status(404).send({ error: 'DSAR request not found' });
-    if (before.requestType === 'ERASURE' && ['DELIVERED', 'CLOSED'].includes(next)) {
-      const allowed = await requireNoActiveLegalHold(app, before.tenantId, reply);
-      if (!allowed) return;
-    }
-    const after = await model.update({ where: { id }, data: { status: next, notes: stringValue(body.notes) || undefined, closedAt: next === 'CLOSED' ? new Date() : undefined } });
-    await delegate(app, 'dSARTransition').create({ data: { dsarId: id, fromStatus: before.status ?? null, toStatus: next, actorId: actorId(request), notes: stringValue(body.notes) || null } });
-    await writeInternalAudit(request, 'compliance.dsar.transition', 'dsar_request', id, before, after, stringValue(body.notes, 'DSAR transition'));
-    reply.send(after);
-  });
-
-  app.post('/api/internal/compliance/dsar/:id/gather', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const dsar = await delegate(app, 'dSARRequest').findUnique({ where: { id } }) as { tenantId?: string } | null;
-    if (!dsar) return reply.status(404).send({ error: 'DSAR request not found' });
-    const exportRow = await createAndAudit(request, delegate(app, 'complianceExport'), { tenantId: dsar.tenantId, dsarId: id, exportType: 'DSAR_BUNDLE', status: 'QUEUED', requestedBy: actorId(request) }, 'compliance.dsar.gather', 'dsar_request', 'DSAR gather job queued');
-    reply.status(202).send(exportRow);
-  });
-
-  app.post('/api/internal/compliance/dsar/:id/deliver', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const dsar = await delegate(app, 'dSARRequest').findUnique({ where: { id } }) as { tenantId?: string; requestType?: string } | null;
-    if (!dsar) return reply.status(404).send({ error: 'DSAR request not found' });
-    if (dsar.requestType === 'ERASURE') {
-      const allowed = await requireNoActiveLegalHold(app, dsar.tenantId, reply);
-      if (!allowed) return;
-    }
-    const signedUrl = `https://signed.example.fauward.internal/dsar/${id}?expires=${encodeURIComponent(inDays(30).toISOString())}`;
-    const after = await updateAndAudit(request, delegate(app, 'dSARRequest'), id, { exportUrl: signedUrl, expiresAt: inDays(30), status: 'DELIVERED' }, 'compliance.dsar.deliver', 'dsar_request', stringValue(bodyObject(request).reason, 'DSAR delivered'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/compliance/legal-hold', { preHandler: readPre('trust.compliance.legal-hold.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'legalHold'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/compliance/legal-hold', { preHandler: writePre('trust.compliance.legal-hold.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const hold = await createAndAudit(request, delegate(app, 'legalHold'), { tenantId: stringValue(body.tenantId) || null, scope: body.scope ?? {}, reason: stringValue(body.reason, 'Legal hold'), createdBy: actorId(request) }, 'compliance.legal_hold.create', 'legal_hold', stringValue(body.reason, 'Legal hold'));
-    reply.status(201).send(hold);
-  });
-}
-
-function registerSafety(app: FastifyInstance) {
-  app.get('/api/internal/safety/fraud', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'fraudSignal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/safety/fraud', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const signal = await createAndAudit(request, delegate(app, 'fraudSignal'), { tenantId, source: stringValue(body.source, 'manual'), signalType: stringValue(body.signalType, 'manual_flag'), severity: stringValue(body.severity, 'MEDIUM'), payload: body.payload ?? body }, 'safety.fraud.flag', 'fraud_signal', stringValue(body.reason, 'Fraud flag'));
-    reply.status(201).send(signal);
-  });
-
-  app.post('/api/internal/safety/fraud/:id/decision', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const decision = stringValue(body.decision);
-    const model = delegate(app, 'fraudSignal');
-    const signal = await model.findUnique({ where: { id } }) as { tenantId?: string } | null;
-    if (!signal) return reply.status(404).send({ error: 'Fraud signal not found' });
-    const updated = await updateAndAudit(request, model, id, { status: 'CLOSED', reviewedBy: actorId(request), decision }, 'safety.fraud.decision', 'fraud_signal', stringValue(body.reason, decision));
-    if (decision === 'suspend' && signal.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: signal.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({ where: { id: signal.tenantId }, data: { status: 'SUSPENDED' } });
-      await delegate(app, 'suspensionRecord').create({ data: { tenantId: signal.tenantId, sourceSignalId: id, suspendedBy: actorId(request), reason: stringValue(body.reason, 'Trust and safety suspension') } });
-      await app.prisma.notificationLog.create({
-        data: {
-          tenantId: signal.tenantId,
-          channel: 'EMAIL',
-          event: 'trust_safety_tenant_suspended',
-          status: 'QUEUED'
-        }
-      });
-      await writeInternalAudit(request, 'safety.tenant.suspend', 'tenant', signal.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Trust and safety suspension'));
-    }
-    reply.send(updated);
-  });
-
-  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'suspensionRecord'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/safety/appeals', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'tenantAppeal'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/safety/appeals/:id', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const appeal = await delegate(app, 'tenantAppeal').findUnique({ where: { id } });
-    if (!appeal) return reply.status(404).send({ error: 'Appeal not found' });
-    reply.send(appeal);
-  });
-
-  app.patch('/api/internal/safety/appeals/:id', { preHandler: writePre('trust.safety.suspend') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const status = stringValue(body.status).toUpperCase();
-    if (!['APPROVED', 'REJECTED', 'PENDING', 'OPEN'].includes(status)) {
-      return reply.status(400).send({ error: 'Invalid appeal status' });
-    }
-    const model = delegate(app, 'tenantAppeal');
-    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string } | null;
-    if (!before) return reply.status(404).send({ error: 'Appeal not found' });
-
-    const after = await model.update({
-      where: { id },
-      data: {
-        status,
-        resolvedBy: ['APPROVED', 'REJECTED'].includes(status) ? actorId(request) : undefined,
-        resolution: status,
-        reviewNote: stringValue(body.reviewNote, stringValue(body.reason)) || undefined
-      }
-    });
-    if (status === 'APPROVED' && before.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: before.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({
-        where: { id: before.tenantId },
-        data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null }
-      });
-      await delegate(app, 'suspensionRecord').update({
-        where: { id: stringValue(body.suspensionId, '') },
-        data: { status: 'LIFTED', liftedBy: actorId(request), liftedAt: new Date() }
-      }).catch(() => null);
-      await writeInternalAudit(request, 'safety.appeal.approve_unsuspend', 'tenant', before.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Appeal approved'));
-    }
-    await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/safety/aup', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send({ data: [] });
-  });
-
-  app.get('/api/internal/safety/rules', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send({ data: [], phase: 4, enabled: false });
-  });
-}
-
 function registerFlags(app: FastifyInstance) {
   app.get('/api/internal/flags', { preHandler: readPre('platform.flags.read') }, async (_request, reply) => {
     const vendor = vendorUnavailable('launchdarkly');
@@ -992,29 +596,43 @@ function registerFlags(app: FastifyInstance) {
 
   app.get('/api/internal/flags/:key', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
     const { key } = request.params as { key: string };
-    const audits = await delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ key, audits, vendor: vendorUnavailable('launchdarkly') });
+    const [overrides, audits] = await Promise.all([
+      app.prisma.tenantFeatureOverride.findMany({ where: { featureKey: key }, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 })
+    ]);
+    reply.send({ key, overrides, audits, vendor: vendorUnavailable('launchdarkly') });
   });
 
-  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (request, reply) => {
-    const vendor = vendorUnavailable('launchdarkly');
+  // S9 / WP-1.4: a flag override is a native per-tenant TenantFeatureOverride. LaunchDarkly is never called here
+  // (the old handler's `turnFlagOn` switched the flag on for every tenant); LD mirroring arrives with WP-4.1.
+  app.post('/api/internal/flags/:key/overrides', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
     const { key } = request.params as { key: string };
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    if (vendor) return reply.status(503).send({ error: 'LAUNCHDARKLY_NOT_CONFIGURED', vendor });
-    const vendorResult = await vendorJson<unknown>('launchdarkly', `/flags/default/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        environmentKey: 'production',
-        instructions: [{ kind: 'turnFlagOn' }],
-        comment: stringValue(body.reason, `Tenant override for ${tenantId}`),
-        tenantId,
-        value: body.value ?? false
-      })
-    });
-    const audit = await createAndAudit(request, delegate(app, 'featureFlagOverrideAudit'), { flagKey: key, tenantId, value: body.value ?? false, actorId: actorId(request), vendorRef: 'launchdarkly' }, 'flags.override.set', 'feature_flag', stringValue(body.reason, 'Feature flag override'));
-    reply.status(201).send({ audit, vendor: vendorResult, vendorUnavailable: vendor });
+    if (!tenantId) return reply.status(400).send({ error: 'TENANT_REQUIRED', message: 'tenantId is required' });
+    if (typeof body.enabled !== 'boolean') return reply.status(400).send({ error: 'ENABLED_REQUIRED', message: 'enabled must be true or false' });
+    const expiresAt = body.expiresAt ? new Date(stringValue(body.expiresAt)) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) return reply.status(400).send({ error: 'INVALID_EXPIRY', message: 'expiresAt must be an ISO date' });
+    try {
+      const override = await createFeatureOverride(app, { tenantId, featureKey: key, enabled: body.enabled, reason: stringValue(body.reason).trim(), expiresAt, actor: consoleOverrideActor(request) });
+      return reply.status(201).send({ override, mirror: { vendor: 'launchdarkly', status: 'NOT_MIRRORED', fixedBy: 'WP-4.1' } });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
+  });
+
+  app.delete('/api/internal/flags/:key/overrides/:id', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { key, id } = request.params as { key: string; id: string };
+    const existing = await app.prisma.tenantFeatureOverride.findFirst({ where: { id, featureKey: key }, select: { tenantId: true } });
+    if (!existing) return reply.status(404).send({ error: 'OVERRIDE_NOT_FOUND', message: 'Feature override not found' });
+    try {
+      const override = await revokeFeatureOverride(app, { tenantId: existing.tenantId, overrideId: id, featureKey: key, reason: stringValue(bodyObject(request).reason).trim(), actor: consoleOverrideActor(request) });
+      return reply.send({ override });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
@@ -1272,63 +890,6 @@ function registerTax(app: FastifyInstance) {
     const after = await updateAndAudit(request, delegate(app, 'taxExemption'), id, { status: 'APPROVED', approvedBy: actorId(request), approvedAt: new Date() }, 'tax.exemption.approve', 'tax_exemption', stringValue(bodyObject(request).reason, 'Tax exemption approved'));
     if (exemption.tenantId) await app.prisma.tenant.update({ where: { id: exemption.tenantId }, data: { taxExempt: true } });
     reply.send(after);
-  });
-}
-
-function registerSubscriptions(app: FastifyInstance) {
-  app.get('/api/internal/subscriptions', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    const data = await app.prisma.subscription.findMany({ include: { tenant: true }, orderBy: { updatedAt: 'desc' }, take: 100 });
-    reply.send({ data });
-  });
-
-  app.get('/api/internal/subscriptions/contracts', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'customContract'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/subscriptions/contracts', { preHandler: writePre('revenue.subscriptions.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const contract = await createAndAudit(request, delegate(app, 'customContract'), { tenantId, msaUrl: stringValue(body.msaUrl) || null, termStart: dateValue(body.termStart), termEnd: dateValue(body.termEnd, inDays(365)), terms: body.terms ?? {}, status: 'DRAFT' }, 'subscriptions.contract.create', 'custom_contract', stringValue(body.reason, 'Custom contract'));
-    reply.status(201).send(contract);
-  });
-
-  app.get('/api/internal/subscriptions/overrides', { preHandler: readPre('revenue.subscriptions.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'pricingOverride'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/subscriptions/overrides', { preHandler: writePre('revenue.subscriptions.override') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-
-    const discountPercent = numberValue(body.discountPercent);
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    if (discountPercent > 25 && !context.roles.includes('CFO') && !context.roles.includes('ROOT')) {
-      return reply.status(403).send({ error: 'CFO approval required', requiredRole: 'CFO' });
-    }
-    if (discountPercent >= 10 && !context.roles.some((role) => ['SALES_MANAGER', 'SALES_DIRECTOR', 'CFO', 'ROOT'].includes(role))) {
-      return reply.status(403).send({ error: 'Sales manager approval required', requiredRole: 'SALES_MANAGER' });
-    }
-
-    const override = await createAndAudit(
-      request,
-      delegate(app, 'pricingOverride'),
-      {
-        tenantId,
-        contractId: stringValue(body.contractId) || null,
-        ruleType: stringValue(body.ruleType, 'discount_percent'),
-        ruleValue: body.ruleValue ?? { discountPercent },
-        discountPercent,
-        validFrom: dateValue(body.validFrom),
-        validTo: body.validTo ? dateValue(body.validTo) : null,
-        status: 'APPROVED'
-      },
-      'subscriptions.override.create',
-      'pricing_override',
-      stringValue(body.reason, 'Pricing override')
-    );
-    reply.status(201).send(override);
   });
 }
 

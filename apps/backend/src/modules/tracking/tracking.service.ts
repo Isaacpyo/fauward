@@ -17,6 +17,7 @@ import { triggerTrackingNotifications } from './tracking-notification.service.js
 import { triggerTrackingWebhooks } from './tracking-webhook.service.js';
 import { emitTrackingStatusUpdate } from './tracking.websocket.js';
 import { legacyToTrackingStatus } from './tracking-status-mapper.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
 
 export async function recordTrackingEvent(
   app: FastifyInstance,
@@ -44,23 +45,33 @@ export async function recordTrackingEvent(
     const status = event.status as TrackingStatus;
     const customerStatus = CUSTOMER_STATUS_MAP[status] ?? status;
 
-    void triggerTrackingNotifications(app, {
-      tenantId: event.tenantId,
-      shipmentId: event.shipmentId,
-      trackingNumber: event.trackingNumber,
-      status,
-      plan
-    });
+    fireAndForget(
+      triggerTrackingNotifications(app, {
+        tenantId: event.tenantId,
+        shipmentId: event.shipmentId,
+        trackingNumber: event.trackingNumber,
+        status,
+        plan
+      }),
+      app.log,
+      'triggerTrackingNotifications failed',
+      { shipmentId: event.shipmentId }
+    );
 
-    void triggerTrackingWebhooks(app, {
-      tenantId: event.tenantId,
-      shipmentId: event.shipmentId,
-      trackingNumber: event.trackingNumber,
-      status,
-      eventId: event.id,
-      occurredAt: event.occurredAt,
-      customerStatus
-    });
+    fireAndForget(
+      triggerTrackingWebhooks(app, {
+        tenantId: event.tenantId,
+        shipmentId: event.shipmentId,
+        trackingNumber: event.trackingNumber,
+        status,
+        eventId: event.id,
+        occurredAt: event.occurredAt,
+        customerStatus
+      }),
+      app.log,
+      'triggerTrackingWebhooks failed',
+      { shipmentId: event.shipmentId }
+    );
   }
 
   return eventId;
@@ -167,18 +178,20 @@ export async function getTenantTrackingView(
   };
 }
 
+/** Console view of one shipment's tracking; every query names the tenant (console runs in system context). */
 export async function getPlatformTrackingView(
   prisma: PrismaClient,
+  tenantId: string,
   shipmentId: string
 ) {
   const [snapshot, events, shipment] = await Promise.all([
-    prisma.trackingSnapshot.findUnique({ where: { shipmentId } }),
+    prisma.trackingSnapshot.findFirst({ where: { shipmentId, tenantId } }),
     prisma.trackingEvent.findMany({
-      where: { shipmentId },
+      where: { shipmentId, tenantId },
       orderBy: { occurredAt: 'asc' }
     }),
-    prisma.shipment.findUnique({
-      where: { id: shipmentId },
+    prisma.shipment.findFirst({
+      where: { id: shipmentId, tenantId },
       include: {
         tenant: { select: { id: true, name: true, slug: true, status: true, plan: true } }
       }

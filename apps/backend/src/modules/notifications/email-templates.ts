@@ -12,6 +12,8 @@ export const EMAIL_TEMPLATES = {
   invoice_sent: 'invoice_sent',
   invoice_overdue: 'invoice_overdue',
   payment_received: 'payment_received',
+  payment_failed: 'payment_failed',
+  quote_sent: 'quote_sent',
   return_approved: 'return_approved',
   return_received: 'return_received',
   return_refunded: 'return_refunded',
@@ -20,6 +22,8 @@ export const EMAIL_TEMPLATES = {
   ticket_reply_from_customer: 'ticket_reply_from_customer',
   ticket_resolved: 'ticket_resolved',
   password_reset: 'password_reset',
+  // Fauward Go sign-in link (C80): the link carries the sign-in token, so it is never returned by the API.
+  field_email_link: 'field_email_link',
   staff_invite: 'staff_invite',
   trial_expiring: 'trial_expiring',
   usage_warning_80: 'usage_warning_80',
@@ -27,5 +31,37 @@ export const EMAIL_TEMPLATES = {
   ops_new_shipment: 'ops_new_shipment',
   trial_expiry: 'trial_expiry',
   return_fee: 'return_fee',
-  permission_request_approval: 'permission_request_approval'
+  permission_request_approval: 'permission_request_approval',
+  // Fauward → tenant (PlatformNotifier, D6). SendGrid template ids come from SENDGRID_TEMPLATE_<KEY>; without one the
+  // code-defined content in email-content.ts is sent (SendGrid or SMTP).
+  tenant_suspended: 'tenant_suspended',
+  tenant_unsuspended: 'tenant_unsuspended',
+  tenant_closed: 'tenant_closed',
+  appeal_decided: 'appeal_decided',
+  support_reply_from_fauward: 'support_reply_from_fauward',
+  dsar_ready: 'dsar_ready',
+  dsar_completed_erasure: 'dsar_completed_erasure',
+  region_change_decided: 'region_change_decided',
+  plan_changed: 'plan_changed',
+  plan_change_request_decided: 'plan_change_request_decided',
+  staff_access_started: 'staff_access_started',
+  api_key_revoked_by_fauward: 'api_key_revoked_by_fauward',
+  ai_limit_changed: 'ai_limit_changed',
+  ai_limit_reached: 'ai_limit_reached',
+  exception_escalation_update: 'exception_escalation_update',
+  gateway_verification_failed: 'gateway_verification_failed',
+  platform_announcement: 'platform_announcement',
+  feedback_status_changed: 'feedback_status_changed',
+  trial_extension_decided: 'trial_extension_decided',
+  incident_update: 'incident_update',
+  onboarding_nudge: 'onboarding_nudge',
+  user_locked_by_fauward: 'user_locked_by_fauward',
+  user_unlocked_by_fauward: 'user_unlocked_by_fauward',
+  billing_payment_failed: 'billing_payment_failed',
+  billing_final_warning: 'billing_final_warning',
+  billing_account_cancelled: 'billing_account_cancelled',
+  // Fauward → Fauward staff (notifyStaff email).
+  staff_notification: 'staff_notification'
 } as const;
+
+export type EmailTemplateKey = keyof typeof EMAIL_TEMPLATES;

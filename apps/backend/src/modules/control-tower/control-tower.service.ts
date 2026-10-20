@@ -4,24 +4,25 @@ import { LLMGatewayService } from '../../shared/services/llm-gateway.service.js'
 import { TenantHealthSchema } from './control-tower.schema.js';
 
 export const controlTowerService = {
-  async metrics(prisma: PrismaClient, tenantId?: string) {
-    const where = tenantId ? { tenantId } : {};
-    const [shipmentVolumeLastWeek, failedDeliveryCount, webhookFailures, activeExceptions, openSupportTickets] = await Promise.all([
-      prisma.shipment.count({ where }),
-      prisma.shipment.count({ where: { ...where, status: 'FAILED_DELIVERY' } as any }),
-      prisma.webhookDelivery.count({ where: { ...where, deadLetteredAt: { not: null } } as any }),
-      (prisma as any).exceptionCase.count({ where: { ...where, status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
-      prisma.supportTicket.count({ where: { ...where, status: { in: ['OPEN', 'IN_PROGRESS'] } } as any })
+  /** Platform (or one tenant's) operations metrics over the last 7 days; open exceptions and tickets are current counts. */
+  async metrics(prisma: PrismaClient, tenantId?: string, now = new Date()) {
+    const scope = tenantId ? { tenantId } : {};
+    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const [shipmentVolumeLastWeek, failedDeliveryCount, webhookFailures, activeExceptions, escalatedExceptions, openSupportTickets] = await Promise.all([
+      prisma.shipment.count({ where: { ...scope, createdAt: { gte: since } } }),
+      prisma.shipment.count({ where: { ...scope, createdAt: { gte: since }, status: 'FAILED_DELIVERY' } }),
+      prisma.webhookDelivery.count({ where: { ...scope, deadLetteredAt: { gte: since } } }),
+      prisma.exceptionCase.count({ where: { ...scope, status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
+      prisma.exceptionCase.count({ where: { ...scope, escalatedAt: { not: null }, platformResolvedAt: null } }),
+      prisma.supportTicket.count({ where: { ...scope, status: { in: ['OPEN', 'IN_PROGRESS'] } } })
     ]);
     return {
       shipmentVolumeLastWeek,
       failedDeliveryRate: shipmentVolumeLastWeek > 0 ? failedDeliveryCount / shipmentVolumeLastWeek : 0,
       webhookFailures,
       activeExceptions,
-      openSupportTickets,
-      slaBreachesLast24h: activeExceptions,
-      paymentFailures: 0,
-      queueDepth: 0
+      escalatedExceptions,
+      openSupportTickets
     };
   },
 

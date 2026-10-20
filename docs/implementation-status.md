@@ -100,6 +100,14 @@ Important field additions:
 | `/returns` | Complete |
 | `/developer` | Complete |
 
+## Open items (tenant portal)
+
+| Item | Status | Note |
+|------|:------:|------|
+| Tenant-user MFA (Settings → Profile → "Set up authenticator app") | Not built | Button disabled with a "Coming soon" tooltip since console WP-2.0 (2026-10-18). Staff MFA in the console is done (console WP-0.1); tenant users have no TOTP enrolment flow yet. |
+| Public booking page (`/book`) | Removed | Console WP-2.0: the form had no backend. Customers book through their tenant until a customer booking API exists. |
+| Scheduled reports | Removed | Console WP-2.0: "Save schedule" had no backend. |
+
 ---
 
 ## Completed Agents PWA

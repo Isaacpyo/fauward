@@ -1,3 +1,4 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma, PaymentStatus, ShipmentStatus } from '@prisma/client';
 
@@ -10,6 +11,7 @@ import { emitTrackingStatusUpdate } from '../tracking/tracking.websocket.js';
 import { notificationQueue, webhookQueue } from '../../queues/queues.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
 import { enqueueAgentEvent } from '../agent/agent.queue.js';
+import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
 import { createTrackingEvent, buildStatusTitle, statusToEventType } from '../tracking/tracking-event.service.js';
 import { legacyToTrackingStatus } from '../tracking/tracking-status-mapper.js';
 import { TrackingSource, TrackingActorType, TrackingVisibility } from '@fauward/tracking-core';
@@ -447,6 +449,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId,
             aggregateType: 'shipment',
             aggregateId: created.id,
             eventType: 'shipment.created',
@@ -509,11 +512,11 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         if (paymentGatewayRef) {
           const existing = await tx.payment.findFirst({
-            where: { tenantId, gatewayRef: paymentGatewayRef, shipmentId: null }
+            where: { kind: 'TENANT_CUSTOMER', tenantId, gatewayRef: paymentGatewayRef, shipmentId: null }
           });
           if (existing) {
             const linked = await tx.payment.update({
-              where: { id: existing.id },
+              where: { kind: 'TENANT_CUSTOMER', id: existing.id },
               data: { shipmentId: created.id }
             });
             paymentAction = 'PAYMENT_LINKED';
@@ -524,11 +527,11 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         if (!paymentRowId && idempotency.type === 'new') {
           const idempotencyKeyForPayment = `shipment-create:${tenantId}:${idempotency.key}`;
           const existingByKey = await tx.payment.findFirst({
-            where: { tenantId, idempotencyKey: idempotencyKeyForPayment, shipmentId: null }
+            where: { kind: 'TENANT_CUSTOMER', tenantId, idempotencyKey: idempotencyKeyForPayment, shipmentId: null }
           });
           if (existingByKey) {
             const linked = await tx.payment.update({
-              where: { id: existingByKey.id },
+              where: { kind: 'TENANT_CUSTOMER', id: existingByKey.id },
               data: { shipmentId: created.id }
             });
             paymentAction = 'PAYMENT_LINKED';
@@ -542,6 +545,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           try {
             const createdPayment = await tx.payment.create({
               data: {
+                kind: 'TENANT_CUSTOMER',
                 tenantId,
                 shipmentId: created.id,
                 customerId: payload.customerId,
@@ -557,7 +561,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           } catch (err) {
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
               const reFound = await tx.payment.findFirst({
-                where: { tenantId, shipmentId: created.id }
+                where: { kind: 'TENANT_CUSTOMER', tenantId, shipmentId: created.id }
               });
               if (reFound) {
                 paymentAction = 'PAYMENT_LINKED';
@@ -631,6 +635,8 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       if (idempotency.type === 'new') {
         await storeIdempotencyResult(request, idempotency.key, 201, response);
       }
+      // L7 (WP-2.17): a real shipment completes the onboarding step (stamped once).
+      await markOnboardingStep({ prisma: app.prisma, redis: app.redis, log: request.log }, tenantId, 'FIRST_SHIPMENT');
 
       reply.status(201).send(response);
     }
@@ -672,7 +678,41 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       });
 
       if (!shipment) return reply.status(404).send({ error: 'Shipment not found' });
-      reply.send(shipment);
+
+      // Surface the latest COMPLETED shipping_label from the Python-owned
+      // `documents` table (Path #1 flow) alongside the Prisma `ShipmentDocument`
+      // rows. Both feed the Documents tab via the normalizer's fileUrl/type
+      // shape — no enum migration needed.
+      const labelRows = await app.prisma.$queryRaw<
+        Array<{ id: string; url: string | null; updatedAt: Date }>
+      >(Prisma.sql`
+        select id, url, updated_at as "updatedAt"
+        from documents
+        where tenant_id = ${tenantId}
+          and shipment_id = ${shipment.id}
+          and type = 'shipping_label'
+          and status = 'COMPLETED'
+        order by updated_at desc
+        limit 1
+      `);
+      const labelRow = labelRows[0];
+
+      const labelDocument = labelRow?.url
+        ? {
+            id: labelRow.id,
+            type: 'SHIPPING_LABEL',
+            fileUrl: `/pdf/download/${labelRow.id}`,
+            file_name: `shipping-label-${shipment.trackingNumber}.pdf`,
+            file_type: 'pdf',
+            generatedAt: labelRow.updatedAt,
+            uploaded_by: 'System'
+          }
+        : null;
+
+      reply.send({
+        ...shipment,
+        documents: labelDocument ? [labelDocument, ...shipment.documents] : shipment.documents
+      });
     }
   );
 
@@ -823,6 +863,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId,
             aggregateType: 'shipment',
             aggregateId: shipment.id,
             eventType: 'shipment.status.updated',
@@ -842,18 +883,23 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
       });
 
       if (status === 'FAILED_DELIVERY') {
-        void enqueueAgentEvent(app, {
-          eventId: `failed-delivery-${shipment.id}-${updated.event.id}`,
-          type: 'failed_delivery',
-          tenantId,
-          shipmentId: shipment.id,
-          payload: {
-            newStatus: status,
-            previousStatus: shipment.status,
-            source: 'TENANT_PORTAL',
-            ...(failedReason ? { reason: failedReason } : {})
-          }
-        });
+        fireAndForget(
+          enqueueAgentEvent(app, {
+            eventId: `failed-delivery-${shipment.id}-${updated.event.id}`,
+            type: 'failed_delivery',
+            tenantId,
+            shipmentId: shipment.id,
+            payload: {
+              newStatus: status,
+              previousStatus: shipment.status,
+              source: 'TENANT_PORTAL',
+              ...(failedReason ? { reason: failedReason } : {})
+            }
+          }),
+          request.log,
+          'enqueueAgentEvent failed',
+          { shipmentId: shipment.id }
+        );
       }
 
       emitTrackingStatusUpdate({

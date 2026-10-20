@@ -15,6 +15,7 @@ import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
 import { normalizePodResponse, normalizeShipmentDetail } from "@/lib/shipment-normalizers";
+import { usePrintShippingLabel } from "@/hooks/usePrintShippingLabel";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import type { ShipmentState } from "@/types/domain";
@@ -82,15 +83,14 @@ export function ShipmentDetailPage() {
     }
   });
 
-  const handleExceptionAction = (action: "reattempt" | "return" | "contact" | "escalate") => {
+  const handleExceptionAction = (action: "reattempt" | "return" | "escalate") => {
     if (action === "reattempt") {
       updateStatusMutation.mutate({ status: "OUT_FOR_DELIVERY" });
     } else if (action === "return") {
       updateStatusMutation.mutate({ status: "RETURNED" });
-    } else if (action === "escalate") {
+    } else {
       updateStatusMutation.mutate({ status: "EXCEPTION" });
     }
-    // "contact" has no status change — future: open contact drawer
   };
 
   const quickNextStatuses = useMemo(() => {
@@ -112,8 +112,35 @@ export function ShipmentDetailPage() {
 
   const pageTitle = shipment ? `Shipment ${shipment.tracking_number}` : "Shipment";
 
+  const { printLabel, isPendingFor } = usePrintShippingLabel();
+  const isLabelPending = shipment ? isPendingFor(shipment.id) : false;
+
+  const labelButton = shipment ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => printLabel(shipment.id)}
+      loading={isLabelPending}
+      aria-label="Print shipping label"
+      title="Print shipping label"
+      leftIcon={
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <polyline points="6 9 6 2 18 2 18 9" />
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+          <rect x="6" y="14" width="12" height="8" />
+        </svg>
+      }
+    >
+      Print label
+    </Button>
+  ) : null;
+
   return (
-    <PageShell title={pageTitle} description="Operational detail, timeline, documents, and POD.">
+    <PageShell
+      title={pageTitle}
+      description="Operational detail, timeline, documents, and POD."
+      actions={labelButton}
+    >
       {shipmentQuery.isLoading ? (
         <div className="space-y-3">
           <Skeleton className="h-20 w-full" />
@@ -216,6 +243,7 @@ export function ShipmentDetailPage() {
           <ExceptionBanner
             status={shipment.status}
             reason={shipment.exception_reason}
+            contactHref={shipment.recipient_phone ? `tel:${shipment.recipient_phone}` : shipment.recipient_email ? `mailto:${shipment.recipient_email}` : undefined}
             onAction={handleExceptionAction}
           />
 
@@ -245,7 +273,7 @@ export function ShipmentDetailPage() {
             {visitedTabs.has("documents") ? (
               <TabsContent value="documents">
                 <div className="space-y-4">
-                  <DocumentsPanel documents={shipment.documents} onDocumentsChange={(documents) => void documents} />
+                  <DocumentsPanel documents={shipment.documents} />
                   {shipment.status === "DELIVERED" ? (
                     <PODViewer
                       shipmentId={shipment.id}
@@ -279,7 +307,7 @@ export function ShipmentDetailPage() {
 
             {visitedTabs.has("notes") ? (
               <TabsContent value="notes">
-                <NotesPanel notes={shipment.notes} canWrite onNotesChange={(notes) => void notes} />
+                <NotesPanel notes={shipment.notes} />
               </TabsContent>
             ) : null}
           </Tabs>

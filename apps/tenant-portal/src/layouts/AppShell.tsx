@@ -4,6 +4,8 @@ import { Outlet, useLocation } from "react-router-dom";
 import { FailedPaymentBanner } from "@/components/billing/FailedPaymentBanner";
 import { LimitReachedBanner } from "@/components/billing/LimitReachedBanner";
 import { SaveOfferBanner } from "@/components/billing/SaveOfferBanner";
+import { NpsPrompt } from "@/components/feedback/NpsPrompt";
+import { StaffAccessActiveBanner } from "@/components/staff-access/StaffAccess";
 import { SuspendedOverlay } from "@/components/billing/SuspendedOverlay";
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { UsageWarningBanner } from "@/components/billing/UsageWarningBanner";
@@ -25,7 +27,7 @@ export function AppShell() {
   const tenant = useTenantStore((state) => state.tenant);
   const { summary } = useBilling();
 
-  const suspended = summary.paymentStatus === "suspended" || tenant?.status === "SUSPENDED";
+  const suspended = summary?.paymentStatus === "suspended" || tenant?.status === "SUSPENDED";
   const onBillingSettings = location.pathname.startsWith("/settings") && location.search.includes("tab=billing");
   const showSuspendedOverlay = suspended && !onBillingSettings;
 
@@ -51,13 +53,19 @@ export function AppShell() {
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <TrialBanner days={summary.trialDaysRemaining ?? 0} />
-        <UsageWarningBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
-        <LimitReachedBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
-        <FailedPaymentBanner visible={summary.paymentStatus === "failed"} nextRetryAt={summary.nextRetryAt} />
-        <SaveOfferBanner offer={summary.saveOffer} />
+        {summary ? (
+          <>
+            <TrialBanner days={summary.trialDaysRemaining ?? 0} />
+            <UsageWarningBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
+            <LimitReachedBanner used={summary.usage.shipments.used} limit={summary.usage.shipments.limit} />
+            <FailedPaymentBanner visible={summary.paymentStatus === "failed"} nextRetryAt={summary.nextRetryAt} />
+            <SaveOfferBanner offer={summary.saveOffer} />
+          </>
+        ) : null}
         <ImpersonationBanner />
+        <StaffAccessActiveBanner />
         <AnnouncementBanner />
+        <NpsPrompt enabled={Boolean(summary) && !suspended} />
 
         <TopBar />
 
@@ -71,7 +79,7 @@ export function AppShell() {
       <MobileNav />
       <CommandPalette />
       <ToastStack />
-      <SuspendedOverlay active={showSuspendedOverlay} reason={tenant?.suspensionReason} />
+      <SuspendedOverlay active={showSuspendedOverlay} />
     </div>
   );
 }

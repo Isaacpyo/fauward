@@ -5,7 +5,10 @@ import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload,
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
 import { verifyFirebaseIdToken } from './firebase-token.js';
+import { enqueueEmail } from '../notifications/notifications.service.js';
+import { config } from '../../config/index.js';
 import { isReservedSlug } from '../tenants/reserved-slugs.js';
+import { assertNotLocked, recordSignIn } from '../../services/tenant-user-lifecycle.service.js';
 import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
 
 type RegisterPayload = {
@@ -240,18 +243,21 @@ export const authService = {
       await tx.outboxEvent.createMany({
         data: [
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.created',
             payload: { tenantId: tenant.id, slug: tenant.slug }
           },
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.verification_email.requested',
             payload: { tenantId: tenant.id, userId: user.id, email: user.email }
           },
           {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.subdomain.provision.requested',
@@ -305,11 +311,18 @@ export const authService = {
     if (!ok) {
       throw new Error('Invalid credentials');
     }
+    // Checked after the password so a lock reveals nothing to someone without it (WP-2.15).
+    assertNotLocked(user);
 
     const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) {
       throw new Error('Tenant not found');
     }
+    // A closed workspace cannot sign in (WP-1.2); checked after the password so it reveals nothing to strangers.
+    if (tenant.closedAt) {
+      throw new Error('TENANT_CLOSED');
+    }
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -372,11 +385,13 @@ export const authService = {
     if (!user) {
       throw new Error('No Fauward account is linked to this Google email');
     }
+    assertNotLocked(user);
 
     const tenant = await prisma.tenant.findUnique({ where: { id: resolvedTenantId } });
     if (!tenant) {
       throw new Error('Tenant not found');
     }
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -425,7 +440,7 @@ export const authService = {
     const [user, tenant] = await Promise.all([
       prisma.user.findUnique({
         where: { id: decoded.sub },
-        select: { id: true, email: true, role: true, tenantId: true, isActive: true }
+        select: { id: true, email: true, role: true, tenantId: true, isActive: true, lockedAt: true }
       }),
       prisma.tenant.findUnique({
         where: { id: decoded.tenantId },
@@ -436,6 +451,7 @@ export const authService = {
     if (!user || !tenant || !user.isActive || user.tenantId !== tenant.id) {
       throw new Error('Invalid refresh token');
     }
+    assertNotLocked(user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -467,12 +483,22 @@ export const authService = {
   },
   requestEmailLink: async (payload: EmailLinkRequestPayload, prisma: PrismaClient, tenantId?: string) => {
     const email = payload.email.toLowerCase().trim();
+    let resolvedTenantId = tenantId && tenantId !== 'system' ? tenantId : undefined;
+    if (!resolvedTenantId) {
+      // Fauward Go has no tenant before sign-in: as with forgot-password, only an email in exactly one workspace gets a link.
+      const matches = await prisma.user.findMany({
+        where: { email, isActive: true },
+        select: { tenantId: true },
+        distinct: ['tenantId']
+      });
+      if (matches.length !== 1) {
+        return { success: true };
+      }
+      resolvedTenantId = matches[0].tenantId;
+    }
+
     const user = await prisma.user.findFirst({
-      where: {
-        email,
-        isActive: true,
-        ...(tenantId ? { tenantId } : {})
-      },
+      where: { email, tenantId: resolvedTenantId, isActive: true },
       select: {
         id: true,
         email: true,
@@ -499,22 +525,19 @@ export const authService = {
       )
     );
 
-    await prisma.notificationLog.create({
+    // The sign-in token only ever travels in the email; the API answers the same whether or not the account exists (C61, C80).
+    await enqueueEmail({
+      tenantId: user.tenantId,
+      userId: user.id,
+      to: user.email,
+      template: 'field_email_link',
       data: {
-        tenantId: user.tenantId,
-        userId: user.id,
-        channel: 'EMAIL',
-        event: 'field_email_link',
-        status: 'QUEUED',
-        providerRef: linkToken
+        link: `${config.fauwardGoUrl}/login?token=${encodeURIComponent(linkToken)}&email=${encodeURIComponent(user.email)}`,
+        expiresInMinutes: 15
       }
     });
 
-    return {
-      success: true,
-      linkToken,
-      tenantSlug: user.tenant.slug
-    };
+    return { success: true };
   },
   consumeEmailLink: async (payload: EmailLinkConsumePayload, prisma: PrismaClient) => {
     const email = payload.email.toLowerCase().trim();
@@ -532,6 +555,8 @@ export const authService = {
     if (!user || !tenant) {
       throw new Error('Invalid email-link token');
     }
+    assertNotLocked(user);
+    await recordSignIn(prisma, user);
 
     const jwtPayload = buildJwtPayload(
       { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId },
@@ -579,18 +604,16 @@ export const authService = {
       }
     });
 
-    await prisma.notificationLog.create({
-      data: {
-        tenantId,
-        userId: user.id,
-        channel: 'EMAIL',
-        event: 'password_reset',
-        status: 'QUEUED',
-        providerRef: rawToken
-      }
+    // The token only ever travels in the email; the API answers the same whether or not the account exists (C61).
+    await enqueueEmail({
+      tenantId,
+      userId: user.id,
+      to: user.email,
+      template: 'password_reset',
+      data: { resetUrl: `${config.publicSiteUrl}/reset-password?token=${rawToken}`, expiresInMinutes: 60 }
     });
 
-    return { success: true, token: rawToken };
+    return { success: true };
   },
   resetPassword: async (
     payload: { token: string; newPassword: string },

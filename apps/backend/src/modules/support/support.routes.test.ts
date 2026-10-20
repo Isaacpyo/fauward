@@ -45,10 +45,10 @@ function buildApp(roleOverride = 'TENANT_ADMIN', ticketOverride?: any) {
       create: vi.fn().mockImplementation(async ({ data }: any) => ({ id: 'msg-new', ...data })),
       findMany: vi.fn().mockResolvedValue([STAFF_MESSAGE])
     },
-    notificationLog: { create: vi.fn().mockResolvedValue({}) },
     inAppNotification: { createMany: vi.fn().mockResolvedValue({}) },
     user: { findMany: vi.fn().mockResolvedValue([{ id: 'user-ops-1' }]) }
   };
+  (prisma as Record<string, unknown>).$transaction = vi.fn(async (callback: (tx: unknown) => unknown) => callback(prisma));
 
   (app as any).decorate('prisma', prisma);
   (app as any).decorate('authenticate', async (req: any) => {
@@ -109,7 +109,9 @@ describe('POST /api/v1/support/tickets', () => {
     // The first message is created via nested Prisma create, not a separate create call
     const createCall = ctx.prisma.supportTicket.create.mock.calls[0][0].data;
     expect(createCall.messages.create.body).toBe('I cannot find it.');
-    expect(createCall.messages.create.isInternal).toBe(false);
+    // D5: the first message is PUBLIC; the mocked authenticate makes the author tenant staff (TENANT_USER).
+    expect(createCall.messages.create).toMatchObject({ visibility: 'PUBLIC', authorType: 'TENANT_USER' });
+    expect(createCall.audience).toBe('END_CUSTOMER');
   });
 
   it('calls createInAppNotifications for TENANT_ADMIN on new ticket', async () => {
@@ -189,7 +191,9 @@ describe('POST /api/v1/support/tickets/:id/messages', () => {
 
     expect(res.statusCode).toBe(201);
     const messageData = ctx.prisma.ticketMessage.create.mock.calls[0][0].data;
-    expect(messageData.isInternal).toBe(false);
+    expect(messageData).toMatchObject({ visibility: 'PUBLIC', authorType: 'TENANT_USER', isInternal: false });
+    // ACC-SUP-4: the ticket's lastMessageAt moves with every message.
+    expect(ctx.prisma.supportTicket.update.mock.calls[0][0].data).toMatchObject({ lastMessageAuthorType: 'TENANT_USER' });
     expect(createInAppNotifications).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ type: 'ticket_reply_from_staff' })
@@ -214,7 +218,7 @@ describe('POST /api/v1/support/tickets/:id/messages', () => {
 
     expect(res.statusCode).toBe(201);
     const messageData = ctx.prisma.ticketMessage.create.mock.calls[0][0].data;
-    expect(messageData.isInternal).toBe(true);
+    expect(messageData).toMatchObject({ visibility: 'TENANT_INTERNAL', isInternal: true });
     // Internal notes must not notify the customer
     expect(notifMock).not.toHaveBeenCalled();
   });

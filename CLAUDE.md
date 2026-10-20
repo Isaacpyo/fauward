@@ -28,8 +28,7 @@ apps/
 ├── tenant-portal/    React/Vite — tenant ops portal
 ├── agents/           React/Vite PWA — field agent mobile app
 ├── fauward-Go/       Field logistics app
-├── super-admin/      React/Vite — Fauward internal admin
-└── admin/            Admin app
+└── super-admin/      React/Vite — Fauward internal admin
 
 packages/
 ├── brand/            brand.css — design tokens
@@ -104,3 +103,12 @@ Every module exports a `register*Routes(app: FastifyInstance)` function and is r
 ## Docs
 
 Full spec in `docs/` — **start with `docs/implementation-status.md`** for what to build next.
+
+## Docker runs on the Oracle VM, never on this laptop
+Full guide: `docs/vm-docker.md`. Short version:
+- Never run `docker compose` or Docker Desktop locally. Use `bash scripts/vm-slot.sh`; it forces the `oracle` Docker context and runs `docker-compose.yml` plus `docker-compose.remote.yml` on the VM.
+- Main checkout = slot 0 on the ports `docker-compose.yml` already uses (8000, 5432, 6379, 8025, 1025, 4002): `bash scripts/vm-slot.sh setup`.
+- Every other checkout, worktree or parallel session claims its own slot and never touches slot 0: `n=$(bash scripts/vm-slot.sh claim)`, then `up $n`, `env $n`, `tunnel $n`; `release $n` when done. No free slot: stop and report, never share one. Remember your slot number.
+- Status and logs: `bash scripts/vm-slot.sh status <slot>`, `logs <slot> [service]`.
+- Mail catcher: the mailhog image is x86-only and crashes on the ARM VM, so `docker-compose.remote.yml` swaps in Mailpit (UI `:8025`, SMTP `:1025`, same ports; the compose service is still named `mailhog`). Never switch it back.
+- Ports for slot n (n=1-3): API 57000+100n, Kuma +2, Mailhog UI +25, SMTP +26, Postgres +32, Redis +79. TipSignal and vitalos-platform share the VM: never stop or remove their containers. Never open ports in the Oracle firewall; use the tunnel.

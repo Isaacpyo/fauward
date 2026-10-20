@@ -29,17 +29,18 @@ import {
 } from "recharts";
 
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { PageShell } from "@/layouts/PageShell";
+import { apiErrorMessage } from "@/lib/api-error";
 import { api } from "@/lib/api";
 import { normalizeShipmentListResponse } from "@/lib/shipment-normalizers";
 import { cn, formatCurrency, formatDateTime } from "@/lib/utils";
 import { useTenantStore } from "@/stores/useTenantStore";
-import type { ShipmentState } from "@/types/domain";
 import type { ShipmentListItem } from "@/types/shipment";
 
 type AnalyticsPreset = "today" | "7d" | "30d" | "90d";
@@ -175,147 +176,19 @@ function enumerateDateKeys(range: DateRange) {
   return dates;
 }
 
-function createFallbackOverview(range: DateRange): AnalyticsFullResponse {
-  const volumeByDay = enumerateDateKeys(range).map((date, index) => ({
-    date,
-    count: Math.max(4, Math.round(16 + Math.sin(index / 2) * 6 + (index % 5) * 2))
-  }));
-  const shipments = volumeByDay.reduce((sum, day) => sum + day.count, 0);
+const EMPTY_TREND = { value: 0, previousValue: 0, changePct: 0 };
 
-  return {
-    totals: {
-      shipments: { value: shipments, previousValue: Math.round(shipments * 0.88), changePct: 13.6 },
-      revenue: { value: shipments * 185, previousValue: shipments * 171, changePct: 8.2 },
-      onTimeRate: { value: 96.2, previousValue: 94.7, changePct: 1.6 },
-      avgDeliveryDays: { value: 1.8, previousValue: 2.1, changePct: -14.3 }
-    },
-    volumeByDay
-  };
-}
+/** Shape used for derived charts before data arrives or when a request failed (the page shows the error). */
+const EMPTY_OVERVIEW: AnalyticsFullResponse = {
+  totals: { shipments: EMPTY_TREND, revenue: EMPTY_TREND, onTimeRate: EMPTY_TREND, avgDeliveryDays: EMPTY_TREND },
+  volumeByDay: []
+};
 
-function createFallbackShipmentAnalytics(totalShipments: number): ShipmentAnalyticsResponse {
-  const base = Math.max(totalShipments, 1);
-  const count = (ratio: number) => Math.max(0, Math.round(base * ratio));
-
-  return {
-    lifecycleFunnel: [
-      { status: "PENDING", count: count(0.12), pct: 12 },
-      { status: "PROCESSING", count: count(0.14), pct: 14 },
-      { status: "PICKED_UP", count: count(0.1), pct: 10 },
-      { status: "IN_TRANSIT", count: count(0.18), pct: 18 },
-      { status: "OUT_FOR_DELIVERY", count: count(0.08), pct: 8 },
-      { status: "DELIVERED", count: count(0.42), pct: 42 },
-      { status: "FAILED_DELIVERY", count: count(0.04), pct: 4 },
-      { status: "RETURNED", count: count(0.02), pct: 2 }
-    ],
-    slaCompliance: {
-      onTime: count(0.39),
-      late: count(0.03),
-      compliancePct: 96.2,
-      avgDeliveryHours: 31.4,
-      breachesByReason: [
-        { reason: "FAILED_DELIVERY", count: count(0.02) },
-        { reason: "EXCEPTION", count: count(0.01) }
-      ]
-    },
-    exceptions: {
-      activeExceptions: count(0.03),
-      stalePendingOver24h: count(0.02),
-      failedDeliveryRate: 4.1,
-      topExceptionRoutes: [
-        { route: "Lagos -> London", count: 6 },
-        { route: "Abuja -> Manchester", count: 4 },
-        { route: "Birmingham -> Glasgow", count: 3 }
-      ]
-    }
-  };
-}
-
-function createFallbackShipments(range: DateRange): ShipmentListItem[] {
-  const dates = enumerateDateKeys(range);
-  const routes = [
-    { origin: "Lagos", destination: "London", route: "Lagos -> London", customer: "Acme Retail" },
-    { origin: "Abuja", destination: "Manchester", route: "Abuja -> Manchester", customer: "Northline Freight" },
-    { origin: "Birmingham", destination: "Glasgow", route: "Birmingham -> Glasgow", customer: "PortBridge" },
-    { origin: "Leeds", destination: "Bristol", route: "Leeds -> Bristol", customer: "Summit Stores" },
-    { origin: "London", destination: "Cardiff", route: "London -> Cardiff", customer: "Urban Market" }
-  ];
-  const statuses: ShipmentState[] = [
-    "DELIVERED",
-    "IN_TRANSIT",
-    "OUT_FOR_DELIVERY",
-    "PROCESSING",
-    "FAILED_DELIVERY",
-    "DELIVERED",
-    "DELIVERED",
-    "PENDING"
-  ];
-
-  return Array.from({ length: 40 }).map((_, index) => {
-    const route = routes[index % routes.length];
-    const status = statuses[index % statuses.length];
-
-    return {
-      id: `fallback-${index + 1}`,
-      tracking_number: `FWD-2026-${String(index + 1).padStart(5, "0")}`,
-      status,
-      customer_name: route.customer,
-      origin: route.origin,
-      destination: route.destination,
-      route_name: route.route,
-      driver_name: index % 4 === 0 ? "Amina Yusuf" : "Daniel Cole",
-      service_tier: index % 3 === 0 ? "Express" : index % 3 === 1 ? "Standard" : "Same Day",
-      created_at: `${dates[index % Math.max(dates.length, 1)] ?? range.dateTo}T10:00:00.000Z`,
-      reference: `REF-${2400 + index}`
-    };
-  });
-}
-
-function createFallbackActivity(): ActivityEntry[] {
-  const now = Date.now();
-  return [
-    {
-      id: "activity-1",
-      type: "shipment",
-      title: "Shipment FWD-2026-00051 out for delivery",
-      subtitle: "Assigned to the west London delivery run",
-      link: "/shipments",
-      timestamp: new Date(now - 12 * 60 * 1000).toISOString(),
-      icon: "truck",
-      colour: "blue"
-    },
-    {
-      id: "activity-2",
-      type: "ticket",
-      title: "Support message received",
-      subtitle: "POD photo requested for invoice reconciliation",
-      link: "/support",
-      timestamp: new Date(now - 31 * 60 * 1000).toISOString(),
-      icon: "message-square",
-      colour: "emerald"
-    },
-    {
-      id: "activity-3",
-      type: "invoice",
-      title: "Invoice FWD-INV-0142 paid",
-      subtitle: "Acme Retail settled the weekly shipment batch",
-      link: "/finance",
-      timestamp: new Date(now - 74 * 60 * 1000).toISOString(),
-      icon: "file-text",
-      colour: "violet"
-    },
-    {
-      id: "activity-4",
-      type: "return",
-      title: "Return inspection completed",
-      subtitle: "Route Lagos -> London cleared for re-dispatch",
-      link: "/returns",
-      timestamp: new Date(now - 128 * 60 * 1000).toISOString(),
-      icon: "rotate-ccw",
-      colour: "amber"
-    }
-  ];
-}
+const EMPTY_SHIPMENT_ANALYTICS: ShipmentAnalyticsResponse = {
+  lifecycleFunnel: [],
+  slaCompliance: { onTime: 0, late: 0, compliancePct: 0, avgDeliveryHours: 0, breachesByReason: [] },
+  exceptions: { activeExceptions: 0, stalePendingOver24h: 0, failedDeliveryRate: 0, topExceptionRoutes: [] }
+};
 
 function buildVolumeData(range: DateRange, volumeByDay: Array<{ date: string; count: number }> = []) {
   const countByDate = new Map(volumeByDay.map((entry) => [entry.date, Number(entry.count ?? 0)]));
@@ -344,18 +217,12 @@ function buildStatusBreakdown(analytics: ShipmentAnalyticsResponse) {
   ];
 }
 
-function buildOnTimeSeries(
-  volumeData: Array<{ date: string; label: string; shipments: number }>,
-  rate: number,
-  useSampleVariance: boolean
-) {
-  return volumeData.map((point, index) => {
-    const variance = useSampleVariance ? Math.sin(index / 2) * 1.8 + ((point.shipments % 4) - 1.5) * 0.4 : 0;
-    return {
-      ...point,
-      onTimeRate: clamp(rate + variance, 0, 100)
-    };
-  });
+/** The API returns one on-time rate for the range; it is drawn flat across the days that had shipments. */
+function buildOnTimeSeries(volumeData: Array<{ date: string; label: string; shipments: number }>, rate: number) {
+  return volumeData.map((point) => ({
+    ...point,
+    onTimeRate: point.shipments > 0 ? clamp(rate, 0, 100) : 0
+  }));
 }
 
 function buildTopRoutes(shipments: ShipmentListItem[]): RouteSummary[] {
@@ -538,14 +405,6 @@ export function AnalyticsPage() {
   const [activePreset, setActivePreset] = useState<AnalyticsPreset>("30d");
   const [range, setRange] = useState<DateRange>(initial);
 
-  const fallbackOverview = useMemo(() => createFallbackOverview(range), [range]);
-  const fallbackShipmentAnalytics = useMemo(
-    () => createFallbackShipmentAnalytics(fallbackOverview.totals.shipments.value),
-    [fallbackOverview.totals.shipments.value]
-  );
-  const fallbackShipments = useMemo(() => createFallbackShipments(range), [range]);
-  const fallbackActivity = useMemo(() => createFallbackActivity(), []);
-
   const overviewQuery = useQuery({
     queryKey: ["analytics-full-dashboard", range.dateFrom, range.dateTo],
     queryFn: () => fetchAnalyticsFull(range),
@@ -574,16 +433,22 @@ export function AnalyticsPage() {
     retry: 1
   });
 
-  const overview = overviewQuery.data ?? fallbackOverview;
-  const shipmentAnalytics = shipmentAnalyticsQuery.data ?? fallbackShipmentAnalytics;
-  const shipments = shipmentsQuery.data ?? fallbackShipments;
-  const activity = activityQuery.data ?? fallbackActivity;
+  const overview = overviewQuery.data ?? EMPTY_OVERVIEW;
+  const shipmentAnalytics = shipmentAnalyticsQuery.data ?? EMPTY_SHIPMENT_ANALYTICS;
+  const shipments = useMemo(() => shipmentsQuery.data ?? [], [shipmentsQuery.data]);
+  const activity = activityQuery.data ?? [];
+  const failedSections = [
+    { label: "Overview", query: overviewQuery },
+    { label: "Shipment status", query: shipmentAnalyticsQuery },
+    { label: "Routes", query: shipmentsQuery },
+    { label: "Activity", query: activityQuery }
+  ].filter((section) => section.query.isError);
   const volumeData = useMemo(() => buildVolumeData(range, overview.volumeByDay), [overview.volumeByDay, range]);
   const statusBreakdown = useMemo(() => buildStatusBreakdown(shipmentAnalytics), [shipmentAnalytics]);
   const topRoutes = useMemo(() => buildTopRoutes(shipments), [shipments]);
   const onTimeSeries = useMemo(
-    () => buildOnTimeSeries(volumeData, overview.totals.onTimeRate.value, !overviewQuery.data),
-    [overview.totals.onTimeRate.value, overviewQuery.data, volumeData]
+    () => buildOnTimeSeries(volumeData, overview.totals.onTimeRate.value),
+    [overview.totals.onTimeRate.value, volumeData]
   );
   const hasVolume = volumeData.some((entry) => entry.shipments > 0);
   const hasStatusBreakdown = statusBreakdown.some((entry) =>
@@ -616,8 +481,16 @@ export function AnalyticsPage() {
           ))}
         </div>
 
+        {failedSections.length > 0 ? (
+          <ErrorState
+            title="Some analytics could not be loaded"
+            description={`${failedSections.map((section) => section.label).join(", ")}: ${apiErrorMessage(failedSections[0].query.error, "the server returned an error")}. Those sections show no data until this is fixed.`}
+            onRetry={() => failedSections.forEach((section) => void section.query.refetch())}
+          />
+        ) : null}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12">
-          {overviewQuery.isLoading && !overviewQuery.data ? (
+          {overviewQuery.isError ? null : overviewQuery.isLoading && !overviewQuery.data ? (
             Array.from({ length: 4 }).map((_, index) => (
               <Skeleton key={index} className="h-[154px] rounded-xl xl:col-span-3" />
             ))

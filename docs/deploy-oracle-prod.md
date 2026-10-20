@@ -23,7 +23,12 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
 
 ## First-time setup
 
-1. **Folders and templates.** Run `bash scripts/prod-vm.sh init`. It creates the folders, copies the env templates from `deploy/oracle-prod/env.example/` (it never overwrites a filled file), generates the Redis password and installs `prodctl.sh`.
+1. **Folders and templates.** Run `bash scripts/prod-vm.sh init`. It creates the folders, copies the env templates from `deploy/oracle-prod/env.example/` (it never overwrites a filled file) and installs `prodctl.sh`. It also generates any of these that are still empty:
+   - the Redis password
+   - `FIELD_ENCRYPTION_KEYS` and `FIELD_ENCRYPTION_ACTIVE_KEY_ID`. Production refuses to boot without them, and losing them makes encrypted values (such as TOTP secrets) unreadable.
+   - `MONITORING_API_KEY`, written to both `backend.env` and `python.env`. Copy the same value into the status-dashboard Vercel project.
+
+   Re-running `init` is safe.
 2. **Secrets.** Copy the values from Railway: open each service, then Variables, then Raw Editor.
    - `bash scripts/prod-vm.sh edit-env backend.env`: from the Railway backend service.
    - `bash scripts/prod-vm.sh edit-env python.env`: from the Railway python-services service.
@@ -33,7 +38,10 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
    2. On the install step, copy the token (the long string after `--token`). Run `bash scripts/prod-vm.sh edit-env cloudflared.env` and set `TUNNEL_TOKEN=`. You don't need to install anything; the `cloudflared` container runs it.
    3. **Public Hostname**: subdomain `api`, domain `fauward.com`, service type `HTTP`, URL `backend:3001`. Cloudflare creates the DNS record.
    4. Optional, only if the status dashboard's Python observability panel is used: add a second hostname, `py.fauward.com`, pointing to `HTTP python-api:8000`, and set `PYTHON_API_URL=https://py.fauward.com` in the status-dashboard Vercel project.
-4. **Deploy.** Run `bash scripts/prod-vm.sh deploy` (or `deploy <branch>`; see "Deploying" below).
+4. **Database, then deploy.** `master` contains console Phases 0–2. Their migrations (0037 onward) and backfills must reach the Supabase database before the new backend serves traffic.
+   1. Run `bash scripts/prod-vm.sh deploy`. If it fails on missing tables, first run `migrate-status`, then `backup`, then `migrate --yes`, then `deploy` again.
+   2. Read the output of `bash scripts/prod-vm.sh migrate-status` before you migrate. If the Supabase database was created with `prisma db push` (as CI does) and has no migration history, `migrate deploy` would try to replay everything from 0001. In that case, baseline it first with `prisma migrate resolve --applied <name>` for the migrations already reflected in the schema.
+   3. Run the backfills listed under "Deferred for owner" in the console-run PROGRESS.md (0037 TOTP encryption, 0039a role assignments, and the Phase 2 ones). Each script has a `--dry-run`.
 5. **Point the frontends at the new API** in Vercel. Open each project, then Settings, then Environment Variables, make the change and redeploy:
    - tenant-portal: `VITE_API_BASE_URL=https://api.fauward.com`
    - fauward-Go (if deployed separately): `VITE_API_BASE_URL=https://api.fauward.com`

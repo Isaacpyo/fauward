@@ -1,14 +1,20 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { handleStripeSubscriptionEvent, tenantForStripeInvoice } from '../../services/subscription.service.js';
 import { PaymentStatus } from '@prisma/client';
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
-import { handleDunningEvent } from './billing.service.js';
+import { handleDunningEvent, handleDunningPaid } from './billing.service.js';
 import { stripeService } from './stripe.service.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
+import { STRIPE_RADAR_RULE } from '../../config/safety-rules.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../../services/platform-activity.service.js';
+import { notifyStaff } from '../../services/platform-notifier.service.js';
 
 async function handleReturnPayment(app: FastifyInstance, tenantId: string, returnId: string) {
   const returnReq = await app.prisma.returnRequest.findFirst({
@@ -142,7 +148,7 @@ async function ingestStripePayout(app: FastifyInstance, payoutObj: Record<string
 
     for (const { txn, sourceId } of lines) {
       const matchedPayment = sourceId
-        ? await app.prisma.payment.findFirst({ where: { tenantId, gatewayRef: sourceId } })
+        ? await app.prisma.payment.findFirst({ where: { kind: 'TENANT_CUSTOMER', tenantId, gatewayRef: sourceId } })
         : null;
 
       await app.prisma.gatewayPayoutLine.upsert({
@@ -232,8 +238,9 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
     });
 
     const payment = await app.prisma.payment.upsert({
-      where: { shipmentId: shipment.id },
+      where: { kind: 'TENANT_CUSTOMER', shipmentId: shipment.id },
       create: {
+        kind: 'TENANT_CUSTOMER',
         tenantId,
         shipmentId: shipment.id,
         customerId: shipment.customerId,
@@ -274,14 +281,14 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
     const now = new Date();
     const [tenant, overdueInvoiceCount, nextRetry, saveOffer] = await Promise.all([
       app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { status: true } }),
-      app.prisma.invoice.count({ where: { tenantId, status: 'OVERDUE' } }),
+      app.prisma.invoice.count({ where: { kind: 'TENANT_CUSTOMER', tenantId, status: 'OVERDUE' } }),
       app.prisma.webhookDelivery.findFirst({
         where: { tenantId, nextRetryAt: { gt: now }, eventType: { contains: 'payment', mode: 'insensitive' } },
         orderBy: { nextRetryAt: 'asc' },
         select: { nextRetryAt: true }
       }),
       app.prisma.saveOffer.findFirst({
-        where: { tenantId, status: 'APPROVED', expiresAt: { gt: now } },
+        where: { tenantId, status: 'APPROVED', code: { not: null }, redeemedAt: null, expiresAt: { gt: now } },
         orderBy: { createdAt: 'desc' }
       })
     ]);
@@ -304,7 +311,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
         ? {
             discount: Number(saveOffer.discount),
             validUntil: saveOffer.expiresAt.toISOString(),
-            code: `SAVE-${saveOffer.id.slice(0, 8).toUpperCase()}`
+            code: saveOffer.code ?? ''
           }
         : undefined
     });
@@ -316,7 +323,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
 
     const { shipmentId } = request.params as { shipmentId: string };
     const payment = await app.prisma.payment.findFirst({
-      where: { tenantId, shipmentId },
+      where: { kind: 'TENANT_CUSTOMER', tenantId, shipmentId },
       include: { invoice: true }
     });
 
@@ -348,11 +355,11 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
 
     if (eventType === 'payment_intent.succeeded') {
       const paymentIntentId = String(eventAny.data?.object?.id ?? '');
-      const payment = await app.prisma.payment.findFirst({ where: { gatewayRef: paymentIntentId } });
+      const payment = await app.prisma.payment.findFirst({ where: { kind: 'TENANT_CUSTOMER', gatewayRef: paymentIntentId } });
       if (payment) {
         await app.prisma.$transaction(async (tx) => {
           await tx.payment.update({
-            where: { id: payment.id },
+            where: { kind: 'TENANT_CUSTOMER', id: payment.id },
             data: {
               status: PaymentStatus.COMPLETED,
               gatewayResponse: event as any
@@ -361,7 +368,7 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
 
           if (payment.invoiceId) {
             await tx.invoice.update({
-              where: { id: payment.invoiceId },
+              where: { kind: 'TENANT_CUSTOMER', id: payment.invoiceId },
               data: {
                 status: 'PAID',
                 paidAt: new Date()
@@ -369,54 +376,61 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
             });
           }
 
-          await tx.notificationLog.create({
-            data: {
-              tenantId: payment.tenantId,
-              userId: payment.customerId ?? undefined,
-              channel: 'EMAIL',
-              event: 'payment_received',
-              status: 'QUEUED'
-            }
-          });
+        });
+        if (payment.invoiceId) await markOnboardingStep({ prisma: app.prisma, redis: app.redis, log: app.log }, payment.tenantId, 'FIRST_PAID_INVOICE');
+        await notifyCustomer(app, {
+          tenantId: payment.tenantId,
+          userId: payment.customerId,
+          template: 'payment_received',
+          data: { amount: payment.amount.toFixed(2), currency: payment.currency }
         });
       }
     }
 
     if (eventType === 'payment_intent.payment_failed') {
       const paymentIntentId = String(eventAny.data?.object?.id ?? '');
-      const payment = await app.prisma.payment.findFirst({ where: { gatewayRef: paymentIntentId } });
+      const payment = await app.prisma.payment.findFirst({ where: { kind: 'TENANT_CUSTOMER', gatewayRef: paymentIntentId } });
       if (payment) {
         await app.prisma.$transaction(async (tx) => {
           await tx.payment.update({
-            where: { id: payment.id },
+            where: { kind: 'TENANT_CUSTOMER', id: payment.id },
             data: {
               status: PaymentStatus.FAILED,
               gatewayResponse: event as any
             }
           });
 
-          await tx.notificationLog.create({
-            data: {
-              tenantId: payment.tenantId,
-              userId: payment.customerId ?? undefined,
-              channel: 'EMAIL',
-              event: 'payment_failed',
-              status: 'QUEUED'
-            }
-          });
+        });
+        await notifyCustomer(app, {
+          tenantId: payment.tenantId,
+          userId: payment.customerId,
+          template: 'payment_failed',
+          data: { amount: payment.amount.toFixed(2), currency: payment.currency }
         });
       }
     }
 
-    if (eventType === 'invoice.payment_failed') {
-      const tenantId = String(eventAny.data?.object?.metadata?.tenantId ?? '');
-      const attemptCount = Number(eventAny.data?.object?.attempt_count ?? 1);
+    if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted' || (event.type === 'checkout.session.completed' && event.data.object.metadata?.planChangeRequestId)) {
+      await handleStripeSubscriptionEvent(app, event);
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const tenantId = (await tenantForStripeInvoice(app, event.data.object)) ?? '';
+      const attemptCount = Number(event.data.object.attempt_count ?? 1);
+      const invoiceRef = event.data.object.id ?? '';
       if (tenantId) {
-        await handleDunningEvent(app.prisma, {
+        await handleDunningEvent(app, {
           tenantId,
-          attempt: attemptCount
+          attempt: attemptCount,
+          invoiceRef
         });
       }
+    }
+
+    if (event.type === 'invoice.paid') {
+      const tenantId = (await tenantForStripeInvoice(app, event.data.object)) ?? '';
+      const invoiceRef = event.data.object.id ?? '';
+      if (tenantId && invoiceRef) await handleDunningPaid(app, { tenantId, invoiceRef });
     }
 
     if (eventType === 'checkout.session.completed') {
@@ -434,19 +448,37 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       });
     }
 
-    if (eventType === 'radar.early_fraud_warning.created' || eventType === 'review.opened') {
+    if ((STRIPE_RADAR_RULE.events as readonly string[]).includes(eventType)) {
       const object = eventAny.data?.object ?? {};
       const tenantId = String(object.metadata?.tenantId ?? object.payment_intent?.metadata?.tenantId ?? '');
       if (tenantId) {
-        await app.prisma.fraudSignal.create({
+        const signal = await app.prisma.fraudSignal.create({
           data: {
             tenantId,
             source: 'stripe_radar',
             signalType: eventType,
-            severity: 'HIGH',
+            category: 'FRAUD',
+            severity: STRIPE_RADAR_RULE.severity,
             payload: event as never
           }
         });
+        await recordAndPublishActivity(
+          { prisma: app.prisma, redis: app.redis, log: app.log },
+          {
+            service: 'trust.safety',
+            type: 'fraud.signal_received',
+            tenantId,
+            ...SYSTEM_ACTOR,
+            actorLabel: 'Stripe Radar',
+            subjectType: 'fraud_signal',
+            subjectId: signal.id,
+            summary: `Stripe Radar flagged a payment (${eventType})`,
+            severity: 'ATTENTION',
+            consoleLink: `/trust/safety/signals?signal=${signal.id}`,
+            dedupeKey: `fraud.signal_received:${signal.id}`
+          }
+        );
+        await notifyStaff(app, { permission: 'trust.safety.read', event: 'fraud.signal_received', title: 'Stripe Radar fraud warning', body: eventType, link: `/trust/safety/signals?signal=${signal.id}`, severity: 'ATTENTION', tenantId });
       }
     }
 

@@ -5,7 +5,6 @@ import { getHotState } from './realtime/hot-state.repository.js';
 import { ingestTrackingPoints, ingestManualAction } from './realtime/ingest.service.js';
 import { findBreadcrumbs } from './history/history.repository.js';
 import { resolveEscalation } from './escalation/resolve.service.js';
-import { writeInternalAudit } from '../internal/internal-audit.js';
 
 const FIELD_ROLES = ['TENANT_ADMIN', 'TENANT_MANAGER', 'TENANT_STAFF', 'TENANT_DRIVER'] as const;
 
@@ -163,54 +162,8 @@ export async function registerRealtimeTrackingRoutes(app: FastifyInstance) {
     }
   );
 
-  // Admin escalations list
-  app.get(
-    '/api/v1/admin/escalations',
-    { preHandler: [app.authenticate, requireRole(['SUPER_ADMIN'])] },
-    async (request, reply) => {
-      const query = request.query as {
-        status?: string;
-        severity?: string;
-        limit?: string;
-        cursor?: string;
-      };
-
-      const limit = Math.min(50, Math.max(1, Number(query.limit ?? 50)));
-      const cursor = query.cursor ? new Date(query.cursor) : undefined;
-
-      const where: Record<string, unknown> = {
-        escalationFlag: true,
-      };
-
-      if (cursor) {
-        (where as any).escalationFlaggedAt = { lt: cursor };
-      }
-
-      const [shipments, total] = await Promise.all([
-        app.prisma.shipment.findMany({
-          where,
-          include: {
-            tenant: { select: { id: true, name: true, slug: true } },
-          },
-          orderBy: { escalationFlaggedAt: 'desc' },
-          take: limit,
-        }),
-        app.prisma.shipment.count({ where }),
-      ]);
-
-      await writeInternalAudit(request, 'ADMIN_ESCALATIONS_LIST', 'SHIPMENT', 'list', null, null, null);
-
-      const lastShipment = shipments[shipments.length - 1];
-      const nextCursor = shipments.length === limit && lastShipment?.escalationFlaggedAt
-        ? lastShipment.escalationFlaggedAt.toISOString()
-        : null;
-
-      return reply.send({
-        data: shipments,
-        meta: { limit, total, nextCursor },
-      });
-    }
-  );
+  // The legacy cross-tenant escalations list (tenant SUPER_ADMIN JWT) was removed in WP-1.6; WP-2.11 rebuilds it under
+  // /api/internal/operations with console auth.
 
   // Resolve escalation
   app.post(

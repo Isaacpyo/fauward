@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
+import { StatusPill } from "@/components/service-kit/StatusPill";
 import { fetchBadge } from "@/lib/badges";
 import type { PillarManifest, PillarServiceManifest } from "@/pillars/_manifests";
 
@@ -17,9 +18,11 @@ const toneClasses = {
 };
 
 export function ServiceRow({ pillar, service }: ServiceRowProps) {
+  const badgeKey = service.badgeKey;
   const badge = useQuery({
-    queryKey: ["pillar-service-badge", service.id, service.badgeKey ?? "placeholder"],
-    queryFn: () => fetchBadge(service.badgeKey),
+    queryKey: ["pillar-service-badge", service.id, badgeKey ?? "none"],
+    queryFn: () => fetchBadge(badgeKey!),
+    enabled: Boolean(badgeKey),
     staleTime: 30_000
   });
 
@@ -28,10 +31,13 @@ export function ServiceRow({ pillar, service }: ServiceRowProps) {
       <span className="flex min-w-0 items-center gap-2">
         <service.icon size={15} className="shrink-0" style={{ color: pillar.accent }} />
         <span className="truncate font-medium text-[var(--color-text-primary)]">{service.name}</span>
+        {service.status === "preview" ? <StatusPill status="preview" /> : null}
       </span>
-      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${toneClasses[badge.data?.tone ?? "neutral"]}`}>
-        {badge.isLoading ? "..." : badge.isError ? "-" : badge.data?.label ?? "-"}
-      </span>
+      {badgeKey ? (
+        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-xs font-semibold ${toneClasses[badge.data?.tone ?? "neutral"]}`}>
+          {badge.isLoading ? "..." : badge.isError ? "-" : badge.data?.label ?? "-"}
+        </span>
+      ) : null}
     </Link>
   );
 }

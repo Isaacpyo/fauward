@@ -1,9 +1,9 @@
 export type Permission =
   | 'platform.tenants.read' | 'platform.tenants.write'
-  | 'platform.tenants.suspend' | 'platform.tenants.delete'
+  | 'platform.tenants.suspend' | 'platform.tenants.delete' | 'platform.tenants.close'
   | 'platform.impersonation.start' | 'platform.impersonation.mutate'
   | 'platform.flags.read' | 'platform.flags.write'
-  | 'platform.queues.read' | 'platform.queues.replay'
+  | 'platform.queues.read' | 'platform.queues.replay' | 'platform.queues.purge'
   | 'platform.incidents.read' | 'platform.incidents.write'
   | 'platform.health.read'
   | 'platform.jobs.read' | 'platform.jobs.trigger'
@@ -30,7 +30,7 @@ export type Permission =
   | 'trust.iam.read' | 'trust.iam.write' | 'trust.iam.root'
   | 'trust.jit.request' | 'trust.jit.approve'
   | 'trust.audit.read' | 'trust.audit.export'
-  | 'trust.compliance.dsar.read' | 'trust.compliance.dsar.write'
+  | 'trust.compliance.dsar.read' | 'trust.compliance.dsar.write' | 'trust.compliance.dsar.deliver'
   | 'trust.compliance.legal-hold.read' | 'trust.compliance.legal-hold.write'
   | 'trust.safety.read' | 'trust.safety.suspend'
   | 'trust.kyc.read' | 'trust.kyc.approve'
@@ -51,12 +51,14 @@ export const PERMISSIONS = [
   'platform.tenants.write',
   'platform.tenants.suspend',
   'platform.tenants.delete',
+  'platform.tenants.close',
   'platform.impersonation.start',
   'platform.impersonation.mutate',
   'platform.flags.read',
   'platform.flags.write',
   'platform.queues.read',
   'platform.queues.replay',
+  'platform.queues.purge',
   'platform.incidents.read',
   'platform.incidents.write',
   'platform.health.read',
@@ -106,6 +108,7 @@ export const PERMISSIONS = [
   'trust.audit.export',
   'trust.compliance.dsar.read',
   'trust.compliance.dsar.write',
+  'trust.compliance.dsar.deliver',
   'trust.compliance.legal-hold.read',
   'trust.compliance.legal-hold.write',
   'trust.safety.read',
@@ -135,3 +138,20 @@ export const PERMISSIONS = [
 ] as const satisfies readonly Permission[];
 
 export const READ_ONLY_PERMISSIONS = PERMISSIONS.filter((permission) => permission.endsWith('.read')) as Permission[];
+
+/**
+ * Permissions of deferred services (D1/D10). They stay in the catalogue because the manifest references them, but no
+ * console route may use them (asserted by the backend rbac-matrix test).
+ */
+export const DEFERRED_PERMISSIONS = [
+  'revenue.recognition.read',
+  'revenue.recognition.write',
+  'revenue.commissions.read',
+  'revenue.commissions.payout',
+  'customer.kb.read',
+  'customer.kb.write',
+  'gtm.partners.read',
+  'gtm.partners.write',
+  'gtm.pricing.read',
+  'gtm.pricing.write'
+] as const satisfies readonly Permission[];

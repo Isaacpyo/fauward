@@ -2,55 +2,25 @@ import { useQuery } from "@tanstack/react-query";
 
 import { api } from "@/lib/api";
 import { getAccessToken, hasDevTestSession } from "@/lib/auth";
-import type { BillingSummary } from "@/types/billing";
+import type { BillingPlan, BillingSummary } from "@/types/billing";
 
-const fallbackBillingSummary: BillingSummary = {
-  plan: "pro",
-  cycle: "monthly",
-  amount: 79,
-  renewalDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 16).toISOString(),
-  trialDaysRemaining: 5,
-  paymentStatus: "active",
+type BillingSummaryPayload = {
+  billingPlan: string;
+  effectivePlan: string;
+  tenantStatus: string;
+  subscription: {
+    status: string;
+    billingCycle: "MONTHLY" | "ANNUAL";
+    currentPeriodEnd: string | null;
+    trialEnd: string | null;
+    cancelAtPeriodEnd: boolean;
+    managedByStripe: boolean;
+  } | null;
+  price: { amount: string; currency: string; cycle: "MONTHLY" | "ANNUAL" } | null;
   usage: {
-    shipments: { used: 142, limit: 200 },
-    staff: { used: 3, limit: 5 },
-    apiCalls: { used: 12450, limit: 50000 }
-  },
-  paymentMethod: {
-    brand: "Visa",
-    last4: "4242",
-    expMonth: 12,
-    expYear: 2027
-  },
-  invoices: Array.from({ length: 16 }).map((_, index) => ({
-    id: `inv-${index + 1}`,
-    date: new Date(Date.now() - index * 1000 * 60 * 60 * 24 * 28).toISOString(),
-    invoiceNumber: `INV-${3000 + index}`,
-    amount: index % 2 === 0 ? 79 : 29,
-    status: index % 5 === 0 ? "OVERDUE" : "PAID",
-    pdfUrl: "#"
-  }))
-};
-
-type TenantBillingPayload = {
-  plan?: string;
-  status?: string;
-  maxStaff?: number;
-};
-
-type UsagePayload = {
-  shipments?: {
-    used?: number;
-    limit?: number;
+    shipments: { used: number; limit: number };
+    staff: { used: number; limit: number };
   };
-};
-
-type InvoicePayload = {
-  id: string;
-  createdAt?: string;
-  invoiceNumber?: string;
-  total?: number | string;
-  status?: BillingSummary["invoices"][number]["status"];
 };
 
 type BillingStatusPayload = {
@@ -60,16 +30,12 @@ type BillingStatusPayload = {
   saveOffer?: BillingSummary["saveOffer"];
 };
 
-function normalizePlan(plan?: string): BillingSummary["plan"] {
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function normalizePlan(plan?: string): BillingPlan {
   const normalized = plan?.toLowerCase();
   if (normalized === "pro" || normalized === "enterprise") return normalized;
   return "starter";
-}
-
-function planAmount(plan: BillingSummary["plan"]) {
-  if (plan === "enterprise") return 249;
-  if (plan === "pro") return 79;
-  return 29;
 }
 
 function paymentStatus(status?: string): BillingSummary["paymentStatus"] {
@@ -79,55 +45,35 @@ function paymentStatus(status?: string): BillingSummary["paymentStatus"] {
   return "active";
 }
 
-async function fetchBillingSummary(): Promise<BillingSummary> {
-  const [tenantResult, usageResult, invoicesResult, billingStatusResult] = await Promise.allSettled([
-    api.get<TenantBillingPayload>("/v1/tenant/me"),
-    api.get<UsagePayload>("/v1/tenant/usage"),
-    api.get<{ data: InvoicePayload[] }>("/v1/finance/invoices"),
-    api.get<BillingStatusPayload>("/v1/payments/billing-status")
-  ]);
-
-  const tenant = tenantResult.status === "fulfilled" ? tenantResult.value.data : {};
-  const usage = usageResult.status === "fulfilled" ? usageResult.value.data : {};
-  const invoices = invoicesResult.status === "fulfilled" ? invoicesResult.value.data.data : [];
-  const billingStatus = billingStatusResult.status === "fulfilled" ? billingStatusResult.value.data : {};
-  const plan = normalizePlan(tenant.plan);
-  const apiLimit = plan === "enterprise" ? 500_000 : plan === "pro" ? 50_000 : 0;
-
+export function toBillingSummary(payload: BillingSummaryPayload, billingStatus: BillingStatusPayload, now = Date.now()): BillingSummary {
+  const subscription = payload.subscription;
+  const trialEnd = subscription?.status === "TRIALING" && subscription.trialEnd ? new Date(subscription.trialEnd).getTime() : null;
   return {
-    plan,
-    cycle: "monthly",
-    amount: planAmount(plan),
-    renewalDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString(),
-    trialDaysRemaining: tenant.status === "TRIALING" ? 14 : undefined,
-    paymentStatus: paymentStatus(billingStatus.status ?? tenant.status),
+    plan: normalizePlan(payload.billingPlan),
+    effectivePlan: normalizePlan(payload.effectivePlan),
+    cycle: subscription?.billingCycle === "ANNUAL" ? "annual" : "monthly",
+    price: payload.price ? { amount: payload.price.amount, currency: payload.price.currency } : null,
+    renewalDate: subscription?.currentPeriodEnd ?? null,
+    trialDaysRemaining: trialEnd !== null ? Math.max(0, Math.ceil((trialEnd - now) / DAY_MS)) : undefined,
+    subscriptionStatus: subscription?.status ?? null,
+    managedByStripe: subscription?.managedByStripe ?? false,
+    paymentStatus: paymentStatus(billingStatus.status ?? payload.tenantStatus),
     nextRetryAt: billingStatus.nextRetryAt,
     saveOffer: billingStatus.saveOffer,
-    usage: {
-      shipments: {
-        used: usage.shipments?.used ?? 0,
-        limit: usage.shipments?.limit ?? fallbackBillingSummary.usage.shipments.limit
-      },
-      staff: {
-        used: 1,
-        limit: tenant.maxStaff ?? fallbackBillingSummary.usage.staff.limit
-      },
-      apiCalls: {
-        used: 0,
-        limit: apiLimit
-      }
-    },
-    invoices: invoices.map((invoice) => ({
-      id: invoice.id,
-      date: invoice.createdAt ?? new Date().toISOString(),
-      invoiceNumber: invoice.invoiceNumber ?? invoice.id,
-      amount: Number(invoice.total ?? 0),
-      status: invoice.status ?? "SENT",
-      pdfUrl: "#"
-    }))
+    usage: payload.usage
   };
 }
 
+async function fetchBillingSummary(): Promise<BillingSummary> {
+  const [summary, billingStatus] = await Promise.all([
+    api.get<BillingSummaryPayload>("/v1/tenants/me/billing/summary"),
+    // Status is advisory (dunning banners); a failure there must not hide the plan.
+    api.get<BillingStatusPayload>("/v1/payments/billing-status").then((response) => response.data).catch(() => ({}))
+  ]);
+  return toBillingSummary(summary.data, billingStatus);
+}
+
+/** `summary` is undefined until the API answers; a failed request is `isError`, never sample data. */
 export function useBilling() {
   const canFetchBilling = Boolean(getAccessToken()) && !hasDevTestSession();
   const query = useQuery({
@@ -139,8 +85,5 @@ export function useBilling() {
     enabled: canFetchBilling
   });
 
-  return {
-    ...query,
-    summary: query.data ?? fallbackBillingSummary
-  };
+  return { ...query, summary: query.data };
 }

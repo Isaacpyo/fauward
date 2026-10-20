@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 
 import CareersOpenRolesPage from "@/components/careers/CareersOpenRolesPage";
 import StructuredData from "@/components/seo/StructuredData";
+import { loadOpenJobs } from "@/lib/careers-jobs";
 import { buildBreadcrumbSchema, buildMetadata } from "@/lib/seo";
+
+export const revalidate = 300;
 
 export function generateMetadata(): Metadata {
   return buildMetadata({
@@ -12,7 +15,9 @@ export function generateMetadata(): Metadata {
   });
 }
 
-export default function OpenRolesRoute() {
+export default async function OpenRolesRoute() {
+  const roles = await loadOpenJobs();
+
   return (
     <>
       <StructuredData
@@ -24,7 +29,7 @@ export default function OpenRolesRoute() {
           ]),
         ]}
       />
-      <CareersOpenRolesPage />
+      <CareersOpenRolesPage roles={roles} />
     </>
   );
 }

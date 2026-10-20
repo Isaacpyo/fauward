@@ -32,7 +32,8 @@ export function computePlatformAuditHash(fields: Record<string, unknown>, previo
     .digest('hex');
 }
 
-export async function writePlatformAuditLog(prisma: PrismaClient, input: PlatformAuditInput) {
+// Accepts a transaction client too, so callers can write the audit row in the same transaction as the change.
+export async function writePlatformAuditLog(prisma: Pick<PrismaClient, 'platformAuditLog'>, input: PlatformAuditInput) {
   const previous = await prisma.platformAuditLog.findFirst({
     orderBy: { createdAt: 'desc' },
     select: { hash: true }

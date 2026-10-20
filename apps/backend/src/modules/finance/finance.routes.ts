@@ -1,3 +1,4 @@
+import { markOnboardingStep } from '../../services/onboarding.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { InvoiceStatus, PaymentStatus, Prisma, ReturnStatus } from '@prisma/client';
 
@@ -5,6 +6,7 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
 import { planService } from '../tenants/plan.service.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -42,6 +44,7 @@ async function nextInvoiceNumber(app: FastifyInstance, tenantId: string, tenantS
   const prefix = `${tenantSlug.toUpperCase()}-INV-${year}-`;
   const count = await app.prisma.invoice.count({
     where: {
+      kind: 'TENANT_CUSTOMER',
       tenantId,
       invoiceNumber: { startsWith: prefix }
     }
@@ -53,28 +56,24 @@ export async function runOverdueInvoiceSweep(app: FastifyInstance) {
   const now = new Date();
   const overdueInvoices = await app.prisma.invoice.findMany({
     where: {
+      kind: 'TENANT_CUSTOMER',
       status: 'SENT',
       dueDate: { lt: now }
     }
   });
 
   for (const invoice of overdueInvoices) {
-    await app.prisma.$transaction([
-      app.prisma.invoice.update({
-        where: { id: invoice.id },
-        data: { status: 'OVERDUE' }
-      }),
-      app.prisma.notificationLog.createMany({
-        data: [
-          {
-            tenantId: invoice.tenantId,
-            channel: 'EMAIL',
-            event: 'invoice_overdue',
-            status: 'QUEUED'
-          }
-        ]
-      })
-    ]);
+    await app.prisma.invoice.update({
+      where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
+      data: { status: 'OVERDUE' }
+    });
+    await notifyCustomer(app, {
+      tenantId: invoice.tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'invoice_overdue',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: invoice.total.toFixed(2), currency: invoice.currency }
+    });
   }
 
   return overdueInvoices.length;
@@ -104,7 +103,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     if (!hasAnyFilter) {
       const invoices = await app.prisma.invoice.findMany({
-        where: { tenantId },
+        where: { kind: 'TENANT_CUSTOMER', tenantId },
         include: { organisation: true },
         orderBy: { createdAt: 'desc' }
       });
@@ -138,13 +137,13 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const [rows, total] = await Promise.all([
       app.prisma.invoice.findMany({
-        where,
+        where: { ...where, kind: 'TENANT_CUSTOMER' },
         include: { organisation: true },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit
       }),
-      app.prisma.invoice.count({ where })
+      app.prisma.invoice.count({ where: { ...where, kind: 'TENANT_CUSTOMER' } })
     ]);
 
     reply.send({
@@ -180,6 +179,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     const invoiceNumber = await nextInvoiceNumber(app, tenantId, req.tenant?.slug ?? 'TENANT');
     const invoice = await app.prisma.invoice.create({
       data: {
+        kind: 'TENANT_CUSTOMER',
         tenantId,
         invoiceNumber,
         shipmentId: payload.shipmentId,
@@ -213,7 +213,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const { id } = req.params as { id: string };
     const invoice = await app.prisma.invoice.findFirst({
-      where: { id, tenantId },
+      where: { kind: 'TENANT_CUSTOMER', id, tenantId },
       include: {
         payments: true,
         creditNotes: true,
@@ -242,14 +242,14 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       total?: number;
     };
 
-    const invoice = await app.prisma.invoice.findFirst({ where: { id, tenantId } });
+    const invoice = await app.prisma.invoice.findFirst({ where: { kind: 'TENANT_CUSTOMER', id, tenantId } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
     if (invoice.status !== 'DRAFT') {
       return reply.status(400).send({ error: 'Only DRAFT invoices can be updated' });
     }
 
     const updated = await app.prisma.invoice.update({
-      where: { id: invoice.id },
+      where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
       data: {
         lineItems: payload.lineItems ? (payload.lineItems as Prisma.InputJsonValue) : undefined,
         dueDate: payload.dueDate ? new Date(payload.dueDate) : undefined,
@@ -270,23 +270,13 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     if (!tenantId) return;
 
     const { id } = req.params as { id: string };
-    const invoice = await app.prisma.invoice.findFirst({ where: { id, tenantId } });
+    const invoice = await app.prisma.invoice.findFirst({ where: { kind: 'TENANT_CUSTOMER', id, tenantId } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
     const updated = await app.prisma.$transaction(async (tx) => {
       const next = await tx.invoice.update({
-        where: { id: invoice.id },
+        where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
         data: { status: 'SENT', sentAt: new Date() }
-      });
-
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          channel: 'EMAIL',
-          event: 'invoice_sent',
-          status: 'QUEUED',
-          userId: invoice.customerId ?? undefined
-        }
       });
 
       await tx.auditLog.create({
@@ -301,6 +291,14 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       });
 
       return next;
+    });
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'invoice_sent',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: invoice.total.toFixed(2), currency: invoice.currency, dueDate: invoice.dueDate?.toISOString().slice(0, 10) ?? '' }
     });
 
     reply.send(updated);
@@ -323,12 +321,13 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     }
     const paymentAmount = payload.amount;
 
-    const invoice = await app.prisma.invoice.findFirst({ where: { id, tenantId } });
+    const invoice = await app.prisma.invoice.findFirst({ where: { kind: 'TENANT_CUSTOMER', id, tenantId } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
     const result = await app.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.create({
         data: {
+          kind: 'TENANT_CUSTOMER',
           tenantId,
           invoiceId: invoice.id,
           shipmentId: invoice.shipmentId,
@@ -342,7 +341,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       });
 
       const paidAggregate = await tx.payment.aggregate({
-        where: { tenantId, invoiceId: invoice.id, status: PaymentStatus.COMPLETED },
+        where: { kind: 'TENANT_CUSTOMER', tenantId, invoiceId: invoice.id, status: PaymentStatus.COMPLETED },
         _sum: { amount: true }
       });
       const paidAmount = Number(paidAggregate._sum.amount ?? 0);
@@ -350,20 +349,10 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
       const nextStatus: InvoiceStatus = paidAmount >= invoiceTotal ? 'PAID' : 'PARTIALLY_PAID';
       const updatedInvoice = await tx.invoice.update({
-        where: { id: invoice.id },
+        where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
         data: {
           status: nextStatus,
           paidAt: nextStatus === 'PAID' ? new Date() : invoice.paidAt
-        }
-      });
-
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          channel: 'EMAIL',
-          event: 'payment_received',
-          status: 'QUEUED',
-          userId: invoice.customerId ?? undefined
         }
       });
 
@@ -386,6 +375,15 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
       return { payment, invoice: updatedInvoice };
     });
+    if (result.invoice.status === 'PAID') await markOnboardingStep({ prisma: app.prisma, redis: app.redis, log: req.log }, tenantId, 'FIRST_PAID_INVOICE');
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: invoice.customerId,
+      organisationId: invoice.organisationId,
+      template: 'payment_received',
+      data: { invoiceNumber: invoice.invoiceNumber, amount: result.payment.amount.toFixed(2), currency: result.payment.currency }
+    });
 
     reply.send(result);
   });
@@ -395,7 +393,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     if (!tenantId) return;
 
     const { id } = req.params as { id: string };
-    const invoice = await app.prisma.invoice.findFirst({ where: { id, tenantId } });
+    const invoice = await app.prisma.invoice.findFirst({ where: { kind: 'TENANT_CUSTOMER', id, tenantId } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
     if (invoice.status === 'PAID') {
       return reply.status(400).send({ error: 'Cannot void PAID invoice' });
@@ -403,7 +401,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const updated = await app.prisma.$transaction(async (tx) => {
       const next = await tx.invoice.update({
-        where: { id: invoice.id },
+        where: { kind: 'TENANT_CUSTOMER', id: invoice.id },
         data: { status: 'VOID', voidedAt: new Date() }
       });
       await tx.auditLog.create({
@@ -445,6 +443,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
       const amount = Number(shipment.price ?? 0);
       const invoice = await app.prisma.invoice.create({
         data: {
+          kind: 'TENANT_CUSTOMER',
           tenantId,
           invoiceNumber,
           shipmentId: shipment.id,
@@ -472,7 +471,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     if (!tenantId) return;
 
     const payments = await app.prisma.payment.findMany({
-      where: { tenantId },
+      where: { kind: 'TENANT_CUSTOMER', tenantId },
       include: { invoice: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -498,15 +497,16 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     }
     const creditAmount = payload.amount;
 
-    const invoice = await app.prisma.invoice.findFirst({ where: { id: payload.invoiceId, tenantId } });
+    const invoice = await app.prisma.invoice.findFirst({ where: { kind: 'TENANT_CUSTOMER', id: payload.invoiceId, tenantId } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
-    const existingCount = await app.prisma.creditNote.count({ where: { tenantId } });
+    const existingCount = await app.prisma.creditNote.count({ where: { kind: 'TENANT_CUSTOMER', tenantId } });
     const creditNumber = `${(req.tenant?.slug ?? 'TENANT').toUpperCase()}-CR-${yearPrefix()}-${String(existingCount + 1).padStart(4, '0')}`;
 
     const creditNote = await app.prisma.$transaction(async (tx) => {
       const created = await tx.creditNote.create({
         data: {
+          kind: 'TENANT_CUSTOMER',
           tenantId,
           invoiceId: invoice.id,
           customerId: payload.customerId ?? invoice.customerId,
@@ -543,7 +543,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     if (!tenantId) return;
 
     const creditNotes = await app.prisma.creditNote.findMany({
-      where: { tenantId },
+      where: { kind: 'TENANT_CUSTOMER', tenantId },
       include: { invoice: true, organisation: true },
       orderBy: { createdAt: 'desc' }
     });
@@ -561,6 +561,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const invoices = await app.prisma.invoice.findMany({
       where: {
+        kind: 'TENANT_CUSTOMER',
         tenantId,
         createdAt: { gte: dateFrom, lte: dateTo }
       },
@@ -594,7 +595,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     const tenantId = getTenantId(req, reply);
     if (!tenantId) return;
 
-    const invoices = await app.prisma.invoice.findMany({ where: { tenantId } });
+    const invoices = await app.prisma.invoice.findMany({ where: { kind: 'TENANT_CUSTOMER', tenantId } });
     const totals = invoices.reduce(
       (acc, inv) => {
         const total = Number(inv.total ?? 0);
@@ -611,7 +612,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const codAgg = await app.prisma.payment.groupBy({
       by: ['status'],
-      where: { tenantId, method: 'CASH' },
+      where: { kind: 'TENANT_CUSTOMER', tenantId, method: 'CASH' },
       _sum: { amount: true }
     });
     let codOutstanding = 0;
@@ -769,7 +770,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
     if (!tenantId) return;
 
     const codPayments = await app.prisma.payment.findMany({
-      where: { tenantId, method: 'CASH' },
+      where: { kind: 'TENANT_CUSTOMER', tenantId, method: 'CASH' },
       include: {
         shipment: {
           select: { id: true, trackingNumber: true, assignedDriverId: true }
@@ -906,7 +907,7 @@ export async function registerFinanceRoutes(app: FastifyInstance) {
 
     const [line, payment] = await Promise.all([
       app.prisma.gatewayPayoutLine.findFirst({ where: { id: lineId, tenantId } }),
-      app.prisma.payment.findFirst({ where: { id: body.paymentId, tenantId } })
+      app.prisma.payment.findFirst({ where: { kind: 'TENANT_CUSTOMER', id: body.paymentId, tenantId } })
     ]);
     if (!line) return reply.status(404).send({ error: 'Payout line not found' });
     if (!payment) return reply.status(404).send({ error: 'Payment not found' });

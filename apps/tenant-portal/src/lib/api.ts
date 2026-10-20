@@ -6,6 +6,9 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL
   ? `${import.meta.env.VITE_API_BASE_URL}/api`
   : '/api';
 
+/** Fired when the backend says a plan feature is not available; useTenant reloads the tenant config. */
+export const ENTITLEMENTS_STALE_EVENT = 'fauward:entitlements-stale';
+
 export const api = axios.create({
   baseURL: API_BASE,
   withCredentials: true,
@@ -13,7 +16,7 @@ export const api = axios.create({
 });
 
 function isPublicAuthEndpoint(url?: string) {
-  return Boolean(url && /^\/?v1\/auth\/(login|register|forgot-password|reset-password|refresh)/.test(url));
+  return Boolean(url && /^\/?v1\/auth\/(login|register|forgot-password|reset-password|refresh|impersonation\/exchange)/.test(url));
 }
 
 // Inject the stored access token into every outgoing request.
@@ -70,6 +73,11 @@ api.interceptors.response.use(
     return response;
   },
   async (error) => {
+    // L12 (ACC-L12-1): the backend refused a plan feature, so the tenant's entitlements changed (override revoked or
+    // expired) since the UI last loaded them; the tenant config reloads at once so PlanGate agrees with the backend.
+    if (error.response?.status === 403 && error.response?.data?.code === 'FEATURE_NOT_AVAILABLE' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(ENTITLEMENTS_STALE_EVENT));
+    }
     const original = error.config as typeof error.config & { _retry?: boolean };
     if (error.response?.status !== 401 || original._retry) {
       return Promise.reject(error);

@@ -143,10 +143,10 @@ function unique(permissions: Permission[]): Permission[] {
   return Array.from(new Set(permissions));
 }
 
-export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
+const BASE_ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   [Role.PLATFORM_ENGINEER]: unique([...platformWrite, 'trust.security.read']),
-  [Role.SRE]: unique([...platformWrite, 'trust.security.read', 'trust.audit.read']),
-  [Role.PLATFORM_ADMIN]: unique([...platformWrite, 'platform.tenants.delete', 'trust.audit.read']),
+  [Role.SRE]: unique([...platformWrite, 'platform.queues.purge', 'trust.security.read', 'trust.audit.read']),
+  [Role.PLATFORM_ADMIN]: unique([...platformWrite, 'platform.tenants.delete', 'platform.tenants.close', 'platform.queues.purge', 'trust.audit.read']),
   [Role.FINANCE_ANALYST]: unique([...revenueRead, 'platform.health.read', 'platform.queues.read']),
   [Role.FINANCE_ADMIN]: unique([...revenueWrite, 'revenue.invoices.refund.large', 'revenue.subscriptions.override', 'revenue.commissions.payout', 'platform.health.read', 'platform.queues.read']),
   [Role.REVOPS]: unique([...revenueWrite, 'revenue.subscriptions.override', 'revenue.analytics.read', ...gtmRead]),
@@ -157,7 +157,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   [Role.TRUST_ANALYST]: unique([...trustRead, 'trust.jit.request', 'trust.safety.suspend']),
   [Role.LEGAL_COUNSEL]: unique(['trust.audit.read', 'trust.audit.export', 'trust.compliance.dsar.read', 'trust.compliance.legal-hold.read', 'trust.compliance.legal-hold.write']),
   [Role.SECURITY_ENGINEER]: unique([...trustRead, 'trust.secrets.write', 'trust.security.write', 'trust.jit.request', 'trust.jit.approve', 'platform.health.read', 'platform.integrations.read']),
-  [Role.COMPLIANCE_ADMIN]: unique([...trustWrite, 'trust.iam.write']),
+  [Role.COMPLIANCE_ADMIN]: unique([...trustWrite, 'trust.iam.write', 'trust.compliance.dsar.deliver']),
   [Role.SALES_REP]: unique(['gtm.pipeline.read', 'gtm.pipeline.write', 'gtm.trials.read', 'gtm.trials.extend', 'gtm.demos.read', 'gtm.demos.write', 'gtm.contracts.read']),
   [Role.SALES_MANAGER]: unique([...gtmWrite, 'gtm.contracts.discount.large']),
   [Role.SALES_DIRECTOR]: unique([...gtmWrite, 'revenue.subscriptions.read']),
@@ -167,6 +167,11 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   [Role.EXECUTIVE]: unique(READ_ONLY_PERMISSIONS),
   [Role.ROOT]: [...PERMISSIONS]
 };
+
+/** Every role can ask for just-in-time elevation (D2), so `trust.jit.request` is added to all of them. */
+export const ROLE_PERMISSIONS: Record<Role, Permission[]> = Object.fromEntries(
+  Object.entries(BASE_ROLE_PERMISSIONS).map(([role, permissions]) => [role, unique([...permissions, 'trust.jit.request'])])
+) as Record<Role, Permission[]>;
 
 export function roleHasPermission(role: Role, permission: Permission): boolean {
   return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;

@@ -9,8 +9,11 @@ import { runAgent, approveAgentAction } from './agent.service.js';
 import { persistAgentRun } from './agent.audit.js';
 import { buildToolHandlers } from './agent.handlers.impl.js';
 import { enqueueAgentSweep } from './agent.queue.js';
+import { registerAgentAskRoute } from './agent.ask.js';
+import { registerAgentConversationRoutes } from './agent.conversations.js';
 import { NON_TERMINAL_STATUSES, type FindingKind } from './sweep.detectors.js';
 import type { AgentEvent } from './agent.types.js';
+import { emitAiLimitReached } from '../../shared/services/llm-gateway.service.js';
 
 // Coverage view groups: problems first (actionable) → informational. Empty groups are
 // omitted before the response leaves the server.
@@ -62,6 +65,7 @@ async function enforceSweepLimits(app: FastifyInstance, tenantId: string): Promi
     });
     const totalCost = usage.reduce((sum, row) => sum + Number(row.costUsd ?? 0), 0);
     if (totalCost >= Number(limit.monthlyBudgetUsd)) {
+      emitAiLimitReached({ tenantId, feature: SWEEP_FEATURE_KEY, code: 'AI_BUDGET_EXCEEDED' });
       throw app.httpErrors.paymentRequired('Monthly AI budget exhausted');
     }
   }
@@ -73,6 +77,9 @@ function sweepRateLimitKey(req: FastifyRequest): string {
 }
 
 export async function registerAgentRoutes(app: FastifyInstance) {
+  await registerAgentAskRoute(app);
+  await registerAgentConversationRoutes(app);
+
   app.post('/v1/agent/handle-event', async (request, reply) => {
     if (!agentConfig.serviceToken) {
       app.log.error('AGENT_SERVICE_TOKEN is required for agent event handling');
@@ -458,7 +465,7 @@ export async function registerAgentRoutes(app: FastifyInstance) {
         },
         limit: limit
           ? {
-              monthlyBudgetUsd: limit.monthlyBudgetUsd,
+              monthlyBudgetUsd: limit.monthlyBudgetUsd === null ? null : limit.monthlyBudgetUsd.toFixed(2),
               flashRequestLimit: limit.flashRequestLimit,
               proRequestLimit: limit.proRequestLimit,
               featuresEnabled: limit.featuresEnabled ?? []

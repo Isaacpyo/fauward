@@ -1,34 +1,48 @@
 import type { PrismaClient } from '@prisma/client';
 
+type ExceptionsDb = Pick<PrismaClient, 'exceptionCase' | 'slaPolicy'>;
+
+// The tenant sees Fauward's replies on an escalated exception (L15, WP-2.11).
+const withEscalation = {
+  shipment: { select: { id: true, trackingNumber: true } },
+  escalationReplies: { orderBy: { createdAt: 'asc' as const } }
+};
+
 export const exceptionsService = {
-  list(prisma: PrismaClient, tenantId: string) {
-    return (prisma as any).exceptionCase.findMany({
+  list(prisma: ExceptionsDb, tenantId: string) {
+    return prisma.exceptionCase.findMany({
       where: { tenantId },
-      orderBy: { createdAt: 'desc' }
+      include: withEscalation,
+      orderBy: { createdAt: 'desc' },
+      take: 500
     });
   },
 
-  get(prisma: PrismaClient, tenantId: string, id: string) {
-    return (prisma as any).exceptionCase.findFirst({ where: { id, tenantId } });
+  get(prisma: ExceptionsDb, tenantId: string, id: string) {
+    return prisma.exceptionCase.findFirst({ where: { id, tenantId }, include: withEscalation });
   },
 
-  async resolve(prisma: PrismaClient, tenantId: string, id: string, notes?: string) {
-    const existing = await this.get(prisma, tenantId, id);
+  async resolve(prisma: ExceptionsDb, tenantId: string, id: string, notes?: string) {
+    const existing = await prisma.exceptionCase.findFirst({ where: { id, tenantId } });
     if (!existing) return null;
-    return (prisma as any).exceptionCase.update({
+    return prisma.exceptionCase.update({
       where: { id: existing.id },
       data: { status: 'RESOLVED', resolvedAt: new Date(), notes: notes ?? existing.notes }
     });
   },
 
-  listSlaPolicies(prisma: PrismaClient, tenantId: string) {
-    return (prisma as any).slaPolicy.findMany({
+  listSlaPolicies(prisma: ExceptionsDb, tenantId: string) {
+    return prisma.slaPolicy.findMany({
       where: { tenantId },
       orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }]
     });
   },
 
-  createSlaPolicy(prisma: PrismaClient, tenantId: string, data: Record<string, unknown>) {
-    return (prisma as any).slaPolicy.create({ data: { tenantId, ...data } });
+  createSlaPolicy(
+    prisma: ExceptionsDb,
+    tenantId: string,
+    data: { name: string; serviceType?: string; pickupWindowHours: number; deliveryWindowHours: number; escalationHours: number; isDefault: boolean }
+  ) {
+    return prisma.slaPolicy.create({ data: { tenantId, ...data } });
   }
 };

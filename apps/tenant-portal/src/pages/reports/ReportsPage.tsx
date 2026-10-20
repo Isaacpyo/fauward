@@ -40,8 +40,6 @@ export function ReportsPage() {
   const [dateFrom, setDateFrom] = useState(initial.dateFrom);
   const [dateTo, setDateTo] = useState(initial.dateTo);
   const [loading, setLoading] = useState(false);
-  const [schedule, setSchedule] = useState("weekly");
-  const [recipients, setRecipients] = useState("");
 
   const generate = async () => {
     setLoading(true);
@@ -111,28 +109,6 @@ export function ReportsPage() {
           </Button>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Scheduled Reports (Pro+)</h3>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <Select
-              value={schedule}
-              onValueChange={setSchedule}
-              options={[
-                { label: "Daily", value: "daily" },
-                { label: "Weekly", value: "weekly" },
-                { label: "Monthly", value: "monthly" }
-              ]}
-            />
-            <Input
-              value={recipients}
-              onChange={(event) => setRecipients(event.target.value)}
-              placeholder="Recipients: ops@company.com, manager@company.com"
-            />
-          </div>
-          <Button variant="secondary" className="mt-3">
-            Save schedule
-          </Button>
-        </div>
       </div>
     </PageShell>
   );

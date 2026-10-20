@@ -1,27 +1,11 @@
 import type { PrismaClient, Tenant } from '@prisma/client';
+import { resolveTenantEntitlements } from '../../services/tenant-entitlements.service.js';
 
 function getCurrentMonth(): string {
   const d = new Date();
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}`;
-}
-
-function hasConnectedPaymentGateway(rawValue?: string | null) {
-  if (!rawValue) return false;
-
-  try {
-    const parsed = JSON.parse(rawValue) as {
-      providers?: Record<string, { enabled?: boolean } | undefined>;
-    };
-    const providers = Object.values(parsed.providers ?? {});
-    if (providers.length === 0) {
-      return false;
-    }
-    return providers.some((provider) => provider?.enabled);
-  } catch {
-    return rawValue.trim().length > 0;
-  }
 }
 
 export const usageService = {
@@ -33,9 +17,11 @@ export const usageService = {
     const current = (usage as any)?.[type] ?? 0;
 
     if (type === 'shipments') {
-      const limit = tenant.maxShipmentsPm;
+      // Effective limits (plan override, or limits Fauward staff set) — WP-1.2, C42.
+      const entitlements = await resolveTenantEntitlements(prisma, tenant);
+      const limit = entitlements.limits.maxShipmentsPm;
       if (limit !== -1 && current >= limit) {
-        if (tenant.plan === 'PRO') {
+        if (entitlements.effectivePlan === 'PRO') {
           return { allowed: true, overage: true };
         }
         return {
@@ -65,7 +51,7 @@ export const usageService = {
       where: { tenantId_month: { tenantId: tenant.id, month } }
     });
     const shipmentsUsed = usage?.shipments ?? 0;
-    const limit = tenant.maxShipmentsPm;
+    const limit = (await resolveTenantEntitlements(prisma, tenant)).limits.maxShipmentsPm;
     const percent = limit > 0 ? Math.round((shipmentsUsed / limit) * 100) : 0;
 
     return {
@@ -76,29 +62,5 @@ export const usageService = {
         percent
       }
     };
-  },
-
-  async getOnboarding(prisma: PrismaClient, tenant: Tenant) {
-    const [settings, shipmentCount, staffCount] = await Promise.all([
-      prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id } }),
-      prisma.shipment.count(),
-      prisma.user.count({ where: { tenantId: tenant.id, role: { notIn: ['CUSTOMER_ADMIN', 'CUSTOMER_USER'] } } })
-    ]);
-
-    const checklist = {
-      logoUploaded: !!tenant.logoUrl,
-      colourSet: tenant.primaryColor !== '#0D1F3C',
-      firstShipmentCreated: shipmentCount > 0,
-      staffInvited: staffCount > 1,
-      paymentConnected: hasConnectedPaymentGateway(settings?.paymentGatewayKey),
-      customDomain: tenant.customDomainStatus === 'ACTIVE',
-      apiKeyGenerated: false
-    };
-
-    const values = Object.values(checklist);
-    const completeCount = values.filter(Boolean).length;
-    const percentComplete = Math.round((completeCount / values.length) * 100);
-
-    return { ...checklist, percentComplete };
   }
 };

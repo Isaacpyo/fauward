@@ -11,6 +11,37 @@ export type PaymentIntentInput = {
   metadata?: Record<string, string>;
 };
 
+// ISO 4217 currencies whose minor unit is not 1/100 (Stripe's zero- and three-decimal lists).
+const ZERO_DECIMAL_CURRENCIES = new Set(['BIF', 'CLP', 'DJF', 'GNF', 'JPY', 'KMF', 'KRW', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF']);
+const THREE_DECIMAL_CURRENCIES = new Set(['BHD', 'JOD', 'KWD', 'OMR', 'TND']);
+
+export function currencyDecimals(currency: string) {
+  const code = currency.toUpperCase();
+  if (ZERO_DECIMAL_CURRENCIES.has(code)) return 0;
+  if (THREE_DECIMAL_CURRENCIES.has(code)) return 3;
+  return 2;
+}
+
+export class MoneyFormatError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MoneyFormatError';
+  }
+}
+
+/** "12.34" GBP → 1234; "1500" JPY → 1500; "1.234" KWD → 1234. Exact string arithmetic, no floating point. */
+export function toMinorUnits(amountMajor: string, currency: string): number {
+  const decimals = currencyDecimals(currency);
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(amountMajor.trim());
+  if (!match) throw new MoneyFormatError(`Invalid amount "${amountMajor}"`);
+  const [, whole, fraction = ''] = match;
+  const trimmed = fraction.replace(/0+$/, '');
+  if (trimmed.length > decimals) throw new MoneyFormatError(`${currency.toUpperCase()} amounts have at most ${decimals} decimal places`);
+  const minor = Number(`${whole}${fraction.padEnd(decimals, '0').slice(0, decimals)}`);
+  if (!Number.isSafeInteger(minor)) throw new MoneyFormatError(`Amount "${amountMajor}" is too large`);
+  return minor;
+}
+
 let stripeClient: Stripe | null = null;
 
 function getStripeClient() {
@@ -73,14 +104,27 @@ export const stripeService = {
     return { id: subscription.id, status: subscription.status };
   },
 
-  async createRefund(paymentIntent: string, amountMinor: number, reason: string | undefined, idempotencyKey: string) {
+  /** Tenant close (WP-1.2): stop renewing, keep the paid period. */
+  async cancelSubscriptionAtPeriodEnd(subscriptionId: string) {
     const stripe = getStripeClient();
+    const subscription = await stripe.subscriptions.update(subscriptionId, { cancel_at_period_end: true });
+    return { id: subscription.id, status: subscription.status, cancelAtPeriodEnd: subscription.cancel_at_period_end };
+  },
+
+  isConfigured() {
+    return Boolean(config.stripe.secretKey);
+  },
+
+  /** Refund in major units (Decimal string); the only place major → minor conversion happens is toMinorUnits (D4). */
+  async createRefund(input: { paymentIntentOrCharge: string; amountMajor: string; currency: string; reason?: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const target = input.paymentIntentOrCharge.startsWith('ch_') ? { charge: input.paymentIntentOrCharge } : { payment_intent: input.paymentIntentOrCharge };
     const params: Stripe.RefundCreateParams = {
-      payment_intent: paymentIntent,
-      amount: amountMinor,
-      metadata: reason ? { reason, idempotencyKey } : { idempotencyKey }
+      ...target,
+      amount: toMinorUnits(input.amountMajor, input.currency),
+      metadata: input.reason ? { reason: input.reason, idempotencyKey: input.idempotencyKey } : { idempotencyKey: input.idempotencyKey }
     };
-    const refund = await stripe.refunds.create(params, { idempotencyKey });
+    const refund = await stripe.refunds.create(params, { idempotencyKey: input.idempotencyKey });
     return { id: refund.id, status: refund.status ?? 'pending' };
   },
 
@@ -127,5 +171,54 @@ export const stripeService = {
       results.push(txn);
     }
     return results;
+  },
+
+  /** Plan change for a tenant without a Stripe subscription yet (WP-2.7): a subscription-mode Checkout session. */
+  async createSubscriptionCheckout(params: { customerId?: string | null; customerEmail?: string | null; priceId: string; metadata: Record<string, string>; successUrl: string; cancelUrl: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: 'subscription',
+        line_items: [{ price: params.priceId, quantity: 1 }],
+        ...(params.customerId ? { customer: params.customerId } : params.customerEmail ? { customer_email: params.customerEmail } : {}),
+        metadata: params.metadata,
+        subscription_data: { metadata: params.metadata },
+        success_url: params.successUrl,
+        cancel_url: params.cancelUrl
+      },
+      { idempotencyKey: params.idempotencyKey }
+    );
+    return { sessionId: session.id, url: session.url ?? '' };
+  },
+
+  /** Plan change on an existing Stripe subscription: swaps the price with proration (WP-2.7). */
+  async changeSubscriptionPrice(params: { subscriptionId: string; priceId: string; metadata: Record<string, string>; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const current = await stripe.subscriptions.retrieve(params.subscriptionId);
+    const item = current.items.data[0];
+    if (!item) throw new Error(`Stripe subscription ${params.subscriptionId} has no items`);
+    const updated = await stripe.subscriptions.update(
+      params.subscriptionId,
+      { items: [{ id: item.id, price: params.priceId }], proration_behavior: 'create_prorations', metadata: params.metadata },
+      { idempotencyKey: params.idempotencyKey }
+    );
+    return { id: updated.id, status: updated.status };
+  },
+
+  async createBillingPortalSession(params: { customerId: string; returnUrl: string }) {
+    const stripe = getStripeClient();
+    const session = await stripe.billingPortal.sessions.create({ customer: params.customerId, return_url: params.returnUrl });
+    return { url: session.url };
+  },
+
+  /** Save offer redemption (WP-2.7): a one-off amount-off coupon applied to the tenant's subscription. */
+  async applyAmountOffCoupon(params: { subscriptionId: string; amountMajor: string; currency: string; name: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const coupon = await stripe.coupons.create(
+      { amount_off: toMinorUnits(params.amountMajor, params.currency), currency: params.currency.toLowerCase(), duration: 'once', name: params.name },
+      { idempotencyKey: `${params.idempotencyKey}:coupon` }
+    );
+    await stripe.subscriptions.update(params.subscriptionId, { discounts: [{ coupon: coupon.id }] }, { idempotencyKey: `${params.idempotencyKey}:apply` });
+    return { couponId: coupon.id };
   }
 };

@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     passWithNoTests: true,
+    // The first test in a file pays for importing route modules (Prisma client, queues, config); under turbo's parallel
+    // runs that alone can pass vitest's 5 s default on Windows/CI runners.
+    testTimeout: 20_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json-summary', 'lcov'],
@@ -28,7 +32,10 @@ export default defineConfig({
       VERCEL_API_TOKEN: 'test-vercel-token',
       VERCEL_PORTAL_PROJECT_ID: 'prj_test_portal',
       VERCEL_API_BASE: 'https://api.vercel.test',
-      RESERVED_DOMAINS: 'fauward.com,www.fauward.com,api.fauward.com,app.fauward.com'
+      RESERVED_DOMAINS: 'fauward.com,www.fauward.com,api.fauward.com,app.fauward.com',
+      // No email transport unless a test stubs one (a developer .env may point SMTP_URL at Mailpit).
+      SMTP_URL: '',
+      SENDGRID_API_KEY: ''
     }
   },
   css: {

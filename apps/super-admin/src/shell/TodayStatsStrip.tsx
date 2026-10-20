@@ -18,7 +18,7 @@ export function TodayStatsStrip() {
 
   return (
     <section className="grid gap-3 rounded-lg border border-[var(--color-border)] bg-white p-4 sm:grid-cols-2 lg:grid-cols-5">
-      <StatItem label="MRR" value={metrics.data ? formatCurrency(metrics.data.totalMRR) : "-"} loading={metrics.isLoading} />
+      <StatItem label="MRR" value={metrics.data?.mrr ? formatCurrency(metrics.data.mrr.amount, metrics.data.mrr.currency) : "-"} loading={metrics.isLoading} />
       <StatItem label="Active Tenants" value={metrics.data ? String(metrics.data.activeTenantCount) : "-"} loading={metrics.isLoading} />
       <StatItem label="Shipments Today" value={metrics.data ? String(metrics.data.shipmentsToday) : "-"} loading={metrics.isLoading} />
       <StatItem label="P95 latency" value={p95.data?.label ?? "-"} loading={p95.isLoading} />

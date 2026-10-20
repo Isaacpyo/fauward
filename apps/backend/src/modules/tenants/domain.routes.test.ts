@@ -43,7 +43,8 @@ async function buildApp() {
       retryAfter: Number(context.after ?? 60)
     })
   });
-  (app as any).decorate('prisma', {});
+  // requireFeature reads entitlements (WP-1.4): no plan or feature overrides here.
+  (app as any).decorate('prisma', { tenantPlanOverride: { findFirst: async () => null }, tenantFeatureOverride: { findMany: async () => [] } });
   (app as any).decorate('authenticate', async (request: any, reply: any) => {
     if (!request.headers.authorization) {
       return reply.status(401).send({ error: 'Unauthorized' });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Printer, UserPlus } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
@@ -13,12 +13,14 @@ import {
 } from "@/components/shipments/ShipmentFilterBar";
 import { ShipmentTable } from "@/components/shipments/ShipmentTable";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { LiveEventsRail } from "@/components/shared/LiveEventsRail";
 import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
 import { Select } from "@/components/ui/Select";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
+import { printShippingLabel } from "@/lib/shipping-label";
 import { loadRouteOptions, type TenantRouteOption } from "@/lib/route-options";
 import { normalizeShipmentListResponse } from "@/lib/shipment-normalizers";
 import { getValidNextShipmentStates } from "@/lib/shipment-state";
@@ -65,6 +67,42 @@ function buildFiltersFromSearchParams(searchParams: URLSearchParams): ShipmentFi
 }
 
 
+type BulkResult = { ok: number; failed: Array<{ id: string; message: string }> };
+
+/** Runs one real API call per shipment, sequentially, and reports what actually succeeded. */
+async function runForEach(ids: string[], action: (id: string) => Promise<unknown>): Promise<BulkResult> {
+  const result: BulkResult = { ok: 0, failed: [] };
+  for (const id of ids) {
+    try {
+      await action(id);
+      result.ok += 1;
+    } catch (error) {
+      result.failed.push({ id, message: apiErrorMessage(error, "Request failed") });
+    }
+  }
+  return result;
+}
+
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** CSV of the selected rows exactly as loaded from `GET /v1/shipments`. */
+function downloadShipmentsCsv(rows: ShipmentListItem[]) {
+  const header = ["Tracking number", "Status", "Customer", "Origin", "Destination", "Field operator", "Created"];
+  const lines = rows.map((row) =>
+    [row.tracking_number, row.status, row.customer_name, row.origin, row.destination, row.driver_name ?? "", row.created_at].map(csvCell).join(",")
+  );
+  const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `shipments-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 async function fetchShipments(): Promise<ShipmentListItem[]> {
   const response = await api.get("/v1/shipments");
   return normalizeShipmentListResponse(response.data);
@@ -86,6 +124,10 @@ export function ShipmentsListPage() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState("25");
   const [assignDriverOpen, setAssignDriverOpen] = useState(false);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<ShipmentState | "">("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const queryClient = useQueryClient();
   const [routeOptions, setRouteOptions] = useState<TenantRouteOption[]>(() => loadRouteOptions());
 
   useEffect(() => {
@@ -195,6 +237,44 @@ export function ShipmentsListPage() {
 
   const hasSelection = selectedIds.length > 0;
 
+  const reportBulk = (verb: string, result: BulkResult) => {
+    if (result.failed.length === 0) {
+      addToast({ title: `${verb} ${result.ok} shipment(s)`, variant: "success" });
+    } else {
+      addToast({
+        title: `${verb} ${result.ok} of ${result.ok + result.failed.length} shipment(s)`,
+        description: result.failed[0]?.message,
+        variant: "error"
+      });
+    }
+    void queryClient.invalidateQueries({ queryKey: ["shipments-list"] });
+  };
+
+  const applyBulkStatus = async () => {
+    if (!bulkStatus) return;
+    setBulkBusy(true);
+    try {
+      const result = await runForEach(selectedIds, (id) => api.patch(`/v1/shipments/${id}/status`, { status: bulkStatus }));
+      reportBulk(`Moved to ${bulkStatus.replace(/_/g, " ").toLowerCase()}:`, result);
+      if (result.failed.length === 0) {
+        setSelectedIds([]);
+        setBulkStatusOpen(false);
+        setBulkStatus("");
+      }
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const printSelectedLabels = async () => {
+    setBulkBusy(true);
+    try {
+      reportBulk("Printed labels for", await runForEach(selectedIds, (id) => printShippingLabel(id)));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   const openShipmentWorkspace = (shipment: ShipmentListItem) => {
     const next = new URLSearchParams(searchParams);
     next.set("selected", shipment.tracking_number ?? shipment.id);
@@ -214,7 +294,7 @@ export function ShipmentsListPage() {
         <Button onClick={() => navigate("/shipments/create")}>Create Shipment</Button>
       }
     >
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className={`grid gap-6 ${selectedShipmentId ? "lg:grid-cols-[minmax(0,1fr)_28rem]" : ""}`}>
         <div className="space-y-4">
         <div className="sticky top-16 z-20">
         <ShipmentFilterBar
@@ -252,22 +332,26 @@ export function ShipmentsListPage() {
                     ? "No common valid status update for selected shipments"
                     : undefined
                 }
-                onClick={() => {
-                  if (sharedNextStates.length === 0) {
-                    return;
-                  }
-                  addToast({
-                    title: `Available updates: ${sharedNextStates.join(", ")}`,
-                    variant: "default"
-                  });
-                }}
+                onClick={() => setBulkStatusOpen(true)}
               >
                 Update status
               </Button>
-              <Button variant="secondary" size="sm" leftIcon={<Download size={14} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<Download size={14} />}
+                onClick={() => downloadShipmentsCsv(selectedShipments)}
+              >
                 Export selected
               </Button>
-              <Button variant="secondary" size="sm" leftIcon={<Printer size={14} />}>
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<Printer size={14} />}
+                loading={bulkBusy}
+                disabled={bulkBusy}
+                onClick={() => void printSelectedLabels()}
+              >
                 Print labels
               </Button>
             </div>
@@ -364,10 +448,6 @@ export function ShipmentsListPage() {
         )}
         </div>
 
-        <div className="hidden lg:block">
-          <LiveEventsRail className="sticky top-20" />
-        </div>
-
         <RadixDialog.Root open={!!selectedShipmentId} onOpenChange={(open) => { if (!open) closeShipmentWorkspace(); }}>
           <RadixDialog.Portal>
             <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
@@ -392,15 +472,30 @@ export function ShipmentsListPage() {
         onOpenChange={setAssignDriverOpen}
         drivers={driversQuery.data ?? []}
         onConfirm={async (driverId) => {
-          await new Promise((resolve) => window.setTimeout(resolve, 450));
           const driver = (driversQuery.data ?? []).find((item) => item.id === driverId);
-          addToast({
-            title: `Assigned ${selectedIds.length} shipment(s) to ${driver?.name ?? "field operator"}`,
-            variant: "success"
-          });
-          setSelectedIds([]);
+          const result = await runForEach(selectedIds, (id) => api.patch(`/v1/shipments/${id}/assign-driver`, { driverId }));
+          reportBulk(`Assigned to ${driver?.name ?? "field operator"}:`, result);
+          if (result.failed.length === 0) setSelectedIds([]);
         }}
       />
+
+      <Dialog
+        open={bulkStatusOpen}
+        onOpenChange={setBulkStatusOpen}
+        title="Update status"
+        description={`Move ${selectedIds.length} selected shipment(s) to a status every one of them allows.`}
+      >
+        <div className="space-y-4">
+          <Select
+            value={bulkStatus}
+            onValueChange={(value) => setBulkStatus(value as ShipmentState)}
+            options={sharedNextStates.map((status) => ({ label: status.replace(/_/g, " "), value: status }))}
+          />
+          <Button className="w-full" onClick={() => void applyBulkStatus()} loading={bulkBusy} disabled={!bulkStatus || bulkBusy}>
+            Apply to {selectedIds.length} shipment(s)
+          </Button>
+        </div>
+      </Dialog>
     </PageShell>
   );
 }

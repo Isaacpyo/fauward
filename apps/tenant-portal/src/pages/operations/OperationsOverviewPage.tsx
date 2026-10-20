@@ -1,14 +1,10 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle,
-  Bell,
   BriefcaseBusiness,
-  FileSpreadsheet,
   MapPinned,
   ShieldCheck,
   Truck,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -23,35 +19,6 @@ interface LiveCard {
   /** Renders a small red count pill when > 0. */
   count?: number;
 }
-
-interface ComingSoonCard {
-  title: string;
-  description: string;
-  icon: LucideIcon;
-}
-
-const comingSoon: ComingSoonCard[] = [
-  {
-    title: "Exception triage",
-    description: "Central view of failed deliveries, SLA breaches, and escalations needing manager action.",
-    icon: AlertTriangle,
-  },
-  {
-    title: "Daily ops report",
-    description: "Auto-generated end-of-day summary: delivered, failed, cash collected, exceptions cleared.",
-    icon: FileSpreadsheet,
-  },
-  {
-    title: "Real-time alerts",
-    description: "Configurable SLA and route alerts pushed to managers as they happen.",
-    icon: Bell,
-  },
-  {
-    title: "COD reconciliation",
-    description: "Match cash collected in the field against bank deposits and flag discrepancies.",
-    icon: Wallet,
-  },
-];
 
 export function OperationsOverviewPage() {
   // Lightweight count for the Permission Requests card; reuses the same
@@ -131,32 +98,6 @@ export function OperationsOverviewPage() {
           </div>
         </section>
 
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-500">Coming soon</h2>
-            <p className="text-xs text-gray-400">On the roadmap — not yet built.</p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {comingSoon.map((card) => (
-              <div
-                key={card.title}
-                aria-disabled
-                className="flex cursor-not-allowed flex-col rounded-xl border border-dashed border-gray-300 bg-gray-50/60 p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="rounded-full bg-white p-2.5 text-gray-400 shadow-sm">
-                    <card.icon className="h-5 w-5" />
-                  </div>
-                  <span className="inline-flex items-center rounded-full border border-gray-300 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">
-                    Coming soon
-                  </span>
-                </div>
-                <h3 className="mt-4 text-base font-semibold text-gray-500">{card.title}</h3>
-                <p className="mt-1.5 text-sm text-gray-500">{card.description}</p>
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
     </PageShell>
   );

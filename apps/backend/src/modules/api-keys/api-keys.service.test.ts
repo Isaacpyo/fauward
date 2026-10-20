@@ -87,6 +87,9 @@ async function buildApp() {
   ];
 
   const prisma = {
+    // requireFeature reads entitlements (WP-1.4): no plan or feature overrides here.
+    tenantPlanOverride: { findFirst: vi.fn(async () => null) },
+    tenantFeatureOverride: { findMany: vi.fn(async () => []) },
     apiKey: {
       findFirst: vi.fn(async ({ where }: any) => keys.find((key) => key.keyHash === where.keyHash) ?? null),
       findMany: vi.fn(async ({ where }: any) => keys.filter((key) => key.tenantId === where.tenantId)),

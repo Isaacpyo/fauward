@@ -1,10 +1,6 @@
 {
   "rewrites": [
     {
-      "source": "/api/v1/:path*",
-      "destination": "https://api.fauward.com/api/v1/:path*"
-    },
-    {
       "source": "/api/internal/:path*",
       "destination": "https://api.fauward.com/api/internal/:path*"
     },
@@ -12,5 +8,11 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "console/*": false,
+      "claude/*": false
+    }
+  }
 }
