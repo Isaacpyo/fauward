@@ -39,7 +39,7 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
    3. **Public Hostname**: subdomain `api`, domain `fauward.com`, service type `HTTP`, URL `backend:3001`. Cloudflare creates the DNS record.
    4. Optional, only if the status dashboard's Python observability panel is used: add a second hostname, `py.fauward.com`, pointing to `HTTP python-api:8000`, and set `PYTHON_API_URL=https://py.fauward.com` in the status-dashboard Vercel project.
 4. **Database, then deploy.** `master` contains console Phases 0–3: migrations `0037_console_mfa` to `0062_health_score_inputs`, and eight one-off backfills (`apps/backend/src/scripts/backfills/`). No migration drops or renames anything or adds a required column without a default, so the Railway backend keeps working while you migrate. Three backfills (0037, 0055, 0059) rewrite data the old code reads, so they wait for the cutover (step 7).
-   1. `bash scripts/prod-vm.sh stage` uploads and builds `origin/master` without starting it. The database commands below now run in this release, which has the new migrations.
+   1. `bash scripts/prod-vm.sh stage origin/chore/prod-oracle-vm` uploads and builds the release without starting it. The database commands below now run in this release, which has the new migrations. (Use the branch until it is merged in step 5; `master` has no `deploy/oracle-prod/` before that. Afterwards `stage` and `deploy` default to `origin/master`.)
    2. `bash scripts/prod-vm.sh migrate-status`. Read it before you migrate. If the Supabase database has no migration history (it was created with `prisma db push`), `migrate deploy` would replay everything from 0001. Baseline it first: for each migration already reflected in the schema, run `bash scripts/prod-vm.sh migrate-resolve --applied <name> --yes`, then check `migrate-status` again.
    3. `bash scripts/prod-vm.sh backup`, then `bash scripts/prod-vm.sh migrate --yes`.
    4. The backfills that only add data. Run each with `--dry-run` first, read the counts, then with `--yes`, for example `bash scripts/prod-vm.sh backfill 0039a --dry-run`:
@@ -48,13 +48,13 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
       - `0045`: marks console-created billing rows as platform rows
       - `0047`: support message authors and ticket audiences
       - `0051`: subscription history. Revenue analytics shows existing subscriptions only after this.
-   5. `bash scripts/prod-vm.sh deploy`. The VM backend now runs; nothing sends it traffic until step 5.
+   5. `bash scripts/prod-vm.sh deploy origin/chore/prod-oracle-vm`. The VM backend now runs; nothing sends it traffic until step 5. Check `https://api.fauward.com/health` answers through the tunnel.
    6. Dry-run the cutover backfills now, so step 7 is only the `--yes` runs: `backfill 0037 --dry-run`, `backfill 0055 --dry-run`, `backfill 0059 --dry-run`.
 5. **Point the frontends at the new API** in Vercel. Open each project, then Settings, then Environment Variables, make the change and redeploy:
    - tenant-portal: `VITE_API_BASE_URL=https://api.fauward.com`
    - fauward-Go (if deployed separately): `VITE_API_BASE_URL=https://api.fauward.com`. The emailed sign-in link opens Fauward Go at `FAUWARD_GO_URL` (default `https://fauward.com/go`); set it in `backend.env` if Fauward Go lives elsewhere.
    - status-dashboard: `BACKEND_URL=https://api.fauward.com`
-   - super-admin needs no variable change: its `vercel.json` rewrites now go to `https://api.fauward.com`.
+   - super-admin needs no variable change: its `vercel.json` rewrites go to `https://api.fauward.com` once this branch is merged. Merge the PR now (not earlier: before the tunnel is up those rewrites point at nothing), and Vercel redeploys it from `master`.
 6. **Point the inbound webhooks at the new host.** In Stripe, open Developers, then Webhooks, and change the endpoint to `https://api.fauward.com/api/v1/payments/webhook/stripe`. Put its new signing secret in `backend.env` as `STRIPE_WEBHOOK_SECRET`, then run `bash scripts/prod-vm.sh restart backend`. Do the same for any PagerDuty, Persona, ComplyAdvantage or DocuSign webhook you use (`/api/internal/.../webhooks/...`).
 7. **Cutover backfills**, straight after steps 5 and 6, in this order (0059 reads the gateways 0055 creates):
    - `bash scripts/prod-vm.sh backfill 0037 --yes` encrypts console TOTP secrets. The new backend also accepts the old plaintext ones and encrypts each at its next sign-in.
