@@ -31,7 +31,8 @@ export const MODEL_ROUTING = {
   claims_assessment: 'deepseek-v4-pro',
   returns_classification: 'deepseek-v4-flash',
   tenant_health_summary: 'deepseek-v4-pro',
-  webhook_error_summary: 'deepseek-v4-flash'
+  webhook_error_summary: 'deepseek-v4-flash',
+  agent_ask: 'deepseek-v4-flash'
 } as const satisfies Record<string, LLMModel>;
 
 type RunInput<T> = {
@@ -127,7 +128,8 @@ export class LLMGatewayService {
 
       const response = await this.callWithFallback(input, primaryModel);
       const parsed = input.outputSchema.parse(response.result);
-      const confidence = z.object({ confidence: z.number() }).passthrough().parse(parsed).confidence;
+      const confidenceCheck = z.object({ confidence: z.number() }).passthrough().safeParse(parsed);
+      const confidence = confidenceCheck.success ? confidenceCheck.data.confidence : 0;
       const latencyMs = Date.now() - started;
 
       await this.prisma.aiAgentRun?.update?.({

@@ -9,6 +9,8 @@ import { runAgent, approveAgentAction } from './agent.service.js';
 import { persistAgentRun } from './agent.audit.js';
 import { buildToolHandlers } from './agent.handlers.impl.js';
 import { enqueueAgentSweep } from './agent.queue.js';
+import { registerAgentAskRoute } from './agent.ask.js';
+import { registerAgentConversationRoutes } from './agent.conversations.js';
 import { NON_TERMINAL_STATUSES, type FindingKind } from './sweep.detectors.js';
 import type { AgentEvent } from './agent.types.js';
 
@@ -73,6 +75,9 @@ function sweepRateLimitKey(req: FastifyRequest): string {
 }
 
 export async function registerAgentRoutes(app: FastifyInstance) {
+  await registerAgentAskRoute(app);
+  await registerAgentConversationRoutes(app);
+
   app.post('/v1/agent/handle-event', async (request, reply) => {
     if (!agentConfig.serviceToken) {
       app.log.error('AGENT_SERVICE_TOKEN is required for agent event handling');

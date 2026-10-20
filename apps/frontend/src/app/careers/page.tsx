@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import StructuredData from "@/components/seo/StructuredData";
 import { buildBreadcrumbSchema, buildMetadata } from "@/lib/seo";
-import { sampleRoles } from "@/components/careers/careers-data";
+import { loadOpenJobs } from "@/lib/careers-jobs";
 import { CounterUp } from "@/components/marketing/effects/CounterUp";
 import { MagneticButton } from "@/components/marketing/effects/MagneticButton";
 import { MaskRevealHeading } from "@/components/marketing/effects/MaskRevealHeading";
@@ -49,14 +49,20 @@ const benefits = [
   },
 ];
 
-const heroStats: Array<{ to: number; suffix?: string; label: string }> = [
+type HeroStat = { to: number; suffix?: string; label: string };
+
+const baseHeroStats: HeroStat[] = [
   { to: 50, suffix: "+", label: "Team members" },
   { to: 18, label: "Countries served" },
-  { to: 6, label: "Open roles" },
 ];
 
-export default function CareersPage() {
-  const featuredRoles = sampleRoles.slice(0, 3);
+export const revalidate = 300;
+
+export default async function CareersPage() {
+  const openRoles = await loadOpenJobs();
+  const featuredRoles = openRoles.slice(0, 3);
+  const heroStats: HeroStat[] =
+    openRoles.length > 0 ? [...baseHeroStats, { to: openRoles.length, label: "Open roles" }] : baseHeroStats;
 
   return (
     <>
@@ -82,7 +88,9 @@ export default function CareersPage() {
             </MagneticButton>
           </div>
 
-          <div className="mt-16 grid gap-6 border-t border-white/15 pt-6 sm:grid-cols-3">
+          <div
+            className={`mt-16 grid gap-6 border-t border-white/15 pt-6 ${heroStats.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+          >
             {heroStats.map((stat, index) => (
               <div key={stat.label} className={index > 0 ? "sm:border-l sm:border-white/15 sm:pl-6" : ""}>
                 <p className="text-2xl font-extrabold text-white">
@@ -115,36 +123,38 @@ export default function CareersPage() {
         </div>
       </section>
 
-      <section className="bg-gray-50 py-16 lg:py-24">
-        <div className="marketing-container">
-          <div className="mb-8">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Open Roles</p>
-            <MaskRevealHeading as="h2" className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">
-              Featured roles
-            </MaskRevealHeading>
+      {featuredRoles.length > 0 && (
+        <section className="bg-gray-50 py-16 lg:py-24">
+          <div className="marketing-container">
+            <div className="mb-8">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">Open Roles</p>
+              <MaskRevealHeading as="h2" className="mt-2 text-3xl font-extrabold tracking-tight text-gray-900 md:text-4xl">
+                Featured roles
+              </MaskRevealHeading>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              {featuredRoles.map((role) => (
+                <TiltCard key={role.slug} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" intensity={5}>
+                  <h3 className="text-lg font-bold text-gray-900">{role.title}</h3>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.department}</span>
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.location}</span>
+                  </div>
+                </TiltCard>
+              ))}
+            </div>
+            <div className="mt-6">
+              <MagneticButton
+                href="/careers/open-roles"
+                strength={0.18}
+                className="inline-flex text-sm font-bold text-amber-700 transition hover:text-amber-600"
+              >
+                View all open roles -&gt;
+              </MagneticButton>
+            </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {featuredRoles.map((role) => (
-              <TiltCard key={role.slug} className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm" intensity={5}>
-                <h3 className="text-lg font-bold text-gray-900">{role.title}</h3>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.department}</span>
-                  <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600">{role.location}</span>
-                </div>
-              </TiltCard>
-            ))}
-          </div>
-          <div className="mt-6">
-            <MagneticButton
-              href="/careers/open-roles"
-              strength={0.18}
-              className="inline-flex text-sm font-bold text-amber-700 transition hover:text-amber-600"
-            >
-              View all open roles -&gt;
-            </MagneticButton>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="bg-white py-16 lg:py-24">
         <div className="marketing-container">

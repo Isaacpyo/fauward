@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { StatCard } from "@/components/ui/StatCard";
 import { UsageMeter } from "@/components/shared/UsageMeter";
 import { PageShell } from "@/layouts/PageShell";
+import { AskAgentToggleButton } from "@/components/agent-chat/AskAgentToggleButton";
 
 function humaniseType(type: string): string {
   const spaced = type.replaceAll("_", " ");
@@ -45,6 +46,7 @@ export function AgentUsagePage() {
     <PageShell
       title="Usage"
       description="AI consumption and plan limits for Fauward Agent this month."
+      actions={<AskAgentToggleButton />}
     >
       {isLoading && (
         <div className="space-y-4">

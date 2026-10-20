@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -82,11 +83,70 @@ def _address_text(value: Any) -> str:
     return ", ".join(str(part) for part in parts if part)
 
 
+def _address_field(value: Any, *keys: str) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    for key in keys:
+        raw = value.get(key)
+        if isinstance(raw, str) and raw.strip():
+            return raw.strip()
+    return None
+
+
+def _format_decimal(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number <= 0:
+        return None
+    formatted = f"{number:.2f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
+def _format_dimensions(item: dict[str, Any] | None) -> str | None:
+    if not item:
+        return None
+    length = _format_decimal(item.get("lengthCm") or item.get("length_cm"))
+    width = _format_decimal(item.get("widthCm") or item.get("width_cm"))
+    height = _format_decimal(item.get("heightCm") or item.get("height_cm"))
+    if not (length and width and height):
+        return None
+    return f"{length} × {width} × {height} cm"
+
+
+def _format_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        try:
+            moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.strftime("%d %b %Y")
+
+
+def _tracking_url(base: str, tracking_ref: str | None) -> str:
+    if not tracking_ref:
+        return base
+    if not base:
+        return tracking_ref
+    return f"{base.rstrip('/')}/{tracking_ref}"
+
+
 def build_pdf_data_from_shipment(
     *,
     shipment: dict[str, Any],
     document_type: DocumentType,
     options: PdfDisplayOptions | None = None,
+    items: list[dict[str, Any]] | None = None,
+    tracking_url_base: str = "",
 ) -> dict[str, Any]:
     origin = _first_value(shipment, "originAddress", "origin_address", "origin")
     destination = _first_value(shipment, "destinationAddress", "destination_address", "destination")
@@ -106,6 +166,34 @@ def build_pdf_data_from_shipment(
         "status": shipment.get("status"),
         "currency": options.currency if options else None,
     }
+
+    if document_type == "shipping_label":
+        first_item = (items or [None])[0] if items else None
+        weight_value = _first_value(shipment, "weightKg", "weight_kg", "package_weight_kg")
+        service_tier = _first_value(shipment, "serviceTier", "service_tier")
+        fragile = bool(
+            (first_item or {}).get("isDangerous")
+            or (first_item or {}).get("is_dangerous")
+            or shipment.get("fragile")
+        )
+        quantity = sum(int((it or {}).get("quantity") or 0) for it in (items or [])) or None
+        reference_number = _first_value(shipment, "referenceNumber", "reference_number", "reference")
+        recipient_email = _address_field(destination, "email", "contactEmail", "contact_email")
+        recipient_phone = _address_field(destination, "phone", "contactPhone", "contact_phone")
+        data.update(
+            {
+                "serviceTier": str(service_tier).upper() if service_tier else None,
+                "weightKg": _format_decimal(weight_value),
+                "packageQuantity": quantity,
+                "dimensions": _format_dimensions(first_item),
+                "fragile": fragile,
+                "recipientEmail": recipient_email,
+                "recipientPhone": recipient_phone,
+                "referenceNumber": reference_number if reference_number != shipment.get("id") else None,
+                "createdAt": _format_date(_first_value(shipment, "createdAt", "created_at")),
+                "trackingUrl": _tracking_url(tracking_url_base, tracking_ref),
+            }
+        )
 
     if document_type == "invoice":
         data.update(
@@ -147,6 +235,24 @@ def build_pdf_data_from_shipment(
     if options and options.notes:
         data["notes"] = options.notes
     return {key: value for key, value in data.items() if value is not None}
+
+
+async def latest_completed_label(tenant_id: str, shipment_id: str) -> dict[str, Any] | None:
+    row = await db.fetchrow(
+        """
+        select id, status, metadata, url
+        from documents
+        where tenant_id = $1
+          and shipment_id = $2
+          and type = 'shipping_label'
+          and status = 'COMPLETED'
+        order by updated_at desc
+        limit 1
+        """,
+        tenant_id,
+        shipment_id,
+    )
+    return dict(row) if row else None
 
 
 async def find_idempotent_document(tenant_id: str, idempotency_key: str | None) -> dict[str, Any] | None:
