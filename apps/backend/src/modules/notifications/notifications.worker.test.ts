@@ -180,3 +180,30 @@ describe.runIf(process.env.MAILPIT_SMTP_URL && process.env.MAILPIT_API_URL)('SMT
     expect(body.messages[0].Subject).toBe('Your appeal was approved');
   });
 });
+
+describe('notification failure spike (L14)', () => {
+  it('records one notifications.failure_spike per hour when more than 5% of at least 20 notifications failed', async () => {
+    const { checkNotificationFailureSpike } = await loadWorker();
+    const activity = new Map<string, Record<string, unknown>>();
+    let failed = 1;
+    const app = {
+      prisma: {
+        notificationLog: { count: vi.fn(async ({ where }: { where: { status?: string } }) => (where.status === 'FAILED' ? failed : 40)) },
+        platformActivity: {
+          upsert: vi.fn(async ({ where, create }: { where: { dedupeKey: string }; create: Record<string, unknown> }) => {
+            if (!activity.has(where.dedupeKey)) activity.set(where.dedupeKey, { id: `act_${activity.size + 1}`, ...create });
+            return activity.get(where.dedupeKey)!;
+          })
+        }
+      },
+      redis: { publish: vi.fn(async () => 1) },
+      log: { error: vi.fn(), warn: vi.fn(), info: vi.fn() }
+    };
+    const now = new Date('2026-10-19T09:30:00Z');
+    expect(await checkNotificationFailureSpike(app as never, now)).toBeNull();
+    failed = 5;
+    await checkNotificationFailureSpike(app as never, now);
+    await checkNotificationFailureSpike(app as never, new Date('2026-10-19T09:45:00Z'));
+    expect([...activity.values()]).toEqual([expect.objectContaining({ service: 'customer.comms', type: 'notifications.failure_spike', severity: 'CRITICAL', summary: '5 of 40 notifications failed in the last hour (13%)' })]);
+  });
+});

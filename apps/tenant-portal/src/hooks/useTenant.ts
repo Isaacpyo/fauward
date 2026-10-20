@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { api } from "@/lib/api";
+import { api, ENTITLEMENTS_STALE_EVENT } from "@/lib/api";
 import { getAccessToken, getDevTestSession, getDevTestSessionSnapshot, getTenantSlug } from "@/lib/auth";
 import { resolvePathTenantSlug } from "@/lib/tenantResolver";
 import { useAppStore } from "@/stores/useAppStore";
@@ -109,12 +109,21 @@ export function useTenant() {
   const query = useQuery({
     queryKey: ["tenant-config", tenantSlug],
     queryFn: fetchTenantConfig,
-    staleTime: 5 * 60_000,
-    refetchInterval: 5 * 60_000,
+    // Plan overrides and feature overrides reach the UI within a minute, on focus, or at once when the backend refuses
+    // a feature (ENTITLEMENTS_STALE_EVENT) — WP-1.4/L12.
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     retry: 2,
     enabled: hasToken && !devSession
   });
+
+  const { refetch } = query;
+  useEffect(() => {
+    const reload = () => void refetch();
+    window.addEventListener(ENTITLEMENTS_STALE_EVENT, reload);
+    return () => window.removeEventListener(ENTITLEMENTS_STALE_EVENT, reload);
+  }, [refetch]);
 
   useEffect(() => {
     if (devSession?.tenant && !tenant) {

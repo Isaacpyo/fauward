@@ -8,6 +8,7 @@ import { config } from '../../config/index.js';
 import { bullmqConnection } from '../../queues/queues.js';
 import { tenantStorage, type TenantContext } from '../../context/tenant.context.js';
 import { renderEmail, subjectOverride } from './email-content.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../../services/platform-activity.service.js';
 
 // The notification worker is the only writer of NotificationLog (D6, gate no-direct-notification-log.test.ts).
 //
@@ -44,6 +45,44 @@ type Outcome =
   | { status: 'QUOTA_EXCEEDED'; error: string };
 
 type WorkerApp = Pick<FastifyInstance, 'prisma' | 'redis' | 'log'>;
+
+/** L14: more than 5% of the last hour's notifications failed (with enough volume for the rate to mean something). */
+export const NOTIFICATION_FAILURE_SPIKE = { windowMs: 60 * 60 * 1000, rate: 0.05, minVolume: 20 } as const;
+
+/**
+ * After a failed delivery: if the last hour's failure rate is above the threshold, record one
+ * `notifications.failure_spike` activity for that hour (customer.comms). Never throws into the worker.
+ */
+export async function checkNotificationFailureSpike(app: WorkerApp, now = new Date()) {
+  try {
+    const since = new Date(now.getTime() - NOTIFICATION_FAILURE_SPIKE.windowMs);
+    const [total, failed] = await Promise.all([
+      app.prisma.notificationLog.count({ where: { createdAt: { gte: since } } }),
+      app.prisma.notificationLog.count({ where: { createdAt: { gte: since }, status: 'FAILED' } })
+    ]);
+    if (total < NOTIFICATION_FAILURE_SPIKE.minVolume || failed / total <= NOTIFICATION_FAILURE_SPIKE.rate) return null;
+    const hour = now.toISOString().slice(0, 13);
+    return await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'customer.comms',
+        type: 'notifications.failure_spike',
+        ...SYSTEM_ACTOR,
+        subjectType: 'notification_log',
+        subjectId: hour,
+        summary: `${failed} of ${total} notifications failed in the last hour (${Math.round((failed / total) * 100)}%)`,
+        severity: 'CRITICAL',
+        consoleLink: '/customer/comms/delivery-log?status=FAILED',
+        metadata: { failed, total },
+        dedupeKey: `notifications.failure_spike:${hour}`,
+        occurredAt: now
+      }
+    );
+  } catch (err) {
+    app.log.error({ err }, 'Failed to check the notification failure rate');
+    return null;
+  }
+}
 
 const sendgridApiKey = config.sendgridApiKey;
 if (sendgridApiKey) {
@@ -186,6 +225,7 @@ export async function processNotificationJob(app: WorkerApp, job: NotificationJo
         where: { id: log.id },
         data: { status: 'FAILED', error: error instanceof Error ? error.message : 'Notification delivery failed' }
       });
+      await checkNotificationFailureSpike(app);
       throw error;
     }
 

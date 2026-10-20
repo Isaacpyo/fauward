@@ -1,28 +1,16 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantChip } from "@/components/service-kit/TenantChip";
-import { consoleApi } from "@/lib/console-api";
 import { apiErrorMessage } from "@/lib/console-api-error";
+import { ONBOARDING_STEPS, type OnboardingStep, useNudgeTenant, useOnboardingFunnel, useStuckTenants } from "./api";
 
 // customer.onboarding (L7, WP-2.17): funnel and stuck tenants, both read from the event-stamped onboarding steps.
 
-type Step = "BRANDING_SET" | "GATEWAY_VERIFIED" | "FIRST_SHIPMENT" | "TEAMMATE_JOINED" | "DOMAIN_VERIFIED" | "FIRST_PAID_INVOICE";
-type Funnel = { cohort: string | null; accountsCreated: number; completed: number; steps: Array<{ step: Step; label: string; required: boolean; count: number; conversionFromPrevious: number | null }> };
-type StuckTenant = { id: string; name: string; slug: string; plan: string; signedUpAt: string; daysSinceSignup: number; stepsDone: Step[]; nextStep: Step | null; lastNudgedAt: string | null; canNudge: boolean };
-
-const KEY = ["customer.onboarding"] as const;
-const STEPS: Array<{ id: Step; label: string }> = [
-  { id: "BRANDING_SET", label: "Branding set" },
-  { id: "GATEWAY_VERIFIED", label: "Gateway verified" },
-  { id: "FIRST_SHIPMENT", label: "First shipment" },
-  { id: "TEAMMATE_JOINED", label: "Teammate joined" },
-  { id: "DOMAIN_VERIFIED", label: "Domain verified" },
-  { id: "FIRST_PAID_INVOICE", label: "First paid invoice" }
-];
+type Step = OnboardingStep;
+const STEPS = ONBOARDING_STEPS;
 const stepLabel = (step: Step | null) => STEPS.find((item) => item.id === step)?.label ?? "—";
 const percent = (value: number | null) => (value === null ? "—" : `${Math.round(value * 100)}%`);
 
@@ -43,11 +31,7 @@ function OnboardingNav({ current }: { current: "funnel" | "stuck" }) {
 export function OnboardingFunnelPage() {
   const [params, setParams] = useSearchParams();
   const cohort = params.get("cohort") ?? "";
-  const funnel = useQuery({
-    queryKey: [...KEY, "funnel", cohort],
-    queryFn: async () => (await consoleApi.get<Funnel>("/onboarding/funnel", { params: cohort ? { cohort } : {} })).data,
-    placeholderData: keepPreviousData
-  });
+  const funnel = useOnboardingFunnel(cohort);
   const data = funnel.data;
   return (
     <div className="space-y-4">
@@ -97,18 +81,10 @@ export function OnboardingFunnelPage() {
 }
 
 export function StuckTenantsPage() {
-  const queryClient = useQueryClient();
   const [stuckAt, setStuckAt] = useState<Step | "">("");
   const [stuckDays, setStuckDays] = useState(7);
-  const stuck = useQuery({
-    queryKey: [...KEY, "stuck", stuckAt, stuckDays],
-    queryFn: async () => (await consoleApi.get<{ data: StuckTenant[] }>("/onboarding/tenants", { params: { stuckDays, ...(stuckAt ? { stuckAt } : {}) } })).data.data,
-    placeholderData: keepPreviousData
-  });
-  const nudge = useMutation({
-    mutationFn: async (tenantId: string) => (await consoleApi.post<{ nudgedAt: string; step: Step }>(`/onboarding/tenants/${encodeURIComponent(tenantId)}/nudge`)).data,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...KEY, "stuck"] })
-  });
+  const stuck = useStuckTenants(stuckAt, stuckDays);
+  const nudge = useNudgeTenant();
   const rows = stuck.data ?? [];
   return (
     <div className="space-y-4">

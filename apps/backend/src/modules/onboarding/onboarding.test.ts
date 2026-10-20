@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const notifyTenantAdmins = vi.hoisted(() => vi.fn(async (_app: unknown, _input: Record<string, unknown>) => ({ inApp: 1, emailsQueued: 1 })));
 vi.mock('../../services/platform-notifier.service.js', () => ({ notifyTenantAdmins }));
+const auditMock = vi.hoisted(() => vi.fn(async (_db: unknown, _input: Record<string, unknown>) => ({ id: 'aud' })));
+vi.mock('../../services/platform-audit.service.js', () => ({ writePlatformAuditLog: auditMock }));
 vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
     request.platform = { user: { id: 'pu_cs', email: 'cs@fauward.com', name: 'Casey CS', mfaEnabled: true }, session: { id: 'ps_1', mfaVerifiedAt: new Date() } };
@@ -154,6 +156,7 @@ describe('L7 onboarding (WP-2.17)', () => {
     expect(nudged.json()).toMatchObject({ step: 'GATEWAY_VERIFIED' });
     expect(notifyTenantAdmins).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 't_branded', event: 'onboarding.nudged', email: expect.objectContaining({ template: 'onboarding_nudge' }) }));
     expect(store.activity).toEqual([expect.objectContaining({ type: 'onboarding.nudged', tenantId: 't_branded', actorType: 'STAFF' })]);
+    expect(auditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'ONBOARDING_NUDGE_SENT', targetTenantId: 't_branded' }));
     const again = await app.inject({ method: 'POST', url: '/api/internal/onboarding/tenants/t_branded/nudge' });
     expect(again.statusCode).toBe(429);
     expect(notifyTenantAdmins).toHaveBeenCalledTimes(1);

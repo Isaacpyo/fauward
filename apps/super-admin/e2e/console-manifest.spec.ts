@@ -18,6 +18,9 @@ async function mockBackend(page: Page) {
       );
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: tenants, total: tenants.length, nextCursor: null }) });
     }
+    if (url.pathname === "/api/internal/onboarding/funnel") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cohort: null, accountsCreated: 0, completed: 0, steps: [] }) });
+    }
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
   });
   await page.route("**/api/internal/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(ROOT_PERMISSIONS)) }));
@@ -40,7 +43,7 @@ test("ACC-MAN-2 every sidebar entry opens its service page and never lands on /l
       await page.goto(pillarRoute);
       await page.locator(`aside nav a[href="${href}"]`).click();
       await expect(page).not.toHaveURL(/\/login/);
-      await expect(page.locator("main")).not.toBeEmpty();
+      await expect(page.locator("main"), href).not.toBeEmpty();
       visited.push(href);
     }
   }

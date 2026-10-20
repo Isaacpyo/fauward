@@ -136,7 +136,7 @@ describe('entitlements honour overrides (WP-1.4)', () => {
     await import('../modules/internal/platform/tenants.routes.js');
   }, 60_000);
 
-  it('ACC-ENT-1 override STARTER → PRO: a PRO-only route returns 200 on another instance without restart', { timeout: 30_000 }, async () => {
+  it('ACC-ENT-1 ACC-L12-1 override STARTER → PRO: a PRO-only route returns 200 on another instance within 5 s, without restart', { timeout: 30_000 }, async () => {
     const { db } = createDb('STARTER');
     const redis = createRedis();
     const tenantA = await tenantInstance(db, redis);

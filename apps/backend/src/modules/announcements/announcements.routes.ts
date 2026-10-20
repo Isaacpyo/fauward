@@ -189,6 +189,15 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
       }
     });
     await writePlatformAuditLog(app.prisma, { ...platformAuditActor(request), actorType: 'PLATFORM_USER', action: 'ANNOUNCEMENT_UPDATED', targetTenantId: null, reason: null, metadata: { announcementId: id, fields: Object.keys(body) } });
+    await recordAndPublishActivity(activityDeps(app), {
+      service: 'customer.comms',
+      type: 'announcement.updated',
+      ...staffActor(request),
+      subjectType: 'announcement',
+      subjectId: id,
+      summary: `Edited "${updated.title}" (${Object.keys(body).join(', ')})`,
+      consoleLink: `/customer/comms?id=${id}`
+    });
     return reply.send(present(updated));
   });
 
@@ -220,6 +229,15 @@ export async function registerAnnouncementRoutes(app: FastifyInstance) {
     if (receipts > 0) return reply.status(409).send({ error: 'HAS_RECEIPTS', message: 'Tenants have already seen this announcement; archive it instead.' });
     await app.prisma.platformAnnouncement.delete({ where: { id } });
     await writePlatformAuditLog(app.prisma, { ...platformAuditActor(request), actorType: 'PLATFORM_USER', action: 'ANNOUNCEMENT_DELETED', targetTenantId: null, reason: reasonOf(request), metadata: { announcementId: id, title: row.title } });
+    await recordAndPublishActivity(activityDeps(app), {
+      service: 'customer.comms',
+      type: 'announcement.deleted',
+      ...staffActor(request),
+      subjectType: 'announcement',
+      subjectId: id,
+      summary: `Deleted "${row.title}" before anyone saw it: ${reasonOf(request) ?? ''}`,
+      severity: 'ATTENTION'
+    });
     return reply.status(204).send();
   });
 }

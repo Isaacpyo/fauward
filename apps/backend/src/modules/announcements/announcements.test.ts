@@ -190,7 +190,7 @@ describe('L8 announcements (WP-2.14)', () => {
     expect((await tenantList(app, 'u_b_admin')).map((row) => row.title)).toEqual(['New title']);
     expect((await app.inject({ method: 'POST', url: `/api/internal/announcements/${id}/archive` })).json()).toMatchObject({ state: 'ARCHIVED' });
     expect(await tenantList(app, 'u_b_admin')).toEqual([]);
-    expect(store.activity.map((row) => row.type)).toEqual(['announcement.published', 'announcement.archived']);
+    expect(store.activity.map((row) => row.type)).toEqual(['announcement.published', 'announcement.updated', 'announcement.archived']);
     expect((await app.inject({ method: 'PATCH', url: `/api/internal/announcements/${id}`, payload: { title: 'Again' } })).statusCode).toBe(409);
     expect((await app.inject({ method: 'GET', url: '/api/internal/announcements?status=archived' })).json().data).toHaveLength(1);
   });
@@ -218,5 +218,6 @@ describe('L8 announcements (WP-2.14)', () => {
     expect((await app.inject({ method: 'DELETE', url: `/api/internal/announcements/${id}`, payload: { reason: 'Posted by mistake' } })).statusCode).toBe(409);
     const { id: fresh } = (await app.inject({ method: 'POST', url: '/api/internal/announcements', payload: { title: 'Typo 2', body: 'Body', targetAll: true } })).json() as { id: string };
     expect((await app.inject({ method: 'DELETE', url: `/api/internal/announcements/${fresh}`, payload: { reason: 'Posted by mistake' } })).statusCode).toBe(204);
+    expect(store.activity.map((row) => row.type)).toContain('announcement.deleted');
   });
 });

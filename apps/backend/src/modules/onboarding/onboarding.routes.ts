@@ -5,6 +5,8 @@ import { authenticatePlatformSession } from '../../middleware/authenticate-platf
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffActor } from '../../services/platform-activity.service.js';
+import { writePlatformAuditLog } from '../../services/platform-audit.service.js';
+import { platformAuditActor } from '../internal/request-meta.js';
 import { ONBOARDING_STEPS, NudgeError, nudgeTenant, onboardingChecklist, onboardingFunnel, stuckTenants } from '../../services/onboarding.service.js';
 
 // customer.onboarding (L7, WP-2.17). The tenant reads its checklist; steps are stamped only by the events that prove
@@ -53,7 +55,9 @@ export async function registerOnboardingRoutes(app: FastifyInstance) {
       const { id } = request.params as { id: string };
       const actor = staffActor(request);
       try {
-        return reply.send(await nudgeTenant(app, id, { actorType: 'STAFF', actorId: actor.actorId ?? null, actorLabel: actor.actorLabel }));
+        const nudged = await nudgeTenant(app, id, { actorType: 'STAFF', actorId: actor.actorId ?? null, actorLabel: actor.actorLabel });
+        await writePlatformAuditLog(app.prisma, { ...platformAuditActor(request), actorType: 'PLATFORM_USER', action: 'ONBOARDING_NUDGE_SENT', targetTenantId: id, reason: null, metadata: { step: nudged.step } });
+        return reply.send(nudged);
       } catch (error) {
         if (error instanceof NudgeError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
         throw error;
