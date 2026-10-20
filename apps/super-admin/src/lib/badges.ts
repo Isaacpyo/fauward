@@ -6,7 +6,7 @@ type TenantsResponse = {
 };
 
 type QueuesResponse = {
-  dlq?: Record<string, number>;
+  queues: Array<{ dlqDepth: number | null }>;
 };
 
 export type MetricsResponse = {
@@ -28,7 +28,7 @@ export async function fetchTenantCountBadge(): Promise<BadgeResult> {
 
 export async function fetchDlqDepthBadge(): Promise<BadgeResult> {
   const response = await api.get<QueuesResponse>("/queues");
-  const total = Object.values(response.data.dlq ?? {}).reduce((sum, value) => sum + value, 0);
+  const total = response.data.queues.reduce((sum, queue) => sum + (queue.dlqDepth ?? 0), 0);
   return { label: total > 0 ? `DLQ ${total}` : "ok", tone: total > 0 ? "red" : "green" };
 }
 

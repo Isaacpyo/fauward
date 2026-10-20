@@ -33,6 +33,7 @@ import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
 import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
@@ -110,6 +111,9 @@ export const consoleRoutes: ConsoleRoute[] = [
               </PermissionRoute> },
   { path: "/platform/queues", element: <PermissionRoute permission="platform.queues.read">
                 <QueuesListPage />
+              </PermissionRoute> },
+  { path: "/platform/queues/:name", element: <PermissionRoute permission="platform.queues.read">
+                <QueueDetailPage />
               </PermissionRoute> },
   { path: "/platform/flags", element: <OpsRoute permission="platform.flags.read" title="Feature Flags" description="LaunchDarkly flags with Fauward per-tenant override audit." endpoint="/flags" related={[{ label: "Releases", to: "/platform/releases" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
