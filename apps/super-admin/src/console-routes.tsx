@@ -5,7 +5,6 @@ import { JITGate } from "@fauward/internal-ui";
 
 import { AccessDenied } from "@/components/service-kit/AccessDenied";
 import { ComingSoonPage } from "@/components/service-kit/ComingSoonPage";
-import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { findServiceByKey } from "@/pillars/_manifests";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
@@ -34,6 +33,7 @@ import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/Impers
 import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { JobRunsPage, JobsListPage } from "@/pillars/platform/jobs/JobsPages";
+import { FlagAuditPage, FlagDetailPage, FlagsListPage, ReleasesPage } from "@/pillars/platform/flags/FlagsPages";
 import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
@@ -92,12 +92,6 @@ export function OpsRoute({ permission, title, description, endpoint, related, no
   );
 }
 
-const flagOverridesNotWired = (
-  <DegradedBanner variant="not-wired" fixedBy="WP-4.1">
-    Per-tenant feature overrides are native now and are set on each tenant's Plan &amp; entitlements tab. This page is rebuilt on them in WP-4.1; LaunchDarkly is not mirrored yet.
-  </DegradedBanner>
-);
-
 export function ComingSoonRoute({ serviceKey }: { serviceKey: string }) {
   const service = findServiceByKey(serviceKey);
   if (!service) return <Navigate to="/" replace />;
@@ -116,10 +110,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/queues/:name", element: <PermissionRoute permission="platform.queues.read">
                 <QueueDetailPage />
               </PermissionRoute> },
-  { path: "/platform/flags", element: <OpsRoute permission="platform.flags.read" title="Feature Flags" description="LaunchDarkly flags with Fauward per-tenant override audit." endpoint="/flags" related={[{ label: "Releases", to: "/platform/releases" }]} notice={flagOverridesNotWired} /> },
-  { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
-  { path: "/platform/flags/:key/audit", element: <OpsRoute permission="platform.flags.read" title="Flag Audit" description="Local audit of per-tenant LaunchDarkly override changes." endpoint="/flags/:key/audit" /> },
-  { path: "/platform/releases", element: <OpsRoute permission="platform.flags.read" title="Releases" description="Current deployed versions and release workflow links." endpoint="/releases" /> },
+  { path: "/platform/flags", element: <PermissionRoute permission="platform.flags.read"><FlagsListPage /></PermissionRoute> },
+  { path: "/platform/flags/:key", element: <PermissionRoute permission="platform.flags.read"><FlagDetailPage /></PermissionRoute> },
+  { path: "/platform/flags/:key/audit", element: <PermissionRoute permission="platform.flags.read"><FlagAuditPage /></PermissionRoute> },
+  { path: "/platform/releases", element: <PermissionRoute permission="platform.flags.read"><ReleasesPage /></PermissionRoute> },
   { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }, { label: "Tenant escalations", to: "/platform/incidents/escalations" }]} /> },
   { path: "/platform/incidents/escalations", element: <PermissionRoute permission="platform.incidents.read">
                 <EscalationsPage />

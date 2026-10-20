@@ -16,6 +16,7 @@ import { registerConsoleOperationsRoutes } from './platform/operations.routes.js
 import { registerConsoleQueueRoutes } from './platform/queues.routes.js';
 import { registerConsoleHealthRoutes } from './platform/health.routes.js';
 import { registerConsoleJobRoutes } from './platform/jobs.routes.js';
+import { registerConsoleFlagRoutes } from './platform/flags.routes.js';
 import { registerConsoleEscalationRoutes } from './platform/escalations.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
@@ -39,6 +40,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleQueueRoutes(app);
   await registerConsoleHealthRoutes(app);
   await registerConsoleJobRoutes(app);
+  await registerConsoleFlagRoutes(app);
   await registerConsoleEscalationRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleBadgeRoutes(app);

@@ -9,7 +9,8 @@ import { resolveEffectiveTenantPlan } from '../../../services/platform-plan-over
 import { recordAndPublishActivity, staffActor } from '../../../services/platform-activity.service.js';
 import { platformAuditActor, reasonOf } from '../request-meta.js';
 import { SUSPENSION_CATEGORIES, SuspensionError, liftSuspension, staffSuspensionActor, suspendTenant } from '../../../services/tenant-suspension.service.js';
-import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../../services/feature-override.service.js';
+import { FeatureOverrideError, consoleOverrideActor } from '../../../services/feature-override.service.js';
+import { createOverrideWithMirror, revokeOverrideWithMirror } from '../../../services/feature-flags.service.js';
 import { invalidateTenantEntitlements, resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
 import { planService } from '../../tenants/plan.service.js';
 import { getTenantDetail, listTenants, tenantListQuery } from '../../../services/tenant-directory.service.js';
@@ -424,7 +425,7 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     const parsed = featureOverrideBody.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
     try {
-      const override = await createFeatureOverride(app, {
+      const { override, mirror } = await createOverrideWithMirror(app, {
         tenantId: id,
         featureKey: parsed.data.featureKey,
         enabled: parsed.data.enabled,
@@ -432,7 +433,7 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
         expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
         actor: consoleOverrideActor(request)
       });
-      return reply.status(201).send({ override });
+      return reply.status(201).send({ override, mirror });
     } catch (error) {
       return sendFeatureOverrideError(reply, error);
     }
@@ -441,8 +442,8 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
   app.delete('/api/internal/tenants/:id/feature-overrides/:overrideId', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
     const { id, overrideId } = request.params as { id: string; overrideId: string };
     try {
-      const override = await revokeFeatureOverride(app, { tenantId: id, overrideId, reason: reasonOf(request) ?? '', actor: consoleOverrideActor(request) });
-      return reply.send({ override });
+      const { override, mirror } = await revokeOverrideWithMirror(app, { tenantId: id, overrideId, reason: reasonOf(request) ?? '', actor: consoleOverrideActor(request) });
+      return reply.send({ override, mirror });
     } catch (error) {
       return sendFeatureOverrideError(reply, error);
     }
