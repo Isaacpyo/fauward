@@ -525,7 +525,7 @@ export const authService = {
       )
     );
 
-    // The sign-in token only ever travels in the email; the API answers the same whether or not the account exists (C61, C61b).
+    // The sign-in token only ever travels in the email; the API answers the same whether or not the account exists (C61, C80).
     await enqueueEmail({
       tenantId: user.tenantId,
       userId: user.id,

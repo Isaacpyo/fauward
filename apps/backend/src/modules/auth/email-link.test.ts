@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-// C61 / C61b: the Fauward Go sign-in token travels only in the email. `POST /api/v1/auth/email-link/request` used to
+// C61 / C80: the Fauward Go sign-in token travels only in the email. `POST /api/v1/auth/email-link/request` used to
 // return it as `linkToken`, so anyone knowing a field user's email could sign in as them.
 
 const queueAdd = vi.hoisted(() => vi.fn(async () => ({ id: 'job' })));
