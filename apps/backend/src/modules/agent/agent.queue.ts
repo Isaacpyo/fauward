@@ -13,7 +13,7 @@ export async function enqueueAgentEvent(
   event: AgentEvent
 ): Promise<void> {
   try {
-    await agentQueue.add(event.type, event, {
+    await agentQueue.add(event.type, event as unknown as Record<string, unknown>, {
       jobId: event.eventId
     });
     app.log.info({ eventId: event.eventId, type: event.type }, 'agent event enqueued');

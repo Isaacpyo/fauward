@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { StatusPill } from "@/components/common/StatusPill";
-import { jobStatusLabel, stopStatusTone, workflowStageLabel, type FieldJob } from "@/types/field";
+import { jobStatusLabel, workflowStageLabel, type FieldJob } from "@/types/field";
 
 type JobCardProps = {
   job: FieldJob;

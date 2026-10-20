@@ -194,7 +194,7 @@ describe("fieldApi", () => {
 
     expect(result.stops).toEqual([
       {
-        id: "stop-job-2",
+        id: "SHIP-2",
         routeId: "unassigned-route",
         shipmentId: "SHIP-2",
         sequence: 0,
