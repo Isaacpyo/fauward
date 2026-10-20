@@ -17,7 +17,8 @@ export type AgentUsage = {
     totalCostUsd: number;
   };
   limit: {
-    monthlyBudgetUsd: number | null;
+    /** Decimal string with 2 places (Decimal(12,2)), set by Fauward. */
+    monthlyBudgetUsd: string | null;
     flashRequestLimit: number | null;
     proRequestLimit: number | null;
     featuresEnabled: string[];

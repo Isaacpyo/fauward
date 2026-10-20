@@ -9,7 +9,8 @@ export async function writeInternalAudit(
   targetId: string,
   before: unknown,
   after: unknown,
-  reason?: string | null
+  reason?: string | null,
+  options: { targetTenantId?: string | null } = {}
 ) {
   await writeAudit(request.server.prisma as unknown as PlatformAuditClient, {
     actor_id: request.platform!.user.id,
@@ -24,7 +25,8 @@ export async function writeInternalAudit(
     ip_address: request.ip,
     session_id: request.platform!.session.id,
     jit_session_id: request.jitSessionId ?? null,
-    user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null
+    user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
+    target_tenant_id: options.targetTenantId ?? null
   });
 }
 

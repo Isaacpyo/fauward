@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, PackageCheck, Printer } from "lucide-react";
+import { PackageCheck, Printer } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +17,12 @@ type ShipmentRow = {
   destinationAddress?: Record<string, unknown>;
   generatedLabels?: Array<{ id: string; format: "PDF" | "ZPL" | "PNG"; url: string }>;
 };
+
+function formatAddress(address: Record<string, unknown> | undefined) {
+  if (!address) return "No address";
+  const parts = ["line1", "city", "postcode", "country"].map((key) => address[key]).filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return parts.length > 0 ? parts.join(", ") : "No address";
+}
 
 export function LabelsPage() {
   const [search, setSearch] = useState("");
@@ -77,7 +83,7 @@ export function LabelsPage() {
           <Button variant="secondary" disabled={!selected.length} loading={generateLabel.isPending} onClick={generateAllSelected} icon={<PackageCheck size={16} />}>
             Generate all selected
           </Button>
-          {bulkDone ? <Button variant="secondary" icon={<Download size={16} />}>Download all as ZIP</Button> : null}
+          {bulkDone ? <span className="text-sm text-gray-600">Labels generated. Download each from its row.</span> : null}
         </div>
 
         <Table columns={["Select", "Shipment", "Destination", "Status", "Label status", "Downloads", "Reprint"]}>
@@ -99,7 +105,7 @@ export function LabelsPage() {
                   <div className="font-mono text-gray-900">{shipment.trackingNumber}</div>
                   <div className="text-xs text-gray-500">{shipment.reference ?? shipment.id}</div>
                 </TableCell>
-                <TableCell>{JSON.stringify(shipment.destinationAddress ?? {})}</TableCell>
+                <TableCell>{formatAddress(shipment.destinationAddress)}</TableCell>
                 <TableCell>{shipment.status}</TableCell>
                 <TableCell>{labels.length ? <Badge variant="success">Generated</Badge> : <Badge variant="neutral">Not generated</Badge>}</TableCell>
                 <TableCell>

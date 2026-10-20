@@ -39,6 +39,12 @@ function prismaDouble() {
     tenantSettings: {
       findUnique: vi.fn(async () => ({ notificationEmail: 'ops@northwind.test', emailFromName: null, emailReplyTo: null, customEmailDomain: null, opsEmailRecipients: [], notifyOnStaffAccess: true, paymentGateway: 'STRIPE', paymentGatewayKey: 'sk_live_super_secret', currency: 'GBP', webhookUrl: 'https://hooks.northwind.test', webhookSecret: 'whsec_secret' }))
     },
+    tenantPaymentGateway: {
+      findMany: vi.fn(async () => [
+        { id: 'gw_1', tenantId: 't_1', provider: 'STRIPE', mode: 'LIVE', enabled: true, publicKey: 'pk_public_value', secretKeyEncrypted: 'v1:k:iv:cipher', webhookSecretEncrypted: 'v1:k:iv:hook', encryptionKeyEncrypted: null, config: { accountId: 'acct_hidden' }, status: 'FAILED', lastVerifiedAt: null, lastError: 'STRIPE returned 401: Invalid API Key', updatedByUserId: 'u_1', createdAt: new Date(), updatedAt: new Date() },
+        { id: 'gw_2', tenantId: 't_1', provider: 'BANK_TRANSFER', mode: 'LIVE', enabled: true, publicKey: null, secretKeyEncrypted: null, webhookSecretEncrypted: null, encryptionKeyEncrypted: null, config: { accountNumber: '12345678' }, status: 'VERIFIED', lastVerifiedAt: new Date(), lastError: null, updatedByUserId: 'u_1', createdAt: new Date(), updatedAt: new Date() }
+      ])
+    },
     apiKey: { findMany: vi.fn(async () => [{ id: 'key_1', name: 'ERP', keyPrefix: 'fw_live_ab12', scopes: ['shipments:read'], isActive: true, isSandbox: false, createdAt: new Date(), lastUsedAt: null, expiresAt: null }]) },
     webhookEndpoint: { findMany: vi.fn(async () => [{ id: 'wh_1', url: 'https://erp.northwind.test/hooks', events: ['shipment.updated'], isActive: true, createdAt: new Date() }]) },
     webhookDelivery: { count: vi.fn(async () => 3) }
@@ -82,19 +88,26 @@ describe('Customer 360 per-tab endpoints (WP-1.8)', () => {
     expect(tickets.byStatus).toEqual({ OPEN: 400, CLOSED: 12 });
   });
 
-  it('ACC-C360-6 config is structured and never returns secrets', async () => {
+  it('ACC-C360-6 ACC-L11-2 config is structured and never returns secrets (gateways: provider, mode, status, last error only)', async () => {
     permissions = ['platform.tenants.read'];
     const { app } = await buildApp();
     const response = await app.inject({ method: 'GET', url: '/api/internal/customer360/t_1/config' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       general: { timezone: 'Europe/London' },
-      payments: { gateway: 'STRIPE', gatewayKeyConfigured: true },
+      payments: {
+        activeProvider: 'STRIPE',
+        gateways: [
+          { provider: 'STRIPE', mode: 'LIVE', enabled: true, status: 'FAILED', secretConfigured: true, lastError: 'STRIPE returned 401: Invalid API Key' },
+          { provider: 'BANK_TRANSFER', status: 'VERIFIED', secretConfigured: false }
+        ]
+      },
       apiKeys: [{ keyPrefix: 'fw_live_ab12' }],
       webhooks: [{ url: 'https://erp.northwind.test/hooks', failuresLast30Days: 3 }],
       legacyWebhook: { secretConfigured: true }
     });
     expect(response.body).not.toMatch(/sk_live|whsec_|keyHash|"secret"/);
+    expect(response.body).not.toMatch(/v1:|pk_public_value|acct_hidden|12345678|Encrypted|publicKey|config"/);
   });
 
   it('ACC-C360-2 each tab has its own permission: billing needs revenue.invoices.read even with customer.360.read', async () => {

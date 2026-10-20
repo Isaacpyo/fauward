@@ -5,6 +5,7 @@ import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function getTenantId(request: FastifyRequest, reply: FastifyReply): string | null {
   const tenantId = request.tenant?.id;
@@ -260,13 +261,13 @@ export async function registerCrmRoutes(app: FastifyInstance) {
       data: { status: 'SENT' }
     });
 
-    await app.prisma.notificationLog.create({
-      data: {
-        tenantId,
-        channel: 'EMAIL',
-        event: 'quote_sent',
-        status: 'QUEUED'
-      }
+    await notifyCustomer(app, {
+      tenantId,
+      userId: quote.customerId,
+      organisationId: quote.organisationId,
+      leadId: quote.leadId,
+      template: 'quote_sent',
+      data: { quoteNumber: quote.quoteNumber, amount: quote.total?.toFixed(2) ?? '', currency: quote.currency, tenantName: req.tenant?.name ?? '' }
     });
 
     reply.send(updated);

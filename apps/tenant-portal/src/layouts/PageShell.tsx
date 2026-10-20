@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -94,7 +95,9 @@ export function PageShell({
           <div>
             <h2 className="text-base font-semibold text-amber-900">Feature gated by plan</h2>
             <p className="mt-1 text-sm text-amber-800">Upgrade your plan to access this feature.</p>
-            <Button variant="amber" size="sm" className="mt-4">Upgrade plan</Button>
+            <Button variant="amber" size="sm" className="mt-4" asChild>
+              <Link to="/settings?tab=billing">Upgrade plan</Link>
+            </Button>
           </div>
         </div>
       </div>

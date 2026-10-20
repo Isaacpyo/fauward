@@ -11,6 +11,8 @@ vi.mock('../../shared/middleware/authenticate.js', () => ({
 const openApps: FastifyInstance[] = [];
 afterEach(async () => {
   role = 'TENANT_ADMIN';
+  plan = 'PRO';
+  settings.notifyOnStaffAccess = true;
   await Promise.all(openApps.splice(0).map((app) => app.close()));
 });
 
@@ -20,8 +22,16 @@ const sessions = [
   { id: 'imp_1', targetTenantId: 'tenant_1', reason: 'Investigating a failed label print', scopes: ['read'], createdAt: new Date(now - 7_200_000), expiresAt: new Date(now - 5_400_000), exchangedAt: null, endedAt: new Date(now - 6_000_000), revokedAt: new Date(now - 6_000_000), endedReason: 'REVOKED', platformUser: { name: null, email: 'ops@fauward.com' } }
 ];
 
+let plan = 'PRO';
+const settings = { notifyOnStaffAccess: true };
+
 async function buildApp() {
   const prisma = {
+    tenant: { findUnique: vi.fn(async () => ({ plan })) },
+    tenantSettings: {
+      findUnique: vi.fn(async () => ({ ...settings })),
+      upsert: vi.fn(async ({ update }: { update: { notifyOnStaffAccess: boolean } }) => Object.assign(settings, update))
+    },
     platformImpersonationSession: { findMany: vi.fn(async ({ where }: { where: { targetTenantId: string; endedAt?: null } }) => sessions.filter((row) => row.targetTenantId === where.targetTenantId && (where.endedAt === undefined || row.endedAt === null))) },
     auditLog: { count: vi.fn(async ({ where }: { where: { metadata: { equals: string } } }) => (where.metadata.equals === 'imp_2' ? 3 : 0)) }
   };
@@ -45,6 +55,18 @@ describe('tenant staff-access log (D8)', () => {
 
     const active = await app.inject({ method: 'GET', url: '/api/v1/tenants/me/staff-access/active' });
     expect((active.json() as { data: Array<{ id: string }> }).data.map((row) => row.id)).toEqual(['imp_2']);
+  });
+
+  it('ACC-L18-1 staff-access emails can be turned off only on Enterprise; the in-app notice always stays', async () => {
+    const { app } = await buildApp();
+    expect((await app.inject({ method: 'GET', url: '/api/v1/tenants/me/staff-access/settings' })).json()).toEqual({ notifyOnStaffAccess: true, canDisableEmail: false });
+    const refused = await app.inject({ method: 'PATCH', url: '/api/v1/tenants/me/staff-access/settings', payload: { notifyOnStaffAccess: false } });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({ error: 'PLAN_REQUIRED' });
+    plan = 'ENTERPRISE';
+    const off = await app.inject({ method: 'PATCH', url: '/api/v1/tenants/me/staff-access/settings', payload: { notifyOnStaffAccess: false } });
+    expect(off.json()).toEqual({ notifyOnStaffAccess: false, canDisableEmail: true });
+    expect(settings.notifyOnStaffAccess).toBe(false);
   });
 
   it('only tenant admins can read it', async () => {

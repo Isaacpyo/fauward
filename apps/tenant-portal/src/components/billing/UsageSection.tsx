@@ -22,12 +22,6 @@ export function UsageSection({ summary, onUpgrade }: UsageSectionProps) {
         limit={summary.usage.staff.limit}
         onUpgrade={onUpgrade}
       />
-      <UsageMeter
-        label="API calls"
-        used={summary.usage.apiCalls.used}
-        limit={summary.usage.apiCalls.limit}
-        onUpgrade={onUpgrade}
-      />
     </section>
   );
 }

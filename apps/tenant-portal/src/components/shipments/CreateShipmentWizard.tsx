@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { StepAddresses } from "@/components/shipments/StepAddresses";
 import { StepPackage } from "@/components/shipments/StepPackage";
@@ -6,14 +7,19 @@ import { StepReview } from "@/components/shipments/StepReview";
 import { StepService } from "@/components/shipments/StepService";
 import { ShipmentSuccessState } from "@/components/shipments/ShipmentSuccessState";
 import {
+  createShipmentRequest,
   initialShipmentWizardData,
   type ShipmentWizardData
 } from "@/components/shipments/wizard-types";
 import { Button } from "@/components/ui/Button";
+import { api } from "@/lib/api";
+import { apiErrorCode, apiErrorMessage } from "@/lib/api-error";
 
 type CreateShipmentWizardProps = {
-  onCreated?: (trackingNumber: string) => void;
+  onCreated?: (shipment: CreatedShipment) => void;
 };
+
+export type CreatedShipment = { id: string; trackingNumber: string };
 
 const stepLabels = ["Addresses", "Package", "Service & Pricing", "Review & Confirm"];
 
@@ -52,14 +58,45 @@ function validateStep(step: number, data: ShipmentWizardData): string[] {
   return [];
 }
 
+/** The step a server-side rejection belongs to, so the tenant lands where the fix is. */
+function stepForError(error: unknown) {
+  const message = apiErrorMessage(error, "").toLowerCase();
+  if (message.includes("address")) return 0;
+  return 3;
+}
+
+function createErrorMessage(error: unknown) {
+  const code = apiErrorCode(error);
+  if (code === "BOOKING_BLOCKED") return `Booking blocked by a shipping rule: ${apiErrorMessage(error, "blocked")}`;
+  if (code === "LIMIT_REACHED") return "Your plan's monthly shipment limit is reached. Upgrade the plan or wait for next month.";
+  return apiErrorMessage(error, "The shipment could not be created.");
+}
+
 export function CreateShipmentWizard({ onCreated }: CreateShipmentWizardProps) {
   const [step, setStep] = useState(0);
   const [data, setData] = useState<ShipmentWizardData>(initialShipmentWizardData);
   const [errors, setErrors] = useState<string[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [createdTrackingNumber, setCreatedTrackingNumber] = useState<string | null>(null);
+  const [created, setCreated] = useState<CreatedShipment | null>(null);
+  const queryClient = useQueryClient();
+  const requestBody = useMemo(() => createShipmentRequest(data), [data]);
+  // One key per distinct booking: a retry of the same request is deduplicated by the API, an edited one is not.
+  const idempotencyKey = useMemo(() => crypto.randomUUID(), [requestBody]);
 
   const progress = useMemo(() => ((step + 1) / stepLabels.length) * 100, [step]);
+
+  const createMutation = useMutation({
+    mutationFn: async () =>
+      (await api.post<CreatedShipment>("/v1/shipments", requestBody, { headers: { "Idempotency-Key": idempotencyKey } })).data,
+    onSuccess: (shipment) => {
+      setCreated(shipment);
+      void queryClient.invalidateQueries({ queryKey: ["shipments"] });
+      onCreated?.(shipment);
+    },
+    onError: (error) => {
+      setStep(stepForError(error));
+      setErrors([createErrorMessage(error)]);
+    }
+  });
 
   const next = () => {
     const validation = validateStep(step, data);
@@ -75,33 +112,26 @@ export function CreateShipmentWizard({ onCreated }: CreateShipmentWizardProps) {
     setStep((current) => Math.max(0, current - 1));
   };
 
-  const createShipment = async () => {
+  const createShipment = () => {
     const validation = validateStep(3, data);
     setErrors(validation);
     if (validation.length > 0) {
       return;
     }
-
-    setSubmitting(true);
-    try {
-      await new Promise((resolve) => window.setTimeout(resolve, 900));
-      const tracking = `FWD-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
-      setCreatedTrackingNumber(tracking);
-      onCreated?.(tracking);
-    } finally {
-      setSubmitting(false);
-    }
+    createMutation.mutate();
   };
 
-  if (createdTrackingNumber) {
+  if (created) {
     return (
       <ShipmentSuccessState
-        trackingNumber={createdTrackingNumber}
+        shipmentId={created.id}
+        trackingNumber={created.trackingNumber}
         onCreateAnother={() => {
           setData(initialShipmentWizardData);
           setStep(0);
           setErrors([]);
-          setCreatedTrackingNumber(null);
+          setCreated(null);
+          createMutation.reset();
         }}
       />
     );
@@ -138,7 +168,7 @@ export function CreateShipmentWizard({ onCreated }: CreateShipmentWizardProps) {
         {step < stepLabels.length - 1 ? (
           <Button onClick={next}>Next</Button>
         ) : (
-          <Button onClick={createShipment} loading={submitting} disabled={submitting}>
+          <Button onClick={createShipment} loading={createMutation.isPending} disabled={createMutation.isPending}>
             Create Shipment
           </Button>
         )}

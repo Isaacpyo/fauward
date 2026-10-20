@@ -51,6 +51,11 @@ const envSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_API_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  // Fauward plan prices in Stripe (WP-2.7). A plan/cycle without a price id is changed by staff approval instead.
+  STRIPE_PRICE_STARTER_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_STARTER_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PRO_ANNUAL: z.string().optional(),
   VERCEL_API_TOKEN: z.string().min(1).optional(),
   VERCEL_PORTAL_PROJECT_ID: z.string().min(1).optional(),
   VERCEL_TEAM_ID: z.string().optional(),
@@ -72,6 +77,11 @@ const envSchema = z.object({
   ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
   TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
+  // Marketing site (password reset page) and console origin, used in email links.
+  PUBLIC_SITE_URL: z.string().url().default('https://fauward.com'),
+  CONSOLE_URL: z.string().url().default('https://console.fauward.com'),
+  // Vendor-free email transport (D6): used when SENDGRID_API_KEY is unset, e.g. smtp://localhost:1025 (Mailpit).
+  SMTP_URL: z.string().optional(),
   FAUWARD_GO_URL: z.string().url().default('https://fauward.com/go'),
   FIELD_ENCRYPTION_KEYS: z.string().optional(),
   FIELD_ENCRYPTION_ACTIVE_KEY_ID: z.string().optional(),
@@ -162,9 +172,16 @@ export const config = {
       ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT,
       tenant_suspended: parsed.data.SENDGRID_TEMPLATE_TENANT_SUSPENDED,
       tenant_unsuspended: parsed.data.SENDGRID_TEMPLATE_TENANT_UNSUSPENDED,
-      tenant_closed: parsed.data.SENDGRID_TEMPLATE_TENANT_CLOSED
+      tenant_closed: parsed.data.SENDGRID_TEMPLATE_TENANT_CLOSED,
+      // Any other SENDGRID_TEMPLATE_<KEY> in the environment maps to template key <key> (WP-2.2 templates).
+      ...Object.fromEntries(
+        Object.entries(process.env)
+          .filter(([name, value]) => name.startsWith('SENDGRID_TEMPLATE_') && typeof value === 'string' && value.trim().length > 0)
+          .map(([name, value]) => [name.slice('SENDGRID_TEMPLATE_'.length).toLowerCase(), value])
+      )
     } as Record<string, string | undefined>
   },
+  smtpUrl: parsed.data.SMTP_URL?.trim() ? parsed.data.SMTP_URL.trim() : undefined,
   twilio: {
     accountSid: parsed.data.TWILIO_ACCOUNT_SID,
     authToken: parsed.data.TWILIO_AUTH_TOKEN,
@@ -173,7 +190,11 @@ export const config = {
   stripe: {
     // Accept either env name so deploy config can use the existing Stripe secret key label.
     secretKey: parsed.data.STRIPE_SECRET_KEY ?? parsed.data.STRIPE_API_KEY,
-    webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET
+    webhookSecret: parsed.data.STRIPE_WEBHOOK_SECRET,
+    prices: {
+      STARTER: { MONTHLY: parsed.data.STRIPE_PRICE_STARTER_MONTHLY || undefined, ANNUAL: parsed.data.STRIPE_PRICE_STARTER_ANNUAL || undefined },
+      PRO: { MONTHLY: parsed.data.STRIPE_PRICE_PRO_MONTHLY || undefined, ANNUAL: parsed.data.STRIPE_PRICE_PRO_ANNUAL || undefined }
+    } as Record<string, Record<string, string | undefined>>
   },
   vercel: {
     apiToken: parsed.data.VERCEL_API_TOKEN,
@@ -216,5 +237,7 @@ export const config = {
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
   tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,
-  fauwardGoUrl: parsed.data.FAUWARD_GO_URL
+  fauwardGoUrl: parsed.data.FAUWARD_GO_URL,
+  publicSiteUrl: parsed.data.PUBLIC_SITE_URL,
+  consoleUrl: parsed.data.CONSOLE_URL
 };

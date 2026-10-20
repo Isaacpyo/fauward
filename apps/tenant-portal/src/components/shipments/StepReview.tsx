@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
-import type { ShipmentWizardData } from "@/components/shipments/wizard-types";
-import { calculateServicePrice } from "@/components/shipments/StepService";
+import { SERVICE_TIERS, type ShipmentWizardData } from "@/components/shipments/wizard-types";
+import { QuoteSummary } from "@/components/shipments/StepService";
 
 type StepReviewProps = {
   data: ShipmentWizardData;
@@ -34,8 +34,6 @@ function Section({
 }
 
 export function StepReview({ data, onJumpToStep, onTermsChange, errors = [] }: StepReviewProps) {
-  const pricing = calculateServicePrice(data);
-
   return (
     <div className="space-y-4">
       <Section title="Addresses" onEdit={() => onJumpToStep(0)}>
@@ -55,9 +53,8 @@ export function StepReview({ data, onJumpToStep, onTermsChange, errors = [] }: S
       </Section>
 
       <Section title="Service & pricing" onEdit={() => onJumpToStep(2)}>
-        <p>Tier: {data.serviceTier}</p>
-        <p>Insurance: {data.insurance ? "Included" : "No"}</p>
-        <p>Total: £{pricing.total.toFixed(2)}</p>
+        <p className="mb-2">Tier: {SERVICE_TIERS.find((option) => option.tier === data.serviceTier)?.label ?? data.serviceTier}</p>
+        <QuoteSummary data={data} />
       </Section>
 
       <label className="flex min-h-[44px] items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">

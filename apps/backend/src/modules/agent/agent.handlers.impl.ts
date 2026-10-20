@@ -103,6 +103,7 @@ export function buildToolHandlers(app: FastifyInstance): Record<ToolName, ToolHa
 
         await tx.outboxEvent.create({
           data: {
+            tenantId: ctx.tenantId,
             aggregateType: 'shipment',
             aggregateId: shipment.id,
             eventType: 'shipment.driver.assigned',
@@ -311,6 +312,7 @@ export function buildToolHandlers(app: FastifyInstance): Record<ToolName, ToolHa
 
         await tx.outboxEvent.create({
           data: {
+            tenantId: ctx.tenantId,
             aggregateType: 'shipment',
             aggregateId: shipment.id,
             eventType: 'shipment.rerouted',

@@ -40,9 +40,11 @@ export type C360Billing = {
 };
 
 export type C360Tickets = {
-  tickets: Array<{ id: string; ticketNumber: string; subject: string; category: string; priority: string; status: string; createdAt: string; updatedAt: string }>;
+  audience: "PLATFORM" | "END_CUSTOMER";
+  tickets: Array<{ id: string; ticketNumber: string; subject: string; category: string; priority: string; status: string; audience: string; lastMessageAt: string | null; createdAt: string; updatedAt: string }>;
   total: number;
   byStatus: Record<string, number>;
+  endCustomer: { total: number; open: number };
   audienceTracked: boolean;
 };
 
@@ -52,7 +54,23 @@ export type C360Ai = {
   usage: Array<{ id: string; month: string; model: string; feature: string; requestCount: number; tokenCount: number; costUsd: number }>;
   runs: Array<{ id: string; agentType: string; status: string; stage: string | null; scannedCount: number; flaggedCount: number; proposedCount: number; durationMs: number | null; createdAt: string }>;
   runCount: number;
-  limit: { monthlyBudgetUsd: number | null; flashRequestLimit: number | null; proRequestLimit: number | null; featuresEnabled: string[] } | null;
+  limit: C360AiLimit | null;
+  /** Spend this month (USD, 2 decimals as a string) and request count. */
+  currentMonth: { month: string; costUsd: string; requests: number };
+  /** Feature keys a limit may allow (none selected = all). */
+  featureKeys: string[];
+};
+
+export type C360Gateway = { provider: string; mode: string; enabled: boolean; status: string; secretConfigured: boolean; lastVerifiedAt: string | null; lastError: string | null; updatedAt: string };
+
+export type C360AiLimit = {
+  monthlyBudgetUsd: string | null;
+  flashRequestLimit: number | null;
+  proRequestLimit: number | null;
+  featuresEnabled: string[];
+  updatedAt: string;
+  updatedByPlatformUserId: string | null;
+  reason: string | null;
 };
 
 export type C360Audit = {
@@ -62,7 +80,7 @@ export type C360Audit = {
 };
 
 export type C360People = {
-  users: Array<{ id: string; email: string; firstName: string | null; lastName: string | null; role: string; isActive: boolean; mfaEnabled: boolean; lastLogin: string | null; invitedBy: string | null; createdAt: string }>;
+  users: Array<{ id: string; email: string; firstName: string | null; lastName: string | null; role: string; isActive: boolean; mfaEnabled: boolean; lastLogin: string | null; invitedBy: string | null; createdAt: string; lockedAt: string | null; lockedReason: string | null; status: "ACTIVE" | "SUSPENDED" | "LOCKED"; invited: boolean; joined: boolean }>;
   total: number;
 };
 
@@ -71,8 +89,9 @@ export type C360Config = {
   branding: Record<string, string | null>;
   domains: Record<string, string | null>;
   notifications: Record<string, string | boolean | string[] | null> | null;
-  payments: { gateway: string; gatewayKeyConfigured: boolean; currency: string } | null;
-  apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null }>;
+  /** L11 (WP-2.12): tenant payment gateways — state only, never keys. */
+  payments: { activeProvider: string | null; currency: string; gateways: C360Gateway[] };
+  apiKeys: Array<{ id: string; name: string | null; keyPrefix: string; scopes: string[]; isActive: boolean; isSandbox: boolean; createdAt: string; lastUsedAt: string | null; expiresAt: string | null; revokedAt: string | null; revokedByType: string | null; revokedReason: string | null }>;
   webhooks: Array<{ id: string; url: string; events: string[]; isActive: boolean; createdAt: string; failuresLast30Days: number }>;
   legacyWebhook: { url: string | null; secretConfigured: boolean } | null;
 };

@@ -574,13 +574,13 @@ export function ShipmentWorkspacePanel({ shipmentId, fallbackShipment, onClose }
 
                 {visitedTabs.has("documents") ? (
                   <TabsContent value="documents">
-                    <DocumentsPanel documents={documents} onDocumentsChange={setDocuments} />
+                    <DocumentsPanel documents={documents} />
                   </TabsContent>
                 ) : null}
 
                 {visitedTabs.has("notes") ? (
                   <TabsContent value="notes">
-                    <NotesPanel notes={notes} onNotesChange={setNotes} canWrite />
+                    <NotesPanel notes={notes} />
                   </TabsContent>
                 ) : null}
               </Tabs>

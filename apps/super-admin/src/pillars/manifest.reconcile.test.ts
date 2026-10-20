@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { matchRoutes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { SERVICE_READ_PERMISSIONS } from "@fauward/internal-rbac";
 
 import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
@@ -67,10 +68,10 @@ describe("manifest reconciliation (D1)", () => {
     }
   });
 
-  it("manifest statuses match the ADR 0002 Phase-1 snapshot", () => {
+  it("manifest statuses match the services that met the definition of done (Phases 1–2)", () => {
     expect(SERVICES).toHaveLength(41);
     expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key).sort()).toEqual(
-      ["customer.360", "platform.impersonation", "platform.tenants", "revenue.billing", "trust.audit", "trust.iam", "trust.jit"]
+      ["customer.360", "customer.comms", "customer.feedback", "customer.onboarding", "customer.support", "platform.impersonation", "platform.tenants", "revenue.billing", "revenue.subscriptions", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.safety"]
     );
     expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "revenue.recognition"]);
     for (const service of SERVICES.filter((item) => item.status === "preview")) {
@@ -97,7 +98,7 @@ describe("manifest reconciliation (D1)", () => {
   });
 
   it("ACC-MAN-4 planned services without a page show ComingSoonPage with their phase and keep a preview entry", () => {
-    const planned = ["platform.jobs", "platform.database", "revenue.disputes", "customer.feedback"];
+    const planned = ["platform.jobs", "platform.database", "revenue.disputes"];
     for (const key of planned) {
       const service = SERVICES.find((item) => item.key === key)!;
       expect(service.status).toBe("preview");
@@ -105,6 +106,11 @@ describe("manifest reconciliation (D1)", () => {
       expect(routeByPath.get(service.route)?.element.type).toBe(ComingSoonRoute);
       expect(navigableServices(service.pillar).map((item) => item.id)).toContain(service.id);
     }
+  });
+
+  it("every service's requiredPermission matches the backend's activity visibility map (WP-2.1)", () => {
+    const manifest = Object.fromEntries(SERVICES.map((service) => [service.key, service.requiredPermission]));
+    expect(manifest).toEqual(SERVICE_READ_PERMISSIONS);
   });
 
   it("findServiceForPath maps concrete paths to their owning service", () => {

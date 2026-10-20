@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { consoleApi } from "@/lib/console-api";
@@ -9,6 +9,7 @@ export type TenantOption = { id: string; name: string; slug: string; status: str
 
 /** Search-as-you-type over the tenant directory (GET /api/internal/tenants?search=). */
 export function TenantPicker({ onSelect, label = "Find a tenant" }: { onSelect: (tenant: TenantOption) => void; label?: string }) {
+  const inputId = useId();
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search.trim(), 250);
   const query = useQuery({
@@ -19,11 +20,11 @@ export function TenantPicker({ onSelect, label = "Find a tenant" }: { onSelect: 
 
   return (
     <div className="space-y-2">
-      <label htmlFor="tenant-picker-search" className="block text-sm font-medium text-[var(--color-text-primary)]">
+      <label htmlFor={inputId} className="block text-sm font-medium text-[var(--color-text-primary)]">
         {label}
       </label>
       <input
-        id="tenant-picker-search"
+        id={inputId}
         type="search"
         autoComplete="off"
         value={search}

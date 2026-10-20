@@ -12,7 +12,7 @@ import { Tabs, TabsContent } from "@/components/ui/Tabs";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
 
-type ApiKey = { id: string; name?: string; scopes?: string[]; isSandbox?: boolean; lastUsedAt?: string; monthlyRequestCount?: number };
+type ApiKey = { id: string; name?: string | null; keyPrefix?: string; scopes?: string[]; isActive: boolean; isSandbox?: boolean; lastUsedAt?: string | null; monthlyRequestCount?: number; revokedAt: string | null; revokedBy: "TENANT" | "FAUWARD" | null; revokedReason: string | null };
 type WebhookEndpoint = { id: string; url: string; events: string[]; isActive: boolean };
 type WebhookDelivery = { id: string; endpointId?: string; eventType: string; status: string; responseCode?: number; responseLatencyMs?: number; createdAt: string; deadLetteredAt?: string };
 type UsageRow = { keyId: string; keyName: string; endpoint: string; method: string; date: string; requestCount: number; errorCount: number; avgLatencyMs: number };
@@ -92,7 +92,7 @@ export function DeveloperPage() {
               </div>
               <div className="flex items-center gap-3"><Switch checked={newKey.isSandbox} onCheckedChange={(isSandbox) => setNewKey((current) => ({ ...current, isSandbox }))} /><Button onClick={() => createKey.mutate()}>Create key</Button></div>
             </div>
-            <Table columns={["Name", "Scopes", "Sandbox", "Last used", "Monthly requests", "Revoke"]}>
+            <Table columns={["Name", "Scopes", "Sandbox", "Last used", "Monthly requests", "Status"]}>
               {(keysQuery.data ?? []).map((key) => (
                 <TableRow key={key.id}>
                   <TableCell>{key.name ?? key.id}</TableCell>
@@ -100,7 +100,15 @@ export function DeveloperPage() {
                   <TableCell>{key.isSandbox ? <Badge variant="warning">Sandbox</Badge> : <Badge variant="neutral">Live</Badge>}</TableCell>
                   <TableCell>{key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleString() : "Never"}</TableCell>
                   <TableCell>{key.monthlyRequestCount ?? 0}</TableCell>
-                  <TableCell><Button size="sm" variant="danger" onClick={() => window.confirm("Revoke this key?") && revokeKey.mutate(key.id)}>Revoke</Button></TableCell>
+                  <TableCell>
+                    {key.isActive ? (
+                      <Button size="sm" variant="danger" onClick={() => window.confirm("Revoke this key?") && revokeKey.mutate(key.id)}>Revoke</Button>
+                    ) : (
+                      <span data-testid="api-key-revoked" className="text-xs text-gray-600">
+                        {key.revokedBy === "FAUWARD" ? `Revoked by Fauward${key.revokedReason ? `: ${key.revokedReason}` : ""}` : "Revoked"}
+                      </span>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))}
             </Table>

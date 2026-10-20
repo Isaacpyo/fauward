@@ -178,18 +178,20 @@ export async function getTenantTrackingView(
   };
 }
 
+/** Console view of one shipment's tracking; every query names the tenant (console runs in system context). */
 export async function getPlatformTrackingView(
   prisma: PrismaClient,
+  tenantId: string,
   shipmentId: string
 ) {
   const [snapshot, events, shipment] = await Promise.all([
-    prisma.trackingSnapshot.findUnique({ where: { shipmentId } }),
+    prisma.trackingSnapshot.findFirst({ where: { shipmentId, tenantId } }),
     prisma.trackingEvent.findMany({
-      where: { shipmentId },
+      where: { shipmentId, tenantId },
       orderBy: { occurredAt: 'asc' }
     }),
-    prisma.shipment.findUnique({
-      where: { id: shipmentId },
+    prisma.shipment.findFirst({
+      where: { id: shipmentId, tenantId },
       include: {
         tenant: { select: { id: true, name: true, slug: true, status: true, plan: true } }
       }

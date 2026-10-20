@@ -7,6 +7,7 @@ import { consoleUserHas, requireConsolePermission } from '../../../middleware/re
 import { dangerous } from '../../../middleware/dangerous.js';
 import { writePlatformAuditLog } from '../../../services/platform-audit.service.js';
 import { recordAndPublishActivity, staffActor } from '../../../services/platform-activity.service.js';
+import { notifyTenantAdmins } from '../../../services/platform-notifier.service.js';
 import {
   WRITE_SCOPE_MIN_REASON,
   createExchangeCode,
@@ -96,6 +97,20 @@ export async function registerConsoleImpersonationRoutes(app: FastifyInstance) {
       summary: `${tenant.name}: ${scopeRequest.write ? 'write' : 'read-only'} session as ${targetUser.email} for ${minutes} min`,
       severity: scopeRequest.write ? 'CRITICAL' : 'ATTENTION',
       consoleLink: `/platform/impersonation/sessions/${session.id}`
+    });
+    // D8 / L18: the tenant's admins are told at once, in-app always; the email only stays off when an Enterprise tenant
+    // turned it off (TenantSettings.notifyOnStaffAccess).
+    const settings = await app.prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id }, select: { notifyOnStaffAccess: true } });
+    const emailOff = settings?.notifyOnStaffAccess === false && tenant.plan === 'ENTERPRISE';
+    const staffName = request.platform!.user.name ?? 'A Fauward staff member';
+    const scope = scopeRequest.write ? 'read and write' : 'read-only';
+    await notifyTenantAdmins(app, {
+      tenantId: tenant.id,
+      event: 'staff_access.started',
+      title: `Fauward staff opened your workspace (${scope})`,
+      body: `${staffName}: ${reason}`,
+      link: '/settings?tab=staff-access',
+      ...(emailOff ? {} : { email: { template: 'staff_access_started' as const, data: { staffName, scope, reason } } })
     });
     // The token is only issued to the tenant portal through the one-time exchange code (S18).
     return reply.send({

@@ -4,6 +4,10 @@ import { authenticatePlatformSession } from '../../../middleware/authenticate-pl
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { mrrForSubscription } from '../../../services/revenue/mrr.service.js';
 import { resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
+import { loadConsoleContext } from '../../../middleware/require-console-permission.js';
+import { activityListQuery, listActivity } from '../shell/activity.routes.js';
+import { AI_FEATURE_KEYS, presentAiLimit } from '../../../services/ai-limit.service.js';
+import { presentConsoleGateway } from '../../../services/tenant-payment-gateway.service.js';
 
 // customer.360 (WP-1.8): one endpoint per tab, each with its own permission, so a failing or forbidden tab never takes
 // the others down. Every query names the tenant (console requests run in system context, architecture §7). Counts are
@@ -44,7 +48,7 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       app.prisma.tenantHealthScore.findFirst({ where: { tenantId: tenant.id }, orderBy: { computedAt: 'desc' }, select: { score: true, trend: true, computedAt: true } }),
       app.prisma.suspensionRecord.findMany({ where: { tenantId: tenant.id, status: 'ACTIVE' }, orderBy: { createdAt: 'desc' }, select: { id: true, source: true, category: true, publicReason: true, createdAt: true } }),
       app.prisma.user.count({ where: { tenantId: tenant.id, isActive: true, role: { notIn: [...CUSTOMER_ROLES] } } }),
-      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'PLATFORM', status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
     ]);
     return reply.send({
       identity: { id: tenant.id, name: tenant.name, slug: tenant.slug, customDomain: tenant.customDomain, region: tenant.region, createdAt: tenant.createdAt.toISOString() },
@@ -59,7 +63,7 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       health: health ? { score: health.score, trend: health.trend, computedAt: health.computedAt.toISOString() } : null,
       kycStatus: tenant.kycStatus,
       activeStaff: users,
-      // Support tickets have no audience until WP-2.3; this is every open ticket of the tenant.
+      // Open tickets this tenant has with Fauward (PLATFORM audience, D5).
       openTickets
     });
   });
@@ -112,20 +116,32 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     });
   });
 
+  // Tickets tab (D5): PLATFORM tickets by default; `?audience=END_CUSTOMER` is read-only context on the tenant's own
+  // support desk (counts and PUBLIC/TENANT_INTERNAL thread previews only).
   app.get('/api/internal/customer360/:tenantId/tickets', pre('customer.support.read'), async (request, reply) => {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
-    const [tickets, byStatus, total] = await Promise.all([
+    const audience = (request.query as { audience?: string }).audience === 'END_CUSTOMER' ? 'END_CUSTOMER' : 'PLATFORM';
+    const [tickets, byStatus, total, endCustomerTotal, endCustomerOpen] = await Promise.all([
       app.prisma.supportTicket.findMany({
-        where: { tenantId: tenant.id },
-        orderBy: { updatedAt: 'desc' },
+        where: { tenantId: tenant.id, audience },
+        orderBy: [{ lastMessageAt: { sort: 'desc', nulls: 'last' } }, { updatedAt: 'desc' }],
         take: 25,
-        select: { id: true, ticketNumber: true, subject: true, category: true, priority: true, status: true, createdAt: true, updatedAt: true }
+        select: { id: true, ticketNumber: true, subject: true, category: true, priority: true, status: true, audience: true, lastMessageAt: true, createdAt: true, updatedAt: true }
       }),
-      app.prisma.supportTicket.groupBy({ by: ['status'], where: { tenantId: tenant.id }, _count: { _all: true } }),
-      app.prisma.supportTicket.count({ where: { tenantId: tenant.id } })
+      app.prisma.supportTicket.groupBy({ by: ['status'], where: { tenantId: tenant.id, audience }, _count: { _all: true } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'END_CUSTOMER' } }),
+      app.prisma.supportTicket.count({ where: { tenantId: tenant.id, audience: 'END_CUSTOMER', status: { in: ['OPEN', 'IN_PROGRESS', 'WAITING_CUSTOMER'] } } })
     ]);
-    return reply.send({ tickets, total, byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])), audienceTracked: false });
+    return reply.send({
+      audience,
+      tickets,
+      total,
+      byStatus: Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])),
+      endCustomer: { total: endCustomerTotal, open: endCustomerOpen },
+      audienceTracked: true
+    });
   });
 
   app.get('/api/internal/customer360/:tenantId/health', pre('customer.success.read'), async (request, reply) => {
@@ -149,7 +165,14 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       app.prisma.aiAgentRun.count({ where: { tenantId: tenant.id } }),
       app.prisma.tenantAiLimit.findUnique({ where: { tenantId: tenant.id } })
     ]);
-    return reply.send({ usage, runs, runCount, limit });
+    const thisMonth = monthKeys(1)[0];
+    const monthRows = usage.filter((row) => row.month === thisMonth);
+    const currentMonth = {
+      month: thisMonth,
+      costUsd: monthRows.reduce((sum, row) => sum + row.costUsd, 0).toFixed(2),
+      requests: monthRows.reduce((sum, row) => sum + row.requestCount, 0)
+    };
+    return reply.send({ usage, runs, runCount, limit: presentAiLimit(limit), currentMonth, featureKeys: AI_FEATURE_KEYS });
   });
 
   app.get('/api/internal/customer360/:tenantId/audit', pre('trust.audit.read'), async (request, reply) => {
@@ -180,20 +203,30 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
         where: { tenantId: tenant.id },
         orderBy: [{ isActive: 'desc' }, { createdAt: 'asc' }],
         take: 200,
-        select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, invitedBy: true, createdAt: true }
+        select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, invitedBy: true, createdAt: true, lockedAt: true, lockedReason: true }
       }),
       app.prisma.user.count({ where: { tenantId: tenant.id } })
     ]);
-    return reply.send({ users, total });
+    // L13 (WP-2.15): status, invited/joined (an invited user has joined once they signed in), MFA, last login, lock.
+    return reply.send({
+      users: users.map((user) => ({
+        ...user,
+        status: user.lockedAt ? 'LOCKED' : user.isActive ? 'ACTIVE' : 'SUSPENDED',
+        invited: Boolean(user.invitedBy),
+        joined: user.invitedBy ? user.lastLogin !== null : true
+      })),
+      total
+    });
   });
 
   app.get('/api/internal/customer360/:tenantId/config', pre('platform.tenants.read'), async (request, reply) => {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
     const since30Days = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [settings, apiKeys, webhooks] = await Promise.all([
+    const [settings, gateways, apiKeys, webhooks] = await Promise.all([
       app.prisma.tenantSettings.findUnique({ where: { tenantId: tenant.id } }),
-      app.prisma.apiKey.findMany({ where: { tenantId: tenant.id }, select: { id: true, name: true, keyPrefix: true, scopes: true, isActive: true, isSandbox: true, createdAt: true, lastUsedAt: true, expiresAt: true }, orderBy: { createdAt: 'desc' } }),
+      app.prisma.tenantPaymentGateway.findMany({ where: { tenantId: tenant.id }, orderBy: { provider: 'asc' } }),
+      app.prisma.apiKey.findMany({ where: { tenantId: tenant.id }, select: { id: true, name: true, keyPrefix: true, scopes: true, isActive: true, isSandbox: true, createdAt: true, lastUsedAt: true, expiresAt: true, revokedAt: true, revokedByType: true, revokedReason: true }, orderBy: { createdAt: 'desc' } }),
       app.prisma.webhookEndpoint.findMany({ where: { tenantId: tenant.id }, select: { id: true, url: true, events: true, isActive: true, createdAt: true }, orderBy: { createdAt: 'desc' } })
     ]);
     const failures = await Promise.all(
@@ -207,7 +240,8 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
       notifications: settings
         ? { notificationEmail: settings.notificationEmail, emailFromName: settings.emailFromName, emailReplyTo: settings.emailReplyTo, customEmailDomain: settings.customEmailDomain, opsEmailRecipients: settings.opsEmailRecipients, notifyOnStaffAccess: settings.notifyOnStaffAccess }
         : null,
-      payments: settings ? { gateway: settings.paymentGateway, gatewayKeyConfigured: Boolean(settings.paymentGatewayKey), currency: settings.currency } : null,
+      // L11 (WP-2.12): provider, mode, status and last error only — never keys or bank details (ACC-L11-2).
+      payments: { activeProvider: settings?.paymentGateway ?? null, currency: settings?.currency ?? tenant.defaultCurrency, gateways: gateways.map(presentConsoleGateway) },
       apiKeys,
       webhooks: webhooks.map((hook, index) => ({ ...hook, failuresLast30Days: failures[index], secretConfigured: true })),
       legacyWebhook: settings ? { url: settings.webhookUrl, secretConfigured: Boolean(settings.webhookSecret) } : null
@@ -218,5 +252,15 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     const tenant = await tenantOr404(app, request, reply);
     if (!tenant) return;
     return reply.send({ internalNotes: tenant.internalNotes ?? '', editPath: `/api/internal/tenants/${tenant.id}/internal-notes` });
+  });
+
+  // Activity tab (WP-2.1): this tenant's PlatformActivity, limited to the services the caller can read (D7).
+  app.get('/api/internal/customer360/:tenantId/activity', pre('customer.360.read'), async (request, reply) => {
+    const tenant = await tenantOr404(app, request, reply);
+    if (!tenant) return;
+    const parsed = activityListQuery.omit({ tenantId: true }).safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const context = await loadConsoleContext(request);
+    return reply.send(await listActivity(app, context, { ...parsed.data, tenantId: tenant.id }));
   });
 }

@@ -28,6 +28,7 @@ export function findPlainTenantNames(source: string) {
     const start = match.index ?? 0;
     const before = source.slice(Math.max(0, start - 1), start);
     if (before === "$") continue; // template literal `${tenant.name}`
+    if (before === '"' || before === "'" || before === "`") continue; // text inside a string, e.g. a "{tenantName}" placeholder
     if (/[A-Za-z]=\s*$/.test(source.slice(Math.max(0, start - 30), start))) continue; // attribute value, e.g. name={tenant.name}
     if (/=>\s*$/.test(source.slice(Math.max(0, start - 10), start))) continue; // arrow-function body handled by its own JSX
     if (/<TenantChip\b[^>]*$/.test(source.slice(Math.max(0, start - 200), start))) continue;
@@ -43,6 +44,11 @@ export function findPlainTenantNames(source: string) {
 }
 
 describe("TenantChip everywhere (ACC-C360-7)", () => {
+  it("ACC-C360-7 self-test: placeholders inside strings are not rendered tenant names", () => {
+    expect(findPlainTenantNames('const text = macro.body.replaceAll("{tenantName}", name);')).toEqual([]);
+    expect(findPlainTenantNames("<span>{row.tenant?.name}</span>")).toEqual(["line 1: {row.tenant?.name}"]);
+  });
+
   it("ACC-C360-7 pillar pages render tenant names only through TenantChip", () => {
     const offenders = files(PILLARS)
       .map((file) => [path.relative(PILLARS, file).replaceAll("\\", "/"), findPlainTenantNames(fs.readFileSync(file, "utf8"))] as const)

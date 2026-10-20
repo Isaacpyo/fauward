@@ -1,10 +1,11 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import type { User } from "@/types/domain";
 import { Button } from "@/components/ui/Button";
 import { useFeatureAccess } from "@/hooks/useEntitlements";
-import { formatPlanLabel, type FeatureKey } from "@/lib/plan-features";
+import { BACKEND_FEATURE_KEY, formatPlanLabel, type FeatureKey } from "@/lib/plan-features";
+import { FeedbackDialog } from "@/components/feedback/FeedbackDialog";
 
 type PlanGateProps = {
   minimumPlan: User["plan"];
@@ -17,6 +18,7 @@ type PlanGateProps = {
 export function PlanGate({ minimumPlan, feature, children }: PlanGateProps) {
   const access = useFeatureAccess();
   const hasAccess = feature ? access.hasFeature(feature) : access.hasPlan(minimumPlan);
+  const [requesting, setRequesting] = useState(false);
 
   if (!hasAccess) {
     return (
@@ -25,9 +27,19 @@ export function PlanGate({ minimumPlan, feature, children }: PlanGateProps) {
         <p className="mt-2 text-sm text-amber-800">
           This feature requires the {formatPlanLabel(minimumPlan)} plan or higher.
         </p>
-        <Button asChild className="mt-4">
-          <Link to="/settings?tab=billing">Upgrade plan</Link>
-        </Button>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild>
+            <Link to="/settings?tab=billing">Upgrade plan</Link>
+          </Button>
+          {feature ? (
+            <Button variant="secondary" onClick={() => setRequesting(true)}>
+              Request this feature
+            </Button>
+          ) : null}
+        </div>
+        {feature ? (
+          <FeedbackDialog open={requesting} onOpenChange={setRequesting} initialType="FEATURE_REQUEST" source="PLAN_GATE" featureKey={BACKEND_FEATURE_KEY[feature] ?? feature} featureLabel={feature.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)} />
+        ) : null}
       </div>
     );
   }

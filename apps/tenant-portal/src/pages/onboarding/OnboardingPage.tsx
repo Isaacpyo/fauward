@@ -1,126 +1,53 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { CheckCircle2, Circle } from "lucide-react";
 
-import { OnboardingStepper } from "@/components/onboarding/OnboardingStepper";
-import { StepBranding } from "@/components/onboarding/StepBranding";
-import { StepFirstShipment } from "@/components/onboarding/StepFirstShipment";
-import { StepGoLive } from "@/components/onboarding/StepGoLive";
-import { StepInviteTeam } from "@/components/onboarding/StepInviteTeam";
-import { StepPayments } from "@/components/onboarding/StepPayments";
-import {
-  initialOnboardingState,
-  type OnboardingState
-} from "@/components/onboarding/types";
-import { Button } from "@/components/ui/Button";
+import { useOnboardingChecklist } from "@/components/onboarding/checklist-api";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { PageShell } from "@/layouts/PageShell";
-import { api } from "@/lib/api";
-import { queryClient } from "@/lib/queryClient";
-import { useAppStore } from "@/stores/useAppStore";
-import { useTenantStore } from "@/stores/useTenantStore";
-import { applyTenantConfig } from "@/theme/tenant";
-import type { TenantConfig } from "@/types/domain";
+import { apiErrorMessage } from "@/lib/api-error";
 
-const stepLabels = [
-  "Brand Your Platform",
-  "Create First Shipment",
-  "Invite Team",
-  "Connect Payments",
-  "Go Live"
-];
-const backendSteps = ["BRANDING", "FIRST_SHIPMENT", "TEAM", "PAYMENT", "GO_LIVE"] as const;
-
+/**
+ * Onboarding (L7, WP-2.17): each step links to the place where it is really done. A step turns green when the server
+ * sees it happen — a shipment created, a gateway verified, a teammate signed in — not when "Next" is clicked.
+ */
 export function OnboardingPage() {
-  const tenant = useTenantStore((state) => state.tenant);
-  const setTenant = useTenantStore((state) => state.setTenant);
-  const setAppTenant = useAppStore((state) => state.setTenant);
-  const setDashboardChecklistDismissed = useAppStore((state) => state.setDashboardChecklistDismissed);
-  const addToast = useAppStore((state) => state.addToast);
-  const navigate = useNavigate();
-
-  const [step, setStep] = useState(0);
-  const [state, setState] = useState<OnboardingState>(initialOnboardingState);
-
-  useEffect(() => {
-    if (tenant?.name && !state.companyName) {
-      setState((current) => ({ ...current, companyName: tenant.name }));
-    }
-  }, [state.companyName, tenant?.name]);
-
-  const markStepComplete = async (index: number) => {
-    try {
-      await api.post("/v1/tenants/me/onboarding/steps", { step: backendSteps[index] });
-      void queryClient.invalidateQueries({ queryKey: ["tenant-config"] });
-    } catch {
-      // Onboarding remains usable offline or in dev sessions; the next tenant refresh will reconcile state.
-    }
-  };
-
-  const next = () => {
-    void markStepComplete(step);
-    setStep((current) => Math.min(stepLabels.length - 1, current + 1));
-  };
-  const back = () => setStep((current) => Math.max(0, current - 1));
-
-  const complete = () => {
-    void markStepComplete(4);
-    const nextTenant: TenantConfig = tenant
-      ? {
-          ...tenant,
-          onboarding_complete: true,
-          name: state.companyName || tenant.name,
-          primary_color: state.primaryColor,
-          logo_url: state.logoPreview || tenant.logo_url
-        }
-      : {
-          tenant_id: "tenant_demo",
-          name: state.companyName || "Fauward Demo Tenant",
-          logo_url: state.logoPreview || "",
-          domain: "demo.fauward.com",
-          primary_color: state.primaryColor,
-          accent_color: "#D97706",
-          locale: "en-GB",
-          rtl: false,
-          currency: "GBP",
-          timezone: "Europe/London",
-          onboarding_complete: true,
-          support_email: "support@fauward.com",
-          support_phone: "+44 20 7946 0000"
-        };
-
-    setTenant(nextTenant);
-    setAppTenant(nextTenant);
-    queryClient.setQueryData(["tenant-config"], nextTenant);
-    applyTenantConfig(nextTenant);
-    setDashboardChecklistDismissed(false);
-    addToast({ title: "Onboarding complete. Welcome live!", variant: "success" });
-    navigate("/", { replace: true });
-  };
+  const checklist = useOnboardingChecklist();
+  const steps = checklist.data?.steps ?? [];
+  const required = steps.filter((step) => step.required);
+  const doneRequired = required.filter((step) => step.doneAt).length;
 
   return (
-    <PageShell
-      title="Tenant Onboarding"
-      description="Set up your tenant in a few guided steps."
-    >
-      <div className="space-y-4">
-        <OnboardingStepper currentStep={step} labels={stepLabels} />
-
-        {step === 0 ? <StepBranding state={state} onChange={setState} /> : null}
-        {step === 1 ? <StepFirstShipment state={state} onChange={setState} onSkip={next} /> : null}
-        {step === 2 ? <StepInviteTeam state={state} onChange={setState} onSkip={next} /> : null}
-        {step === 3 ? <StepPayments state={state} onChange={setState} onSkip={next} /> : null}
-        {step === 4 ? <StepGoLive state={state} onComplete={complete} /> : null}
-
-        {step < 4 ? (
-          <div className="flex flex-wrap justify-between gap-2">
-            <Button variant="secondary" onClick={back} disabled={step === 0}>
-              Back
-            </Button>
-            <Button onClick={next}>
-              {step === 3 ? "Almost there!" : "Continue"}
-            </Button>
-          </div>
-        ) : null}
-      </div>
+    <PageShell title="Set up your workspace" description="Each step completes when you actually do it. Come back here any time to see what is left.">
+      {checklist.isError ? <ErrorState title="Your setup checklist could not be loaded" description={apiErrorMessage(checklist.error, "The onboarding service returned an error.")} onRetry={() => void checklist.refetch()} /> : null}
+      {checklist.isLoading ? <p className="text-sm text-gray-500">Loading your checklist…</p> : null}
+      {checklist.data ? (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700" data-testid="onboarding-progress">
+            {checklist.data.completedAt ? `Setup complete on ${new Date(checklist.data.completedAt).toLocaleDateString()}.` : `${doneRequired} of ${required.length} required steps done.`}
+          </p>
+          <ol className="space-y-3">
+            {steps.map((step) => (
+              <li key={step.step} data-testid="onboarding-step" className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start gap-3">
+                  {step.doneAt ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-green-600" aria-label="Done" /> : <Circle className="mt-0.5 h-5 w-5 text-gray-300" aria-label="Not done" />}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {step.label}
+                      {step.required ? null : <span className="ml-2 text-xs font-normal text-gray-500">optional</span>}
+                    </p>
+                    <p className="text-xs text-gray-500">{step.doneAt ? `Done ${new Date(step.doneAt).toLocaleString()}` : "Not done yet"}</p>
+                  </div>
+                </div>
+                {!step.doneAt ? (
+                  <Link to={step.actionPath} className="text-sm font-semibold text-[var(--tenant-primary)] hover:underline">
+                    Do this now
+                  </Link>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </PageShell>
   );
 }

@@ -13,16 +13,16 @@ const PYTHON_EMAIL_TEMPLATES = new Set([
   'invoice_sent'
 ]);
 
-export async function sendEmail(
-  app: FastifyInstance,
-  args: {
-    tenantId: string;
-    to: string;
-    template: keyof typeof EMAIL_TEMPLATES;
-    data?: Record<string, unknown>;
-    userId?: string;
-  }
-) {
+type TenantEmail = {
+  tenantId: string;
+  to: string;
+  template: keyof typeof EMAIL_TEMPLATES;
+  data?: Record<string, unknown>;
+  userId?: string;
+};
+
+/** Queue-only tenant email, for services that have no Fastify instance (the worker writes the NotificationLog). */
+export async function enqueueEmail(args: TenantEmail) {
   await notificationQueue.add('email', {
     tenantId: args.tenantId,
     userId: args.userId,
@@ -32,6 +32,10 @@ export async function sendEmail(
     template: EMAIL_TEMPLATES[args.template],
     data: args.data ?? {}
   });
+}
+
+export async function sendEmail(app: FastifyInstance, args: TenantEmail) {
+  await enqueueEmail(args);
   if (PYTHON_EMAIL_TEMPLATES.has(args.template)) {
     await publishPythonServiceJob(app, 'fauward:notifications:send', {
       jobId: crypto.randomUUID(),
@@ -43,6 +47,19 @@ export async function sendEmail(
       locale: 'en'
     });
   }
+}
+
+/** Fauward staff email (notifyStaff): no tenant; the worker logs it against the platform user. */
+export async function sendStaffEmail(args: { platformUserId: string; to: string; template: keyof typeof EMAIL_TEMPLATES; data?: Record<string, unknown> }) {
+  await notificationQueue.add('email', {
+    tenantId: 'system',
+    platformUserId: args.platformUserId,
+    channel: 'EMAIL',
+    event: args.template,
+    to: args.to,
+    template: EMAIL_TEMPLATES[args.template],
+    data: args.data ?? {}
+  });
 }
 
 export async function sendSms(
@@ -66,5 +83,6 @@ export async function sendSms(
 
 export const notificationsService = {
   sendEmail,
+  sendStaffEmail,
   sendSms
 };

@@ -5,9 +5,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { MoneyCell } from "@/components/service-kit/MoneyCell";
+import { ActionDialog } from "@/components/service-kit/ActionDialog";
+import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { consoleApi } from "@/lib/console-api";
 import { toConsoleApiError } from "@/lib/console-api-error";
-import { C360_KEY, useC360 } from "./api";
+import { severityTone, useActivityFeed } from "@/lib/activity";
+import { C360_KEY, useC360, type C360Ai } from "./api";
 
 const card = "rounded-lg border border-[var(--color-border)] bg-white p-4";
 const th = "py-1 text-left text-xs font-semibold text-[var(--color-text-muted)]";
@@ -188,17 +191,27 @@ export function TicketsTab({ tenantId }: { tenantId: string }) {
     <TabQuery query={tickets} label="tickets">
       {(data) => (
         <section className={card}>
-          <h2 className="text-sm font-semibold">{data.total} ticket(s)</h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold">{data.total} ticket(s) with Fauward</h2>
+            <Link to={`/customer/support?tenantId=${encodeURIComponent(tenantId)}&view=all`} className="text-xs font-semibold text-[var(--fauward-navy)] hover:underline">
+              Open in Support Desk
+            </Link>
+          </div>
           <p className="text-xs text-[var(--color-text-muted)]">
             {Object.entries(data.byStatus)
               .map(([status, count]) => `${status}: ${count}`)
-              .join(" · ") || "No tickets."}
+              .join(" · ") || "No tickets with Fauward."}
           </p>
-          {!data.audienceTracked ? <p className="mt-1 text-xs text-amber-800">Tickets to Fauward and to the tenant&apos;s own customers are not separated until WP-2.3.</p> : null}
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            The tenant&apos;s own customer desk: {data.endCustomer.open} open of {data.endCustomer.total}.
+          </p>
           <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
             {data.tickets.map((ticket) => (
-              <li key={ticket.id} className="py-1">
-                <span className="font-mono text-xs">{ticket.ticketNumber}</span> · {ticket.subject} · {ticket.status} · {ticket.priority}
+              <li key={ticket.id} className="py-1" data-testid="c360-ticket-row">
+                <Link to={`/customer/support/tickets/${ticket.id}`} className="font-mono text-xs font-semibold text-[var(--fauward-navy)] hover:underline">
+                  {ticket.ticketNumber}
+                </Link>{" "}
+                · {ticket.subject} · {ticket.status} · {ticket.priority}
               </li>
             ))}
           </ul>
@@ -231,26 +244,128 @@ export function HealthTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+function limitInput(value: number | null | undefined) {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/** L16 (WP-2.10): staff set the tenant's AI budget/request limits; dangerous (reason + fresh MFA); tenant admins are told. */
+function AiLimitDialog({ tenantId, data, open, onClose }: { tenantId: string; data: C360Ai; open: boolean; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [budget, setBudget] = useState("");
+  const [flash, setFlash] = useState("");
+  const [pro, setPro] = useState("");
+  const [features, setFeatures] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    setBudget(data.limit?.monthlyBudgetUsd ?? "");
+    setFlash(limitInput(data.limit?.flashRequestLimit));
+    setPro(limitInput(data.limit?.proRequestLimit));
+    setFeatures(data.limit?.featuresEnabled ?? []);
+  }, [open, data.limit]);
+  const toLimit = (value: string) => (value.trim() === "" ? null : Number(value.trim()));
+  return (
+    <ActionDialog
+      open={open}
+      dangerous
+      title="Set AI limit"
+      description={`This month: ${data.currentMonth.costUsd} USD over ${data.currentMonth.requests} requests. The gateway refuses runs once a limit is reached; the tenant's admins are told.`}
+      confirmLabel="Save AI limit"
+      validate={() => {
+        if (budget.trim() !== "" && !/^\d{1,10}(\.\d{1,2})?$/.test(budget.trim())) return "Budget must be a USD amount with up to 2 decimals.";
+        if ([flash, pro].some((value) => value.trim() !== "" && !/^\d+$/.test(value.trim()))) return "Request limits must be whole numbers.";
+        return null;
+      }}
+      onSubmit={async (reason) => {
+        await consoleApi.put(`/tenants/${encodeURIComponent(tenantId)}/ai-limit`, {
+          monthlyBudgetUsd: budget.trim() === "" ? null : budget.trim(),
+          flashRequestLimit: toLimit(flash),
+          proRequestLimit: toLimit(pro),
+          featuresEnabled: features,
+          reason
+        });
+        await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "ai", tenantId] });
+      }}
+      onClose={onClose}
+    >
+      <div className="grid gap-3 text-sm">
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Monthly budget in USD (empty = none)</span>
+          <input aria-label="Monthly budget (USD)" value={budget} onChange={(event) => setBudget(event.target.value)} inputMode="decimal" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Standard requests per month (empty = none)</span>
+          <input aria-label="Standard requests per month" value={flash} onChange={(event) => setFlash(event.target.value)} inputMode="numeric" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs font-semibold text-[var(--color-text-muted)]">Advanced requests per month (empty = none)</span>
+          <input aria-label="Advanced requests per month" value={pro} onChange={(event) => setPro(event.target.value)} inputMode="numeric" className="rounded-md border border-[var(--color-border)] px-2 py-1" />
+        </label>
+        <fieldset>
+          <legend className="text-xs font-semibold text-[var(--color-text-muted)]">Allowed features (none selected = all)</legend>
+          <div className="mt-1 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto text-xs">
+            {data.featureKeys.map((key) => (
+              <label key={key} className="flex items-center gap-1">
+                <input type="checkbox" checked={features.includes(key)} onChange={(event) => setFeatures((previous) => (event.target.checked ? [...previous, key] : previous.filter((item) => item !== key)))} />
+                {key}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+    </ActionDialog>
+  );
+}
+
 export function AiTab({ tenantId }: { tenantId: string }) {
   const ai = useC360(tenantId, "ai");
+  const [editing, setEditing] = useState(false);
   return (
     <TabQuery query={ai} label="AI usage">
       {(data) => (
         <div className="grid gap-4 lg:grid-cols-2">
+          <section className={card} data-testid="c360-ai-limit">
+            <h2 className="text-sm font-semibold">AI limit</h2>
+            <p className="mt-1 text-sm">
+              This month ({data.currentMonth.month}): {data.currentMonth.costUsd} USD · {data.currentMonth.requests} requests
+            </p>
+            {data.limit ? (
+              <dl className="mt-2 grid grid-cols-2 gap-1 text-xs">
+                <dt className="text-[var(--color-text-muted)]">Monthly budget</dt>
+                <dd>{data.limit.monthlyBudgetUsd === null ? "None" : `${data.limit.monthlyBudgetUsd} USD`}</dd>
+                <dt className="text-[var(--color-text-muted)]">Standard requests</dt>
+                <dd>{data.limit.flashRequestLimit ?? "None"}</dd>
+                <dt className="text-[var(--color-text-muted)]">Advanced requests</dt>
+                <dd>{data.limit.proRequestLimit ?? "None"}</dd>
+                <dt className="text-[var(--color-text-muted)]">Features</dt>
+                <dd>{data.limit.featuresEnabled.length === 0 ? "All" : data.limit.featuresEnabled.join(", ")}</dd>
+                <dt className="text-[var(--color-text-muted)]">Last set</dt>
+                <dd>
+                  {when(data.limit.updatedAt)}
+                  {data.limit.reason ? ` · ${data.limit.reason}` : ""}
+                </dd>
+              </dl>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--color-text-muted)]">No AI limit set for this tenant.</p>
+            )}
+            <PermissionButton permission="platform.tenants.write" onClick={() => setEditing(true)} className="mt-3 rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-semibold disabled:opacity-50">
+              Set AI limit
+            </PermissionButton>
+            <AiLimitDialog tenantId={tenantId} data={data} open={editing} onClose={() => setEditing(false)} />
+          </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">Usage by month and feature</h2>
             {data.usage.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No AI usage in the last 6 months.</p> : null}
             <ul className="mt-2 text-xs">
               {data.usage.map((row) => (
                 <li key={row.id}>
-                  {row.month} · {row.feature} · {row.model}: {row.requestCount} requests, {row.tokenCount} tokens
+                  {row.month} · {row.feature} · {row.model}: {row.requestCount} requests, {row.tokenCount} tokens, {row.costUsd.toFixed(2)} USD
                 </li>
               ))}
             </ul>
           </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">Agent runs ({data.runCount})</h2>
-            <p className="text-xs text-[var(--color-text-muted)]">{data.limit ? `Budget ${data.limit.monthlyBudgetUsd ?? "—"} USD/month` : "No AI limit set for this tenant."}</p>
+            {data.runs.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No agent runs yet.</p> : null}
             <ul className="mt-2 text-xs">
               {data.runs.map((run) => (
                 <li key={run.id}>
@@ -301,6 +416,32 @@ export function AuditTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+/** L13 (WP-2.15): lock a user during a security incident (their sessions end at once) or unlock them; dangerous. */
+function UserLockButton({ tenantId, userId, email, locked }: { tenantId: string; userId: string; email: string; locked: boolean }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const action = locked ? "unlock" : "lock";
+  return (
+    <>
+      <PermissionButton permission="platform.tenants.write" onClick={() => setOpen(true)} className="rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-semibold disabled:opacity-50">
+        {locked ? "Unlock" : "Lock"}
+      </PermissionButton>
+      <ActionDialog
+        open={open}
+        dangerous
+        title={`${locked ? "Unlock" : "Lock"} ${email}`}
+        description={locked ? "They can sign in again. The tenant's admins are told." : "They are signed out everywhere and cannot sign in until unlocked. The tenant's admins are told your reason."}
+        confirmLabel={locked ? "Unlock user" : "Lock user"}
+        onSubmit={async (reason) => {
+          await consoleApi.post(`/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/${action}`, { reason });
+          await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "people", tenantId] });
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function PeopleTab({ tenantId }: { tenantId: string }) {
   const people = useC360(tenantId, "people");
   return (
@@ -314,20 +455,29 @@ export function PeopleTab({ tenantId }: { tenantId: string }) {
                 <th className={th}>User</th>
                 <th className={th}>Role</th>
                 <th className={th}>Status</th>
+                <th className={th}>Invite</th>
                 <th className={th}>MFA</th>
                 <th className={th}>Last sign-in</th>
+                <th className={th} />
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
               {data.users.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} data-testid="c360-person">
                   <td className="py-1">
                     {[user.firstName, user.lastName].filter(Boolean).join(" ") || "—"} <span className="block font-mono text-xs text-[var(--color-text-muted)]">{user.email}</span>
                   </td>
                   <td className="py-1 text-xs">{user.role}</td>
-                  <td className="py-1 text-xs">{user.isActive ? "Active" : "Inactive"}</td>
+                  <td className="py-1 text-xs">
+                    {user.status === "LOCKED" ? <span className="font-semibold text-red-700">Locked</span> : user.status === "ACTIVE" ? "Active" : "Suspended"}
+                    {user.lockedReason ? <span className="block text-[var(--color-text-muted)]">{user.lockedReason}</span> : null}
+                  </td>
+                  <td className="py-1 text-xs">{user.invited ? (user.joined ? "Invited · joined" : "Invited · not joined") : "—"}</td>
                   <td className="py-1 text-xs">{user.mfaEnabled ? "On" : "Off"}</td>
                   <td className="py-1 text-xs">{when(user.lastLogin)}</td>
+                  <td className="py-1 text-right">
+                    <UserLockButton tenantId={tenantId} userId={user.id} email={user.email} locked={user.status === "LOCKED"} />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -358,6 +508,31 @@ function ConfigList({ title, values }: { title: string; values: Record<string, u
   );
 }
 
+/** L9 (WP-2.13): revoke a compromised key at once (dangerous); the tenant's admins are told the reason. */
+function RevokeApiKeyButton({ tenantId, keyId, keyPrefix }: { tenantId: string; keyId: string; keyPrefix: string }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <PermissionButton permission="platform.tenants.write" onClick={() => setOpen(true)} className="ml-2 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[11px] font-semibold disabled:opacity-50">
+        Revoke
+      </PermissionButton>
+      <ActionDialog
+        open={open}
+        dangerous
+        title={`Revoke API key ${keyPrefix}…`}
+        description="The key stops working immediately. The tenant's admins get your reason in-app and by email."
+        confirmLabel="Revoke key"
+        onSubmit={async (reason) => {
+          await consoleApi.post(`/tenants/${encodeURIComponent(tenantId)}/api-keys/${encodeURIComponent(keyId)}/revoke`, { reason });
+          await queryClient.invalidateQueries({ queryKey: [...C360_KEY, "config", tenantId] });
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+}
+
 export function ConfigTab({ tenantId }: { tenantId: string }) {
   const config = useC360(tenantId, "config");
   return (
@@ -368,13 +543,29 @@ export function ConfigTab({ tenantId }: { tenantId: string }) {
           <ConfigList title="Branding" values={data.branding} />
           <ConfigList title="Domains" values={data.domains} />
           <ConfigList title="Notifications" values={data.notifications} />
-          <ConfigList title="Payments" values={data.payments ? { gateway: data.payments.gateway, currency: data.payments.currency, "gateway key": data.payments.gatewayKeyConfigured ? "configured (hidden)" : "not configured" } : null} />
+          <section className={card} data-testid="c360-gateways">
+            <h2 className="text-sm font-semibold">Payment gateways</h2>
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Default {data.payments.activeProvider ?? "—"} · {data.payments.currency}
+            </p>
+            {data.payments.gateways.length === 0 ? <p className="mt-2 text-sm text-[var(--color-text-muted)]">No gateway set up.</p> : null}
+            <ul className="mt-2 space-y-1 text-xs">
+              {data.payments.gateways.map((gateway) => (
+                <li key={gateway.provider}>
+                  <span className="font-semibold">{gateway.provider}</span> · {gateway.mode.toLowerCase()} · {gateway.enabled ? gateway.status : "disabled"} · key {gateway.secretConfigured ? "configured (hidden)" : "not configured"}
+                  {gateway.lastVerifiedAt ? ` · verified ${when(gateway.lastVerifiedAt)}` : ""}
+                  {gateway.lastError ? <span className="block text-red-700">{gateway.lastError}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </section>
           <section className={card}>
             <h2 className="text-sm font-semibold">API keys and webhooks</h2>
             <ul className="mt-2 text-xs">
               {data.apiKeys.map((key) => (
-                <li key={key.id}>
-                  <span className="font-mono">{key.keyPrefix}…</span> {key.name ?? ""} · {key.isActive ? "active" : "revoked"} · last used {when(key.lastUsedAt)}
+                <li key={key.id} data-testid="c360-api-key">
+                  <span className="font-mono">{key.keyPrefix}…</span> {key.name ?? ""} · {key.isActive ? "active" : key.revokedByType === "STAFF" ? `revoked by Fauward${key.revokedReason ? `: ${key.revokedReason}` : ""}` : "revoked"} · last used {when(key.lastUsedAt)}
+                  {key.isActive ? <RevokeApiKeyButton tenantId={tenantId} keyId={key.id} keyPrefix={key.keyPrefix} /> : null}
                 </li>
               ))}
               {data.webhooks.map((hook) => (
@@ -423,10 +614,53 @@ export function NotesTab({ tenantId }: { tenantId: string }) {
   );
 }
 
-export function ActivityTab() {
+export function ActivityTab({ tenantId }: { tenantId: string }) {
+  const feed = useActivityFeed(`/customer360/${encodeURIComponent(tenantId)}/activity`);
+  if (feed.isLoading) return <p className="text-sm text-[var(--color-text-muted)]">Loading activity…</p>;
+  if (feed.isError) return <ConsoleApiErrorPanel error={feed.error} onRetry={() => void feed.refetch()} title="Unable to load activity" />;
+  const rows = feed.data?.pages.flatMap((page) => page.data) ?? [];
   return (
-    <p className={card} data-testid="c360-activity-pending">
-      The tenant&apos;s activity feed arrives with the platform activity API (WP-2.1). Until then, the Audit tab lists what the tenant and Fauward staff did.
-    </p>
+    <section className={card} data-testid="c360-activity">
+      {rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-text-muted)]">No activity recorded for this tenant in the services you can read.</p>
+      ) : (
+        <ul className="divide-y divide-[var(--color-border)]">
+          {rows.map((row) => (
+            <li key={row.id} className="flex items-start justify-between gap-3 py-2 text-sm" data-testid="c360-activity-row">
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {row.consoleLink ? (
+                    <Link to={row.consoleLink} className="hover:underline">
+                      {row.summary}
+                    </Link>
+                  ) : (
+                    row.summary
+                  )}
+                </p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  {row.actorLabel} · {row.service} · {row.type}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${severityTone[row.severity]}`}>{row.severity}</span>
+                <time className="text-xs text-[var(--color-text-muted)]" dateTime={row.occurredAt}>
+                  {when(row.occurredAt)}
+                </time>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {feed.hasNextPage ? (
+        <button
+          type="button"
+          onClick={() => void feed.fetchNextPage()}
+          disabled={feed.isFetchingNextPage}
+          className="mt-2 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+        >
+          {feed.isFetchingNextPage ? "Loading…" : "Load more"}
+        </button>
+      ) : null}
+    </section>
   );
 }

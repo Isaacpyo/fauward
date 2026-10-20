@@ -10,28 +10,21 @@ import {
 import { Fragment, FormEvent, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { clearTokens, getDevTestSession, getRefreshToken, hasDevTestSession } from "@/lib/auth";
+import { clearTokens, getRefreshToken } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { normalizeShipmentDetail } from "@/lib/shipment-normalizers";
 
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
-import { Select } from "@/components/ui/Select";
+import { RegionChangeDialog } from "@/components/region/RegionChangeDialog";
 import { NotificationCenter } from "@/components/shared/NotificationCenter";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
 
-const regionOptions = [
-  { label: "Africa", value: "africa" },
-  { label: "Europe", value: "europe" },
-  { label: "North America", value: "northAmerica" },
-  { label: "Global", value: "global" }
-];
-
 function formatRegion(region: string | undefined) {
   if (region === "northAmerica") return "North America";
+  if (region === "uk_europe") return "UK & Europe";
   if (!region) return "Global";
   return region.charAt(0).toUpperCase() + region.slice(1);
 }
@@ -84,10 +77,6 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [regionModalOpen, setRegionModalOpen] = useState(false);
-  const [requestedRegion, setRequestedRegion] = useState(tenant?.region ?? "global");
-  const [regionRequestSent, setRegionRequestSent] = useState(false);
-  const [regionRequestLoading, setRegionRequestLoading] = useState(false);
-  const [regionRequestError, setRegionRequestError] = useState<string | null>(null);
 
   // If we're on /shipments/:opaqueId, fetch the shipment so the breadcrumb can
   // substitute the human tracking number for the wall-of-zeros UUID. Shares
@@ -132,34 +121,6 @@ export function TopBar() {
     const query = searchQuery.trim();
     if (!query) return;
     navigate(`/shipments?search=${encodeURIComponent(query)}`);
-  }
-
-  async function submitRegionChangeRequest() {
-    setRegionRequestLoading(true);
-    setRegionRequestError(null);
-
-    try {
-      if (hasDevTestSession()) {
-        const devSession = getDevTestSession();
-        await api.post("/v1/tenant/region-change-requests/dev", {
-          tenantId: devSession?.tenant.tenant_id,
-          tenantName: devSession?.tenant.name,
-          tenantSlug: devSession?.tenant.domain?.split(".")[0],
-          currentRegion: devSession?.tenant.region,
-          requestedRegion,
-          requestedBy: devSession?.user.email
-        });
-      } else {
-        await api.post("/v1/tenant/region-change-requests", { requestedRegion });
-      }
-
-      setRegionRequestSent(true);
-    } catch (error: unknown) {
-      const axiosError = error as { response?: { data?: { error?: string } } };
-      setRegionRequestError(axiosError.response?.data?.error ?? "Could not submit region change request.");
-    } finally {
-      setRegionRequestLoading(false);
-    }
   }
 
   return (
@@ -226,12 +187,7 @@ export function TopBar() {
           variant="secondary"
           size="sm"
           leftIcon={<Globe2 size={16} />}
-          onClick={() => {
-            setRequestedRegion(tenant?.region ?? "global");
-            setRegionRequestSent(false);
-            setRegionRequestError(null);
-            setRegionModalOpen(true);
-          }}
+          onClick={() => setRegionModalOpen(true)}
           className="hidden md:inline-flex"
         >
           {formatRegion(tenant?.region)}
@@ -297,47 +253,7 @@ export function TopBar() {
         </RadixDropdown.Root>
       </div>
 
-      <Dialog
-        open={regionModalOpen}
-        onOpenChange={setRegionModalOpen}
-        title="Request region change"
-        description="Changing region can affect payment options, currency defaults, operational data handling, and customer-facing settings."
-      >
-        <div className="space-y-4">
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Region changes are reviewed and approved by Fauward support before they take effect. Your current region remains active until approval is complete.
-          </div>
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-700">Requested region</label>
-            <Select
-              value={requestedRegion}
-              onValueChange={setRequestedRegion}
-              options={regionOptions}
-            />
-          </div>
-          {regionRequestSent ? (
-            <p className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-              Region change request submitted. Fauward support will review and confirm before applying the change.
-            </p>
-          ) : null}
-          {regionRequestError ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {regionRequestError}
-            </p>
-          ) : null}
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setRegionModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={submitRegionChangeRequest}
-              disabled={regionRequestLoading || regionRequestSent}
-            >
-              {regionRequestLoading ? "Submitting..." : "Request approval"}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <RegionChangeDialog open={regionModalOpen} onOpenChange={setRegionModalOpen} />
 
     </header>
   );

@@ -74,6 +74,7 @@ export async function registerTenantSlugRoutes(app: FastifyInstance) {
 
         await tx.outboxEvent.create({
           data: {
+            tenantId: tenant.id,
             aggregateType: 'tenant',
             aggregateId: tenant.id,
             eventType: 'tenant.slug.changed',

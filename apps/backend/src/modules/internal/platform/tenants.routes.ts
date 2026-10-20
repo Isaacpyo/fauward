@@ -15,11 +15,15 @@ import { planService } from '../../tenants/plan.service.js';
 import { getTenantDetail, listTenants, tenantListQuery } from '../../../services/tenant-directory.service.js';
 import { TenantCloseError, closeTenant } from '../../../services/tenant-close.service.js';
 import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.js';
-import { listRegionChangeRequests, updateRegionChangeRequestStatus } from '../../regions/region-change-requests.store.js';
+import { REGIONS } from '../../../config/regions.js';
+import { RegionChangeError, decideRegionChange, presentRegionRequest } from '../../../services/region-change.service.js';
+import { aiLimitBody, presentAiLimit, setTenantAiLimit } from '../../../services/ai-limit.service.js';
+import { presentApiKey, revokeApiKey } from '../../../services/api-key-revocation.service.js';
+import { UserLockError, setUserLock } from '../../../services/tenant-user-lifecycle.service.js';
 
 // platform.tenants (moved from /api/v1/platform in WP-1.1; list/detail rebuilt in WP-1.2, suspension in WP-1.3).
 
-const SUPPORTED_REGIONS = new Set(['africa', 'europe', 'northAmerica', 'global', 'uk_europe']);
+const regionListQuery = z.object({ status: z.enum(['PENDING', 'APPROVED', 'REJECTED', 'APPLIED', 'CANCELLED']).optional(), tenantId: z.string().min(1).optional() });
 const OVERRIDE_PLANS = new Set<TenantPlan>(['STARTER', 'PRO', 'ENTERPRISE']);
 const readPre = [authenticatePlatformSession, requireConsolePermission('platform.tenants.read')];
 
@@ -75,46 +79,37 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     return reply.send(await listTenants(app.prisma, parsed.data));
   });
 
-  app.get('/api/internal/tenants/region-requests', { preHandler: readPre }, async (_request, reply) => {
-    return reply.send({
-      requests: listRegionChangeRequests(),
-      regions: [
-        { key: 'africa', label: 'Africa', paymentProviders: ['Paystack', 'Flutterwave', 'Bank transfer', 'COD'] },
-        { key: 'europe', label: 'Europe', paymentProviders: ['Stripe', 'Bank transfer'] },
-        { key: 'northAmerica', label: 'North America', paymentProviders: ['Stripe', 'Bank transfer'] },
-        { key: 'global', label: 'Global', paymentProviders: ['Stripe', 'Paystack', 'Flutterwave', 'Bank transfer'] }
-      ]
+  app.get('/api/internal/tenants/region-requests', { preHandler: readPre }, async (request, reply) => {
+    const parsed = regionListQuery.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues.map((issue) => issue.message).join(' ') });
+    const rows = await app.prisma.regionChangeRequest.findMany({
+      where: { ...(parsed.data.status ? { status: parsed.data.status } : {}), ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) },
+      include: { tenant: { select: { id: true, name: true, slug: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200
     });
+    return reply.send({ requests: rows.map((row) => presentRegionRequest(row, row.tenant)), regions: REGIONS });
   });
 
   app.post('/api/internal/tenants/region-requests/:id/decision', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { status, reason } = request.body as { status?: 'APPROVED' | 'REJECTED'; reason: string };
     if (!status || !['APPROVED', 'REJECTED'].includes(status)) return reply.status(400).send({ error: 'INVALID_STATUS', message: 'status must be APPROVED or REJECTED' });
-    const existing = listRegionChangeRequests().find((item) => item.id === id);
-    if (!existing) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Region change request not found' });
-    if (!SUPPORTED_REGIONS.has(existing.requestedRegion)) return reply.status(400).send({ error: 'UNSUPPORTED_REGION', message: 'Unsupported requested region' });
-
-    const regionRequest = updateRegionChangeRequestStatus(id, status, request.platform!.user.email, request.platform!.user.id, reason);
-    await writePlatformAuditLog(app.prisma, {
-      ...platformAuditActor(request),
-      actorType: 'PLATFORM_USER',
-      action: status === 'APPROVED' ? 'REGION_CHANGE_APPROVED' : 'REGION_CHANGE_REJECTED',
-      targetTenantId: existing.tenantId,
-      reason,
-      metadata: { currentRegion: existing.currentRegion, requestedRegion: existing.requestedRegion }
-    });
-    await recordAndPublishActivity(activityDeps(app), {
-      service: 'platform.tenants',
-      type: status === 'APPROVED' ? 'region_request.approved' : 'region_request.rejected',
-      tenantId: existing.tenantId,
-      ...staffActor(request),
-      subjectType: 'region_change_request',
-      subjectId: id,
-      summary: `${existing.tenantName}: ${existing.currentRegion} → ${existing.requestedRegion} ${status.toLowerCase()}`,
-      consoleLink: '/platform/tenants/region-requests'
-    });
-    return reply.send({ request: regionRequest });
+    try {
+      const regionRequest = await decideRegionChange(app, request, { id, status, reason });
+      await writePlatformAuditLog(app.prisma, {
+        ...platformAuditActor(request),
+        actorType: 'PLATFORM_USER',
+        action: status === 'APPROVED' ? 'REGION_CHANGE_APPROVED' : 'REGION_CHANGE_REJECTED',
+        targetTenantId: regionRequest.tenantId,
+        reason,
+        metadata: { currentRegion: regionRequest.currentRegion, requestedRegion: regionRequest.requestedRegion }
+      });
+      return reply.send({ request: regionRequest });
+    } catch (error) {
+      if (error instanceof RegionChangeError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/tenants/:id', { preHandler: readPre }, async (request, reply) => {
@@ -144,7 +139,7 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
             }
           : {})
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, createdAt: true, invitedBy: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, isActive: true, mfaEnabled: true, lastLogin: true, createdAt: true, invitedBy: true, lockedAt: true, lockedReason: true },
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
       take: 100
     });
@@ -195,6 +190,61 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     await invalidateTenantEntitlements(app.redis, id);
     return reply.send({ limits: after });
   });
+
+  // L16 (WP-2.10): staff set the tenant's AI budget/request limits; the gateway enforces them on the next run.
+  app.put('/api/internal/tenants/:id/ai-limit', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsed = aiLimitBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: parsed.error.issues[0]?.message });
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true, name: true } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const limit = await setTenantAiLimit(app, request, tenant, parsed.data);
+    return reply.send({ limit: presentAiLimit(limit) });
+  });
+
+  // L9 (WP-2.13): revoke a compromised tenant API key at once; the tenant's admins are told why.
+  app.post('/api/internal/tenants/:id/api-keys/:keyId/revoke', { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+    const { id, keyId } = request.params as { id: string; keyId: string };
+    const reason = reasonOf(request) ?? '';
+    const tenant = await app.prisma.tenant.findUnique({ where: { id }, select: { id: true } });
+    if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    const staff = request.platform!.user;
+    const result = await revokeApiKey(app, { tenantId: tenant.id, keyId, reason, actor: { type: 'STAFF', id: staff.id, label: staff.name ?? staff.email } });
+    if (!result) return reply.status(404).send({ error: 'NOT_FOUND', message: 'API key not found for this tenant' });
+    if (!result.changed) return reply.status(409).send({ error: 'ALREADY_REVOKED', message: 'This key is already revoked' });
+    await writePlatformAuditLog(app.prisma, {
+      ...platformAuditActor(request),
+      actorType: 'PLATFORM_USER',
+      action: 'TENANT_API_KEY_REVOKED',
+      targetTenantId: tenant.id,
+      reason,
+      metadata: { keyId, keyPrefix: result.key.keyPrefix }
+    });
+    return reply.send({ key: presentApiKey(result.key) });
+  });
+
+  // L13 (WP-2.15): lock a tenant user during a security incident (401 USER_LOCKED everywhere) and unlock them.
+  for (const action of ['lock', 'unlock'] as const) {
+    app.post(`/api/internal/tenants/:id/users/:userId/${action}`, { preHandler: dangerous('platform.tenants.write') }, async (request, reply) => {
+      const { id, userId } = request.params as { id: string; userId: string };
+      const reason = reasonOf(request) ?? '';
+      try {
+        const user = await setUserLock(app, request, { tenantId: id, userId, lock: action === 'lock', reason });
+        await writePlatformAuditLog(app.prisma, {
+          ...platformAuditActor(request),
+          actorType: 'PLATFORM_USER',
+          action: action === 'lock' ? 'TENANT_USER_LOCKED' : 'TENANT_USER_UNLOCKED',
+          targetTenantId: id,
+          reason,
+          metadata: { userId }
+        });
+        return reply.send({ user: { id: user.id, email: user.email, lockedAt: user.lockedAt?.toISOString() ?? null, lockedReason: user.lockedReason } });
+      } catch (error) {
+        if (error instanceof UserLockError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+        throw error;
+      }
+    });
+  }
 
   app.patch(
     '/api/internal/tenants/:id/internal-notes',

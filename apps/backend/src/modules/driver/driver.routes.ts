@@ -1,3 +1,4 @@
+import { dataUrlBytes, recordStorageBytes } from '../../services/usage-storage.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Prisma, PaymentStatus } from '@prisma/client';
 
@@ -9,6 +10,7 @@ import {
 } from '../shipments/shipment-events.const.js';
 import { enqueueAgentEvent } from '../agent/agent.queue.js';
 import { fireAndForget } from '../../shared/utils/fire-and-forget.js';
+import { notifyCustomer } from '../../services/customer-notifier.service.js';
 
 function dayRange(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00.000Z`);
@@ -165,15 +167,19 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
     await app.prisma.$transaction(async (tx) => {
       if (assets.length > 0) {
+        // Inline (data URL) proof-of-delivery files count toward the tenant's storage (L19).
+        const sized = assets.map((asset) => ({ ...asset, fileSize: dataUrlBytes(asset.fileUrl) }));
         await tx.podAsset.createMany({
-          data: assets.map((asset) => ({
+          data: sized.map((asset) => ({
             tenantId,
             shipmentId: shipment.id,
             type: asset.type,
             fileUrl: asset.fileUrl,
+            fileSize: asset.fileSize,
             capturedBy: userId
           }))
         });
+        await recordStorageBytes(tx, tenantId, sized.reduce((sum, asset) => sum + (asset.fileSize ?? 0), 0));
       }
 
       await tx.shipment.update({
@@ -320,17 +326,15 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         }
       });
 
-      await tx.notificationLog.create({
-        data: {
-          tenantId,
-          userId: shipment.customerId ?? undefined,
-          channel: 'EMAIL',
-          event: 'failed_delivery',
-          status: 'QUEUED'
-        }
-      });
-
       return shipmentEvent;
+    });
+
+    await notifyCustomer(app, {
+      tenantId,
+      userId: shipment.customerId,
+      organisationId: shipment.organisationId,
+      template: 'failed_delivery',
+      data: { trackingNumber: shipment.trackingNumber, reason: payload.reason }
     });
 
     fireAndForget(
