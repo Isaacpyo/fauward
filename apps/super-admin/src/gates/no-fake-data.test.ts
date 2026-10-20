@@ -9,8 +9,12 @@ import { NO_FAKE_DATA_ALLOWLIST, type FakeDataRule } from "./no-fake-data.allowl
 // attributes and Tailwind `placeholder:` variants are fine; only rendered strings are checked.
 
 const ROOT = path.resolve(__dirname, "..");
-// ACC-DASH-3 (WP-3.1): the shell and shared components are scanned too.
-const SCANNED = ["shell", "pillars", "components"];
+// WP-3.9: every source folder of the console with an empty allowlist. `gates/` is excluded: it holds the rule names.
+const SCANNED = fs
+  .readdirSync(ROOT, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && entry.name !== "gates")
+  .map((entry) => entry.name);
+const ROOT_FILES = fs.readdirSync(ROOT, { withFileTypes: true }).filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !/\.(test|spec)\.tsx?$/.test(entry.name)).map((entry) => path.join(ROOT, entry.name));
 const STRING_OR_JSX_TEXT = /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|>[^<>{}\n]+</g;
 
 export function findFakeData(source: string): FakeDataRule[] {
@@ -36,8 +40,8 @@ function files(dir: string): string[] {
 }
 
 describe("no fake data in console pillars (ACC-TP-2)", () => {
-  it("ACC-TP-2 ACC-DASH-3 shell, pillars and components contain no sample rows, placeholder copy, random or simulated work, or currency literals", () => {
-    const offenders = SCANNED.flatMap((dir) => files(path.join(ROOT, dir))).flatMap((file) => {
+  it("ACC-TP-2 ACC-DASH-3 apps/super-admin/src contains no sample rows, placeholder copy, random or simulated work, or currency literals", () => {
+    const offenders = [...ROOT_FILES, ...SCANNED.flatMap((dir) => files(path.join(ROOT, dir)))].flatMap((file) => {
       const relative = path.relative(ROOT, file).replaceAll("\\", "/");
       return findFakeData(fs.readFileSync(file, "utf8"))
         .filter((rule) => !NO_FAKE_DATA_ALLOWLIST.some((entry) => entry.file === relative && entry.rule === rule))

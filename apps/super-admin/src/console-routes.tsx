@@ -82,12 +82,12 @@ export function PermissionRoute({ permission, children }: { permission: Permissi
 }
 
 /** Generic Phase-0 page for preview services; deleted in Phase 4 (D1). */
-export function OpsRoute({ permission, title, description, endpoint, related, primaryAction, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; primaryAction?: string; notice?: ReactNode }) {
+export function OpsRoute({ permission, title, description, endpoint, related, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; notice?: ReactNode }) {
   const Page = hasWorkflowSurface(endpoint) ? WorkflowOpsPage : InternalOpsPage;
   return (
     <PermissionRoute permission={permission}>
       {notice ? <div className="mb-4">{notice}</div> : null}
-      <Page title={title} description={description} endpoint={endpoint} related={related} primaryAction={primaryAction} />
+      <Page title={title} description={description} endpoint={endpoint} related={related} />
     </PermissionRoute>
   );
 }
@@ -358,7 +358,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/trials/extensions", element: <OpsRoute permission="gtm.trials.read" title="Trial Extensions" description="Extension requests and approval thresholds." endpoint="/trials/extensions" /> },
   { path: "/gtm/trials/:tenantId", element: <OpsRoute permission="gtm.trials.read" title="Trial Detail" description="Activation score and tenant-level intervention context." endpoint="/trials/:tenantId" /> },
   { path: "/gtm/demos", element: <OpsRoute permission="gtm.demos.read" title="Demo Environments" description="Demo tenant inventory and expiry lifecycle." endpoint="/demos" related={[{ label: "Templates", to: "/gtm/demos/templates" }]} /> },
-  { path: "/gtm/demos/create", element: <OpsRoute permission="gtm.demos.write" title="Create Demo" description="Provision templated demo tenants for sales." endpoint="/demos/templates" primaryAction="Create demo" /> },
+  { path: "/gtm/demos/create", element: <OpsRoute permission="gtm.demos.write" title="Create Demo" description="Provision templated demo tenants for sales." endpoint="/demos/templates" /> },
   { path: "/gtm/demos/templates", element: <OpsRoute permission="gtm.demos.read" title="Demo Templates" description="Template catalogue for demo tenant seeding." endpoint="/demos/templates" /> },
   { path: "/gtm/demos/:id", element: <OpsRoute permission="gtm.demos.read" title="Demo Detail" description="Demo refresh, sharing and destruction state." endpoint="/demos" /> },
   { path: "/gtm/handoff/won", element: <OpsRoute permission="gtm.handoff.read" title="Won Deals" description="Deals awaiting structured sales-to-CS handoff." endpoint="/handoff/won" /> },
