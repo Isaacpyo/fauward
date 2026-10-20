@@ -14,9 +14,10 @@ export const LoginScreen = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // The emailed link is `/login?token=…&email=…`, so it works on any device or browser (C61).
   const emailLinkToken = searchParams.get("token") ?? searchParams.get("code") ?? undefined;
+  const emailLinkEmail = searchParams.get("email")?.trim().toLowerCase() || emailLinkTarget;
 
   if (isAuthenticated) {
     return <Navigate to="/" replace />;
@@ -29,7 +30,6 @@ export const LoginScreen = () => {
 
     if (!result.ok) {
       setError(result.message ?? "Unable to sign in.");
-      setNotice(null);
       return;
     }
 
@@ -45,20 +45,17 @@ export const LoginScreen = () => {
 
     if (!result.ok) {
       setError(result.message ?? "Unable to send the sign-in link.");
-      setNotice(null);
       return;
     }
 
     setError(null);
-    setNotice(`A sign-in link has been sent to ${email.trim().toLowerCase()}.`);
   };
 
   const handleEmailLinkSignIn = async () => {
-    const result = await signInWithEmailLink(emailLinkToken);
+    const result = await signInWithEmailLink(emailLinkToken, emailLinkEmail);
 
     if (!result.ok) {
       setError(result.message ?? "Unable to sign in with the emailed link.");
-      setNotice(null);
       return;
     }
 
@@ -110,7 +107,6 @@ export const LoginScreen = () => {
           />
         </div>
 
-        {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         <button type="submit" className="primary-btn w-full" disabled={isPending}>
@@ -122,18 +118,24 @@ export const LoginScreen = () => {
         </button>
       </form>
 
-      {emailLinkTarget ? (
+      {emailLinkToken ? (
         <section className="panel mt-5 space-y-3 p-5">
           <p className="tiny-label">Email link sign-in</p>
-          <p className="text-sm leading-6 text-stone-600">
-            A sign-in link is waiting for <span className="font-medium text-ink">{emailLinkTarget}</span>.
-          </p>
-          {emailLinkToken ? (
-            <p className="text-sm leading-6 text-emerald-700">Email-link token detected. The backend consume endpoint will use it.</p>
+          {emailLinkEmail ? (
+            <p className="text-sm leading-6 text-stone-600">
+              Sign in as <span className="font-medium text-ink">{emailLinkEmail}</span>.
+            </p>
           ) : null}
           <button type="button" className="primary-btn w-full" onClick={() => void handleEmailLinkSignIn()} disabled={isPending}>
-            Open emailed sign-in link
+            Sign in with emailed link
           </button>
+        </section>
+      ) : emailLinkTarget ? (
+        <section className="panel mt-5 space-y-3 p-5">
+          <p className="tiny-label">Check your email</p>
+          <p className="text-sm leading-6 text-stone-600">
+            We've emailed a sign-in link to <span className="font-medium text-ink">{emailLinkTarget}</span>.
+          </p>
         </section>
       ) : null}
 
