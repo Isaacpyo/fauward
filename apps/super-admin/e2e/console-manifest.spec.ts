@@ -52,7 +52,7 @@ test("ACC-MAN-2 every sidebar entry opens its service page and never lands on /l
       visited.push(href);
     }
   }
-  expect(visited).toHaveLength(39);
+  expect(visited).toHaveLength(36);
 });
 
 test("ACC-MAN-2 every pillar overview row opens its service page", async ({ page }) => {
@@ -71,7 +71,7 @@ test("ACC-MAN-2 every pillar overview row opens its service page", async ({ page
       rows += 1;
     }
   }
-  expect(rows).toBe(39);
+  expect(rows).toBe(36);
 });
 
 test("ACC-MAN-3 /customer/360 shows the tenant picker and choosing a tenant opens its 360 page", async ({ page }) => {

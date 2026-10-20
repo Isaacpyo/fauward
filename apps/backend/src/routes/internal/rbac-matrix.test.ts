@@ -59,11 +59,6 @@ const MACHINE_ROUTES = new Set([
   'GET /api/internal/metrics/custom-domains',
   'GET /api/internal/metrics/relay-health'
 ]);
-/**
- * Preview services that still have routes using deferred permissions until WP-4.0b removes them (C20: commissions,
- * partners and pricing stay preview with livePhase null until then).
- */
-const DEFERRED_PERMISSION_ROUTE_ALLOWLIST_UNTIL_WP_4_0B = /^(GET|POST) \/api\/internal\/(commissions|partners|pricing)\b/;
 
 let routes: CapturedRoute[] = [];
 let freshMfa: unknown;
@@ -146,8 +141,7 @@ describe('console RBAC matrix (architecture §4)', () => {
     const deferred = new Set<string>(DEFERRED_PERMISSIONS);
     const offenders = routes
       .filter((route) => guardPermissions(route).some((permission) => deferred.has(permission)))
-      .map(key)
-      .filter((route) => !DEFERRED_PERMISSION_ROUTE_ALLOWLIST_UNTIL_WP_4_0B.test(route));
+      .map(key);
     expect(offenders).toEqual([]);
   });
 

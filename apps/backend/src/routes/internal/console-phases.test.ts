@@ -486,18 +486,4 @@ describe('internal console phase routes', () => {
     expect(stale.statusCode).toBe(400);
     expect(stale.json()).toEqual({ error: 'Webhook timestamp too old' });
   });
-
-  it('requires two-person approval for commission payouts over GBP 5000', async () => {
-    currentPermissions = ['revenue.commissions.payout'];
-    currentRoles = ['CFO'];
-    const prisma = {
-      commissionPayout: delegate({ findUnique: vi.fn(async () => ({ id: 'payout_001', amount: '6000', approvedByFinance: null })) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/commissions/payouts/payout_001/approve', payload: { reason: 'approve' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'FINANCE_ADMIN approval required before CFO approval', requiredRole: 'FINANCE_ADMIN' });
-  });
 });

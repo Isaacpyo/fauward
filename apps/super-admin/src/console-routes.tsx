@@ -203,10 +203,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/subscriptions/:id", element: <PermissionRoute permission="revenue.subscriptions.read">
                 <SubscriptionDetailPage />
               </PermissionRoute> },
-  { path: "/revenue/commissions", element: <OpsRoute permission="revenue.commissions.read" title="Reseller Commissions" description="Partner commission ledger and payout controls." endpoint="/commissions" related={[{ label: "Payouts", to: "/revenue/commissions/payouts" }, { label: "Disputes", to: "/revenue/commissions/disputes" }]} /> },
-  { path: "/revenue/commissions/payouts", element: <OpsRoute permission="revenue.commissions.read" title="Commission Payouts" description="Finance-approved payout queue with CFO threshold controls." endpoint="/commissions/payouts" /> },
-  { path: "/revenue/commissions/disputes", element: <OpsRoute permission="revenue.commissions.read" title="Commission Disputes" description="Partner disputes over commission attribution or payout." endpoint="/commissions/disputes" /> },
-  { path: "/revenue/commissions/:partnerId", element: <OpsRoute permission="revenue.commissions.read" title="Partner Commissions" description="Per-partner commission ledger and payout history." endpoint="/commissions" /> },
+  { path: "/revenue/commissions", element: <ComingSoonRoute serviceKey="revenue.commissions" /> },
   { path: "/customer", element: <CustomerOverview /> },
   { path: "/customer/360", element: <PermissionRoute permission="customer.360.read">
                 <Customer360IndexPage />
@@ -369,17 +366,11 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/attribution/campaigns", element: <OpsRoute permission="gtm.attribution.read" title="Campaign Performance" description="Campaign-level source and revenue attribution." endpoint="/attribution/campaigns" /> },
   { path: "/gtm/attribution/funnel", element: <OpsRoute permission="gtm.attribution.read" title="Attribution Funnel" description="Visit to signup to activation to paid conversion." endpoint="/attribution/funnel" /> },
   { path: "/gtm/attribution/landing-pages", element: <OpsRoute permission="gtm.attribution.read" title="Landing Pages" description="Landing page attribution and conversion performance." endpoint="/attribution/landing-pages" /> },
-  { path: "/gtm/pricing/experiments", element: <OpsRoute permission="gtm.pricing.read" title="Pricing Experiments" description="Statsig/LaunchDarkly pricing tests with revenue impact." endpoint="/pricing/experiments" related={[{ label: "Plans", to: "/gtm/pricing/plans" }]} /> },
-  { path: "/gtm/pricing", element: <Navigate to="/gtm/pricing/experiments" replace /> },
-  { path: "/gtm/pricing/experiments/:id", element: <OpsRoute permission="gtm.pricing.read" title="Pricing Experiment Detail" description="Variant conversion, ARPU and revenue lift detail." endpoint="/pricing/experiments" /> },
-  { path: "/gtm/pricing/plans", element: <OpsRoute permission="gtm.pricing.read" title="Plan Editor" description="Plan, price, feature and limit catalogue." endpoint="/pricing/plans" /> },
+  { path: "/gtm/pricing", element: <ComingSoonRoute serviceKey="gtm.pricing" /> },
   { path: "/gtm/contracts/quotes", element: <OpsRoute permission="gtm.contracts.read" title="Quote Builder" description="CPQ quotes, discount approvals and DocuSign handoff." endpoint="/contracts/quotes" related={[{ label: "Discounts", to: "/gtm/contracts/discounts" }, { label: "MSAs", to: "/gtm/contracts/msas" }]} /> },
   { path: "/gtm/contracts", element: <Navigate to="/gtm/contracts/quotes" replace /> },
   { path: "/gtm/contracts/quotes/:id", element: <OpsRoute permission="gtm.contracts.read" title="Quote Detail" description="Quote approval and signature state." endpoint="/contracts/quotes/:id" /> },
   { path: "/gtm/contracts/discounts", element: <OpsRoute permission="gtm.contracts.read" title="Discount Approvals" description="Quotes waiting for manager or CFO discount approval." endpoint="/contracts/discounts" /> },
   { path: "/gtm/contracts/msas", element: <OpsRoute permission="gtm.contracts.read" title="MSA Repository" description="Signed master service agreements and renewal metadata." endpoint="/contracts/msas" /> },
-  { path: "/gtm/partners", element: <OpsRoute permission="gtm.partners.read" title="Partner Directory" description="Referral, reseller and technology partner management." endpoint="/partners" related={[{ label: "Applications", to: "/gtm/partners/applications" }, { label: "Deal Registration", to: "/gtm/partners/deal-registration" }]} /> },
-  { path: "/gtm/partners/applications", element: <OpsRoute permission="gtm.partners.read" title="Partner Applications" description="Partner application review and onboarding queue." endpoint="/partners/applications" /> },
-  { path: "/gtm/partners/deal-registration", element: <OpsRoute permission="gtm.partners.read" title="Deal Registration" description="Partner registered deals and 90-day lead locks." endpoint="/partners/deal-registration" /> },
-  { path: "/gtm/partners/:id", element: <OpsRoute permission="gtm.partners.read" title="Partner Detail" description="Partner deals, applications and commission context." endpoint="/partners" /> },
+  { path: "/gtm/partners", element: <ComingSoonRoute serviceKey="gtm.partners" /> },
 ];

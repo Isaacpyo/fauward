@@ -46,8 +46,7 @@ const WORKFLOW_PREFIXES = [
   "/contracts",
   "/qbr",
   "/trials",
-  "/demos",
-  "/commissions"
+  "/demos"
 ];
 
 export function hasWorkflowSurface(endpoint: string) {
@@ -393,23 +392,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Create demo" }
         ],
         payload: (values) => ({ template: values.template, expiresAt: values.expiresAt || undefined, reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/commissions")) {
-    return [
-      {
-        id: "approve",
-        label: "Approve Payout",
-        description: "Approve a payout. Payouts above 5,000 in the payout currency need Finance and CFO approval.",
-        method: "post",
-        path: (values) => `/commissions/payouts/${encodeURIComponent(values.payoutId)}/approve`,
-        fields: [
-          { name: "payoutId", label: "Payout ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Payout approved" }
-        ],
-        payload: (values) => ({ reason: values.reason })
       }
     ];
   }

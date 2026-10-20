@@ -191,14 +191,6 @@ registerScheduledJob({
 });
 
 registerScheduledJob({
-  name: 'revenue.commission-aggregation',
-  pattern: '0 4 1 * *',
-  repeatJobId: 'revenue.commission-aggregation.monthly',
-  description: 'No-op: there is no reseller programme; the job is deleted with commissions in WP-4.0b.',
-  handler: async () => ({ aggregated: 0, reason: 'No reseller programme' })
-});
-
-registerScheduledJob({
   name: 'platform.impersonation-expiry-sweep',
   pattern: '*/5 * * * *',
   repeatJobId: 'platform.impersonation-expiry-sweep',
