@@ -11,15 +11,12 @@ import {
   Link2,
   CheckCircle2,
   Zap,
-  Bot,
-  Send,
   Sparkles,
-  ShieldCheck,
   ArrowRight,
-  Check,
   type LucideIcon,
 } from "lucide-react";
 
+import AgentAppShowcase from "@/components/marketing/AgentAppShowcase";
 import CTABanner from "@/components/marketing/CTABanner";
 import { AGENT_CAPABILITIES } from "@/lib/marketing-data";
 
@@ -68,122 +65,6 @@ const headerItem = {
   hidden: { opacity: 0, y: 20, filter: "blur(8px)" },
   show:   { opacity: 1, y: 0, filter: "blur(0px)", transition: { duration: 0.7, ease: EASE } },
 };
-
-function AgentChatHero() {
-  return (
-    <motion.div
-      className="relative mx-auto mt-16 max-w-md"
-      initial={{ opacity: 0, scale: 0.95, y: 24 }}
-      whileInView={{ opacity: 1, scale: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.3 }}
-      transition={{ duration: 0.8, ease: EASE }}
-    >
-      <motion.span
-        aria-hidden
-        className="pointer-events-none absolute -inset-px -z-10 rounded-3xl"
-        style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.4) 0%, transparent 50%, rgba(59,130,246,0.4) 100%)" }}
-        animate={{ opacity: [0.4, 0.7, 0.4] }}
-        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-      />
-
-      <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#060e1c] shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-5 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
-              <Bot size={14} />
-            </span>
-            <div>
-              <div className="text-xs font-semibold text-white">Fauward Agent</div>
-              <div className="flex items-center gap-1 text-[10px] text-blue-300">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-                </span>
-                847 shipments monitored
-              </div>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-400">
-            <ShieldCheck size={10} /> Verified
-          </span>
-        </div>
-
-        {/* Body */}
-        <div className="space-y-4 px-5 py-6">
-          <motion.div
-            className="flex justify-end"
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.3, duration: 0.5 }}
-          >
-            <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2.5 text-sm text-white shadow-lg shadow-blue-900/40">
-              Anything risky in the next 4 hours?
-            </div>
-          </motion.div>
-
-          <motion.div
-            className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/[0.04] p-4"
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: 0.8, duration: 0.6 }}
-          >
-            <div className="mb-3 flex items-center gap-2 text-sm text-blue-100">
-              <Sparkles size={14} className="text-amber-400" />
-              <span>
-                <span className="font-bold text-amber-400">3 risks</span> across 2 tenants. Suggested actions below.
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                { ref: "FW-7821", action: "Reassign to Carrier B", risk: "+38 min", color: "text-red-400", pill: "bg-red-500/15 text-red-300" },
-                { ref: "FW-7834", action: "Notify customer + flag", risk: "+22 min", color: "text-amber-400", pill: "bg-amber-500/15 text-amber-300" },
-              ].map((s, i) => (
-                <motion.div
-                  key={s.ref}
-                  className="rounded-lg border border-white/10 bg-[#0a1628] p-3"
-                  initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ delay: 1 + i * 0.15, duration: 0.5 }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-white">{s.ref}</div>
-                      <div className="text-[10px] text-blue-300">Manchester → Leeds</div>
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.pill}`}>{s.risk}</span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5">
-                    <span className="text-[11px] text-amber-200">
-                      Suggested: <span className="font-semibold text-amber-300">{s.action}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400">
-                      Awaiting approval <Check size={10} />
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
-
-        {/* Prompt */}
-        <div className="border-t border-white/10 bg-white/[0.03] p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0a1628] px-3 py-2">
-            <Sparkles size={14} className="text-amber-400" />
-            <span className="flex-1 text-sm text-blue-300/60">Ask the agent…</span>
-            <button className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500 text-gray-900" aria-label="Send">
-              <Send size={12} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
 
 export default function AgentPageContent() {
   return (
@@ -289,7 +170,9 @@ export default function AgentPageContent() {
             </motion.p>
           </motion.div>
 
-          <AgentChatHero />
+          <div className="mt-16">
+            <AgentAppShowcase priority />
+          </div>
         </div>
       </section>
 

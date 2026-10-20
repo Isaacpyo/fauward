@@ -9,16 +9,10 @@ import {
   TrendingUp,
   Bell,
   Link2,
-  Sparkles,
-  Send,
-  Check,
   ArrowRight,
-  Bot,
-  Package,
-  Truck,
-  ShieldCheck,
 } from "lucide-react";
 
+import AgentAppShowcase from "@/components/marketing/AgentAppShowcase";
 import { AGENT_CAPABILITIES } from "@/lib/marketing-data";
 
 const MotionLink = motion(Link);
@@ -32,17 +26,6 @@ const ICON_MAP: Record<string, typeof Cpu> = {
   bell: Bell,
   link: Link2,
 };
-
-const CAPABILITY_TAGS = [
-  "SLA monitoring",
-  "Driver routing",
-  "Exception flagging",
-  "Customer notifications",
-  "Invoice escalation",
-  "Dispatcher approvals",
-  "Live ops Q&A",
-  "Carrier scoring",
-];
 
 const headerContainer = {
   hidden: { opacity: 0 },
@@ -61,223 +44,6 @@ const headerItem = {
     transition: { duration: 0.7, ease: EASE },
   },
 };
-
-function ChatMockup() {
-  return (
-    <div className="relative mx-auto w-full max-w-3xl">
-      {/* Floating capability tags around the chat (sit in the gutter beside it on large screens) */}
-      <div className="pointer-events-none absolute inset-0 z-20">
-        {CAPABILITY_TAGS.map((tag, i) => {
-          const positions = [
-            { top: "4%",   left:  "2%"  },
-            { top: "10%",  right: "2%"  },
-            { top: "32%",  left:  "0%"  },
-            { top: "28%",  right: "0%"  },
-            { top: "58%",  left:  "1%"  },
-            { top: "60%",  right: "1%"  },
-            { bottom: "8%", left: "3%"  },
-            { bottom: "10%", right: "3%" },
-          ] as const;
-          const pos = positions[i] ?? {};
-          return (
-            <motion.span
-              key={tag}
-              className="absolute hidden whitespace-nowrap rounded-full border border-white/15 bg-[#0a1628]/90 px-3 py-1 text-[11px] font-medium text-blue-100 shadow-lg backdrop-blur-sm xl:inline-flex"
-              style={pos}
-              initial={{ opacity: 0, scale: 0.7, y: 6 }}
-              whileInView={{ opacity: 1, scale: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ delay: 0.6 + i * 0.08, duration: 0.5, ease: EASE }}
-            >
-              {tag}
-            </motion.span>
-          );
-        })}
-      </div>
-
-      <motion.div
-        className="relative z-10 mx-auto max-w-md overflow-hidden rounded-2xl border border-white/10 bg-[#060e1c] shadow-2xl"
-        initial={{ opacity: 0, scale: 0.95, y: 24 }}
-        whileInView={{ opacity: 1, scale: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.8, ease: EASE }}
-      >
-        {/* Soft glow rim */}
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute -inset-px -z-10 rounded-3xl"
-          style={{
-            background:
-              "linear-gradient(135deg, rgba(245,158,11,0.35) 0%, transparent 50%, rgba(59,130,246,0.35) 100%)",
-          }}
-          animate={{ opacity: [0.4, 0.7, 0.4] }}
-          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        />
-
-        {/* Header bar */}
-        <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-5 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
-              <Bot size={14} />
-            </span>
-            <div>
-              <div className="text-xs font-semibold text-white">Fauward Agent</div>
-              <div className="flex items-center gap-1 text-[10px] text-blue-300">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
-                </span>
-                Monitoring 847 active shipments
-              </div>
-            </div>
-          </div>
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-amber-400">
-            <ShieldCheck size={10} /> Verified
-          </span>
-        </div>
-
-        {/* Conversation body */}
-        <div className="space-y-4 px-5 py-6">
-          {/* User message */}
-          <motion.div
-            className="flex justify-end"
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.3, duration: 0.5, ease: EASE }}
-          >
-            <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2.5 text-sm text-white shadow-lg shadow-blue-900/40">
-              Any SLA risks across all tenants this afternoon?
-            </div>
-          </motion.div>
-
-          {/* Typing indicator */}
-          <motion.div
-            className="flex items-center gap-2 text-xs text-blue-300"
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 0.7, duration: 0.4 }}
-          >
-            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
-              <Bot size={12} />
-            </span>
-            <span>Fauward Agent is analysing</span>
-            <span className="flex gap-1">
-              {[0, 1, 2].map((d) => (
-                <motion.span
-                  key={d}
-                  className="h-1.5 w-1.5 rounded-full bg-amber-400"
-                  animate={{ opacity: [0.3, 1, 0.3] }}
-                  transition={{ duration: 1.2, repeat: Infinity, delay: d * 0.2, ease: "easeInOut" }}
-                />
-              ))}
-            </span>
-          </motion.div>
-
-          {/* Agent response card */}
-          <motion.div
-            className="rounded-2xl rounded-tl-sm border border-white/10 bg-white/[0.04] p-4"
-            initial={{ opacity: 0, y: 12 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ delay: 1.2, duration: 0.6, ease: EASE }}
-          >
-            <div className="mb-3 flex items-center gap-2 text-sm text-blue-100">
-              <Sparkles size={14} className="text-amber-400" />
-              <span>
-                Found <span className="font-bold text-amber-400">2 shipments</span> at risk of breaching SLA by 16:00.
-              </span>
-            </div>
-            <div className="space-y-2">
-              {[
-                {
-                  ref: "FW-7821",
-                  route: "Manchester → Leeds",
-                  risk: "+38 min vs SLA",
-                  action: "Reassign to Carrier B",
-                  riskColor: "text-red-400",
-                  pillBg: "bg-red-500/15 text-red-300",
-                  icon: AlertTriangle,
-                },
-                {
-                  ref: "FW-7834",
-                  route: "Dubai → Riyadh",
-                  risk: "+22 min vs SLA",
-                  action: "Notify customer + flag",
-                  riskColor: "text-amber-400",
-                  pillBg: "bg-amber-500/15 text-amber-300",
-                  icon: Truck,
-                },
-              ].map((s, i) => (
-                <motion.div
-                  key={s.ref}
-                  className="rounded-lg border border-white/10 bg-[#0a1628] p-3"
-                  initial={{ opacity: 0, x: -10 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, amount: 0.3 }}
-                  transition={{ delay: 1.4 + i * 0.15, duration: 0.5, ease: EASE }}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-white/5">
-                        <s.icon size={12} className={s.riskColor} />
-                      </span>
-                      <div>
-                        <div className="text-xs font-bold text-white">{s.ref}</div>
-                        <div className="text-[10px] text-blue-300">{s.route}</div>
-                      </div>
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${s.pillBg}`}>
-                      {s.risk}
-                    </span>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5">
-                    <span className="text-[11px] text-amber-200">
-                      Suggested: <span className="font-semibold text-amber-300">{s.action}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-400">
-                      Awaiting approval <Check size={10} />
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-            <motion.div
-              className="mt-3 flex items-center justify-between text-[11px] text-blue-300"
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ delay: 1.9, duration: 0.4 }}
-            >
-              <span className="inline-flex items-center gap-1">
-                <Package size={11} />
-                Customer notifications drafted &amp; queued
-              </span>
-              <span className="inline-flex items-center gap-1 font-semibold text-green-400">
-                <Check size={11} /> Dispatcher in the loop
-              </span>
-            </motion.div>
-          </motion.div>
-        </div>
-
-        {/* Prompt input */}
-        <div className="border-t border-white/10 bg-white/[0.03] p-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-[#0a1628] px-3 py-2">
-            <Sparkles size={14} className="text-amber-400" />
-            <span className="flex-1 text-sm text-blue-300/60">Ask the agent anything about your operations…</span>
-            <button
-              className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500 text-gray-900 transition hover:bg-amber-400"
-              aria-label="Send"
-            >
-              <Send size={12} />
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 export default function AgentSection() {
   return (
@@ -388,9 +154,9 @@ export default function AgentSection() {
           </motion.div>
         </motion.div>
 
-        {/* Chat mockup */}
+        {/* Agent app screens */}
         <div className="relative mt-20">
-          <ChatMockup />
+          <AgentAppShowcase />
         </div>
 
         {/* Capabilities grid */}
