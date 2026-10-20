@@ -6,7 +6,11 @@ import { authenticatePlatformSession } from '../../middleware/authenticate-platf
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
-import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
+import { vendorStatus } from '../../services/vendors/index.js';
+import { launchDarklyAdapter } from '../../services/vendors/launchdarkly.adapter.js';
+import { personaAdapter } from '../../services/vendors/persona.adapter.js';
+import { complyAdvantageAdapter } from '../../services/vendors/complyadvantage.adapter.js';
+import { docusignAdapter } from '../../services/vendors/docusign.adapter.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { approveSaveOffer, SaveOfferError } from '../../services/save-offer.service.js';
 import { writeInternalAudit } from './internal-audit.js';
@@ -433,7 +437,7 @@ function registerDunning(app: FastifyInstance) {
 
 function registerIncidents(app: FastifyInstance) {
   app.get('/api/internal/incidents', { preHandler: readPre('platform.incidents.read') }, async (_request, reply) => {
-    const vendor = vendorUnavailable('pagerduty');
+    const vendor = vendorStatus('pagerduty');
     const data = await delegate(app, 'incidentRecord').findMany({ include: { impacts: true }, orderBy: { createdAt: 'desc' }, take: 100 });
     reply.send({ data, vendor });
   });
@@ -588,9 +592,9 @@ function registerSuccess(app: FastifyInstance) {
 
 function registerFlags(app: FastifyInstance) {
   app.get('/api/internal/flags', { preHandler: readPre('platform.flags.read') }, async (_request, reply) => {
-    const vendor = vendorUnavailable('launchdarkly');
+    const vendor = vendorStatus('launchdarkly');
     if (vendor) return reply.send({ data: [], vendor });
-    const data = await vendorJson<unknown>('launchdarkly', '/flags/default');
+    const data = await launchDarklyAdapter.listFlagKeys();
     reply.send({ data, vendor: null });
   });
 
@@ -600,7 +604,7 @@ function registerFlags(app: FastifyInstance) {
       app.prisma.tenantFeatureOverride.findMany({ where: { featureKey: key }, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
       delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 })
     ]);
-    reply.send({ key, overrides, audits, vendor: vendorUnavailable('launchdarkly') });
+    reply.send({ key, overrides, audits, vendor: vendorStatus('launchdarkly') });
   });
 
   // S9 / WP-1.4: a flag override is a native per-tenant TenantFeatureOverride. LaunchDarkly is never called here
@@ -641,13 +645,13 @@ function registerFlags(app: FastifyInstance) {
   });
 
   app.get('/api/internal/releases', { preHandler: readPre('platform.flags.read') }, async (_request, reply) => {
-    reply.send({ data: [], vendor: vendorUnavailable('github') });
+    reply.send({ data: [], vendor: vendorStatus('github') });
   });
 }
 
 function registerSecrets(app: FastifyInstance) {
   app.get('/api/internal/secrets', { preHandler: readPre('trust.secrets.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'secretCredential'), { orderBy: { expiresAt: 'asc' } })), vendor: vendorUnavailable('doppler') });
+    reply.send({ ...(await listWithMeta(delegate(app, 'secretCredential'), { orderBy: { expiresAt: 'asc' } })), vendor: vendorStatus('doppler') });
   });
 
   app.get('/api/internal/secrets/expiring', { preHandler: readPre('trust.secrets.read') }, async (_request, reply) => {
@@ -719,20 +723,16 @@ function registerKyc(app: FastifyInstance) {
   });
 
   app.post('/api/internal/kyc/inquiries', { preHandler: writePre('trust.kyc.approve') }, async (request, reply) => {
-    const vendor = vendorUnavailable('persona');
+    const vendor = vendorStatus('persona');
     if (vendor) return reply.status(503).send({ error: 'PERSONA_NOT_CONFIGURED', vendor });
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const persona = await vendorJson<Record<string, unknown>>('persona', '/inquiries', {
-      method: 'POST',
-      body: JSON.stringify({ data: { attributes: { 'reference-id': tenantId } } })
-    });
-    const data = nestedRecord(persona.data);
+    const persona = await personaAdapter.createInquiry({ referenceId: tenantId, name: tenantId });
     const review = await createAndAudit(
       request,
       delegate(app, 'kYCReview'),
-      { tenantId, inquiryId: stringValue(data.id) || null, status: 'PENDING', payload: persona },
+      { tenantId, inquiryId: persona.inquiryId, status: 'PENDING', payload: persona },
       'kyc.inquiry.create',
       'kyc_review',
       stringValue(body.reason, 'KYC inquiry')
@@ -763,16 +763,13 @@ function registerKyc(app: FastifyInstance) {
   });
 
   app.post('/api/internal/kyc/screen', { preHandler: writePre('trust.kyc.approve') }, async (request, reply) => {
-    const vendor = vendorUnavailable('complyadvantage');
+    const vendor = vendorStatus('complyadvantage');
     if (vendor) return reply.status(503).send({ error: 'COMPLYADVANTAGE_NOT_CONFIGURED', vendor });
     const body = bodyObject(request);
     const tenantId = stringValue(body.tenantId);
     if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const result = await vendorJson<Record<string, unknown>>('complyadvantage', '/searches', {
-      method: 'POST',
-      body: JSON.stringify({ search_term: stringValue(body.searchTerm, tenantId), client_ref: tenantId })
-    });
-    const matchType = stringValue(body.matchType, stringValue(nestedRecord(result).matchType));
+    const result = await complyAdvantageAdapter.createSearch({ searchTerm: stringValue(body.searchTerm, tenantId), referenceId: tenantId });
+    const matchType = stringValue(body.matchType);
     const status = stringValue(body.status, matchType ? 'MATCH' : 'PENDING');
     const screening = await createAndAudit(
       request,
@@ -868,7 +865,7 @@ function registerTax(app: FastifyInstance) {
       delegate(app, 'taxRegistration').findMany({ orderBy: { region: 'asc' } }),
       delegate(app, 'taxReturn').findMany({ orderBy: { periodStart: 'desc' }, take: 20 })
     ]);
-    reply.send({ registrations, returns, vendors: { stripeTax: Boolean(process.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_API_KEY), anrok: !vendorUnavailable('anrok') } });
+    reply.send({ registrations, returns, vendors: { stripeTax: Boolean(process.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_API_KEY), anrok: !vendorStatus('anrok') } });
   });
 
   app.get('/api/internal/tax/returns', { preHandler: readPre('revenue.tax.read') }, async (_request, reply) => {
@@ -923,14 +920,12 @@ function registerContracts(app: FastifyInstance) {
   });
 
   app.post('/api/internal/contracts/quotes/:id/send', { preHandler: writePre('gtm.contracts.write') }, async (request, reply) => {
-    const vendor = vendorUnavailable('docusign');
+    const vendor = vendorStatus('docusign');
     if (vendor) return reply.status(503).send({ error: 'DOCUSIGN_NOT_CONFIGURED', vendor });
     const { id } = request.params as RequestWithId;
-    const envelope = await vendorJson<Record<string, unknown>>('docusign', `/v2.1/accounts/${process.env.DOCUSIGN_ACCOUNT_ID ?? 'default'}/envelopes`, {
-      method: 'POST',
-      body: JSON.stringify({ status: 'sent', emailSubject: `Fauward quote ${id}` })
-    });
-    const envelopeId = stringValue(envelope.envelopeId, `env_${Date.now()}`);
+    // The quote PDF and signers arrive with WP-4.19; the adapter refuses an envelope without them (502 VENDOR_ERROR).
+    const envelope = await docusignAdapter.createEnvelope({ emailSubject: `Fauward quote ${id}`, document: { name: `quote-${id}.pdf`, fileExtension: 'pdf', base64: '' }, signers: [] });
+    const envelopeId = envelope.envelopeId;
     const after = await updateAndAudit(request, delegate(app, 'salesQuote'), id, { status: 'SENT_FOR_SIGNATURE', docusignEnvelopeId: envelopeId }, 'contracts.quote.send_for_signature', 'sales_quote', stringValue(bodyObject(request).reason, 'Send to DocuSign'));
     reply.send(after);
   });
@@ -1010,7 +1005,7 @@ function registerQbr(app: FastifyInstance) {
 
 function registerGtm(app: FastifyInstance) {
   app.get('/api/internal/pipeline', { preHandler: readPre('gtm.pipeline.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'salesDeal'), { orderBy: { closeDate: 'asc' }, take: 100 })), vendor: vendorUnavailable('hubspot') });
+    reply.send({ ...(await listWithMeta(delegate(app, 'salesDeal'), { orderBy: { closeDate: 'asc' }, take: 100 })), vendor: vendorStatus('hubspot') });
   });
 
   app.get('/api/internal/pipeline/forecasting', { preHandler: readPre('gtm.pipeline.read') }, async (_request, reply) => {
@@ -1091,7 +1086,7 @@ function registerGtm(app: FastifyInstance) {
   });
 
   app.get('/api/internal/attribution', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'marketingAttribution'), { orderBy: { periodStart: 'desc' }, take: 100 })), vendor: vendorUnavailable('posthog') });
+    reply.send({ ...(await listWithMeta(delegate(app, 'marketingAttribution'), { orderBy: { periodStart: 'desc' }, take: 100 })), vendor: null });
   });
 
   app.get('/api/internal/attribution/campaigns', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {

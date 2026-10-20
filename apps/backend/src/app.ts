@@ -51,6 +51,7 @@ import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.real
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerImpersonationExchangeRoutes } from './modules/auth/impersonation-exchange.routes.js';
 import { registerConsoleRoutes } from './modules/internal/register.js';
+import { vendorErrorHandler } from './services/vendors/vendor-error.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -102,6 +103,8 @@ export async function buildApp() {
   });
 
   await app.register(sensible);
+  // D9 / S16: a failing vendor answers 502 VENDOR_ERROR (degraded), never a crash; other errors use the default handler.
+  app.setErrorHandler(vendorErrorHandler);
   await app.register(helmet);
   await app.register(cors, {
     origin: (origin, callback) => {
