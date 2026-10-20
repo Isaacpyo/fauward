@@ -38,15 +38,27 @@ test.beforeEach(async ({ context }) => {
   await addCsrfCookie(context);
 });
 
-test("ACC-DASH-1 dashboard tiles match the overview fixture exactly and pillar alerts come from activity", async ({ page }) => {
+test("ACC-DASH-1 ACC-BADGE-2 dashboard tiles match the overview fixture exactly and pillar alerts come from activity", async ({ page }) => {
   await page.route("**/api/internal/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
     if (path === "/auth/me") return json(route, 200, meBody(ROOT_PERMISSIONS));
     if (path === "/metrics/overview") return json(route, 200, OVERVIEW);
     if (path === "/activity/summary") return json(route, 200, SUMMARY);
+    if (path === "/badges") {
+      return json(route, 200, {
+        "dlq-depth": { value: 7, tone: "red", asOf: OVERVIEW.asOf },
+        mrr: { value: { amount: "1087.50", currency: "GBP" }, tone: "neutral", asOf: OVERVIEW.asOf },
+        "p95-latency": { value: 200, unit: "ms", tone: "green", asOf: OVERVIEW.asOf }
+      });
+    }
     return json(route, 200, { data: [] });
   });
   await page.goto("/");
+  // ACC-BADGE-2: badges come from GET /badges; services whose key is absent show none.
+  await expect(page.getByTestId("badge-dlq-depth")).toHaveText("7");
+  await expect(page.getByTestId("badge-p95-latency")).toHaveText("200 ms");
+  await expect(page.getByTestId("badge-mrr")).toHaveText("£1,087.50");
+  await expect(page.getByTestId("badge-tenant-count")).toHaveCount(0);
   await expect(page.getByTestId("kpi-mrr")).toContainText("£1,087.50");
   await expect(page.getByTestId("kpi-mrr")).toContainText("3 billing subscriptions · 1 converted at stored FX rates");
   await expect(page.getByTestId("kpi-tenants")).toContainText("120");

@@ -4,42 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { fetchBadge } from "@/lib/badges";
 import type { PlatformPermissionContext } from "@/lib/platform-session";
 import { StatusPill } from "@/components/service-kit/StatusPill";
 import { navigableServices, type PillarManifest, type PillarServiceManifest } from "@/pillars/_manifests";
+import { ServiceBadge } from "@/shell/ServiceBadge";
 
 type PillarOverviewBaseProps = {
   manifest: PillarManifest;
   beforeGrid?: ReactNode;
 };
-
-function StatusCell({ service }: { service: PillarServiceManifest }) {
-  const badgeKey = service.badgeKey;
-  const query = useQuery({
-    queryKey: ["pillar-overview-status", service.id, badgeKey ?? "none"],
-    queryFn: () => fetchBadge(badgeKey!),
-    enabled: Boolean(badgeKey),
-    staleTime: 30_000
-  });
-  if (!badgeKey) return null;
-
-  const tone = query.data?.tone ?? "neutral";
-  const className =
-    tone === "green"
-      ? "border-green-200 bg-green-50 text-green-700"
-      : tone === "amber"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : tone === "red"
-          ? "border-red-200 bg-red-50 text-red-700"
-          : "border-[var(--color-border)] bg-[var(--color-surface-50)] text-[var(--color-text-muted)]";
-
-  return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${className}`}>
-      {query.isLoading ? "..." : query.isError ? "-" : query.data?.label ?? "-"}
-    </span>
-  );
-}
 
 export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseProps) {
   const navigate = useNavigate();
@@ -97,7 +70,7 @@ export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseP
           {
             id: "status",
             header: "Status",
-            cell: (row) => <StatusCell service={row} />
+            cell: (row) => <ServiceBadge badgeKey={row.badgeKey} />
           },
           {
             id: "owner",

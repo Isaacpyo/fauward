@@ -8,6 +8,7 @@ import { registerInternalConsolePhaseRoutes } from './console-phases.routes.js';
 import { registerStaffNotificationRoutes } from './shell/notifications.routes.js';
 import { registerConsoleActivityRoutes } from './shell/activity.routes.js';
 import { registerConsoleMetricsRoutes } from './shell/metrics.routes.js';
+import { registerConsoleBadgeRoutes } from './shell/badges.routes.js';
 import { registerConsoleSearchRoutes } from './shell/search.routes.js';
 import { registerConsoleTenantRoutes } from './platform/tenants.routes.js';
 import { registerConsoleImpersonationRoutes } from './platform/impersonation.routes.js';
@@ -39,6 +40,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleJobRoutes(app);
   await registerConsoleEscalationRoutes(app);
   await registerConsoleMetricsRoutes(app);
+  await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);
   await registerConsoleCommsRoutes(app);
   await registerConsoleSupportRoutes(app);
