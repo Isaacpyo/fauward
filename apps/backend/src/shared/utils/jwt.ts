@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import { config } from '../../config/index.js';
 
 export interface JwtPayload {
@@ -34,10 +34,20 @@ export function signRefreshToken(payload: JwtPayload) {
   });
 }
 
+// Email-link tokens are signed with their own key, derived from the access secret, so an emailed link never works as
+// a Bearer access token and an access token never works as an email link (C61).
+function emailLinkKey() {
+  return createHmac('sha256', config.jwt.accessSecret).update('fauward:email-link').digest('hex');
+}
+
 export function signEmailLinkToken(payload: JwtPayload) {
-  return jwt.sign({ ...payload, purpose: 'email_link' }, config.jwt.accessSecret, {
+  return jwt.sign({ ...payload, purpose: 'email_link' }, emailLinkKey(), {
     expiresIn: '15m'
   });
+}
+
+export function verifyEmailLinkToken(token: string): JwtPayload & { purpose?: string } {
+  return jwt.verify(token, emailLinkKey()) as JwtPayload & { purpose?: string };
 }
 
 export function verifyAccessToken(token: string): JwtPayload & { purpose?: string } {

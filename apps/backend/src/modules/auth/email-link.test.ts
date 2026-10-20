@@ -9,6 +9,8 @@ vi.mock('../../queues/python-services.js', () => ({ publishPythonServiceJob: vi.
 
 const { authService } = await import('./auth.service.js');
 const { config } = await import('../../config/index.js');
+const { signAccessToken, verifyAccessToken } = await import('../../shared/utils/jwt.js');
+const jwt = (await import('jsonwebtoken')).default;
 
 type Job = { tenantId: string; userId: string; to: string; template: string; event: string; data: { link: string; expiresInMinutes: number } };
 
@@ -87,5 +89,31 @@ describe('email-link sign-in request (C61)', () => {
     expect(prisma.user.findMany).not.toHaveBeenCalled();
     expect(prisma.user.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { email: 'ada@northwind.test', tenantId: 'tenant_a', isActive: true } }));
     expect(queuedJob()).toMatchObject({ tenantId: 'tenant_a', template: 'field_email_link' });
+  });
+
+  it('the emailed token is not an access token, and an access token is not an email link', async () => {
+    const prisma = prismaWith(ada);
+    await authService.requestEmailLink({ email: 'ada@northwind.test' }, prisma as never);
+    const token = new URL(queuedJob().data.link).searchParams.get('token') as string;
+
+    // app.authenticate verifies Bearer tokens with the access secret, as verifyAccessToken does.
+    expect(() => verifyAccessToken(token)).toThrow();
+
+    const payload = {
+      sub: ada.id, email: ada.email, role: ada.role, tenantId: ada.tenantId, tenantSlug: 'northwind', plan: 'PRO', mfaVerified: false
+    };
+    // Neither an ordinary access token nor an email-link token signed the old way (with the access secret) signs in.
+    const oldStyleLink = jwt.sign({ ...payload, purpose: 'email_link' }, config.jwt.accessSecret, { expiresIn: '15m' });
+    for (const candidate of [signAccessToken(payload), oldStyleLink]) {
+      await expect(authService.consumeEmailLink({ email: ada.email, token: candidate }, prisma as never)).rejects.toThrow();
+    }
+  });
+
+  it('a queue failure gets the same answer as an unknown email, and is logged', async () => {
+    queueAdd.mockRejectedValueOnce(new Error('queue down'));
+    const log = { error: vi.fn() };
+    const result = await authService.requestEmailLink({ email: 'ada@northwind.test' }, prismaWith(ada) as never, undefined, log);
+    expect(result).toEqual({ success: true });
+    expect(log.error).toHaveBeenCalledWith(expect.objectContaining({ template: 'field_email_link', userId: 'u_1' }), 'Sign-in email not queued');
   });
 });
