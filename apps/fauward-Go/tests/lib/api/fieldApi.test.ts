@@ -57,6 +57,30 @@ describe("fieldApi", () => {
     });
   });
 
+  it("requests an email link without reading anything token-like from the response (C61)", async () => {
+    apiRequestMock.mockResolvedValueOnce({ success: true, linkToken: "should-be-ignored" });
+
+    const result = await fieldApi.requestEmailLink("ada@example.com");
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/api/v1/auth/email-link/request", {
+      method: "POST",
+      body: { email: "ada@example.com" },
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it("consumes an email link with the token from the emailed URL", async () => {
+    apiRequestMock.mockResolvedValueOnce({ accessToken: "access-1", tenantSlug: "northline", tenantId: "tenant-1" });
+
+    const result = await fieldApi.consumeEmailLink("ada@example.com", "link-token");
+
+    expect(apiRequestMock).toHaveBeenCalledWith("/api/v1/auth/email-link/consume", {
+      method: "POST",
+      body: { email: "ada@example.com", token: "link-token" },
+    });
+    expect(result).toMatchObject({ accessToken: "access-1", tenantSlug: "northline" });
+  });
+
   it("fetches assigned jobs and builds normalized route and stop data", async () => {
     apiRequestMock
       .mockResolvedValueOnce({
@@ -194,7 +218,7 @@ describe("fieldApi", () => {
 
     expect(result.stops).toEqual([
       {
-        id: "stop-job-2",
+        id: "SHIP-2",
         routeId: "unassigned-route",
         shipmentId: "SHIP-2",
         sequence: 0,

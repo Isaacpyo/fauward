@@ -33,6 +33,28 @@ describe("widget middleware", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("rewrites ship.fauward.com/<slug> to /ship/<slug> without touching Edge Config", async () => {
+    const response = await middleware(requestFor("ship.fauward.com", "/acme"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/ship/acme");
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("preserves query string on ship.fauward.com path rewrites", async () => {
+    const response = await middleware(requestFor("ship.fauward.com", "/acme?ref=email"));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/ship/acme?ref=email");
+  });
+
+  it("returns 404 for ship.fauward.com root", async () => {
+    const response = await middleware(requestFor("ship.fauward.com", "/"));
+
+    expect(response.status).toBe(404);
+    expect(get).not.toHaveBeenCalled();
+  });
+
   it("rewrites mapped tenant-owned domains", async () => {
     vi.mocked(get).mockResolvedValue({ "ship.acme.com": "acme" });
 
