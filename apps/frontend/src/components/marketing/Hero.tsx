@@ -1,11 +1,10 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Sparkles, ArrowRight } from 'lucide-react';
-
-import { CommandCentreMockup } from './CommandCentreMockup';
 
 const MotionLink = motion(Link);
 
@@ -182,12 +181,20 @@ export default function Hero() {
           </motion.div>
         </div>
 
-        {/* Command centre mockup */}
+        {/* Tenant portal dashboard (placeholder until the live product shot is ready) */}
         <motion.div
           variants={fadeUp}
-          className="mx-auto mt-16 max-w-5xl"
+          className="mx-auto mt-16 max-w-6xl"
         >
-          <CommandCentreMockup />
+          <Image
+            src="/images/screens/tenant-portal-dashboard.png"
+            alt="Fauward tenant portal dashboard showing shipments, active deliveries, exceptions, SLA compliance and a live map snapshot"
+            width={1672}
+            height={941}
+            priority
+            sizes="(min-width: 1280px) 1152px, 100vw"
+            className="h-auto w-full rounded-2xl shadow-[0_30px_80px_-30px_rgba(15,23,42,0.35)] ring-1 ring-slate-200"
+          />
         </motion.div>
       </motion.div>
     </section>

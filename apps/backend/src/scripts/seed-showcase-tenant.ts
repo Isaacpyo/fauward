@@ -216,7 +216,9 @@ async function wipeShowcaseTenant(tenantId: string) {
   // Delete every model scoped to this tenant (or to its users/shipments) in repeated passes until FK order resolves.
   const targets: Array<{ name: string; where: Record<string, unknown> }> = [];
   for (const model of Prisma.dmmf.datamodel.models) {
-    if (model.name === 'Tenant') continue;
+    // Drivers, users and the tenant go last in one transaction: an open portal's Fleet page
+    // re-creates a Driver for every driver user, which would otherwise block the user delete.
+    if (model.name === 'Tenant' || model.name === 'User' || model.name === 'Driver') continue;
     const fields = new Set(model.fields.filter((f) => f.kind === 'scalar').map((f) => f.name));
     if (fields.has('tenantId')) targets.push({ name: model.name, where: { tenantId } });
     else if (fields.has('shipmentId') && shipmentIds.length) targets.push({ name: model.name, where: { shipmentId: { in: shipmentIds } } });
@@ -238,7 +240,11 @@ async function wipeShowcaseTenant(tenantId: string) {
     pending = failed;
   }
   if (pending.length) throw new Error(`Could not clear: ${pending.map((p) => p.name).join(', ')}`);
-  await prisma.tenant.delete({ where: { id: tenantId } });
+  await prisma.$transaction([
+    prisma.driver.deleteMany({ where: { tenantId } }),
+    prisma.user.deleteMany({ where: { tenantId } }),
+    prisma.tenant.delete({ where: { id: tenantId } })
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -557,11 +563,15 @@ async function main() {
     if (dayAgo === 1) count = 12;
 
     for (let n = 0; n < count; n++) {
-      const createdAt = dayAgo === 0 ? ago(between(0.4, Math.max(1, (NOW.getTime() - startOfTodayUtc.getTime()) / HOUR - 0.2)) * HOUR) : ago(dayAgo * DAY + between(-8, 8) * HOUR);
+      const todayHours = (NOW.getTime() - startOfTodayUtc.getTime()) / HOUR;
+      // Today's bookings always fall after UTC midnight, however early in the day the seed runs.
+      const createdAt = dayAgo === 0 ? ago(between(Math.min(0.4, todayHours * 0.2), Math.max(0.02, todayHours - 0.02)) * HOUR) : ago(dayAgo * DAY + between(-8, 8) * HOUR);
       const ageDays = (NOW.getTime() - createdAt.getTime()) / DAY;
-      let status = chooseStatus(ageDays);
+      // The first few of yesterday's bookings are always delivered today, so "delivered today" is never empty.
+      const deliverToday = dayAgo === 1 && n < 6;
+      let status = deliverToday ? 'DELIVERED' : chooseStatus(ageDays);
       const org = pick(orgs);
-      const international = chance(0.12);
+      const international = !deliverToday && chance(0.12);
       const fromManchester = chance(0.3);
       const origin = fromManchester ? HUB_MANCHESTER : HUB_LONDON;
       let dest = international ? pick(INTL_PLACES) : pick(UK_PLACES.filter((p) => p !== origin));
@@ -599,8 +609,11 @@ async function main() {
         return between(1, 6) * HOUR;
       });
       const total = gaps.reduce((a, b) => a + b, 0);
-      const latest = NOW.getTime() - between(4, 50) * 60_000;
-      const scale = createdAt.getTime() + total > latest ? Math.max(0.01, (latest - createdAt.getTime()) / total) : 1;
+      const latest = deliverToday
+        ? startOfTodayUtc.getTime() + ((n + 0.5) / 6) * Math.max(60_000, NOW.getTime() - 5 * 60_000 - startOfTodayUtc.getTime())
+        : NOW.getTime() - between(4, 50) * 60_000;
+      // Forced deliveries are stretched or squeezed so the final event lands exactly at `latest`.
+      const scale = deliverToday || createdAt.getTime() + total > latest ? Math.max(0.01, (latest - createdAt.getTime()) / total) : 1;
       let t = createdAt.getTime();
       const times = [createdAt, ...gaps.map((g) => new Date((t += g * scale)))];
 
