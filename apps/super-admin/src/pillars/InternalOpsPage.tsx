@@ -1,6 +1,7 @@
 import { EmptyState, HealthPill } from "@fauward/internal-ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
+import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { consoleApi as internalApi } from "@/lib/console-api";
 
@@ -8,7 +9,6 @@ type InternalOpsPageProps = {
   title: string;
   description: string;
   endpoint: string;
-  primaryAction?: string;
   related?: Array<{ label: string; to: string }>;
 };
 
@@ -61,7 +61,7 @@ function compactFields(row: unknown): Array<[string, string]> {
     .map(([key, value]) => [key, valueLabel(value)]);
 }
 
-export function InternalOpsPage({ title, description, endpoint, primaryAction, related = [] }: InternalOpsPageProps) {
+export function InternalOpsPage({ title, description, endpoint, related = [] }: InternalOpsPageProps) {
   const params = useParams();
   const resolvedEndpoint = Object.entries(params).reduce((path, [key, value]) => path.replace(`:${key}`, value ?? ""), endpoint);
   const query = useQuery({
@@ -70,6 +70,14 @@ export function InternalOpsPage({ title, description, endpoint, primaryAction, r
   });
   const rows = normalizeRows(query.data);
   const vendor = query.data && typeof query.data === "object" ? (query.data as Record<string, unknown>).vendor : null;
+  // WP-3.9: the API names the vendor and the env vars it is missing (vendorUnavailable); the banner says so.
+  const vendorInfo =
+    vendor && typeof vendor === "object"
+      ? {
+          vendor: String((vendor as { vendor?: unknown }).vendor ?? "The vendor"),
+          missing: Array.isArray((vendor as { missing?: unknown }).missing) ? ((vendor as { missing: unknown[] }).missing.map(String)) : []
+        }
+      : null;
 
   return (
     <div className="space-y-4">
@@ -84,14 +92,13 @@ export function InternalOpsPage({ title, description, endpoint, primaryAction, r
               {item.label}
             </Link>
           ))}
-          {primaryAction ? <button className="rounded-md bg-[var(--fauward-navy)] px-3 py-2 text-xs font-semibold text-white">{primaryAction}</button> : null}
         </div>
       </header>
 
-      {vendor ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Vendor integration is not configured in this environment. Read-only Fauward data is still shown.
-        </div>
+      {vendorInfo ? (
+        <DegradedBanner variant="vendor-unconfigured" fixedBy={vendorInfo.missing.length ? vendorInfo.missing.join(", ") : vendorInfo.vendor}>
+          {vendorInfo.vendor} is not configured in this environment; read-only Fauward data is still shown.
+        </DegradedBanner>
       ) : null}
 
       {query.isLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading...</p> : null}
@@ -112,7 +119,7 @@ export function InternalOpsPage({ title, description, endpoint, primaryAction, r
                   <dl className="mt-3 grid gap-2 text-xs md:grid-cols-3">
                     {compactFields(row).map(([key, value]) => (
                       <div key={key}>
-                        <dt className="font-medium capitalize text-[var(--color-text-muted)]">{key.replace(/([A-Z])/g, " $1")}</dt>
+                        <dt className="font-medium capitalize text-[var(--color-text-muted)]">{key.replace(/[A-Z]/g, (letter) => ` ${letter}`)}</dt>
                         <dd className="mt-0.5 truncate text-[var(--color-text-primary)]">{value}</dd>
                       </div>
                     ))}

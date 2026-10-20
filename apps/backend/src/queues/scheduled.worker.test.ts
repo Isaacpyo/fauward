@@ -48,11 +48,14 @@ describe('scheduled security anomaly scan', () => {
       ]);
     const securityAnomalyCreate = vi.fn(async () => ({ id: 'anom_001' }));
     const ipBlockUpsert = vi.fn(async () => ({ ipAddress: '203.0.113.10' }));
+    const scheduledJobRunCreate = vi.fn(async () => ({ id: 'run_1' }));
+    const scheduledJobRunUpdate = vi.fn(async () => ({ id: 'run_1' }));
     const app = {
       prisma: {
         staffLoginAttempt: { groupBy },
         securityAnomaly: { create: securityAnomalyCreate },
-        ipBlock: { upsert: ipBlockUpsert }
+        ipBlock: { upsert: ipBlockUpsert },
+        scheduledJobRun: { create: scheduledJobRunCreate, update: scheduledJobRunUpdate }
       },
       log: {
         info: vi.fn(),
@@ -82,6 +85,9 @@ describe('scheduled security anomaly scan', () => {
         payload: { staffEmail: 'security@example.com', count: 6 }
       }
     });
+    // WP-3.8: the run is recorded with its result.
+    expect(scheduledJobRunCreate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ jobName: 'trust.security-anomaly-scan', status: 'RUNNING', triggeredBy: 'SCHEDULE' }) }));
+    expect(scheduledJobRunUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'run_1' }, data: expect.objectContaining({ status: 'SUCCEEDED', result: { accountsChecked: 2, anomalies: 1, ipsBlocked: 1 } }) }));
     expect(ipBlockUpsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { ipAddress: '203.0.113.10' },
       create: expect.objectContaining({

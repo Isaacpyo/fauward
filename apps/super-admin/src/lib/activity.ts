@@ -26,7 +26,7 @@ export type ActivityRow = {
 
 export type ActivityPage = { data: ActivityRow[]; nextCursor: string | null };
 
-export type ActivityFilters = { service?: string; severity?: ActivitySeverity; type?: string };
+export type ActivityFilters = { service?: string; severity?: ActivitySeverity; type?: string; pillar?: string };
 
 /** `path` is `/activity` (cross-tenant, optional `tenantId`) or `/customer360/:tenantId/activity`. */
 export function useActivityFeed(path: string, filters: ActivityFilters & { tenantId?: string } = {}, enabled = true) {

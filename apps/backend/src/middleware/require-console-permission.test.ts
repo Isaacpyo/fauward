@@ -63,7 +63,11 @@ async function buildApp(prisma: ReturnType<typeof createWorld>) {
   const { registerConsoleOperationsRoutes } = await import('../modules/internal/platform/operations.routes.js');
   const { registerConsoleTenantRoutes } = await import('../modules/internal/platform/tenants.routes.js');
   const { registerConsoleAuthRoutes } = await import('../modules/internal/auth/console-auth.routes.js');
+  const { registerConsoleQueueRoutes } = await import('../modules/internal/platform/queues.routes.js');
+  const { registerConsoleHealthRoutes } = await import('../modules/internal/platform/health.routes.js');
   await registerConsoleOperationsRoutes(app);
+  await registerConsoleQueueRoutes(app, { registry: () => [] });
+  await registerConsoleHealthRoutes(app, { registry: () => [] });
   await registerConsoleTenantRoutes(app);
   await registerConsoleAuthRoutes(app);
   return app;

@@ -33,6 +33,8 @@ import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
 import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { JobRunsPage, JobsListPage } from "@/pillars/platform/jobs/JobsPages";
+import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
@@ -80,12 +82,12 @@ export function PermissionRoute({ permission, children }: { permission: Permissi
 }
 
 /** Generic Phase-0 page for preview services; deleted in Phase 4 (D1). */
-export function OpsRoute({ permission, title, description, endpoint, related, primaryAction, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; primaryAction?: string; notice?: ReactNode }) {
+export function OpsRoute({ permission, title, description, endpoint, related, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; notice?: ReactNode }) {
   const Page = hasWorkflowSurface(endpoint) ? WorkflowOpsPage : InternalOpsPage;
   return (
     <PermissionRoute permission={permission}>
       {notice ? <div className="mb-4">{notice}</div> : null}
-      <Page title={title} description={description} endpoint={endpoint} related={related} primaryAction={primaryAction} />
+      <Page title={title} description={description} endpoint={endpoint} related={related} />
     </PermissionRoute>
   );
 }
@@ -111,6 +113,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/queues", element: <PermissionRoute permission="platform.queues.read">
                 <QueuesListPage />
               </PermissionRoute> },
+  { path: "/platform/queues/:name", element: <PermissionRoute permission="platform.queues.read">
+                <QueueDetailPage />
+              </PermissionRoute> },
   { path: "/platform/flags", element: <OpsRoute permission="platform.flags.read" title="Feature Flags" description="LaunchDarkly flags with Fauward per-tenant override audit." endpoint="/flags" related={[{ label: "Releases", to: "/platform/releases" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key/audit", element: <OpsRoute permission="platform.flags.read" title="Flag Audit" description="Local audit of per-tenant LaunchDarkly override changes." endpoint="/flags/:key/audit" /> },
@@ -122,7 +127,12 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/incidents/runbooks", element: <OpsRoute permission="platform.incidents.read" title="Incident Runbooks" description="Markdown runbook library for incident responders." endpoint="/incidents/runbooks" /> },
   { path: "/platform/incidents/:id", element: <OpsRoute permission="platform.incidents.read" title="Incident Detail" description="Incident timeline and tenant impact mapping." endpoint="/incidents/:id" /> },
   { path: "/platform/incidents/:id/postmortem", element: <OpsRoute permission="platform.incidents.read" title="Postmortem" description="Postmortem link and incident closure context." endpoint="/incidents/:id" /> },
-  { path: "/platform/jobs", element: <ComingSoonRoute serviceKey="platform.jobs" /> },
+  { path: "/platform/jobs", element: <PermissionRoute permission="platform.jobs.read">
+                <JobsListPage />
+              </PermissionRoute> },
+  { path: "/platform/jobs/:name", element: <PermissionRoute permission="platform.jobs.read">
+                <JobRunsPage />
+              </PermissionRoute> },
   { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
   { path: "/platform/integrations", element: <OpsRoute permission="platform.integrations.read" title="Integration Health" description="Third-party provider status, credentials and webhook delivery health." endpoint="/integrations" related={[{ label: "Credentials", to: "/platform/integrations/credentials" }, { label: "Webhooks", to: "/platform/integrations/webhooks" }]} /> },
   { path: "/platform/integrations/credentials", element: <OpsRoute permission="platform.integrations.read" title="Integration Credentials" description="Credential metadata shared with the secret rotation tracker." endpoint="/integrations/credentials" /> },
@@ -348,7 +358,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/trials/extensions", element: <OpsRoute permission="gtm.trials.read" title="Trial Extensions" description="Extension requests and approval thresholds." endpoint="/trials/extensions" /> },
   { path: "/gtm/trials/:tenantId", element: <OpsRoute permission="gtm.trials.read" title="Trial Detail" description="Activation score and tenant-level intervention context." endpoint="/trials/:tenantId" /> },
   { path: "/gtm/demos", element: <OpsRoute permission="gtm.demos.read" title="Demo Environments" description="Demo tenant inventory and expiry lifecycle." endpoint="/demos" related={[{ label: "Templates", to: "/gtm/demos/templates" }]} /> },
-  { path: "/gtm/demos/create", element: <OpsRoute permission="gtm.demos.write" title="Create Demo" description="Provision templated demo tenants for sales." endpoint="/demos/templates" primaryAction="Create demo" /> },
+  { path: "/gtm/demos/create", element: <OpsRoute permission="gtm.demos.write" title="Create Demo" description="Provision templated demo tenants for sales." endpoint="/demos/templates" /> },
   { path: "/gtm/demos/templates", element: <OpsRoute permission="gtm.demos.read" title="Demo Templates" description="Template catalogue for demo tenant seeding." endpoint="/demos/templates" /> },
   { path: "/gtm/demos/:id", element: <OpsRoute permission="gtm.demos.read" title="Demo Detail" description="Demo refresh, sharing and destruction state." endpoint="/demos" /> },
   { path: "/gtm/handoff/won", element: <OpsRoute permission="gtm.handoff.read" title="Won Deals" description="Deals awaiting structured sales-to-CS handoff." endpoint="/handoff/won" /> },

@@ -54,6 +54,9 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm test
+        env:
+          # WP-3: Redis-backed golden paths (BullMQ queues, request metrics) run against the CI Redis service.
+          TEST_REDIS_URL: redis://localhost:6379
       - run: npm run test:coverage --workspace=apps/backend
       - run: npm run audit:chain:verify --workspace=apps/backend
         env:

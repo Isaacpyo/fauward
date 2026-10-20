@@ -12,10 +12,6 @@ export const FEEDBACK_STATUSES = ['NEW', 'UNDER_REVIEW', 'PLANNED', 'SHIPPED', '
 export const NPS_CADENCE_DAYS = 90;
 /** Users are surveyed only after this long on the platform, and only if they logged in within it. */
 export const NPS_MIN_ACCOUNT_AGE_DAYS = 30;
-/** Health score weight of the NPS component (WP-3.3 owns the rest of the formula). */
-export const NPS_HEALTH_WEIGHT = 10;
-/** Used while a tenant has no NPS answers in the window; the component reports its source. */
-export const NPS_HEALTH_DEFAULT = 10;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -27,14 +23,6 @@ export function npsFromScores(scores: number[]): NpsBreakdown {
   const detractors = scores.filter((score) => score <= 6).length;
   const passives = scores.length - promoters - detractors;
   return { responses: scores.length, promoters, passives, detractors, nps: scores.length ? Math.round(((promoters - detractors) / scores.length) * 100) : null };
-}
-
-/** The NPS part of a tenant's health score: −100…100 mapped onto 0…NPS_HEALTH_WEIGHT over the last cadence window. */
-export async function npsHealthComponent(db: Pick<PrismaClient, 'feedbackItem'>, tenantId: string, now = new Date()) {
-  const rows = await db.feedbackItem.findMany({ where: { tenantId, type: 'NPS', score: { not: null }, createdAt: { gte: new Date(now.getTime() - NPS_CADENCE_DAYS * DAY_MS) } }, select: { score: true } });
-  const breakdown = npsFromScores(rows.map((row) => row.score ?? 0));
-  if (breakdown.nps === null) return { score: NPS_HEALTH_DEFAULT, source: 'no_responses' as const, ...breakdown };
-  return { score: Math.round(((breakdown.nps + 100) / 200) * NPS_HEALTH_WEIGHT), source: 'nps_responses' as const, ...breakdown };
 }
 
 /** Monthly NPS for the console summary. */

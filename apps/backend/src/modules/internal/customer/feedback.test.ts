@@ -181,8 +181,9 @@ describe('customer.feedback (WP-2.8)', () => {
     const summary = await app.inject({ method: 'GET', url: '/api/internal/feedback?type=NPS' });
     expect(summary.json().nps.overall).toEqual({ responses: 2, promoters: 1, passives: 0, detractors: 1, nps: 0 });
     expect(summary.json().nps.byMonth).toEqual([expect.objectContaining({ month: new Date().toISOString().slice(0, 7), responses: 2, nps: 0 })]);
-    const { npsHealthComponent, NPS_HEALTH_WEIGHT } = await import('../../../services/feedback.service.js');
-    expect(await npsHealthComponent(db.prisma as never, 'tenant_a')).toMatchObject({ source: 'nps_responses', nps: 0, score: NPS_HEALTH_WEIGHT / 2 });
+    // WP-3.3: the tenant's NPS feeds the health score's NPS factor (0 → half of it).
+    const { npsFraction } = await import('../../../services/health-score.service.js');
+    expect(npsFraction(summary.json().nps.overall.nps)).toBe(0.5);
     expect(db.activity.find((row) => (row.metadata as { type?: string }).type === 'NPS' && row.severity === 'ATTENTION')).toBeTruthy();
   });
 
