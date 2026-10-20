@@ -5,7 +5,8 @@
   "installCommand": "npm install",
   "git": {
     "deploymentEnabled": {
-      "console/*": false
+      "console/*": false,
+      "claude/*": false
     }
   }
 }

@@ -32,3 +32,6 @@ apps/backend/.storage/
 __pycache__/
 *.pyc
 .vercel
+
+# Claude Code agent worktrees (local only)
+.claude/worktrees/

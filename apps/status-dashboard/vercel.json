@@ -17,7 +17,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "console/*": false
+      "console/*": false,
+      "claude/*": false
     }
   }
 }
