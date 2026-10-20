@@ -33,6 +33,7 @@ import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
 import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
+import { JobRunsPage, JobsListPage } from "@/pillars/platform/jobs/JobsPages";
 import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
@@ -126,7 +127,12 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/incidents/runbooks", element: <OpsRoute permission="platform.incidents.read" title="Incident Runbooks" description="Markdown runbook library for incident responders." endpoint="/incidents/runbooks" /> },
   { path: "/platform/incidents/:id", element: <OpsRoute permission="platform.incidents.read" title="Incident Detail" description="Incident timeline and tenant impact mapping." endpoint="/incidents/:id" /> },
   { path: "/platform/incidents/:id/postmortem", element: <OpsRoute permission="platform.incidents.read" title="Postmortem" description="Postmortem link and incident closure context." endpoint="/incidents/:id" /> },
-  { path: "/platform/jobs", element: <ComingSoonRoute serviceKey="platform.jobs" /> },
+  { path: "/platform/jobs", element: <PermissionRoute permission="platform.jobs.read">
+                <JobsListPage />
+              </PermissionRoute> },
+  { path: "/platform/jobs/:name", element: <PermissionRoute permission="platform.jobs.read">
+                <JobRunsPage />
+              </PermissionRoute> },
   { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
   { path: "/platform/integrations", element: <OpsRoute permission="platform.integrations.read" title="Integration Health" description="Third-party provider status, credentials and webhook delivery health." endpoint="/integrations" related={[{ label: "Credentials", to: "/platform/integrations/credentials" }, { label: "Webhooks", to: "/platform/integrations/webhooks" }]} /> },
   { path: "/platform/integrations/credentials", element: <OpsRoute permission="platform.integrations.read" title="Integration Credentials" description="Credential metadata shared with the secret rotation tracker." endpoint="/integrations/credentials" /> },
