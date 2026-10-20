@@ -14,5 +14,10 @@
       "source": "/:path*",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "console/*": false
+    }
+  }
 }
