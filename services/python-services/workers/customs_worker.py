@@ -74,7 +74,7 @@ async def handle_customs_job(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Shipment not found")
     updated = await db.execute(
         """
-        update customs_declarations
+        update customs_xml_jobs
         set status = 'PROCESSING',
             error_message = null,
             updated_at = now()
@@ -105,7 +105,7 @@ async def handle_customs_job(payload: dict[str, Any]) -> dict[str, Any]:
     )
     updated = await db.execute(
         """
-        update customs_declarations
+        update customs_xml_jobs
         set xml_url = $5,
             status = 'COMPLETED',
             metadata = metadata || $6::jsonb,
