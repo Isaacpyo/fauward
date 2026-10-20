@@ -1,6 +1,7 @@
 import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { Link } from "react-router-dom";
 
+import { useActivitySummary } from "@/lib/overview";
 import type { PlatformPermissionContext } from "@/lib/platform-session";
 import { navigableServices, type PillarManifest } from "@/pillars/_manifests";
 import { ServiceRow } from "@/shell/ServiceRow";
@@ -13,7 +14,10 @@ export function PillarCard({ pillar }: PillarCardProps) {
   const permissionContext = usePermission() as PlatformPermissionContext;
   const visibleServices = navigableServices(pillar).filter((service) => hasPermission(permissionContext.permissions, service.requiredPermission));
   const disabled = visibleServices.length === 0;
-  const alertCount = pillar.id === "platform" && visibleServices.some((service) => service.badgeKey === "dlq-depth") ? 1 : 0;
+  // ATTENTION/CRITICAL activity in the last 24 h for this pillar's services (WP-3.1).
+  const summary = useActivitySummary();
+  const keys = new Set(pillar.services.map((service) => `${pillar.id}.${service.id}`));
+  const alertCount = summary.data?.services?.filter((entry) => keys.has(entry.service)).reduce((sum, entry) => sum + entry.alerts24h, 0) ?? null;
 
   return (
     <article
@@ -49,7 +53,8 @@ export function PillarCard({ pillar }: PillarCardProps) {
       </div>
 
       <div className="mt-4 border-t border-[var(--color-border)] pt-3 text-xs font-semibold text-[var(--color-text-muted)]">
-        {visibleServices.length} services - {alertCount} alerts
+        {visibleServices.length} services ·{" "}
+        {alertCount === null ? (summary.isError ? "alerts unavailable" : "loading alerts") : <span data-testid={`pillar-alerts-${pillar.id}`} className={alertCount > 0 ? "text-red-700" : undefined}>{alertCount} alerts in 24 h</span>}
       </div>
     </article>
   );

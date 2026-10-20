@@ -213,11 +213,21 @@ describe('console activity (WP-2.1, D7)', () => {
     await seed({ service: 'customer.support', type: 'ticket.created', occurredAt: new Date('2026-10-03T10:00:00.000Z') });
     const support = (await app.inject({ method: 'GET', url: '/api/internal/activity/summary' })).json();
     expect(support.services).toEqual([
-      { service: 'customer.support', lastOccurredAt: '2026-10-03T10:00:00.000Z', count: 1 },
-      { service: 'platform.tenants', lastOccurredAt: '2026-10-05T10:00:00.000Z', count: 2 }
+      { service: 'customer.support', lastOccurredAt: '2026-10-03T10:00:00.000Z', count: 1, alerts24h: 0 },
+      { service: 'platform.tenants', lastOccurredAt: '2026-10-05T10:00:00.000Z', count: 2, alerts24h: 0 }
     ]);
     const cs = (await app.inject({ method: 'GET', url: '/api/internal/activity/summary', headers: { 'x-test-user': 'pu_cs' } })).json();
     expect(cs.services.map((entry: { service: string }) => entry.service)).toEqual(['platform.tenants']);
+  });
+
+  it('summary counts ATTENTION/CRITICAL activity of the last 24 h per service (pillar alert count, WP-3.1)', async () => {
+    const recent = new Date(Date.now() - 60 * 60 * 1000);
+    await seed({ service: 'customer.support', type: 'ticket.sla_breached', severity: 'ATTENTION', occurredAt: recent });
+    await seed({ service: 'customer.support', type: 'ticket.escalated', severity: 'CRITICAL', occurredAt: recent });
+    await seed({ service: 'customer.support', type: 'ticket.created', severity: 'INFO', occurredAt: recent });
+    await seed({ service: 'customer.support', type: 'ticket.sla_breached', severity: 'ATTENTION', occurredAt: new Date(Date.now() - 30 * 60 * 60 * 1000) });
+    const body = (await app.inject({ method: 'GET', url: '/api/internal/activity/summary' })).json();
+    expect(body.services).toEqual([expect.objectContaining({ service: 'customer.support', count: 4, alerts24h: 2 })]);
   });
 
   it('Customer 360 Activity tab lists the tenant\'s rows and 404s for an unknown tenant', async () => {

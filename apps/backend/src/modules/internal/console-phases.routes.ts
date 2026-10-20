@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../middleware/require-console-permission.js';
@@ -12,6 +13,7 @@ import { writeInternalAudit } from './internal-audit.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
+import { mrrForSubscription } from '../../services/revenue/mrr.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -522,13 +524,17 @@ function registerSuccess(app: FastifyInstance) {
       include: { subscription: true }
     });
     const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
-    const monthlyRevenueForPlan = (plan?: string | null) => plan === 'ENTERPRISE' ? 500 : plan === 'PRO' ? 79 : plan === 'STARTER' ? 29 : 0;
+    // WP-3.1: ARR from mrrForSubscription (list price, overrides, contracts, FX) — no plan-price literals.
+    const mrrByTenant = new Map(
+      await Promise.all(tenants.map(async (tenant) => [tenant.id, await mrrForSubscription(app.prisma, tenant, tenant.subscription)] as const))
+    );
     const data = scores
       .map((score) => {
         const tenant = tenantById.get(score.tenantId);
-        const arr = monthlyRevenueForPlan(tenant?.subscription?.plan ?? tenant?.plan) * 12;
+        const mrr = mrrByTenant.get(score.tenantId);
+        const arr = mrr ? Number(new Prisma.Decimal(mrr.amount).mul(12).toFixed(2)) : 0;
         const churnProbability = Math.max(0, Math.min(1, (60 - score.score) / 60));
-        return { ...score, tenant, arr, churnProbability, riskPriority: arr * churnProbability };
+        return { ...score, tenant, arr, arrCurrency: mrr?.currency ?? null, churnProbability, riskPriority: arr * churnProbability };
       })
       .sort((left, right) => right.riskPriority - left.riskPriority || left.score - right.score)
       .slice(0, 100);

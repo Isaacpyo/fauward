@@ -1,4 +1,5 @@
 import { consoleApi as api } from "@/lib/console-api";
+import type { Overview } from "@/lib/overview";
 import type { BadgeKey } from "@/pillars/_manifests";
 import { fetchHealth, formatPercent, isUnavailable } from "@/pillars/platform/health/api";
 
@@ -8,13 +9,6 @@ type TenantsResponse = {
 
 type QueuesResponse = {
   queues: Array<{ dlqDepth: number | null }>;
-};
-
-export type MetricsResponse = {
-  activeTenantCount: number;
-  shipmentsToday: number;
-  /** Null unless the caller holds revenue.analytics.read. Decimal string in the platform base currency. */
-  mrr: { amount: string; currency: string; unconverted: number } | null;
 };
 
 export type BadgeResult = {
@@ -34,14 +28,9 @@ export async function fetchDlqDepthBadge(): Promise<BadgeResult> {
 }
 
 export async function fetchMrrBadge(): Promise<BadgeResult> {
-  const response = await api.get<MetricsResponse>("/metrics/overview");
+  const response = await api.get<Overview>("/metrics/overview");
   const mrr = response.data.mrr;
   return mrr ? { label: formatCurrency(mrr.amount, mrr.currency), tone: "green" } : { label: "-", tone: "neutral" };
-}
-
-export async function fetchMetrics() {
-  const response = await api.get<MetricsResponse>("/metrics/overview");
-  return response.data;
 }
 
 // WP-3.4 replaces these per-key fetches with one GET /api/internal/badges endpoint.
@@ -66,5 +55,5 @@ export async function fetchErrorRate(): Promise<BadgeResult> {
 
 /** Formats an API decimal string in the currency the API returned (never assumes GBP). */
 export function formatCurrency(amount: string, currency: string) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(amount));
+  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(amount));
 }

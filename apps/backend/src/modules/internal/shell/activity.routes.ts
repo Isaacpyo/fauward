@@ -95,15 +95,21 @@ export async function registerConsoleActivityRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
     const context = await loadConsoleContext(request);
     const services = visibleServices(context);
-    const groups = await app.prisma.platformActivity.groupBy({
-      by: ['service'],
-      where: { service: { in: services }, ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) },
-      _max: { occurredAt: true },
-      _count: { _all: true }
-    });
+    const scope = { service: { in: services }, ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) };
+    const [groups, alerts] = await Promise.all([
+      app.prisma.platformActivity.groupBy({ by: ['service'], where: scope, _max: { occurredAt: true }, _count: { _all: true } }),
+      // WP-3.1: pillar alert counts = ATTENTION/CRITICAL activity in the last 24 h.
+      app.prisma.platformActivity.groupBy({
+        by: ['service'],
+        where: { ...scope, severity: { in: ['ATTENTION', 'CRITICAL'] }, occurredAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+        _max: { occurredAt: true },
+        _count: { _all: true }
+      })
+    ]);
+    const alertsByService = new Map(alerts.map((group) => [group.service, group._count._all]));
     return reply.send({
       services: groups
-        .map((group) => ({ service: group.service, lastOccurredAt: group._max.occurredAt?.toISOString() ?? null, count: group._count._all }))
+        .map((group) => ({ service: group.service, lastOccurredAt: group._max.occurredAt?.toISOString() ?? null, count: group._count._all, alerts24h: alertsByService.get(group.service) ?? 0 }))
         .sort((a, b) => a.service.localeCompare(b.service))
     });
   });
