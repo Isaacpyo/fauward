@@ -22,6 +22,8 @@ export const EMAIL_TEMPLATES = {
   ticket_reply_from_customer: 'ticket_reply_from_customer',
   ticket_resolved: 'ticket_resolved',
   password_reset: 'password_reset',
+  // Fauward Go sign-in link (C80): the link carries the sign-in token, so it is never returned by the API.
+  field_email_link: 'field_email_link',
   staff_invite: 'staff_invite',
   trial_expiring: 'trial_expiring',
   usage_warning_80: 'usage_warning_80',

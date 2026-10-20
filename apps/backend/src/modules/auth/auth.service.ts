@@ -483,12 +483,22 @@ export const authService = {
   },
   requestEmailLink: async (payload: EmailLinkRequestPayload, prisma: PrismaClient, tenantId?: string) => {
     const email = payload.email.toLowerCase().trim();
+    let resolvedTenantId = tenantId && tenantId !== 'system' ? tenantId : undefined;
+    if (!resolvedTenantId) {
+      // Fauward Go has no tenant before sign-in: as with forgot-password, only an email in exactly one workspace gets a link.
+      const matches = await prisma.user.findMany({
+        where: { email, isActive: true },
+        select: { tenantId: true },
+        distinct: ['tenantId']
+      });
+      if (matches.length !== 1) {
+        return { success: true };
+      }
+      resolvedTenantId = matches[0].tenantId;
+    }
+
     const user = await prisma.user.findFirst({
-      where: {
-        email,
-        isActive: true,
-        ...(tenantId ? { tenantId } : {})
-      },
+      where: { email, tenantId: resolvedTenantId, isActive: true },
       select: {
         id: true,
         email: true,
@@ -515,11 +525,19 @@ export const authService = {
       )
     );
 
-    return {
-      success: true,
-      linkToken,
-      tenantSlug: user.tenant.slug
-    };
+    // The sign-in token only ever travels in the email; the API answers the same whether or not the account exists (C61, C80).
+    await enqueueEmail({
+      tenantId: user.tenantId,
+      userId: user.id,
+      to: user.email,
+      template: 'field_email_link',
+      data: {
+        link: `${config.fauwardGoUrl}/login?token=${encodeURIComponent(linkToken)}&email=${encodeURIComponent(user.email)}`,
+        expiresInMinutes: 15
+      }
+    });
+
+    return { success: true };
   },
   consumeEmailLink: async (payload: EmailLinkConsumePayload, prisma: PrismaClient) => {
     const email = payload.email.toLowerCase().trim();
