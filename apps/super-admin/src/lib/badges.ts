@@ -1,5 +1,6 @@
 import { consoleApi as api } from "@/lib/console-api";
 import type { BadgeKey } from "@/pillars/_manifests";
+import { fetchHealth, formatPercent, isUnavailable } from "@/pillars/platform/health/api";
 
 type TenantsResponse = {
   total: number;
@@ -51,13 +52,16 @@ export async function fetchBadge(key: BadgeKey): Promise<BadgeResult> {
 }
 
 export async function fetchP95Latency(): Promise<BadgeResult> {
-  // TODO(WP-3.x): wire to /api/internal/health once latency percentiles are exposed.
-  return { label: "-", tone: "neutral" };
+  const report = await fetchHealth();
+  if (isUnavailable(report.http)) return { label: "no traffic", tone: "neutral" };
+  return { label: `${report.http.p95} ms`, tone: report.http.p95 > 1_000 ? "red" : report.http.p95 > 500 ? "amber" : "green" };
 }
 
 export async function fetchErrorRate(): Promise<BadgeResult> {
-  // TODO(WP-3.x): wire to /api/internal/health once error-rate telemetry is exposed.
-  return { label: "-", tone: "neutral" };
+  const report = await fetchHealth();
+  if (isUnavailable(report.http)) return { label: "no traffic", tone: "neutral" };
+  const rate = report.http.errorRate5xx;
+  return { label: formatPercent(rate), tone: rate >= 0.05 ? "red" : rate >= 0.01 ? "amber" : "green" };
 }
 
 /** Formats an API decimal string in the currency the API returned (never assumes GBP). */

@@ -15,20 +15,10 @@ const gatewayListQuery = z.object({
   tenantId: z.string().min(1).optional()
 });
 
-// platform.health and dead-lettered webhook deliveries (moved from /api/v1/platform in WP-1.1); queues moved to
-// queues.routes.ts in WP-3.6.
+// Tenant payment gateways and dead-lettered webhook deliveries (platform.integrations). Queues moved to queues.routes.ts
+// (WP-3.6) and health to health.routes.ts (WP-3.7).
 
 export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
-  app.get('/api/internal/health', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.health.read')] }, async (_request, reply) => {
-    const startedDb = Date.now();
-    await app.prisma.$queryRaw`SELECT 1`;
-    const dbLatencyMs = Date.now() - startedDb;
-    const startedRedis = Date.now();
-    await app.redis.ping();
-    const redisLatencyMs = Date.now() - startedRedis;
-    return reply.send({ dbLatencyMs, redisLatencyMs, uptimeSeconds: Math.floor(process.uptime()) });
-  });
-
   // L11 (WP-2.12): tenant payment gateways across tenants — provider, mode, status, last error; never secrets.
   app.get('/api/internal/integrations/tenant-gateways', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
     const parsed = gatewayListQuery.safeParse(request.query);
