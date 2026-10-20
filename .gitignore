@@ -35,3 +35,6 @@ __pycache__/
 
 # Playwright output when run from a workspace directory
 **/test-results/
+
+# Claude Code agent worktrees (local only)
+.claude/worktrees/
