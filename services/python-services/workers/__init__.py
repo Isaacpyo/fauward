@@ -145,7 +145,7 @@ async def _mark_job_failed(worker_name: str, job_id: str | None, tenant_id: str 
         "pdf_worker": "documents",
         "route_worker": "route_jobs",
         "ocr_worker": "parsed_documents",
-        "customs_worker": "customs_declarations",
+        "customs_worker": "customs_xml_jobs",
     }
     table = table_by_worker.get(worker_name)
     if table is None:
