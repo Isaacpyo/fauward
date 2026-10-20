@@ -1,9 +1,9 @@
 import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { DenseTable, EmptyState } from "@fauward/internal-ui";
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
+import { useActivitySummary } from "@/lib/overview";
 import type { PlatformPermissionContext } from "@/lib/platform-session";
 import { StatusPill } from "@/components/service-kit/StatusPill";
 import { navigableServices, type PillarManifest, type PillarServiceManifest } from "@/pillars/_manifests";
@@ -13,6 +13,20 @@ type PillarOverviewBaseProps = {
   manifest: PillarManifest;
   beforeGrid?: ReactNode;
 };
+
+/** Latest activity the caller can see for the service (GET /activity/summary, WP-3.5). */
+function LastActivity({ serviceKey }: { serviceKey: string }) {
+  const summary = useActivitySummary();
+  if (summary.isLoading) return <span className="text-xs text-[var(--color-text-muted)]">Loading…</span>;
+  if (summary.isError) return <span className="text-xs text-[var(--color-text-muted)]">Unavailable</span>;
+  const entry = summary.data?.services?.find((item) => item.service === serviceKey);
+  if (!entry?.lastOccurredAt) return <span className="text-xs text-[var(--color-text-muted)]">No activity recorded</span>;
+  return (
+    <time data-testid={`last-activity-${serviceKey}`} dateTime={entry.lastOccurredAt} className="text-xs">
+      {new Date(entry.lastOccurredAt).toLocaleString()}
+    </time>
+  );
+}
 
 export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseProps) {
   const navigate = useNavigate();
@@ -62,10 +76,7 @@ export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseP
           {
             id: "lastActivity",
             header: "Last activity",
-            cell: () => {
-              // TODO: Replace with per-service activity endpoints as services are implemented.
-              return <span className="text-[var(--color-text-muted)]">-</span>;
-            }
+            cell: (row) => <LastActivity serviceKey={`${manifest.id}.${row.id}`} />
           },
           {
             id: "status",

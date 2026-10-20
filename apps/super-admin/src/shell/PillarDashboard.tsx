@@ -1,5 +1,6 @@
 import { PILLARS } from "@/pillars/_manifests";
 import { PillarCard } from "@/shell/PillarCard";
+import { DashboardActivityFeed } from "@/shell/DashboardActivityFeed";
 import { DashboardKpis } from "@/shell/DashboardKpis";
 
 export function PillarDashboard() {
@@ -17,6 +18,8 @@ export function PillarDashboard() {
           <PillarCard key={pillar.id} pillar={pillar} />
         ))}
       </section>
+
+      <DashboardActivityFeed />
     </div>
   );
 }

@@ -18,6 +18,8 @@ const PERMISSION_REFRESH_MS = 60_000;
 const listQuery = z.object({
   tenantId: z.string().min(1).optional(),
   service: z.string().min(1).optional(),
+  /** WP-3.5 dashboard feed: every visible service of one pillar. */
+  pillar: z.enum(['platform', 'revenue', 'customer', 'trust', 'gtm']).optional(),
   severity: z.enum(['INFO', 'ATTENTION', 'CRITICAL']).optional(),
   type: z.string().min(1).optional(),
   from: z.string().datetime().optional(),
@@ -49,7 +51,8 @@ async function tenantLabels(app: FastifyInstance, rows: Array<Pick<PlatformActiv
 
 /** Shared by the cross-tenant list and Customer 360's Activity tab. */
 export async function listActivity(app: FastifyInstance, context: ConsoleRequestContext, query: z.infer<typeof listQuery>) {
-  const services = query.service ? (canSeeService(context, query.service) ? [query.service] : []) : visibleServices(context);
+  const visible = query.service ? (canSeeService(context, query.service) ? [query.service] : []) : visibleServices(context);
+  const services = query.pillar ? visible.filter((service) => service.startsWith(`${query.pillar}.`)) : visible;
   const where: Prisma.PlatformActivityWhereInput = {
     service: { in: services },
     ...(query.tenantId ? { tenantId: query.tenantId } : {}),

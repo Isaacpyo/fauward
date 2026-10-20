@@ -220,6 +220,17 @@ describe('console activity (WP-2.1, D7)', () => {
     expect(cs.services.map((entry: { service: string }) => entry.service)).toEqual(['platform.tenants']);
   });
 
+  it('the dashboard feed filters by pillar and severity (WP-3.5)', async () => {
+    await seed({ service: 'customer.support', type: 'ticket.created', severity: 'INFO' });
+    await seed({ service: 'customer.support', type: 'ticket.sla_breached', severity: 'ATTENTION' });
+    await seed({ service: 'platform.tenants', type: 'tenant.suspended', severity: 'ATTENTION' });
+    const customer = (await app.inject({ method: 'GET', url: '/api/internal/activity?pillar=customer' })).json();
+    expect(customer.data.map((row: { type: string }) => row.type).sort()).toEqual(['ticket.created', 'ticket.sla_breached']);
+    const attention = (await app.inject({ method: 'GET', url: '/api/internal/activity?pillar=customer&severity=ATTENTION' })).json();
+    expect(attention.data.map((row: { type: string }) => row.type)).toEqual(['ticket.sla_breached']);
+    expect((await app.inject({ method: 'GET', url: '/api/internal/activity?pillar=nope' })).statusCode).toBe(400);
+  });
+
   it('summary counts ATTENTION/CRITICAL activity of the last 24 h per service (pillar alert count, WP-3.1)', async () => {
     const recent = new Date(Date.now() - 60 * 60 * 1000);
     await seed({ service: 'customer.support', type: 'ticket.sla_breached', severity: 'ATTENTION', occurredAt: recent });
@@ -239,13 +250,15 @@ describe('console activity (WP-2.1, D7)', () => {
     expect((await app.inject({ method: 'GET', url: '/api/internal/customer360/nope/activity' })).statusCode).toBe(404);
   });
 
-  it('platform.activity-prune deletes rows older than 180 days only', async () => {
+  it('ACC-ACT-5 platform.activity-prune deletes rows older than 180 days only', async () => {
     const now = new Date('2026-10-18T00:00:00.000Z');
     await seed({ service: 'platform.tenants', type: 'old', occurredAt: new Date('2026-04-01T00:00:00.000Z') });
+    await seed({ service: 'platform.tenants', type: 'just-past', occurredAt: new Date(now.getTime() - 180 * 86_400_000 - 1) });
+    await seed({ service: 'platform.tenants', type: 'just-inside', occurredAt: new Date(now.getTime() - 179 * 86_400_000) });
     await seed({ service: 'platform.tenants', type: 'recent', occurredAt: new Date('2026-09-01T00:00:00.000Z') });
     const { pruneOldActivity } = await import('../../../jobs/activity-prune.js');
-    expect((await pruneOldActivity(store.prisma as never, now)).deleted).toBe(1);
-    expect(store.rows.map((row) => row.type)).toEqual(['recent']);
+    expect((await pruneOldActivity(store.prisma as never, now)).deleted).toBe(2);
+    expect(store.rows.map((row) => row.type).sort()).toEqual(['just-inside', 'recent']);
   });
 });
 
