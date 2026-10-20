@@ -231,7 +231,7 @@ export const webhooksService = {
         tenant: { select: { id: true, name: true, slug: true } }
       },
       orderBy: { deadLetteredAt: 'desc' },
-      take: 200
+      take: 100
     });
   }
 };

@@ -3,9 +3,9 @@ import { Navigate } from "react-router-dom";
 import { type Permission } from "@fauward/internal-rbac";
 import { JITGate } from "@fauward/internal-ui";
 
+import { AccessDenied } from "@/components/service-kit/AccessDenied";
 import { ComingSoonPage } from "@/components/service-kit/ComingSoonPage";
 import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
-import { consoleApi } from "@/lib/console-api";
 import { findServiceByKey } from "@/pillars/_manifests";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
@@ -14,11 +14,13 @@ import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
-import { ImpersonationStartPage } from "@/pillars/platform/impersonation/ImpersonationStartPage";
+import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
+import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
 import { PlatformOverview } from "@/pillars/platform/PlatformOverview";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
+import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
@@ -33,6 +35,10 @@ import { AuditIntegrityPage } from "@/pillars/trust/audit/AuditIntegrityPage";
 import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
 import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
+import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
+import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
+import { JitPendingPage } from "@/pillars/trust/jit/JitPendingPage";
+import { JitRequestPage } from "@/pillars/trust/jit/JitRequestPage";
 import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
 import { RolesPage } from "@/pillars/trust/iam/RolesPage";
@@ -44,13 +50,13 @@ import { PillarDashboard } from "@/shell/PillarDashboard";
 
 export type ConsoleRoute = { path: string; element: ReactElement };
 
-async function requestJitAccess(permission: Permission, reason: string) {
-  await consoleApi.post("/jit/requests", { permission, reason, durationMinutes: 60 });
-}
-
+/**
+ * Without the read permission a page renders the access-denied state with "Request access" (ACC-RBAC-1); the request
+ * goes through JitRequestDialog, which shows API errors (ACC-JIT-6).
+ */
 export function PermissionRoute({ permission, children }: { permission: Permission; children: ReactNode }) {
   return (
-    <JITGate permission={permission} requestTitle="Request elevated access" onRequest={requestJitAccess}>
+    <JITGate permission={permission} fallback={<AccessDenied permission={permission} />}>
       {children}
     </JITGate>
   );
@@ -68,8 +74,8 @@ export function OpsRoute({ permission, title, description, endpoint, related, pr
 }
 
 const flagOverridesNotWired = (
-  <DegradedBanner variant="not-wired" fixedBy="WP-1.4">
-    Per-tenant flag overrides are switched off: the old action turned the flag on for every tenant. Native overrides arrive in WP-1.4.
+  <DegradedBanner variant="not-wired" fixedBy="WP-4.1">
+    Per-tenant feature overrides are native now and are set on each tenant's Plan &amp; entitlements tab. This page is rebuilt on them in WP-4.1; LaunchDarkly is not mirrored yet.
   </DegradedBanner>
 );
 
@@ -103,10 +109,16 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/integrations/webhooks", element: <OpsRoute permission="platform.integrations.read" title="Webhook Health" description="Outbound webhook delivery attempts, retries and failures." endpoint="/integrations/webhooks" /> },
   { path: "/platform/integrations/:provider", element: <OpsRoute permission="platform.integrations.read" title="Provider Detail" description="Provider health detail and recent status." endpoint="/integrations/:provider" /> },
   { path: "/platform/impersonation", element: <PermissionRoute permission="platform.impersonation.start">
-                <ImpersonationStartPage />
+                <ImpersonationCenterPage />
+              </PermissionRoute> },
+  { path: "/platform/impersonation/sessions/:id", element: <PermissionRoute permission="platform.impersonation.start">
+                <SessionDetailPage />
               </PermissionRoute> },
   { path: "/platform/tenants", element: <PermissionRoute permission="platform.tenants.read">
                 <TenantsListPage />
+              </PermissionRoute> },
+  { path: "/platform/tenants/region-requests", element: <PermissionRoute permission="platform.tenants.read">
+                <RegionRequestsPage />
               </PermissionRoute> },
   { path: "/platform/tenants/:id", element: <PermissionRoute permission="platform.tenants.read">
                 <TenantDetailPage />
@@ -122,7 +134,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/billing/invoices/:id", element: <PermissionRoute permission="revenue.invoices.read">
                 <InvoiceDetailPage />
               </PermissionRoute> },
-  { path: "/revenue/billing/credit-notes", element: <PermissionRoute permission="revenue.invoices.write">
+  { path: "/revenue/billing/credit-notes", element: <PermissionRoute permission="revenue.invoices.read">
                 <CreditNotesPage />
               </PermissionRoute> },
   { path: "/revenue/billing/refunds", element: <PermissionRoute permission="revenue.invoices.refund">
@@ -207,11 +219,19 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/audit/integrity", element: <PermissionRoute permission="trust.audit.read">
                 <AuditIntegrityPage />
               </PermissionRoute> },
-  { path: "/trust/jit", element: <Navigate to="/trust/jit/pending" replace /> },
-  { path: "/trust/jit/request", element: <OpsRoute permission="trust.jit.request" title="Request JIT Access" description="Temporary permission elevation requests with reason and expiry." endpoint="/jit/sessions/active" primaryAction="Request access" /> },
-  { path: "/trust/jit/pending", element: <OpsRoute permission="trust.jit.approve" title="Pending JIT Requests" description="Cross-approval queue for elevated access requests." endpoint="/jit/requests/pending" /> },
-  { path: "/trust/jit/active", element: <OpsRoute permission="trust.jit.approve" title="Active JIT Sessions" description="Currently elevated staff permissions and expiry times." endpoint="/jit/sessions/active" /> },
-  { path: "/trust/jit/audit", element: <OpsRoute permission="trust.audit.read" title="JIT Audit" description="Historical elevated access audit entries." endpoint="/audit/entries?action=jit" /> },
+  { path: "/trust/jit", element: <Navigate to="/trust/jit/request" replace /> },
+  { path: "/trust/jit/request", element: <PermissionRoute permission="trust.jit.request">
+                <JitRequestPage />
+              </PermissionRoute> },
+  { path: "/trust/jit/pending", element: <PermissionRoute permission="trust.jit.approve">
+                <JitPendingPage />
+              </PermissionRoute> },
+  { path: "/trust/jit/active", element: <PermissionRoute permission="trust.jit.approve">
+                <JitActivePage />
+              </PermissionRoute> },
+  { path: "/trust/jit/audit", element: <PermissionRoute permission="trust.jit.approve">
+                <JitHistoryPage />
+              </PermissionRoute> },
   { path: "/trust/compliance", element: <Navigate to="/trust/compliance/dsar" replace /> },
   { path: "/trust/compliance/dsar", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Queue" description="GDPR data subject request workflow and SLA countdown." endpoint="/compliance/dsar" /> },
   { path: "/trust/compliance/dsar/:id", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Detail" description="DSAR transition history and export delivery status." endpoint="/compliance/dsar" /> },

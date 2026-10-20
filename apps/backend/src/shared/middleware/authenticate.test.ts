@@ -107,10 +107,10 @@ describe('authenticate', () => {
     expect(request.server.prisma.tenant.findUnique).not.toHaveBeenCalled();
   });
 
-  it('requires mfa for super-admin routes', async () => {
+  it('requires mfa for tenant-JWT SUPER_ADMIN (control-tower until WP-2.11)', async () => {
     const reply = makeReply();
     const request = {
-      url: '/api/v1/admin/tenants',
+      url: '/api/v1/platform/control-tower/overview',
       jwtVerify: vi.fn().mockResolvedValue(undefined),
       user: { sub: 'user-1', tenantId: 'system', role: 'SUPER_ADMIN', mfaVerified: false },
       server: {

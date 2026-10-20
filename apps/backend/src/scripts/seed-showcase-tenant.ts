@@ -861,7 +861,7 @@ async function main() {
     paymentRows.push({ id, tenantId, shipmentId: s.id, customerId: s.org.customerId, amount: money(s.price * 1.2), currency: 'GBP', method: 'CASH', status: 'PENDING', idempotencyKey: `showcase-cod-${id}`, createdAt: s.createdAt });
   }
   for (let i = 0; i < invoiceRows.length; i += 200) {
-    await prisma.invoice.createMany({ data: invoiceRows.slice(i, i + 200).map((r) => ({ ...r, status: 'DRAFT' as const })) });
+    await prisma.invoice.createMany({ data: invoiceRows.slice(i, i + 200).map((r) => ({ ...r, status: 'DRAFT' as const, kind: 'TENANT_CUSTOMER' as const })) });
   }
   const minor = (v: unknown) => Math.round(Number(v) * 100);
   for (let i = 0; i < invoiceRows.length; i += 100) {
@@ -885,7 +885,7 @@ async function main() {
       values (${tenantId}, ${fiscalYear}, ${count + 1}, 'INV', 6, now(), now())
       on conflict (tenant_id, fiscal_year) do update set next_number = excluded.next_number, updated_at = now()`;
   }
-  for (let i = 0; i < paymentRows.length; i += 200) await prisma.payment.createMany({ data: paymentRows.slice(i, i + 200) });
+  for (let i = 0; i < paymentRows.length; i += 200) await prisma.payment.createMany({ data: paymentRows.slice(i, i + 200).map((r) => ({ ...r, kind: 'TENANT_CUSTOMER' as const })) });
 
   // Refunds + credit notes on a handful of paid invoices.
   const paidInvoices = invoiceRows.filter((r) => r.status === 'PAID');
@@ -894,11 +894,11 @@ async function main() {
     if (!payment) continue;
     const amount = Number((Number(inv.total) * (i % 2 === 0 ? 0.25 : 1)).toFixed(2));
     await prisma.refund.create({
-      data: { tenantId, paymentId: payment.id!, amount: money(amount), reason: pick(['Damaged in transit', 'Late delivery - SLA credit', 'Duplicate charge']), status: 'COMPLETED', initiatedBy: finance.id, idempotencyKey: `showcase-refund-${payment.id}`, createdAt: after(payment.createdAt as Date, 2 * DAY) }
+      data: { kind: 'TENANT_CUSTOMER', tenantId, paymentId: payment.id!, amount: money(amount), reason: pick(['Damaged in transit', 'Late delivery - SLA credit', 'Duplicate charge']), status: 'COMPLETED', initiatedBy: finance.id, idempotencyKey: `showcase-refund-${payment.id}`, createdAt: after(payment.createdAt as Date, 2 * DAY) }
     });
-    await prisma.payment.update({ where: { id: payment.id! }, data: { refundedAmount: money(amount), status: amount >= Number(inv.total) ? 'REFUNDED' : 'COMPLETED' } });
+    await prisma.payment.update({ where: { kind: 'TENANT_CUSTOMER', id: payment.id! }, data: { refundedAmount: money(amount), status: amount >= Number(inv.total) ? 'REFUNDED' : 'COMPLETED' } });
     await prisma.creditNote.create({
-      data: { tenantId, invoiceId: inv.id!, customerId: inv.customerId, organisationId: inv.organisationId, creditNumber: `${slugUpper}-CR-${NOW.getUTCFullYear()}-${String(i + 1).padStart(4, '0')}`, amount: money(amount), reason: 'Service credit', appliedTo: inv.invoiceNumber, createdAt: after(payment.createdAt as Date, 2 * DAY) }
+      data: { kind: 'TENANT_CUSTOMER', tenantId, invoiceId: inv.id!, customerId: inv.customerId, organisationId: inv.organisationId, creditNumber: `${slugUpper}-CR-${NOW.getUTCFullYear()}-${String(i + 1).padStart(4, '0')}`, amount: money(amount), reason: 'Service credit', appliedTo: inv.invoiceNumber, createdAt: after(payment.createdAt as Date, 2 * DAY) }
     });
   }
 

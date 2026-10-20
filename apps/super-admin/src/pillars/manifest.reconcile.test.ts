@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
 
-// D1 reconciliation gate. Check (d) — deferred services have no backend route — lands with route-index.ts in WP-1.1.
+// D1 reconciliation gate. Check (d) reads the backend's registered console routes from route-index.ts (kept equal to
+// the real registrations by the backend rbac-matrix test).
 
 const PILLAR_PREFIXES = ["/platform", "/revenue", "/customer", "/trust", "/gtm"];
 const routeObjects = [...consoleRoutes.map((route) => ({ path: route.path })), { path: "*" }];
@@ -21,6 +22,11 @@ function resolve(pathname: string) {
 }
 
 const routeByPath = new Map(consoleRoutes.map((route) => [route.path, route]));
+
+function backendConsoleRoutes() {
+  const file = path.resolve(__dirname, "../../../backend/src/modules/internal/route-index.ts");
+  return [...fs.readFileSync(file, "utf8").matchAll(/'(GET|POST|PUT|PATCH|DELETE) (\/api\/internal\/[^']*)'/g)].map((match) => match[2]);
+}
 
 describe("manifest reconciliation (D1)", () => {
   it("ACC-MAN-1 every manifest route and routes[] entry resolves to a registered, non-catch-all route", () => {
@@ -49,8 +55,10 @@ describe("manifest reconciliation (D1)", () => {
 
   it("every live service has its own folder and no generic Ops page", () => {
     const pillarsDir = path.resolve(__dirname);
+    // Folder names follow 20-service-catalogue.md; only customer.360 differs from its id (an id cannot start a word).
+    const FOLDER: Record<string, string> = { "customer.360": "customer360" };
     for (const service of SERVICES.filter((item) => item.status === "live")) {
-      expect(fs.existsSync(path.join(pillarsDir, service.pillar.id, service.id)), `${service.key} folder`).toBe(true);
+      expect(fs.existsSync(path.join(pillarsDir, service.pillar.id, FOLDER[service.key] ?? service.id)), `${service.key} folder`).toBe(true);
       for (const pattern of service.routes) {
         const route = routeByPath.get(pattern);
         expect(route, `${service.key} ${pattern} registered`).toBeDefined();
@@ -59,14 +67,25 @@ describe("manifest reconciliation (D1)", () => {
     }
   });
 
-  it("manifest statuses match the ADR 0002 Phase-0 snapshot", () => {
+  it("manifest statuses match the ADR 0002 Phase-1 snapshot", () => {
     expect(SERVICES).toHaveLength(41);
-    expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key)).toEqual(["trust.iam"]);
+    expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key).sort()).toEqual(
+      ["customer.360", "platform.impersonation", "platform.tenants", "revenue.billing", "trust.audit", "trust.iam", "trust.jit"]
+    );
     expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "revenue.recognition"]);
     for (const service of SERVICES.filter((item) => item.status === "preview")) {
       expect(service.note, `${service.key} names what is not wired`).toBeTruthy();
     }
     expect(SERVICES.find((service) => service.key === "trust.jit")?.requiredPermission).toBe("trust.jit.request");
+  });
+
+  it("ACC-MAN-1 (d) every deferred service has no backend route under /api/internal/<service>", () => {
+    const backend = backendConsoleRoutes();
+    expect(backend.length).toBeGreaterThan(100);
+    for (const service of SERVICES.filter((item) => item.status === "deferred")) {
+      const prefix = `/api/internal/${service.id}`;
+      expect(backend.filter((url) => url === prefix || url.startsWith(`${prefix}/`)), `${service.key} backend routes`).toEqual([]);
+    }
   });
 
   it("ACC-MAN-4 deferred services render ComingSoonPage and are absent from navigation", () => {

@@ -8,10 +8,12 @@ type ReasonModalProps = {
   confirmLabel?: string;
   onCancel: () => void;
   onConfirm: (reason: string) => void;
+  /** Shown above the buttons, e.g. the API error from a failed confirm. */
+  error?: string | null;
   className?: string;
 };
 
-export function ReasonModal({ open, title, description, confirmLabel = 'Confirm', onCancel, onConfirm, className }: ReasonModalProps) {
+export function ReasonModal({ open, title, description, confirmLabel = 'Confirm', onCancel, onConfirm, error, className }: ReasonModalProps) {
   const [reason, setReason] = useState('');
   if (!open) return null;
 
@@ -32,6 +34,11 @@ export function ReasonModal({ open, title, description, confirmLabel = 'Confirm'
           rows={4}
           className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--fauward-navy)] dark:bg-neutral-900"
         />
+        {error ? (
+          <p role="alert" className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+            {error}
+          </p>
+        ) : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onCancel} className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm font-semibold">
             Cancel

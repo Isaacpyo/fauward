@@ -350,6 +350,13 @@ model Tenant {
   maxStaff           Int          @default(3)
   maxShipmentsPm     Int          @default(300)
   maxOrganisations   Int          @default(10)
+  /// Set when Fauward staff set the limit columns above (WP-1.2). Until then the effective plan's limits apply
+  /// (the columns were never kept in step with plan changes).
+  limitsOverriddenAt DateTime?
+  /// Tenant closure (WP-1.2): a closed tenant is never reactivated (D3); data is kept until purgeAfter.
+  closedAt           DateTime?
+  closedReason       String?
+  purgeAfter         DateTime?
   onboardingSteps    Json         @default("{}")
   onboardingCompletedAt DateTime?
   internalNotes      String?
@@ -395,6 +402,7 @@ model Tenant {
   weightDiscountTiers           WeightDiscountTier[]
   inAppNotifications            InAppNotification[]
   planOverrides                 TenantPlanOverride[]
+  featureOverrides              TenantFeatureOverride[]
   platformImpersonationSessions PlatformImpersonationSession[]
   trackingEvents                TrackingEvent[]
   trackingBreadcrumbs           TrackingBreadcrumb[]
@@ -602,6 +610,26 @@ model TenantPlanOverride {
 
   @@index([tenantId, revokedAt, expiresAt])
   @@map("tenant_plan_overrides")
+}
+
+/// Per-tenant feature switch on top of the effective plan (WP-1.4). The native source of truth for flags (D9);
+/// read by resolveTenantEntitlements. The latest active row per featureKey wins.
+model TenantFeatureOverride {
+  id                      String    @id @default(uuid())
+  tenantId                String
+  tenant                  Tenant    @relation(fields: [tenantId], references: [id])
+  /// planService feature key, e.g. `apiAccess`
+  featureKey              String
+  enabled                 Boolean
+  reason                  String
+  expiresAt               DateTime?
+  createdByPlatformUserId String
+  revokedAt               DateTime?
+  revokedByPlatformUserId String?
+  createdAt               DateTime  @default(now())
+
+  @@index([tenantId, featureKey, revokedAt])
+  @@map("tenant_feature_overrides")
 }
 
 model TenantSettings {
@@ -1415,6 +1443,9 @@ model Invoice {
   paidAt         DateTime?
   voidedAt       DateTime?
   createdBy      String?
+  /// PLATFORM = Fauward billing the tenant; TENANT_CUSTOMER = the tenant billing its customers (D4).
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
+  stripeInvoiceId String?      @unique
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -1422,6 +1453,7 @@ model Invoice {
   creditNotes CreditNote[]
 
   @@index([tenantId])
+  @@index([kind, tenantId, createdAt])
   @@map("invoices")
 }
 
@@ -1442,6 +1474,7 @@ model Payment {
   gatewayResponse Json?
   idempotencyKey  String?       @unique
   refundedAmount  Decimal       @default(0) @db.Decimal(12, 2)
+  kind            LedgerKind    @default(TENANT_CUSTOMER)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -1450,6 +1483,7 @@ model Payment {
 
   @@index([tenantId])
   @@index([tenantId, gatewayRef])
+  @@index([kind, tenantId, createdAt])
   @@map("payments")
 }
 
@@ -1469,6 +1503,7 @@ model Refund {
   createdAt   DateTime @default(now())
   currency      String?
   failureReason String?
+  kind          LedgerKind @default(TENANT_CUSTOMER)
 
   approvals RefundApproval[]
 
@@ -1506,10 +1541,17 @@ model CreditNote {
   currency       String        @default("GBP")
   reason         String?
   appliedTo      String?
+  kind           LedgerKind    @default(TENANT_CUSTOMER)
   createdAt      DateTime      @default(now())
 
   @@index([tenantId])
   @@map("credit_notes")
+}
+
+/// Which ledger a billing row belongs to (D4).
+enum LedgerKind {
+  PLATFORM
+  TENANT_CUSTOMER
 }
 
 model CurrencyRate {
@@ -1950,9 +1992,12 @@ model OutboxEvent {
   payload       Json
   published     Boolean   @default(false)
   publishedAt   DateTime?
+  // Tenant the event belongs to (console activity projection, D7). Null for platform-level events.
+  tenantId      String?
   createdAt     DateTime  @default(now())
 
   @@index([published, createdAt])
+  @@index([tenantId, createdAt])
   @@map("outbox_events")
 }
 
@@ -2335,18 +2380,33 @@ model FraudSignal {
   @@map("fraud_signals")
 }
 
+/// One cause of a tenant suspension (D3). Written only by services/tenant-suspension.service.ts; a tenant is ACTIVE again
+/// only when no ACTIVE record remains.
 model SuspensionRecord {
   id             String   @id @default(uuid())
   tenantId       String
+  /// Internal reason, visible to staff only.
   reason         String
+  /// Shown to the tenant in the suspension overlay.
+  publicReason   String?
+  /// PLATFORM | DUNNING | FRAUD | AUP | LEGAL | SYSTEM
+  source         String   @default("PLATFORM")
+  /// BILLING | FRAUD | AUP | SECURITY | LEGAL | OTHER
+  category       String   @default("OTHER")
   sourceSignalId String?
+  /// What caused it: Stripe invoice id, fraud signal id, …
+  sourceRef      String?
   suspendedBy    String
   liftedBy       String?
+  /// MANUAL | APPEAL | PAYMENT | EXPIRY
+  liftedVia      String?
+  liftReason     String?
   status         String   @default("ACTIVE")
   createdAt      DateTime @default(now())
   liftedAt       DateTime?
 
   @@index([tenantId, status])
+  @@index([source, status])
   @@map("suspension_records")
 }
 
@@ -3055,4 +3115,54 @@ model ProofOfDelivery {
 
   @@index([tenantId, shipmentId])
   @@map("proof_of_delivery")
+}
+
+// ── Console activity and staff notifications (D6, D7 — WP-1.0) ──────────────
+
+enum ActivitySeverity {
+  INFO
+  ATTENTION
+  CRITICAL
+}
+
+/// One row per thing that happened that console staff may want to see. Written in the producer's transaction
+/// through recordActivity() (services/platform-activity.service.ts); dedupeKey makes producers idempotent.
+model PlatformActivity {
+  id          String           @id @default(uuid())
+  occurredAt  DateTime         @default(now())
+  tenantId    String?
+  service     String
+  type        String
+  actorType   String
+  actorId     String?
+  actorLabel  String
+  subjectType String
+  subjectId   String
+  summary     String
+  severity    ActivitySeverity @default(INFO)
+  consoleLink String?
+  metadata    Json             @default("{}")
+  dedupeKey   String           @unique
+
+  @@index([tenantId, occurredAt])
+  @@index([service, occurredAt])
+  @@index([severity, occurredAt])
+  @@map("platform_activity")
+}
+
+/// Console bell entries for one staff member (PlatformNotifier.notifyStaff).
+model StaffNotification {
+  id             String           @id @default(uuid())
+  platformUserId String
+  event          String
+  title          String
+  body           String?
+  link           String?
+  severity       ActivitySeverity @default(INFO)
+  tenantId       String?
+  readAt         DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@index([platformUserId, readAt, createdAt])
+  @@map("staff_notifications")
 }

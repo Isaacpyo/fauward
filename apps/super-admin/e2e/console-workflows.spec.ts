@@ -7,8 +7,6 @@ const permissions = [
   "platform.incidents.write",
   "customer.success.read",
   "customer.success.write",
-  "trust.jit.request",
-  "trust.jit.approve",
   "gtm.contracts.read",
   "gtm.contracts.write",
   "revenue.dunning.read",
@@ -36,13 +34,11 @@ test.beforeEach(async ({ context, page }) => {
           ? { data: [{ id: "inc_001", title: "Carrier API outage", status: "triggered" }] }
           : path === "/success/health-scoring"
             ? { weights: { login: 20, shipmentTrend: 25, featureBreadth: 15, paymentHealth: 15, ticketSentimentVolume: 15, nps: 10 } }
-            : path === "/jit/sessions/active" || path === "/jit/sessions/my"
-              ? { data: [] }
-              : path === "/contracts/quotes"
-                ? { data: [{ id: "quote_001", quoteNumber: "Q-001", status: "DRAFT" }] }
-                : path === "/dunning/failed-payments"
-                  ? { data: [{ id: "pay_001", status: "FAILED", invoiceId: "inv_001" }] }
-                  : { data: [] };
+            : path === "/contracts/quotes"
+              ? { data: [{ id: "quote_001", quoteNumber: "Q-001", status: "DRAFT" }] }
+              : path === "/dunning/failed-payments"
+                ? { data: [{ id: "pay_001", status: "FAILED", invoiceId: "inv_001" }] }
+                : { data: [] };
 
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
       return;
@@ -62,7 +58,6 @@ test("navigates critical Phase 2-6 workflow pages", async ({ page }) => {
   const pages = [
     ["/platform/incidents", "Incidents"],
     ["/customer/success/health-scoring", "Health Scoring"],
-    ["/trust/jit/request", "Request JIT Access"],
     ["/gtm/contracts/quotes", "Quote Builder"],
     ["/revenue/dunning", "Dunning Manager"]
   ] as const;
@@ -91,11 +86,6 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
   await page.goto("/customer/success/health-scoring");
   await page.getByRole("button", { name: "Queue Health Scoring" }).click();
 
-  await page.goto("/trust/jit/request");
-  await page.getByLabel("Permission").fill("platform.incidents.write");
-  await page.getByLabel("Reason").fill("Incident impact annotation");
-  await page.getByRole("button", { name: "Request Elevated Access" }).click();
-
   await page.goto("/gtm/contracts/quotes");
   await page.getByRole("button", { name: "Create Quote" }).click();
 
@@ -105,7 +95,6 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
 
   await expect.poll(() => calls).toContain("POST /api/internal/incidents/inc_001/impacts");
   expect(calls).toContain("POST /api/internal/success/health-scoring/run");
-  expect(calls).toContain("POST /api/internal/jit/requests");
   expect(calls).toContain("POST /api/internal/contracts/quotes");
   expect(calls).toContain("POST /api/internal/dunning/retry/inv_001");
 });

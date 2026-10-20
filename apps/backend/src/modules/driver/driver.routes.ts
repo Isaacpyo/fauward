@@ -215,7 +215,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         let paymentId = shipment.payment?.id;
         if (paymentId) {
           await tx.payment.update({
-            where: { id: paymentId },
+            where: { kind: 'TENANT_CUSTOMER', id: paymentId },
             data: {
               status: PaymentStatus.COMPLETED,
               amount: cod.amount,
@@ -227,6 +227,7 @@ export async function registerDriverRoutes(app: FastifyInstance) {
         } else {
           const newPayment = await tx.payment.create({
             data: {
+              kind: 'TENANT_CUSTOMER',
               tenantId,
               shipmentId: shipment.id,
               customerId: shipment.customerId,
@@ -243,14 +244,14 @@ export async function registerDriverRoutes(app: FastifyInstance) {
 
         if (shipment.invoice?.id) {
           const paidAggregate = await tx.payment.aggregate({
-            where: { tenantId, invoiceId: shipment.invoice.id, status: PaymentStatus.COMPLETED },
+            where: { kind: 'TENANT_CUSTOMER', tenantId, invoiceId: shipment.invoice.id, status: PaymentStatus.COMPLETED },
             _sum: { amount: true }
           });
           const paidAmount = Number(paidAggregate._sum.amount ?? 0);
           const invoiceTotal = Number(shipment.invoice.total ?? 0);
           const nextStatus = paidAmount >= invoiceTotal ? 'PAID' : 'PARTIALLY_PAID';
           await tx.invoice.update({
-            where: { id: shipment.invoice.id },
+            where: { kind: 'TENANT_CUSTOMER', id: shipment.invoice.id },
             data: {
               status: nextStatus,
               paidAt: nextStatus === 'PAID' ? new Date() : shipment.invoice.paidAt

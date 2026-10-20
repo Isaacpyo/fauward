@@ -15,13 +15,18 @@ vi.mock('../../../services/platform-audit.service.js', () => ({
   })
 }));
 
-vi.mock('../../../services/staff-iam.service.js', () => ({
-  staffPermissionContextForPlatformUser: vi.fn(async () => ({
-    staff: { id: 'staff_1', status: 'ACTIVE' },
-    roles: ['PLATFORM_ENGINEER'],
-    permissions: ['platform.tenants.read', 'trust.jit.request']
-  }))
-}));
+vi.mock('../../../services/staff-iam.service.js', () => {
+  const permissions = ['platform.tenants.read', 'trust.jit.request'];
+  return {
+    consolePermissionContext: vi.fn(async () => ({
+      staff: { id: 'staff_1', status: 'ACTIVE' },
+      roles: ['PLATFORM_ENGINEER'],
+      rolePermissions: new Set(permissions),
+      jit: new Map(),
+      permissions
+    }))
+  };
+});
 
 type UserRow = {
   id: string;
@@ -205,11 +210,11 @@ describe('console auth — WP-0.1', () => {
     const app = await buildApp(state);
     const jar = new CookieJar();
 
-    for (const prefix of ['/api/internal/auth', '/api/v1/platform/auth']) {
-      const response = await login(app, jar, prefix);
-      expect(response.statusCode).toBe(200);
-      expect(response.json()).toMatchObject({ mfa: 'ENROLL', user: { email: 'ops@fauward.com' } });
-    }
+    const response = await login(app, jar, '/api/internal/auth');
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ mfa: 'ENROLL', user: { email: 'ops@fauward.com' } });
+    // The Phase 0 /api/v1/platform/auth mount is gone (WP-1.1).
+    expect((await login(app, jar, '/api/v1/platform/auth')).statusCode).toBe(404);
     expect([...state.sessions.values()].every((session) => session.mfaVerifiedAt === null)).toBe(true);
 
     const blocked = await app.inject({ method: 'GET', url: '/api/internal/tenants', headers: jar.headers() });

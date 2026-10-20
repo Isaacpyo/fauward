@@ -11,6 +11,7 @@ import { DomainSettingsTab } from "@/pages/settings/DomainSettingsTab";
 import { BrandingTab } from "@/pages/settings/BrandingTab";
 import { IntegrationsTab } from "@/pages/settings/IntegrationsTab";
 import { PrivacyTab } from "@/pages/settings/PrivacyTab";
+import { StaffAccessTab } from "@/pages/settings/StaffAccessTab";
 import { TenantDashboardPage } from "@/pages/dashboard/TenantDashboardPage";
 import { TenantFinancePage } from "@/pages/finance/TenantFinancePage";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -28,7 +29,8 @@ import { useTenantStore } from "@/stores/useTenantStore";
 import { clearTokens, createDevTestSession, isDevTestEmail, matchesDevTestLogin, setTokens } from "@/lib/auth";
 import { getFirebaseAuthErrorMessage, signInWithGoogle } from "@/lib/firebase";
 import { resolvePathTenantSlug } from "@/lib/tenantResolver";
-import { formatPlanLabel, hasPlanAccess, type Plan } from "@/lib/plan-features";
+import { formatPlanLabel, type Plan } from "@/lib/plan-features";
+import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
 
@@ -79,7 +81,8 @@ const settingsTabs = [
   { value: "webhooks", label: "Webhooks", minimumPlan: "pro" },
   { value: "email", label: "Email", minimumPlan: "enterprise" },
   { value: "branding", label: "Branding", minimumPlan: "starter" },
-  { value: "privacy", label: "Privacy", minimumPlan: "starter" }
+  { value: "privacy", label: "Privacy", minimumPlan: "starter" },
+  { value: "staff-access", label: "Staff access", minimumPlan: "starter" }
 ] as const satisfies Array<{ value: string; label: string; minimumPlan: Plan }>;
 
 function wait(ms: number) {
@@ -289,6 +292,7 @@ export function TeamPage() {
 
 export function SettingsPage() {
   const user = useAppStore((state) => state.user);
+  const access = useFeatureAccess();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") ?? "profile";
   const [visitedTabs, setVisitedTabs] = useState<Set<string>>(new Set([currentTab]));
@@ -298,7 +302,7 @@ export function SettingsPage() {
   }, [currentTab]);
 
   const tabItems = settingsTabs.map((tab) => {
-    const locked = !hasPlanAccess(user?.plan, tab.minimumPlan);
+    const locked = !access.hasPlan(tab.minimumPlan);
     return {
       value: tab.value,
       label: (
@@ -311,7 +315,7 @@ export function SettingsPage() {
   });
 
   function renderSettingsTab(tab: (typeof settingsTabs)[number], content: React.ReactNode) {
-    if (!hasPlanAccess(user?.plan, tab.minimumPlan)) {
+    if (!access.hasPlan(tab.minimumPlan)) {
       return <LockedSettingsPanel minimumPlan={tab.minimumPlan} feature={tab.label} />;
     }
     return content;
@@ -376,6 +380,11 @@ export function SettingsPage() {
         {visitedTabs.has("privacy") ? (
           <TabsContent value="privacy" className="rounded-lg border border-gray-200 bg-white p-4">
             <PrivacyTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("staff-access") ? (
+          <TabsContent value="staff-access" className="rounded-lg border border-gray-200 bg-white p-4">
+            <StaffAccessTab />
           </TabsContent>
         ) : null}
       </Tabs>

@@ -24,12 +24,21 @@ vi.mock('../../middleware/require-platform-csrf.js', () => ({
   requirePlatformCsrf: async () => undefined
 }));
 
-vi.mock('../../middleware/require-internal-permission.js', () => ({
-  requireInternalPermission: (permission: Permission) => async (_request: unknown, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => {
-    if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
-    return undefined;
-  }
-}));
+vi.mock('../../middleware/require-console-permission.js', () => {
+  type ReplyLike = { status: (code: number) => { send: (body: unknown) => unknown } };
+  return {
+    requireConsolePermission: (permission: Permission) => async (_request: unknown, reply: ReplyLike) => {
+      if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
+      return undefined;
+    },
+    requireAnyConsolePermission: (permissions: Permission[]) => async (_request: unknown, reply: ReplyLike) => {
+      if (!permissions.some((permission) => currentPermissions.includes(permission))) return reply.status(403).send({ error: 'Forbidden', permission: permissions[0] });
+      return undefined;
+    },
+    consoleUserHas: async (_request: unknown, permission: Permission) => currentPermissions.includes(permission),
+    loadConsoleContext: async () => ({ permissions: currentPermissions, jit: new Map() })
+  };
+});
 
 vi.mock('../../services/staff-iam.service.js', () => ({
   STAFF_ROLE_DEFINITIONS: [],
@@ -67,6 +76,9 @@ function createPrisma() {
     },
     platformSession: { updateMany: vi.fn(async () => ({ count: 2 })) },
     staffSession: { updateMany: vi.fn(async () => ({ count: 2 })) },
+    platformActivity: {
+      upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: `activity_${String(create.type)}`, ...create }))
+    },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma))
   };
   return prisma;
@@ -217,6 +229,23 @@ describe('IAM staff lifecycle (S4)', () => {
     expect(prisma.staffSession.updateMany).toHaveBeenCalledWith({ where: { staffId: 'staff_002', revokedAt: null }, data: { revokedAt: expect.any(Date) } });
     expect(prisma.staff.get('staff_002')!.status).toBe('SUSPENDED');
     expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'staff.user.suspend', reason: 'Laptop reported stolen' }));
+  });
+
+  it('WP-1.0 every IAM mutation records exactly one PlatformActivity row (suspend in the same transaction)', async () => {
+    const { app, prisma } = await buildApp();
+    const assign = await app.inject({ method: 'POST', url: '/api/internal/iam/role-assignments', payload: { staffId: 'staff_002', roleId: 'EXECUTIVE', reason: 'Quarterly access review' } });
+    expect(assign.statusCode).toBe(201);
+    expect(prisma.platformActivity.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.platformActivity.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ create: expect.objectContaining({ type: 'staff.role.assign' }) }));
+
+    const suspend = await app.inject({ method: 'POST', url: '/api/internal/iam/users/staff_002/suspend', payload: { reason: 'Laptop reported stolen' } });
+    expect(suspend.statusCode).toBe(200);
+    expect(prisma.platformActivity.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.platformActivity.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({ service: 'trust.iam', type: 'staff.user.suspend', actorType: 'STAFF', actorId: 'pu_self', subjectId: 'staff_002', consoleLink: '/trust/iam/users/staff_002' })
+      })
+    );
   });
 
   it('offboarding is final: reactivating an offboarded user returns 409', async () => {

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 
 import type { PlatformSessionUser } from "@/lib/platform-session";
 import { CommandPalette } from "@/shell/CommandPalette";
+import { NotificationBell } from "@/shell/NotificationBell";
 import { PillarSwitcher } from "@/shell/PillarSwitcher";
 import { UserMenu } from "@/shell/UserMenu";
 
@@ -40,6 +41,7 @@ export function TopBar({ user }: TopBarProps) {
           <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
           On-call
         </span>
+        <NotificationBell />
         <UserMenu user={user} />
       </div>
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />

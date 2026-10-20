@@ -46,15 +46,8 @@ import { registerPlatformTrackingRoutes } from './modules/tracking/tracking.plat
 import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.js';
 import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.realtime.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
-import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
-import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
-import { registerConsoleAuthRoutes } from './modules/internal/auth/console-auth.routes.js';
 import { registerImpersonationExchangeRoutes } from './modules/auth/impersonation-exchange.routes.js';
-import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
-import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
-import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
-import { registerInternalCustomer360Routes } from './modules/internal/customer360.routes.js';
-import { registerInternalConsolePhaseRoutes } from './modules/internal/console-phases.routes.js';
+import { registerConsoleRoutes } from './modules/internal/register.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
@@ -64,7 +57,6 @@ import { enforceTenantStatus } from './middleware/enforce-tenant-status.js';
 import { setupTrackingWebsocket } from './modules/tracking/tracking.websocket.js';
 import { registerRoutingRoutes } from './modules/routing/routing.routes.js';
 import { startRouteOptimizationWorker } from './queues/route-optimization.worker.js';
-import { registerMonitoringRoutes } from './modules/internal/monitoring.routes.js';
 import { registerAnnouncementRoutes } from './modules/announcements/announcements.routes.js';
 import { registerDsarRoutes } from './modules/dsar/dsar.routes.js';
 import { registerAppealRoutes } from './modules/appeals/appeals.routes.js';
@@ -143,6 +135,8 @@ export async function buildApp() {
 
   app.addHook('preHandler', auditMiddleware({ prisma: app.prisma as unknown as PlatformAuditClient, shouldAudit: (request) => {
     const method = request.method?.toUpperCase();
+    // Marking one's own bell entries read is not a platform mutation.
+    if (request.url?.startsWith('/api/internal/notifications/staff')) return false;
     return Boolean(request.url?.startsWith('/api/internal/') && method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
   } }));
 
@@ -274,21 +268,13 @@ export async function buildApp() {
   await registerExceptionsRoutes(app);
   await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
-  await registerConsoleAuthRoutes(app);
   await registerImpersonationExchangeRoutes(app);
-  await registerPlatformRoutes(app);
-  await registerInternalIamRoutes(app);
-  await registerInternalAuditRoutes(app);
-  await registerInternalBillingRoutes(app);
-  await registerInternalCustomer360Routes(app);
-  await registerInternalConsolePhaseRoutes(app);
-  await registerSuperAdminRoutes(app);
+  await registerConsoleRoutes(app);
   await registerLabelRoutes(app);
   await registerShippingLabelRoutes(app);
   await registerDocumentsRoutes(app);
 
   await registerRoutingRoutes(app);
-  await registerMonitoringRoutes(app);
 
   await setupTrackingWebsocket(app);
   startStuckShipmentDetector(app);

@@ -1,25 +1,26 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { addCsrfCookie, meBody } from "./support/console-session";
+import { ROOT_PERMISSIONS, addCsrfCookie, meBody } from "./support/console-session";
 
 const PILLAR_ROUTES = ["/platform", "/revenue", "/customer", "/trust", "/gtm"];
 
 async function mockBackend(page: Page) {
-  await page.route("**/api/v1/**", async (route) => {
+  await page.route("**/api/internal/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/platform/tenants") {
+    if (url.pathname === "/api/internal/tenants") {
       const search = url.searchParams.get("search") ?? "";
-      const tenants = [
-        { id: "tenant_northwind", name: "Northwind Couriers", slug: "northwind", status: "ACTIVE", plan: "PRO" },
-        { id: "tenant_harbour", name: "Harbour Freight", slug: "harbour", status: "TRIAL", plan: "STARTER" }
-      ].filter((tenant) => tenant.name.toLowerCase().includes(search.toLowerCase()));
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: tenants, meta: { page: 1, limit: 20, total: tenants.length, totalPages: 1 } }) });
+      const row = (id: string, name: string, slug: string, status: string, plan: string) => ({
+        id, name, slug, status, plan, effectivePlan: plan, customDomain: null, region: "uk_europe", createdAt: "2026-09-01T09:00:00.000Z", closedAt: null,
+        mrrContribution: { amount: "0.00", currency: "GBP" }, shipmentsThisMonth: 0, staffCount: 1, healthScore: null
+      });
+      const tenants = [row("tenant_northwind", "Northwind Couriers", "northwind", "ACTIVE", "PRO"), row("tenant_harbour", "Harbour Freight", "harbour", "TRIALING", "STARTER")].filter((tenant) =>
+        tenant.name.toLowerCase().includes(search.toLowerCase())
+      );
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: tenants, total: tenants.length, nextCursor: null }) });
     }
-    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
   });
-  await page.route("**/api/internal/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) }));
-  // SUPER_ADMIN maps to ROOT, which holds every console permission.
-  await page.route("**/api/internal/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody([])) }));
+  await page.route("**/api/internal/auth/me", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(ROOT_PERMISSIONS)) }));
 }
 
 test.beforeEach(async ({ context, page }) => {
@@ -83,12 +84,12 @@ test("ACC-MAN-4 deferred services show ComingSoonPage and are absent from the si
   await expect(page.locator("aside nav")).not.toContainText("Revenue Recognition");
 
   await page.keyboard.press("Control+k");
-  const palette = page.getByPlaceholder("Go to a console service...");
+  const palette = page.getByPlaceholder(/Go to a service/);
   await expect(palette).toBeVisible();
   await palette.fill("Recognition");
-  await expect(page.getByText("No service matches.")).toBeVisible();
+  await expect(page.getByText("Nothing matches.")).toBeVisible();
   await palette.fill("Knowledge");
-  await expect(page.getByText("No service matches.")).toBeVisible();
+  await expect(page.getByText("Nothing matches.")).toBeVisible();
 });
 
 test("ACC-MAN-4 planned services without a page show their target phase and keep a Preview sidebar entry", async ({ page }) => {

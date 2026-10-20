@@ -61,11 +61,6 @@ export async function createStaffUser(input: { email: string; name: string; pass
   return response.data;
 }
 
-export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser, "name" | "status">> & { reason?: string }) {
-  const response = await internalApi.patch<StaffUser>(`/iam/users/${id}`, input);
-  return response.data;
-}
-
 export type StaffLifecycleAction = "suspend" | "reactivate" | "offboard";
 
 /** Suspend / reactivate / offboard (dangerous: fresh MFA + reason). Suspend and offboard revoke every session. */

@@ -56,7 +56,10 @@ export const authController = {
     try {
       const result = await authService.login(payload, request.server.prisma, tenantId);
       reply.send(result);
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message === 'TENANT_CLOSED') {
+        return reply.status(403).send({ error: 'TENANT_CLOSED', message: 'This workspace has been closed.' });
+      }
       reply.status(401).send({ error: 'Invalid credentials' });
     }
   },

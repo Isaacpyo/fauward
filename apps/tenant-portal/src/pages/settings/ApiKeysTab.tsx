@@ -127,7 +127,7 @@ export function ApiKeysTab() {
   const keys = useMemo(() => query.data ?? [], [query.data]);
 
   return (
-    <PlanGate minimumPlan="pro" currentPlan={user?.plan}>
+    <PlanGate minimumPlan="pro" feature="apiAccess">
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <div>

@@ -20,7 +20,8 @@ export const STAFF_ROLE_DEFINITIONS = [
   }
 ] as const;
 
-const LEGACY_PLATFORM_ROLE_TO_STAFF_ROLE: Record<string, Role> = {
+/** Legacy PlatformRole → staff role, used only by the one-time backfill `0039a-legacy-role-assignments.ts` (D2). */
+export const LEGACY_PLATFORM_ROLE_TO_STAFF_ROLE: Record<string, Role> = {
   SUPER_ADMIN: Role.ROOT,
   PLATFORM_SUPPORT: Role.SUPPORT_LEAD,
   PLATFORM_OPERATIONS: Role.PLATFORM_ENGINEER,
@@ -62,9 +63,9 @@ const activeAssignmentsInclude = () => ({
 });
 
 /**
- * Resolves (or, the first time, creates) the StaffUser behind a PlatformUser. The legacy PlatformRole is mapped to a
- * staff role only when the StaffUser is created; an existing staff user's roles are never re-added (S5), so a revoked
- * legacy-mapped role stays revoked. Staff roles are seeded at boot and by `staff:roles:seed`, never per request.
+ * Resolves (or, the first time, creates) the StaffUser behind a PlatformUser. It only links or creates the row and never
+ * assigns roles (S5, D2): legacy PlatformRole → staff role mapping happened once, in the `0039a` backfill. A staff user
+ * without role assignments has no permissions until an IAM admin grants one.
  */
 export async function ensureStaffUserForPlatformUser(prisma: PrismaClient, user: PlatformUser) {
   const existing =
@@ -78,18 +79,15 @@ export async function ensureStaffUserForPlatformUser(prisma: PrismaClient, user:
     return existing;
   }
 
-  const roleId = LEGACY_PLATFORM_ROLE_TO_STAFF_ROLE[user.role] ?? Role.EXECUTIVE;
-  const legacyRoles: string[] = user.role === 'SUPER_ADMIN' ? [roleId, 'SUPER_ADMIN'] : [roleId];
   return prisma.staffUser.create({
     data: {
       platformUserId: user.id,
       email: user.email,
       name: user.name ?? user.email,
-      ssoProvider: user.role === 'SUPER_ADMIN' ? 'root' : 'totp',
+      ssoProvider: 'totp',
       status: user.status === 'ACTIVE' ? 'ACTIVE' : 'SUSPENDED',
       mfaEnabled: user.mfaEnabled,
-      lastLoginAt: user.lastLoginAt,
-      roleAssignments: { create: legacyRoles.map((legacyRoleId) => ({ roleId: legacyRoleId, grantedBy: 'legacy-platform-role' })) }
+      lastLoginAt: user.lastLoginAt
     },
     include: activeAssignmentsInclude()
   });
@@ -113,17 +111,29 @@ export async function staffPermissionContextForPlatformUser(prisma: PrismaClient
   };
 }
 
-export async function platformUserHasStaffPermission(prisma: PrismaClient, user: PlatformUser, permission: Permission) {
-  const context = await staffPermissionContextForPlatformUser(prisma, user);
-  return context.permissions.includes(permission);
-}
+export type JitGrantSummary = { id: string; permission: Permission; expiresAt: Date | null };
 
-/** Role permissions ∪ active JIT grants — the same rule as requireInternalPermission, for checks inside handlers. */
-export async function platformUserHasConsolePermission(prisma: PrismaClient, user: PlatformUser, permission: Permission) {
-  if (await platformUserHasStaffPermission(prisma, user, permission)) return true;
-  const grant = await prisma.jitAccessRequest.findFirst({
-    where: { requesterPlatformUserId: user.id, permission, status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { id: true }
+/**
+ * Effective console permissions: role permissions ∪ active, approved, unexpired JIT grants (D2). Computed once per
+ * request by `requireConsolePermission` and returned by `/auth/me`.
+ */
+export async function consolePermissionContext(prisma: PrismaClient, user: PlatformUser) {
+  const context = await staffPermissionContextForPlatformUser(prisma, user);
+  const grants = await prisma.jitAccessRequest.findMany({
+    where: { requesterPlatformUserId: user.id, status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { id: true, permission: true, expiresAt: true },
+    orderBy: { expiresAt: 'desc' }
   });
-  return Boolean(grant);
+  const jit = new Map<Permission, JitGrantSummary>();
+  for (const grant of grants) {
+    if (isPermission(grant.permission) && !jit.has(grant.permission)) jit.set(grant.permission, { id: grant.id, permission: grant.permission, expiresAt: grant.expiresAt });
+  }
+  const rolePermissions = new Set<Permission>(context.permissions);
+  return {
+    staff: context.staff,
+    roles: context.roles,
+    rolePermissions,
+    jit,
+    permissions: Array.from(new Set<Permission>([...rolePermissions, ...jit.keys()]))
+  };
 }

@@ -40,11 +40,15 @@ function buildApp(roleOverride = 'TENANT_ADMIN', userOverride?: any) {
         ? vi.fn().mockResolvedValue(null)
         : vi.fn().mockResolvedValue(userOverride ?? defaultUser),
       findMany: vi.fn().mockResolvedValue([defaultUser]),
+      count: vi.fn().mockResolvedValue(1),
       create: txMock.user.create,
       update: vi.fn().mockImplementation(async ({ data }: any) => ({ ...defaultUser, ...data }))
     },
     auditLog: txMock.auditLog,
     notificationLog: txMock.notificationLog,
+    // Entitlements (WP-1.4/1.2): no overrides, so the PRO plan's 15 staff seats apply.
+    tenantPlanOverride: { findFirst: vi.fn().mockResolvedValue(null) },
+    tenantFeatureOverride: { findMany: vi.fn().mockResolvedValue([]) },
     $transaction: vi.fn(async (cb: any) => {
       if (typeof cb === 'function') return cb(txMock);
       return Promise.all(cb);
@@ -56,7 +60,7 @@ function buildApp(roleOverride = 'TENANT_ADMIN', userOverride?: any) {
     req.user = { sub: 'user-1', role: roleOverride, tenantId: 'tenant-1' };
   });
   app.addHook('onRequest', (req, _reply, done) => {
-    (req as any).tenant = { id: 'tenant-1', slug: 'acme', plan: 'PRO' };
+    (req as any).tenant = { id: 'tenant-1', slug: 'acme', plan: 'PRO', maxStaff: 3, maxShipmentsPm: 300, maxOrganisations: 10, limitsOverriddenAt: tenantLimitsOverriddenAt };
     done();
   });
 
@@ -75,6 +79,8 @@ afterEach(async () => {
 // -----------------------------------------------------------------------------
 // GET /api/v1/users/me
 // -----------------------------------------------------------------------------
+
+let tenantLimitsOverriddenAt: Date | null = null;
 
 describe('GET /api/v1/users/me', () => {
   it('returns the profile of the authenticated user', async () => {
@@ -205,6 +211,30 @@ describe('GET /api/v1/users', () => {
 // -----------------------------------------------------------------------------
 
 describe('POST /api/v1/users/invite', () => {
+  it('ACC-TEN-8 once staff lower maxStaff below the current head-count, the next invite returns 403 LIMIT_REACHED', async () => {
+    tenantLimitsOverriddenAt = new Date();
+    const ctx = buildApp('TENANT_ADMIN');
+    apps.push(ctx);
+    ctx.prisma.user.findFirst = vi.fn().mockResolvedValue(null);
+    ctx.prisma.user.count = vi.fn().mockResolvedValue(4);
+    await registerUsersRoutes(ctx.app as never);
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/v1/users/invite', payload: { email: 'fifth@acme.com', role: 'TENANT_STAFF' } });
+    tenantLimitsOverriddenAt = null;
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'LIMIT_REACHED', limit: 3, current: 4 });
+    expect(ctx.prisma.user.create).not.toHaveBeenCalled();
+  });
+
+  it('without staff-set limits the effective plan decides (PRO: 15 seats), so 4 staff can invite a fifth', async () => {
+    const ctx = buildApp('TENANT_ADMIN');
+    apps.push(ctx);
+    ctx.prisma.user.findFirst = vi.fn().mockResolvedValue(null);
+    ctx.prisma.user.count = vi.fn().mockResolvedValue(4);
+    await registerUsersRoutes(ctx.app as never);
+    const res = await ctx.app.inject({ method: 'POST', url: '/api/v1/users/invite', payload: { email: 'fifth@acme.com', role: 'TENANT_STAFF' } });
+    expect(res.statusCode).toBe(201);
+  });
+
   it('creates user and logs staff_invite notification', async () => {
     const ctx = buildApp('TENANT_ADMIN');
     apps.push(ctx);

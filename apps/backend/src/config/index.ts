@@ -42,6 +42,9 @@ const envSchema = z.object({
   SENDGRID_TEMPLATE_USAGE_WARNING_80: z.string().optional(),
   SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED: z.string().optional(),
   SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_SUSPENDED: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_UNSUSPENDED: z.string().optional(),
+  SENDGRID_TEMPLATE_TENANT_CLOSED: z.string().optional(),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM: z.string().optional(),
@@ -74,7 +77,11 @@ const envSchema = z.object({
   FIELD_ENCRYPTION_ACTIVE_KEY_ID: z.string().optional(),
   CONSOLE_MFA_REQUIRED: z.string().default('true'),
   // Refunds at or above this amount (major units, payment currency) need revenue.invoices.refund.large or a second approver.
-  BILLING_LARGE_REFUND_THRESHOLD: z.string().regex(/^\d+(\.\d{1,2})?$/).default('500.00')
+  BILLING_LARGE_REFUND_THRESHOLD: z.string().regex(/^\d+(\.\d{1,2})?$/).default('500.00'),
+  // Currency Fauward reports platform revenue (MRR) in; other currencies convert through CurrencyRate.
+  PLATFORM_BASE_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('GBP'),
+  // Days a closed tenant's data is kept before it becomes eligible for purge (purgeAfter = closedAt + this).
+  TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90)
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -152,7 +159,10 @@ export const config = {
       trial_expiry: parsed.data.SENDGRID_TEMPLATE_TRIAL_EXPIRY,
       usage_warning_80: parsed.data.SENDGRID_TEMPLATE_USAGE_WARNING_80,
       usage_limit_reached: parsed.data.SENDGRID_TEMPLATE_USAGE_LIMIT_REACHED,
-      ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT
+      ops_new_shipment: parsed.data.SENDGRID_TEMPLATE_OPS_NEW_SHIPMENT,
+      tenant_suspended: parsed.data.SENDGRID_TEMPLATE_TENANT_SUSPENDED,
+      tenant_unsuspended: parsed.data.SENDGRID_TEMPLATE_TENANT_UNSUSPENDED,
+      tenant_closed: parsed.data.SENDGRID_TEMPLATE_TENANT_CLOSED
     } as Record<string, string | undefined>
   },
   twilio: {
@@ -198,7 +208,11 @@ export const config = {
     phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
   },
   billing: {
-    largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD
+    largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD,
+    baseCurrency: parsed.data.PLATFORM_BASE_CURRENCY
+  },
+  tenants: {
+    closeRetentionDays: parsed.data.TENANT_CLOSE_RETENTION_DAYS
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
   tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,

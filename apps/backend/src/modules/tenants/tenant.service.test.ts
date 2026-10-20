@@ -176,6 +176,12 @@ describe('brandingService.updateBranding', () => {
 // usageService
 // -----------------------------------------------------------------------------
 
+// Limits come from the effective plan (WP-1.2, C42): these tenants have no overrides and no staff-set limits.
+const noOverrides = {
+  tenantPlanOverride: { findFirst: vi.fn().mockResolvedValue(null) },
+  tenantFeatureOverride: { findMany: vi.fn().mockResolvedValue([]) }
+};
+
 const baseTenant = {
   id: 'tenant-1',
   plan: 'STARTER',
@@ -187,6 +193,7 @@ const baseTenant = {
 describe('usageService.checkAndIncrement', () => {
   it('allows shipment creation when under the limit', async () => {
     const prisma = {
+      ...noOverrides,
       usageRecord: {
         findUnique: vi.fn().mockResolvedValue({ tenantId: 'tenant-1', month: '2026-04', shipments: 150 }),
         upsert: vi.fn().mockResolvedValue({})
@@ -202,6 +209,7 @@ describe('usageService.checkAndIncrement', () => {
 
   it('blocks Starter tenant at the shipment limit', async () => {
     const prisma = {
+      ...noOverrides,
       usageRecord: {
         findUnique: vi.fn().mockResolvedValue({ tenantId: 'tenant-1', month: '2026-04', shipments: 300 }),
         upsert: vi.fn().mockResolvedValue({})
@@ -218,6 +226,7 @@ describe('usageService.checkAndIncrement', () => {
   it('allows Pro tenant to exceed limit with overage flag', async () => {
     const proTenant = { ...baseTenant, plan: 'PRO', maxShipmentsPm: 2000 };
     const prisma = {
+      ...noOverrides,
       usageRecord: {
         findUnique: vi.fn().mockResolvedValue({ tenantId: 'tenant-1', month: '2026-04', shipments: 2001 }),
         upsert: vi.fn().mockResolvedValue({})
@@ -233,6 +242,7 @@ describe('usageService.checkAndIncrement', () => {
   it('Enterprise tenant (-1 limit) is always allowed', async () => {
     const enterpriseTenant = { ...baseTenant, plan: 'ENTERPRISE', maxShipmentsPm: -1 };
     const prisma = {
+      ...noOverrides,
       usageRecord: {
         findUnique: vi.fn().mockResolvedValue({ tenantId: 'tenant-1', month: '2026-04', shipments: 999999 }),
         upsert: vi.fn().mockResolvedValue({})
@@ -248,6 +258,7 @@ describe('usageService.checkAndIncrement', () => {
 describe('usageService.getUsage', () => {
   it('returns correct usage percentage at 50%', async () => {
     const prisma = {
+      ...noOverrides,
       usageRecord: {
         findUnique: vi.fn().mockResolvedValue({ shipments: 150 })
       }
@@ -262,6 +273,7 @@ describe('usageService.getUsage', () => {
 
   it('returns 0 usage when no record exists yet', async () => {
     const prisma = {
+      ...noOverrides,
       usageRecord: { findUnique: vi.fn().mockResolvedValue(null) }
     } as any;
 

@@ -6,6 +6,8 @@ const readOnlyAllowedPrefixes = ['/api/v1/tracking/'];
 const suspendedTenantAllowedPaths = new Set([
   'GET /api/v1/tenant/me',
   'GET /api/v1/tenants/me',
+  'GET /api/v1/tenants/me/suspension',
+  'GET /api/v1/tenants/me/entitlements',
   'GET /api/v1/tenant/announcements',
   'GET /api/v1/tenants/me/announcements',
   'GET /api/v1/tenants/me/health',

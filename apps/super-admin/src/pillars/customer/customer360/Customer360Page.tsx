@@ -1,75 +1,100 @@
-import { HealthPill } from "@fauward/internal-ui";
-import { useQuery } from "@tanstack/react-query";
-import { lazy, Suspense, useMemo, type ComponentType } from "react";
+import { HealthPill, JITGate } from "@fauward/internal-ui";
+import type { Permission } from "@fauward/internal-rbac";
+import type { ComponentType } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { fetchCustomer360 } from "./api";
 
-const OverviewTab = lazy(() => import("./tabs/OverviewTab"));
-const UsageTab = lazy(() => import("./tabs/UsageTab"));
-const BillingTab = lazy(() => import("./tabs/BillingTab"));
-const TicketsTab = lazy(() => import("./tabs/TicketsTab"));
-const HealthTab = lazy(() => import("./tabs/HealthTab"));
-const AuditTab = lazy(() => import("./tabs/AuditTab"));
-const PeopleTab = lazy(() => import("./tabs/PeopleTab"));
-const ConfigTab = lazy(() => import("./tabs/ConfigTab"));
-const NotesTab = lazy(() => import("./tabs/NotesTab"));
-const DunningTab = lazy(() => import("./tabs/DunningTab"));
-const IncidentsTab = lazy(() => import("./tabs/IncidentsTab"));
-const PipelineTab = lazy(() => import("./tabs/PipelineTab"));
-const AttributionTab = lazy(() => import("./tabs/AttributionTab"));
+import { AccessDenied } from "@/components/service-kit/AccessDenied";
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { MoneyCell } from "@/components/service-kit/MoneyCell";
+import { SectionErrorBoundary } from "@/components/service-kit/SectionErrorBoundary";
+import { toConsoleApiError } from "@/lib/console-api-error";
+import { useC360 } from "./api";
+import { ActivityTab, AiTab, AuditTab, BillingTab, ConfigTab, HealthTab, NotesTab, OverviewTab, PeopleTab, TicketsTab, UsageTab } from "./Customer360Tabs";
 
-const tabs = ["overview", "usage", "billing", "tickets", "health", "dunning", "incidents", "pipeline", "attribution", "audit", "people", "config", "notes"] as const;
+type TabDef = { id: string; label: string; permission: Permission; Component: ComponentType<{ tenantId: string }> };
+
+// Each tab: its own query, its own error boundary and its own permission gate (catalogue → customer.360).
+const TABS: TabDef[] = [
+  { id: "overview", label: "Overview", permission: "customer.360.read", Component: OverviewTab },
+  { id: "activity", label: "Activity", permission: "customer.360.read", Component: ActivityTab },
+  { id: "usage", label: "Usage", permission: "customer.360.read", Component: UsageTab },
+  { id: "billing", label: "Billing", permission: "revenue.invoices.read", Component: BillingTab },
+  { id: "tickets", label: "Tickets", permission: "customer.support.read", Component: TicketsTab },
+  { id: "health", label: "Health", permission: "customer.success.read", Component: HealthTab },
+  { id: "ai", label: "AI", permission: "customer.360.read", Component: AiTab },
+  { id: "audit", label: "Audit", permission: "trust.audit.read", Component: AuditTab },
+  { id: "people", label: "People", permission: "customer.360.read", Component: PeopleTab },
+  { id: "config", label: "Config", permission: "platform.tenants.read", Component: ConfigTab },
+  { id: "notes", label: "Notes", permission: "customer.360.read", Component: NotesTab }
+];
+
+function healthStatus(score: number) {
+  return score >= 70 ? "green" : score >= 45 ? "amber" : "red";
+}
 
 export function Customer360Page() {
   const { tenantId = "" } = useParams();
-  const [params] = useSearchParams();
-  const activeTab = tabs.includes(params.get("tab") as never) ? params.get("tab") as (typeof tabs)[number] : "overview";
-  const query = useQuery({ queryKey: ["customer-360", tenantId], queryFn: () => fetchCustomer360(tenantId), enabled: Boolean(tenantId) });
-  const data = query.data;
-  const Tab = useMemo<ComponentType<{ data: NonNullable<typeof data> }>>(() => ({
-    overview: OverviewTab,
-    usage: UsageTab,
-    billing: BillingTab,
-    tickets: TicketsTab,
-    health: HealthTab,
-    dunning: DunningTab,
-    incidents: IncidentsTab,
-    pipeline: PipelineTab,
-    attribution: AttributionTab,
-    audit: AuditTab,
-    people: PeopleTab,
-    config: ConfigTab,
-    notes: NotesTab
-  })[activeTab], [activeTab]);
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.find((item) => item.id === params.get("tab")) ?? TABS[0];
+  const summary = useC360(tenantId, "summary");
 
-  if (query.isLoading) return <p className="text-sm text-[var(--color-text-muted)]">Loading Customer 360...</p>;
-  if (!data) return <p className="text-sm text-[var(--color-text-muted)]">Tenant not found.</p>;
+  if (summary.isError && toConsoleApiError(summary.error).status === 404) {
+    return (
+      <div className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+        <h1 className="text-lg font-semibold">Tenant not found</h1>
+        <Link to="/customer/360" className="mt-2 inline-block text-sm font-semibold text-[var(--fauward-navy)] hover:underline">
+          Pick another tenant
+        </Link>
+      </div>
+    );
+  }
 
+  const data = summary.data;
   return (
     <div className="space-y-4">
       <header className="sticky top-14 z-10 rounded-lg border border-[var(--color-border)] bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            {data.tenant.logoUrl ? <img src={data.tenant.logoUrl} alt="" className="h-10 w-10 rounded object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded bg-[var(--color-surface-50)] font-semibold">{data.tenant.name[0]}</span>}
+        {summary.isError ? <ConsoleApiErrorPanel error={summary.error} onRetry={() => void summary.refetch()} title="Unable to load the tenant header" /> : null}
+        {data ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-bold text-[var(--color-text-primary)]">{data.tenant.name}</h1>
-              <p className="text-xs text-[var(--color-text-muted)]">{data.tenant.plan} | {data.tenant.status} | MRR placeholder | Last login placeholder</p>
+              <h1 className="text-xl font-bold text-[var(--color-text-primary)]">{data.identity.name}</h1>
+              <p data-testid="c360-header" className="text-xs text-[var(--color-text-muted)]">
+                {data.plan.effectivePlan} · {data.status} · MRR <MoneyCell amount={data.mrr.amount} currency={data.mrr.currency} /> · last sign-in {data.lastLoginAt ? new Date(data.lastLoginAt).toLocaleString() : "never"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {data.health ? <HealthPill status={healthStatus(data.health.score)} label={`Health ${data.health.score}`} /> : <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">Not yet scored</span>}
+              <Link className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" to={`/platform/tenants/${data.identity.id}`}>
+                Tenant controls
+              </Link>
+              <Link className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" to={`/platform/impersonation?tenantId=${encodeURIComponent(data.identity.id)}`}>
+                Impersonate
+              </Link>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <HealthPill status={data.metrics.healthScore >= 70 ? "green" : data.metrics.healthScore >= 45 ? "amber" : "red"} label={`Health ${data.metrics.healthScore}`} />
-            <Link className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" to={`/platform/impersonation?tenant=${data.tenant.id}`}>Impersonate</Link>
-            <a className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" href={`https://dashboard.stripe.com/search?query=${data.tenant.id}`}>Stripe</a>
-            <a className="rounded-md border border-[var(--color-border)] px-3 py-2 text-xs font-semibold" href={`https://zendesk.com/search?query=${data.tenant.slug}`}>Zendesk</a>
-          </div>
-        </div>
-        <nav className="mt-4 flex gap-1 overflow-x-auto">
-          {tabs.map((tab) => <Link key={tab} to={`?tab=${tab}`} className={`rounded-md px-3 py-1.5 text-xs font-semibold capitalize ${activeTab === tab ? "bg-[var(--fauward-navy)] text-white" : "border border-[var(--color-border)] text-[var(--color-text-muted)]"}`}>{tab}</Link>)}
+        ) : summary.isLoading ? (
+          <p className="text-sm text-[var(--color-text-muted)]">Loading tenant…</p>
+        ) : null}
+        <nav className="mt-4 flex gap-1 overflow-x-auto" aria-label="Customer 360 sections">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === item.id}
+              onClick={() => setParams({ tab: item.id }, { replace: true })}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold ${tab.id === item.id ? "bg-[var(--fauward-navy)] text-white" : "border border-[var(--color-border)] text-[var(--color-text-muted)]"}`}
+            >
+              {item.label}
+            </button>
+          ))}
         </nav>
       </header>
-      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading tab...</p>}>
-        <Tab data={data} />
-      </Suspense>
+      <SectionErrorBoundary label={tab.label} resetKey={`${tenantId}:${tab.id}`}>
+        <JITGate permission={tab.permission} fallback={<AccessDenied permission={tab.permission} title={`You don't have access to the ${tab.label} tab`} />}>
+          <tab.Component tenantId={tenantId} />
+        </JITGate>
+      </SectionErrorBoundary>
     </div>
   );
 }

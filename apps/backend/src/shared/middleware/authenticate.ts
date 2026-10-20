@@ -27,7 +27,7 @@ function isReadMethod(method: string) {
 }
 
 function isSuspendedTenantAllowedPath(method: string, path: string) {
-  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/payments/billing-status'].includes(path)) {
+  if (method === 'GET' && ['/api/v1/tenant/me', '/api/v1/tenants/me', '/api/v1/tenants/me/suspension', '/api/v1/tenants/me/entitlements', '/api/v1/payments/billing-status'].includes(path)) {
     return true;
   }
   if (method === 'GET' && (path === '/api/v1/tenant/announcements' || path === '/api/v1/tenants/me/announcements' || path === '/api/v1/tenants/me/health')) {
@@ -201,7 +201,8 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     }
 
     const isMfaRoute = path.startsWith('/api/v1/auth/mfa/');
-    const requiresMfa = role === 'SUPER_ADMIN' || path.startsWith('/api/v1/admin/');
+    // Tenant-JWT SUPER_ADMIN still reaches control-tower/tracking until WP-2.11 moves them to console auth.
+    const requiresMfa = role === 'SUPER_ADMIN';
     if (!isMfaRoute && requiresMfa && request.user?.mfaVerified !== true) {
       return reply.status(403).send({ error: 'MFA required', code: 'MFA_REQUIRED' });
     }

@@ -76,7 +76,7 @@ If a tool already returned data, use that result.
 
 **Root cause:** `/v1/agent/handle-event` is a service-to-service endpoint authenticated by its own service token — it doesn't need tenant-from-hostname resolution. Tenant context comes from the validated request body.
 
-**Fix:** Added a bypass in `tenant.resolver.ts` alongside the existing `/api/v1/admin` bypass:
+**Fix:** Added a bypass in `tenant.resolver.ts` alongside the existing legacy admin-namespace bypass:
 
 ```typescript
 if (path === '/v1/agent/handle-event') {

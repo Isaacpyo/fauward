@@ -42,7 +42,6 @@ const WORKFLOW_PREFIXES = [
   "/support",
   "/announcements",
   "/success",
-  "/jit",
   "/compliance",
   "/safety",
   "/flags",
@@ -234,49 +233,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "CS playbook" }
         ],
         payload: (values) => ({ name: values.name, trigger: values.trigger, steps: [{ type: "notify_csm", status: "PENDING" }], reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/jit")) {
-    return [
-      {
-        id: "request",
-        label: "Request Elevated Access",
-        description: "Create a JIT request with reason and bounded duration.",
-        method: "post",
-        path: () => "/jit/requests",
-        fields: [
-          { name: "permission", label: "Permission", required: true },
-          { name: "durationMinutes", label: "Duration Minutes", type: "number", defaultValue: "60" },
-          { name: "hardwareKeyAssertion", label: "Hardware Key Assertion" },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ permission: values.permission, durationMinutes: numeric(values.durationMinutes), hardwareKeyAssertion: values.hardwareKeyAssertion || undefined, reason: values.reason })
-      },
-      {
-        id: "approve",
-        label: "Approve Request",
-        description: "Approve a pending JIT request. Self-approval is blocked by the backend.",
-        method: "post",
-        path: (values) => `/jit/requests/${encodeURIComponent(values.requestId)}/approve`,
-        fields: [
-          { name: "requestId", label: "Request ID", required: true },
-          { name: "notes", label: "Notes", type: "textarea" }
-        ],
-        payload: (values) => ({ notes: values.notes })
-      },
-      {
-        id: "revoke",
-        label: "Revoke Session",
-        description: "Revoke an active elevated session immediately.",
-        method: "post",
-        path: (values) => `/jit/sessions/${encodeURIComponent(values.requestId)}/revoke`,
-        fields: [
-          { name: "requestId", label: "Session ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "JIT revoked" }
-        ],
-        payload: (values) => ({ reason: values.reason })
       }
     ];
   }

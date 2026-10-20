@@ -2,18 +2,18 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { platformApi } from "@/lib/console-api";
+import { consoleApi } from "@/lib/console-api";
 import { ConsoleApiErrorPanel } from "./ConsoleApiErrorPanel";
 
 export type TenantOption = { id: string; name: string; slug: string; status: string; plan: string };
 
-/** Search-as-you-type over the tenant directory (Phase 0: /api/v1/platform/tenants; WP-1.1 moves it to /api/internal). */
+/** Search-as-you-type over the tenant directory (GET /api/internal/tenants?search=). */
 export function TenantPicker({ onSelect, label = "Find a tenant" }: { onSelect: (tenant: TenantOption) => void; label?: string }) {
   const [search, setSearch] = useState("");
   const debounced = useDebouncedValue(search.trim(), 250);
   const query = useQuery({
     queryKey: ["tenant-picker", debounced],
-    queryFn: async () => (await platformApi.get<{ data: TenantOption[] }>("/tenants", { params: { search: debounced, limit: 20 } })).data.data,
+    queryFn: async () => (await consoleApi.get<{ data: TenantOption[] }>("/tenants", { params: { search: debounced, limit: 20 } })).data.data,
     enabled: debounced.length > 0
   });
 

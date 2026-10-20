@@ -1,23 +1,48 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { InvoiceStatus, type LedgerKind, type Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { writeAudit } from '@fauward/internal-audit';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { config } from '../../config/index.js';
 import { platformAuditClient } from '../../services/platform-audit-client.js';
-import { platformUserHasConsolePermission } from '../../services/staff-iam.service.js';
 import { RefundError, decideRefund, requestRefund } from '../../services/refund.service.js';
+import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
+import {
+  BillingError,
+  PLATFORM,
+  createInvoiceBody,
+  createPlatformCreditNote,
+  createPlatformInvoice,
+  creditNoteBody,
+  invoiceBalance,
+  manualPaymentBody,
+  recordManualPayment,
+  voidPlatformInvoice,
+  type BillingActor
+} from '../../services/platform-billing.service.js';
 import { stripeService } from '../payments/stripe.service.js';
 
-const readPre = [authenticatePlatformSession, requireInternalPermission('revenue.invoices.read')];
-const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.write')];
+// revenue.billing (WP-1.5): the console bills tenants on the PLATFORM ledger. Reads default to PLATFORM; `kind=
+// TENANT_CUSTOMER` shows a tenant's own customer ledger read-only for support investigations (D4).
 
-function money(value: unknown) {
-  return new Prisma.Decimal(String(value ?? '0'));
-}
+const readPre = [authenticatePlatformSession, requireConsolePermission('revenue.invoices.read')];
+const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('revenue.invoices.write')];
+
+const kindParam = z.enum(['PLATFORM', 'TENANT_CUSTOMER']).default('PLATFORM');
+const dateParam = z.string().refine((value) => !Number.isNaN(new Date(value).getTime()), 'must be a date');
+const listQuery = z.object({
+  kind: kindParam,
+  tenantId: z.string().min(1).optional(),
+  status: z.string().min(1).optional(),
+  from: dateParam.optional(),
+  to: dateParam.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().min(1).optional()
+});
 
 function requestIdempotencyKey(request: FastifyRequest) {
   const header = request.headers['idempotency-key'] ?? request.headers['x-idempotency-key'];
@@ -35,6 +60,16 @@ function refundIdempotencyKey(request: FastifyRequest, paymentId: string, amount
 function sendRefundError(reply: FastifyReply, error: unknown) {
   if (error instanceof RefundError) return reply.status(error.status).send({ error: error.code, message: error.message, ...error.extra });
   throw error;
+}
+
+function sendBillingError(reply: FastifyReply, error: unknown) {
+  if (error instanceof BillingError) return reply.status(error.statusCode).send({ error: error.code, message: error.message, ...error.extra });
+  throw error;
+}
+
+function billingActor(request: FastifyRequest): BillingActor {
+  const user = request.platform!.user;
+  return { type: 'STAFF', platformUserId: user.id, email: user.email, label: user.name ?? user.email, ipAddress: request.ip, userAgent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null };
 }
 
 async function auditBilling(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
@@ -55,86 +90,180 @@ async function auditBilling(request: FastifyRequest, action: string, targetType:
   });
 }
 
+function parseList(request: FastifyRequest, reply: FastifyReply) {
+  const parsed = listQuery.safeParse(request.query);
+  if (!parsed.success) {
+    reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    return null;
+  }
+  return parsed.data;
+}
+
+function createdRange(query: { from?: string; to?: string }) {
+  return query.from || query.to ? { createdAt: { ...(query.from ? { gte: new Date(query.from) } : {}), ...(query.to ? { lte: new Date(query.to) } : {}) } } : {};
+}
+
+function page<T extends { id: string }>(rows: T[], limit: number) {
+  const hasMore = rows.length > limit;
+  const data = hasMore ? rows.slice(0, limit) : rows;
+  return { data, nextCursor: hasMore ? data[data.length - 1]?.id ?? null : null };
+}
+
+const tenantSelect = { select: { id: true, name: true, slug: true } } as const;
+
+type RefundActivityRow = { id: string; tenantId: string; amount: Prisma.Decimal | string | number; currency: string | null; status: string };
+
+/** One PlatformActivity row per refund mutation (architecture §12.4). */
+async function refundActivity(app: FastifyInstance, request: FastifyRequest, type: string, refund: RefundActivityRow, reason: string) {
+  await recordAndPublishActivity(
+    { prisma: app.prisma, redis: app.redis, log: app.log },
+    {
+      service: 'revenue.billing',
+      type,
+      tenantId: refund.tenantId,
+      ...staffActor(request),
+      subjectType: 'refund',
+      subjectId: refund.id,
+      summary: `Refund ${String(refund.amount)} ${refund.currency ?? ''} ${refund.status.toLowerCase().replaceAll('_', ' ')} — ${reason}`.replace(/\s+/g, ' '),
+      severity: type === 'refund.requested' ? 'ATTENTION' : 'INFO',
+      consoleLink: '/revenue/billing/refunds',
+      dedupeKey: `${type}:${refund.id}`
+    }
+  );
+}
+
 export async function registerInternalBillingRoutes(app: FastifyInstance) {
   app.get('/api/internal/billing/invoices', { preHandler: readPre }, async (request, reply) => {
-    const query = request.query as { tenantId?: string; status?: string; from?: string; to?: string; min?: string; max?: string; limit?: string };
-    const invoices = await app.prisma.invoice.findMany({
-      where: {
-        tenantId: query.tenantId,
-        status: query.status as never,
-        createdAt: query.from || query.to ? { gte: query.from ? new Date(query.from) : undefined, lte: query.to ? new Date(query.to) : undefined } : undefined,
-        total: query.min || query.max ? { gte: query.min ? money(query.min) : undefined, lte: query.max ? money(query.max) : undefined } : undefined
-      },
-      include: { tenant: { select: { id: true, name: true, slug: true } }, payments: true, creditNotes: true },
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(100, Number(query.limit ?? 50))
+    const query = parseList(request, reply);
+    if (!query) return;
+    const status = query.status && (Object.values(InvoiceStatus) as string[]).includes(query.status) ? (query.status as InvoiceStatus) : undefined;
+    if (query.status && !status) return reply.status(400).send({ error: 'INVALID_QUERY', message: `status must be one of ${Object.values(InvoiceStatus).join(', ')}` });
+    const where: Prisma.InvoiceWhereInput = { ...(query.tenantId ? { tenantId: query.tenantId } : {}), ...(status ? { status } : {}), ...createdRange(query) };
+    const rows = await app.prisma.invoice.findMany({
+      where: { ...where, kind: query.kind },
+      include: { tenant: tenantSelect, payments: { where: { kind: query.kind } }, creditNotes: { where: { kind: query.kind } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
     });
-    reply.send({ data: invoices });
+    const result = page(rows, query.limit);
+    return reply.send({
+      kind: query.kind,
+      readOnly: query.kind !== PLATFORM,
+      nextCursor: result.nextCursor,
+      data: result.data.map(({ payments, creditNotes, ...invoice }) => {
+        const balance = invoiceBalance({ total: invoice.total, payments, creditNotes });
+        return { ...invoice, paid: balance.paid.toFixed(2), credited: balance.credited.toFixed(2), outstanding: balance.outstanding.toFixed(2) };
+      })
+    });
   });
 
   app.get('/api/internal/billing/invoices/:id', { preHandler: readPre }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const invoice = await app.prisma.invoice.findUnique({ where: { id }, include: { tenant: true, payments: { include: { refunds: { include: { approvals: true } } } }, creditNotes: true } });
-    if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
-    reply.send(invoice);
+    const parsedKind = kindParam.safeParse((request.query as { kind?: string }).kind);
+    const kind: LedgerKind = parsedKind.success ? parsedKind.data : PLATFORM;
+    const invoice = await app.prisma.invoice.findUnique({
+      where: { id, kind },
+      include: {
+        tenant: tenantSelect,
+        payments: { where: { kind }, include: { refunds: { where: { kind }, include: { approvals: true } } }, orderBy: { createdAt: 'asc' } },
+        creditNotes: { where: { kind }, orderBy: { createdAt: 'asc' } }
+      }
+    });
+    if (!invoice) return reply.status(404).send({ error: 'INVOICE_NOT_FOUND', message: 'Invoice not found' });
+    const balance = invoiceBalance(invoice);
+    return reply.send({ ...invoice, readOnly: kind !== PLATFORM, paid: balance.paid.toFixed(2), credited: balance.credited.toFixed(2), outstanding: balance.outstanding.toFixed(2) });
   });
 
   app.post('/api/internal/billing/invoices', { preHandler: writePre }, async (request, reply) => {
-    const body = request.body as { tenantId?: string; dueDate?: string; currency?: string; lineItems?: Array<{ description: string; quantity: number; unitAmount: number }>; taxRate?: number; notes?: string; reason?: string };
-    if (!body.tenantId || !body.lineItems?.length) return reply.status(400).send({ error: 'tenantId and lineItems are required' });
-    const subtotal = body.lineItems.reduce((sum, item) => sum + item.quantity * item.unitAmount, 0);
-    const taxAmount = subtotal * ((body.taxRate ?? 0) / 100);
-    const invoice = await app.prisma.invoice.create({
-      data: {
-        tenantId: body.tenantId,
-        invoiceNumber: `MAN-${Date.now()}`,
-        lineItems: body.lineItems as unknown as Prisma.InputJsonValue,
-        subtotal: money(subtotal),
-        taxRate: money(body.taxRate ?? 0),
-        taxAmount: money(taxAmount),
-        total: money(subtotal + taxAmount),
-        currency: body.currency ?? 'GBP',
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        notes: body.notes,
-        createdBy: request.platform!.user.id
-      }
+    const parsed = createInvoiceBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: `${parsed.error.issues[0]?.path.join('.')}: ${parsed.error.issues[0]?.message}` });
+    try {
+      const invoice = await createPlatformInvoice(app, parsed.data, billingActor(request));
+      await auditBilling(request, 'invoice.create', 'invoice', invoice.id, null, invoice, parsed.data.reason ?? null);
+      return reply.status(201).send(invoice);
+    } catch (error) {
+      return sendBillingError(reply, error);
+    }
+  });
+
+  app.post('/api/internal/billing/invoices/:id/void', { preHandler: dangerous('revenue.invoices.write') }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const reason = (request.body as { reason: string }).reason.trim();
+    try {
+      const invoice = await voidPlatformInvoice(app, id, reason, billingActor(request));
+      await auditBilling(request, 'invoice.void', 'invoice', id, null, { status: invoice.status, voidedAt: invoice.voidedAt }, reason);
+      return reply.send(invoice);
+    } catch (error) {
+      return sendBillingError(reply, error);
+    }
+  });
+
+  app.get('/api/internal/billing/payments', { preHandler: readPre }, async (request, reply) => {
+    const query = parseList(request, reply);
+    if (!query) return;
+    const rows = await app.prisma.payment.findMany({
+      where: { kind: query.kind, ...(query.tenantId ? { tenantId: query.tenantId } : {}), ...createdRange(query) },
+      include: { tenant: tenantSelect, invoice: { select: { id: true, invoiceNumber: true, total: true, currency: true } }, refunds: { where: { kind: query.kind } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
     });
-    await auditBilling(request, 'invoice.create', 'invoice', invoice.id, null, invoice, body.reason);
-    reply.status(201).send(invoice);
+    return reply.send({ kind: query.kind, readOnly: query.kind !== PLATFORM, ...page(rows, query.limit) });
   });
 
-  app.get('/api/internal/billing/payments', { preHandler: readPre }, async (_request, reply) => {
-    const data = await app.prisma.payment.findMany({ include: { tenant: true, invoice: true, refunds: true }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ data });
+  app.post('/api/internal/billing/payments', { preHandler: dangerous('revenue.invoices.write') }, async (request, reply) => {
+    const parsed = manualPaymentBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: `${parsed.error.issues[0]?.path.join('.')}: ${parsed.error.issues[0]?.message}` });
+    try {
+      const result = await recordManualPayment(app, parsed.data, billingActor(request));
+      await auditBilling(request, 'payment.record_manual', 'payment', result.payment.id, null, result, parsed.data.reason.trim());
+      return reply.status(201).send(result);
+    } catch (error) {
+      return sendBillingError(reply, error);
+    }
   });
 
-  app.get('/api/internal/billing/credit-notes', { preHandler: readPre }, async (_request, reply) => {
-    const data = await app.prisma.creditNote.findMany({ include: { tenant: true, invoice: true }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ data });
-  });
-
-  app.post('/api/internal/billing/credit-notes', { preHandler: writePre }, async (request, reply) => {
-    const body = request.body as { tenantId?: string; invoiceId?: string; amount?: number; currency?: string; reason?: string };
-    if (!body.tenantId || !body.amount) return reply.status(400).send({ error: 'tenantId and amount are required' });
-    const credit = await app.prisma.creditNote.create({
-      data: { tenantId: body.tenantId, invoiceId: body.invoiceId, creditNumber: `CN-${Date.now()}`, amount: money(body.amount), currency: body.currency ?? 'GBP', reason: body.reason }
+  app.get('/api/internal/billing/credit-notes', { preHandler: readPre }, async (request, reply) => {
+    const query = parseList(request, reply);
+    if (!query) return;
+    const rows = await app.prisma.creditNote.findMany({
+      where: { kind: query.kind, ...(query.tenantId ? { tenantId: query.tenantId } : {}), ...createdRange(query) },
+      include: { tenant: tenantSelect, invoice: { select: { id: true, invoiceNumber: true } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
     });
-    await auditBilling(request, 'credit_note.create', 'credit_note', credit.id, null, credit, body.reason);
-    reply.status(201).send(credit);
+    return reply.send({ kind: query.kind, readOnly: query.kind !== PLATFORM, ...page(rows, query.limit) });
+  });
+
+  app.post('/api/internal/billing/credit-notes', { preHandler: dangerous('revenue.invoices.write') }, async (request, reply) => {
+    const parsed = creditNoteBody.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_BODY', message: `${parsed.error.issues[0]?.path.join('.')}: ${parsed.error.issues[0]?.message}` });
+    try {
+      const credit = await createPlatformCreditNote(app, { ...parsed.data, reason: parsed.data.reason.trim() }, billingActor(request));
+      await auditBilling(request, 'credit_note.create', 'credit_note', credit.id, null, credit, parsed.data.reason.trim());
+      return reply.status(201).send(credit);
+    } catch (error) {
+      return sendBillingError(reply, error);
+    }
   });
 
   app.get('/api/internal/billing/refunds', { preHandler: readPre }, async (request, reply) => {
-    const query = request.query as { status?: string };
+    const query = request.query as { status?: string; kind?: string };
+    const parsedKind = kindParam.safeParse(query.kind);
+    const kind: LedgerKind = parsedKind.success ? parsedKind.data : PLATFORM;
     const data = await app.prisma.refund.findMany({
-      where: { status: query.status || undefined },
-      include: { tenant: { select: { id: true, name: true, slug: true } }, payment: true, approvals: true },
+      where: { kind, status: query.status || undefined },
+      include: { tenant: tenantSelect, payment: true, approvals: true },
       orderBy: { createdAt: 'desc' },
       take: 100
     });
-    reply.send({ data });
+    return reply.send({ kind, readOnly: kind !== PLATFORM, data });
   });
 
   // WP-0.6: over-refund guard under a payment row lock, approval path for manual/large refunds, Stripe in minor units.
+  // The console refunds PLATFORM payments only (D4).
   app.post('/api/internal/billing/refunds', { preHandler: dangerous('revenue.invoices.refund') }, async (request, reply) => {
     const body = request.body as { paymentId?: string; amount?: unknown; reason: string; idempotencyKey?: string };
     if (!body.paymentId || body.amount === undefined || body.amount === null || body.amount === '') {
@@ -142,9 +271,10 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
     }
     const reason = body.reason.trim();
     const idempotencyKey = refundIdempotencyKey(request, body.paymentId, body.amount, reason, body.idempotencyKey);
-    const canRefundLarge = await platformUserHasConsolePermission(app.prisma, request.platform!.user, 'revenue.invoices.refund.large');
+    const canRefundLarge = await consoleUserHas(request, 'revenue.invoices.refund.large');
     try {
       const result = await requestRefund(app.prisma, { stripe: stripeService, largeRefundThreshold: config.billing.largeRefundThreshold }, {
+        kind: PLATFORM,
         paymentId: body.paymentId,
         amount: body.amount,
         reason,
@@ -154,6 +284,7 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
       });
       if (!result.created) return reply.send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval', replayed: true });
       await auditBilling(request, result.path === 'approval' ? 'refund.request' : 'invoice.refund', 'refund', result.refund.id, null, { refund: result.refund, path: result.path }, reason);
+      await refundActivity(app, request, result.path === 'approval' ? 'refund.requested' : 'refund.issued', result.refund, reason);
       return reply.status(201).send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval' });
     } catch (error) {
       if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {
@@ -168,8 +299,9 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
       const { id } = request.params as { id: string };
       const reason = (request.body as { reason: string }).reason.trim();
       try {
-        const refund = await decideRefund(app.prisma, { stripe: stripeService }, { refundId: id, decision: decision === 'approve' ? 'APPROVE' : 'REJECT', actorId: request.platform!.user.id, reason });
+        const refund = await decideRefund(app.prisma, { stripe: stripeService }, { kind: PLATFORM, refundId: id, decision: decision === 'approve' ? 'APPROVE' : 'REJECT', actorId: request.platform!.user.id, reason });
         await auditBilling(request, `refund.${decision}`, 'refund', id, null, { status: refund.status }, reason);
+        await refundActivity(app, request, decision === 'approve' ? 'refund.approved' : 'refund.rejected', refund, reason);
         return reply.send({ refund });
       } catch (error) {
         if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {

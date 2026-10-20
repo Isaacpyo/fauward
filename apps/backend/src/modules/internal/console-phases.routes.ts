@@ -1,15 +1,17 @@
-import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
+import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
-import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
+import { requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { vendorJson, vendorUnavailable } from '../../services/internal-vendors.service.js';
 import { activeLegalHoldForTenant } from '../../services/legal-hold.service.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { writeInternalAudit } from './internal-audit.js';
+import { dangerous } from '../../middleware/dangerous.js';
+import { liftSuspension, staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
+import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -49,11 +51,11 @@ const DSAR_STATES = [
 ];
 
 function readPre(permission: Permission) {
-  return [authenticatePlatformSession, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requireConsolePermission(permission)];
 }
 
 function writePre(permission: Permission) {
-  return [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission(permission)];
+  return [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission(permission)];
 }
 
 function bodyObject(request: FastifyRequest): Record<string, unknown> {
@@ -276,10 +278,6 @@ function optionalJson(value: unknown) {
   return value === undefined ? null : value;
 }
 
-function assertPermissionValue(value: unknown): Permission | null {
-  return typeof value === 'string' && (PERMISSIONS as readonly string[]).includes(value) ? (value as Permission) : null;
-}
-
 async function requireNoActiveLegalHold(app: FastifyInstance, tenantId: string | undefined | null, reply: FastifyReply) {
   const hold = await activeLegalHoldForTenant(app.prisma, tenantId);
   if (hold) {
@@ -328,7 +326,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerIncidents(app);
   registerSupport(app);
   registerSuccess(app);
-  registerJit(app);
   registerCompliance(app);
   registerSafety(app);
   registerFlags(app);
@@ -343,18 +340,19 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerGtm(app);
 }
 
+// Dunning is about Fauward billing tenants: every ledger query here is kind PLATFORM (D4).
 function registerDunning(app: FastifyInstance) {
   app.get('/api/internal/dunning/failed-payments', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
     const [payments, overdueInvoices] = await Promise.all([
       app.prisma.payment.findMany({
-        where: { status: 'FAILED' },
+        where: { kind: 'PLATFORM', status: 'FAILED' },
         include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, invoice: true },
         orderBy: { updatedAt: 'desc' },
         take: 100
       }),
       app.prisma.invoice.findMany({
-        where: { status: 'OVERDUE' },
-        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: true },
+        where: { kind: 'PLATFORM', status: 'OVERDUE' },
+        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: { where: { kind: 'PLATFORM' } } },
         orderBy: { dueDate: 'asc' },
         take: 100
       })
@@ -367,25 +365,31 @@ function registerDunning(app: FastifyInstance) {
     const [events, saveOffers, invoices] = await Promise.all([
       delegate(app, 'dunningEvent').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100 }),
       delegate(app, 'saveOffer').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      app.prisma.invoice.findMany({ where: { tenantId }, include: { payments: true }, orderBy: { createdAt: 'desc' }, take: 30 })
+      app.prisma.invoice.findMany({ where: { kind: 'PLATFORM', tenantId }, include: { payments: { where: { kind: 'PLATFORM' } } }, orderBy: { createdAt: 'desc' }, take: 30 })
     ]);
     reply.send({ events, saveOffers, invoices });
   });
 
   app.post('/api/internal/dunning/retry/:invoiceId', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
     const { invoiceId } = request.params as { invoiceId: string };
-    const invoice = await app.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { tenant: true } });
+    const invoice = await app.prisma.invoice.findUnique({ where: { kind: 'PLATFORM', id: invoiceId }, include: { tenant: true } });
     if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
 
     const attempt = await delegate(app, 'dunningEvent').count({ where: { invoiceId, eventType: 'manual_retry' } });
     if (attempt >= 3) {
-      const before = invoice.tenant;
-      const after = await app.prisma.tenant.update({ where: { id: invoice.tenantId }, data: { status: 'SUSPENDED' } });
+      // D3 caller 2: the retry limit suspends through the one suspension path.
+      const result = await suspendTenant(app, {
+        tenantId: invoice.tenantId,
+        source: 'DUNNING',
+        category: 'BILLING',
+        reason: `Dunning retry limit exceeded for invoice ${invoice.invoiceNumber ?? invoiceId}`,
+        actor: staffSuspensionActor(request),
+        sourceRef: invoiceId
+      });
       await delegate(app, 'dunningEvent').create({
         data: { tenantId: invoice.tenantId, invoiceId, eventType: 'suspended_after_max_retries', attempt: attempt + 1, actorId: actorId(request) }
       });
-      await writeInternalAudit(request, 'dunning.tenant.suspend_after_retry_limit', 'tenant', invoice.tenantId, before, after, 'Dunning retry limit exceeded');
-      return reply.send({ suspended: true, attempt: attempt + 1, tenant: after });
+      return reply.send({ suspended: true, attempt: attempt + 1, suspension: result.record, tenant: result.tenant });
     }
 
     const event = await createAndAudit(
@@ -730,98 +734,6 @@ function registerSuccess(app: FastifyInstance) {
   });
 }
 
-function registerJit(app: FastifyInstance) {
-  app.post('/api/internal/jit/requests', { preHandler: writePre('trust.jit.request') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const permission = assertPermissionValue(body.permission);
-    const reason = stringValue(body.reason);
-    const durationMinutes = Math.min(240, Math.max(1, numberValue(body.durationMinutes, 60)));
-    if (!permission || !reason) return reply.status(400).send({ error: 'permission and reason are required' });
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    const rootRequest = permission === 'trust.iam.root' || body.rootRequest === true;
-    // No literal fallback (S2): without DEV_HARDWARE_KEY_ASSERTION, ROOT JIT is unavailable.
-    const rootCheck = rootRequest ? checkRootHardwareAssertion(body.hardwareKeyAssertion) : null;
-    if (rootCheck && !rootCheck.ok) {
-      return reply.status(rootCheck.status).send({ error: rootCheck.error, message: rootCheck.status === 403 ? 'ROOT JIT requires hardware key verification' : rootCheck.message });
-    }
-    const hardwareKeyVerified = !rootRequest || Boolean(rootCheck?.ok);
-    const jit = await createAndAudit(
-      request,
-      delegate(app, 'jitAccessRequest'),
-      {
-        requesterPlatformUserId: actorId(request),
-        requesterStaffId: context.staff.id,
-        permission,
-        reason,
-        durationMinutes,
-        rootRequest,
-        hardwareKeyVerified,
-        status: 'PENDING'
-      },
-      'jit.request.create',
-      'jit_request',
-      reason
-    );
-    reply.status(201).send(jit);
-  });
-
-  app.get('/api/internal/jit/requests/pending', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' } }));
-  });
-
-  app.post('/api/internal/jit/requests/:id/approve', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const jitModel = delegate(app, 'jitAccessRequest');
-    const approvalModel = delegate(app, 'jitAccessApproval');
-    const before = await jitModel.findUnique({ where: { id } }) as { requesterPlatformUserId?: string; requesterStaffId?: string | null; rootRequest?: boolean; durationMinutes?: number; hardwareKeyVerified?: boolean } | null;
-    if (!before) return reply.status(404).send({ error: 'JIT request not found' });
-    // Compare both identities: the request stores the requester's PlatformUser id and StaffUser id (S3).
-    if (before.requesterPlatformUserId === actorId(request)) return reply.status(403).send({ error: 'Self approval is not allowed' });
-    if (before.requesterStaffId) {
-      const approverStaff = await app.prisma.staffUser.findUnique({ where: { platformUserId: actorId(request) }, select: { id: true } });
-      if (approverStaff?.id === before.requesterStaffId) return reply.status(403).send({ error: 'Self approval is not allowed' });
-    }
-    if (before.rootRequest && !before.hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
-    await approvalModel.upsert({
-      where: { requestId_approverPlatformUserId: { requestId: id, approverPlatformUserId: actorId(request) } },
-      create: { requestId: id, approverPlatformUserId: actorId(request), decision: 'APPROVED', notes: stringValue(body.notes) || null },
-      update: { decision: 'APPROVED', notes: stringValue(body.notes) || null }
-    });
-    const approvals = await approvalModel.count({ where: { requestId: id, decision: 'APPROVED' } });
-    const required = before.rootRequest ? 2 : 1;
-    const after = approvals >= required
-      ? await jitModel.update({ where: { id }, data: { status: 'APPROVED', expiresAt: new Date(Date.now() + (before.durationMinutes ?? 60) * 60 * 1000) } })
-      : await jitModel.findUnique({ where: { id } });
-    await writeInternalAudit(request, 'jit.request.approve', 'jit_request', id, before, after, stringValue(body.notes, 'JIT approval'));
-    reply.send({ approvals, required, request: after });
-  });
-
-  app.post('/api/internal/jit/requests/:id/deny', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { status: 'DENIED', deniedReason: stringValue(body.reason, 'Denied') }, 'jit.request.deny', 'jit_request', stringValue(body.reason, 'Denied'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/jit/sessions/active', { preHandler: readPre('trust.jit.approve') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), { where: { status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { expiresAt: 'asc' } }));
-  });
-
-  app.get('/api/internal/jit/sessions/my', { preHandler: readPre('trust.jit.request') }, async (request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'jitAccessRequest'), {
-      where: { requesterPlatformUserId: actorId(request), status: 'APPROVED', revokedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { expiresAt: 'asc' }
-    }));
-  });
-
-  app.post('/api/internal/jit/sessions/:id/revoke', { preHandler: writePre('trust.jit.approve') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const after = await updateAndAudit(request, delegate(app, 'jitAccessRequest'), id, { revokedAt: new Date(), status: 'REVOKED' }, 'jit.session.revoke', 'jit_request', stringValue(bodyObject(request).reason, 'JIT revoked'));
-    reply.send(after);
-  });
-}
-
 function registerCompliance(app: FastifyInstance) {
   app.post('/api/internal/compliance/dsar', { preHandler: writePre('trust.compliance.dsar.write') }, async (request, reply) => {
     const body = bodyObject(request);
@@ -915,24 +827,41 @@ function registerSafety(app: FastifyInstance) {
     if (!signal) return reply.status(404).send({ error: 'Fraud signal not found' });
     const updated = await updateAndAudit(request, model, id, { status: 'CLOSED', reviewedBy: actorId(request), decision }, 'safety.fraud.decision', 'fraud_signal', stringValue(body.reason, decision));
     if (decision === 'suspend' && signal.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: signal.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({ where: { id: signal.tenantId }, data: { status: 'SUSPENDED' } });
-      await delegate(app, 'suspensionRecord').create({ data: { tenantId: signal.tenantId, sourceSignalId: id, suspendedBy: actorId(request), reason: stringValue(body.reason, 'Trust and safety suspension') } });
-      await app.prisma.notificationLog.create({
-        data: {
-          tenantId: signal.tenantId,
-          channel: 'EMAIL',
-          event: 'trust_safety_tenant_suspended',
-          status: 'QUEUED'
-        }
+      // D3 caller 4: FRAUD cause linked to the signal (sourceRef); the service writes the record, status, audit,
+      // activity and notifies tenant admins.
+      await suspendTenant(app, {
+        tenantId: signal.tenantId,
+        source: 'FRAUD',
+        category: 'FRAUD',
+        reason: stringValue(body.reason, 'Trust and safety suspension'),
+        publicReason: stringValue(body.publicReason) || null,
+        actor: staffSuspensionActor(request),
+        sourceRef: id,
+        sourceSignalId: id
       });
-      await writeInternalAudit(request, 'safety.tenant.suspend', 'tenant', signal.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Trust and safety suspension'));
     }
     reply.send(updated);
   });
 
-  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'suspensionRecord'), { orderBy: { createdAt: 'desc' }, take: 100 }));
+  // Every SuspensionRecord from every source (D3), with filters and the tenant for each row.
+  app.get('/api/internal/safety/suspensions', { preHandler: readPre('trust.safety.read') }, async (request, reply) => {
+    const query = request.query as { source?: string; status?: string; tenantId?: string; category?: string; cursor?: string; limit?: string };
+    const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50));
+    const rows = await app.prisma.suspensionRecord.findMany({
+      where: {
+        ...(query.source ? { source: query.source.toUpperCase() } : {}),
+        ...(query.status ? { status: query.status.toUpperCase() } : {}),
+        ...(query.category ? { category: query.category.toUpperCase() } : {}),
+        ...(query.tenantId ? { tenantId: query.tenantId } : {})
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {})
+    });
+    const page = rows.slice(0, limit);
+    const tenants = await app.prisma.tenant.findMany({ where: { id: { in: [...new Set(page.map((row) => row.tenantId))] } }, select: { id: true, name: true, slug: true, status: true } });
+    const byId = new Map(tenants.map((tenant) => [tenant.id, tenant]));
+    reply.send({ data: page.map((row) => ({ ...row, tenant: byId.get(row.tenantId) ?? null })), nextCursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null });
   });
 
   app.get('/api/internal/safety/appeals', { preHandler: readPre('trust.safety.read') }, async (_request, reply) => {
@@ -954,7 +883,7 @@ function registerSafety(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Invalid appeal status' });
     }
     const model = delegate(app, 'tenantAppeal');
-    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string } | null;
+    const before = await model.findUnique({ where: { id } }) as { tenantId?: string; status?: string; suspensionId?: string | null } | null;
     if (!before) return reply.status(404).send({ error: 'Appeal not found' });
 
     const after = await model.update({
@@ -967,16 +896,11 @@ function registerSafety(app: FastifyInstance) {
       }
     });
     if (status === 'APPROVED' && before.tenantId) {
-      const tenantBefore = await app.prisma.tenant.findUnique({ where: { id: before.tenantId } });
-      const tenantAfter = await app.prisma.tenant.update({
-        where: { id: before.tenantId },
-        data: { status: 'ACTIVE', suspensionReason: null, suspendedAt: null }
-      });
-      await delegate(app, 'suspensionRecord').update({
-        where: { id: stringValue(body.suspensionId, '') },
-        data: { status: 'LIFTED', liftedBy: actorId(request), liftedAt: new Date() }
-      }).catch(() => null);
-      await writeInternalAudit(request, 'safety.appeal.approve_unsuspend', 'tenant', before.tenantId, tenantBefore, tenantAfter, stringValue(body.reason, 'Appeal approved'));
+      // The suspension comes from the appeal (set server-side at creation), never from the client (D3).
+      const active = await app.prisma.suspensionRecord.findFirst({ where: { tenantId: before.tenantId, status: 'ACTIVE', ...(before.suspensionId ? { id: before.suspensionId } : {}) }, orderBy: { createdAt: 'desc' } });
+      if (active) {
+        await liftSuspension(app, { tenantId: before.tenantId, suspensionId: active.id, via: 'APPEAL', reason: stringValue(body.reason, 'Appeal approved'), actor: staffSuspensionActor(request) });
+      }
     }
     await writeInternalAudit(request, 'safety.appeal.review', 'tenant_appeal', id, before, after, stringValue(body.reason, 'Appeal reviewed'));
     reply.send(after);
@@ -1001,18 +925,43 @@ function registerFlags(app: FastifyInstance) {
 
   app.get('/api/internal/flags/:key', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {
     const { key } = request.params as { key: string };
-    const audits = await delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ key, audits, vendor: vendorUnavailable('launchdarkly') });
+    const [overrides, audits] = await Promise.all([
+      app.prisma.tenantFeatureOverride.findMany({ where: { featureKey: key }, include: { tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }),
+      delegate(app, 'featureFlagOverrideAudit').findMany({ where: { flagKey: key }, orderBy: { createdAt: 'desc' }, take: 100 })
+    ]);
+    reply.send({ key, overrides, audits, vendor: vendorUnavailable('launchdarkly') });
   });
 
-  // S9: the old handler called LaunchDarkly `turnFlagOn`, switching the flag on for every tenant. Until native
-  // per-tenant overrides land (WP-1.4) this route makes no vendor call and reports that it is unavailable.
-  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (_request, reply) => {
-    reply.status(501).send({
-      error: 'FLAG_OVERRIDE_UNAVAILABLE',
-      message: 'Per-tenant flag overrides are not available yet; they arrive with native overrides in WP-1.4.',
-      notWired: 'WP-1.4'
-    });
+  // S9 / WP-1.4: a flag override is a native per-tenant TenantFeatureOverride. LaunchDarkly is never called here
+  // (the old handler's `turnFlagOn` switched the flag on for every tenant); LD mirroring arrives with WP-4.1.
+  app.post('/api/internal/flags/:key/overrides', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { key } = request.params as { key: string };
+    const body = bodyObject(request);
+    const tenantId = stringValue(body.tenantId);
+    if (!tenantId) return reply.status(400).send({ error: 'TENANT_REQUIRED', message: 'tenantId is required' });
+    if (typeof body.enabled !== 'boolean') return reply.status(400).send({ error: 'ENABLED_REQUIRED', message: 'enabled must be true or false' });
+    const expiresAt = body.expiresAt ? new Date(stringValue(body.expiresAt)) : null;
+    if (expiresAt && Number.isNaN(expiresAt.getTime())) return reply.status(400).send({ error: 'INVALID_EXPIRY', message: 'expiresAt must be an ISO date' });
+    try {
+      const override = await createFeatureOverride(app, { tenantId, featureKey: key, enabled: body.enabled, reason: stringValue(body.reason).trim(), expiresAt, actor: consoleOverrideActor(request) });
+      return reply.status(201).send({ override, mirror: { vendor: 'launchdarkly', status: 'NOT_MIRRORED', fixedBy: 'WP-4.1' } });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
+  });
+
+  app.delete('/api/internal/flags/:key/overrides/:id', { preHandler: dangerous('platform.flags.write') }, async (request, reply) => {
+    const { key, id } = request.params as { key: string; id: string };
+    const existing = await app.prisma.tenantFeatureOverride.findFirst({ where: { id, featureKey: key }, select: { tenantId: true } });
+    if (!existing) return reply.status(404).send({ error: 'OVERRIDE_NOT_FOUND', message: 'Feature override not found' });
+    try {
+      const override = await revokeFeatureOverride(app, { tenantId: existing.tenantId, overrideId: id, featureKey: key, reason: stringValue(bodyObject(request).reason).trim(), actor: consoleOverrideActor(request) });
+      return reply.send({ override });
+    } catch (error) {
+      if (error instanceof FeatureOverrideError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
+      throw error;
+    }
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {

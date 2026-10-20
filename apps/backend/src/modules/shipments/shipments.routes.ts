@@ -510,11 +510,11 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
 
         if (paymentGatewayRef) {
           const existing = await tx.payment.findFirst({
-            where: { tenantId, gatewayRef: paymentGatewayRef, shipmentId: null }
+            where: { kind: 'TENANT_CUSTOMER', tenantId, gatewayRef: paymentGatewayRef, shipmentId: null }
           });
           if (existing) {
             const linked = await tx.payment.update({
-              where: { id: existing.id },
+              where: { kind: 'TENANT_CUSTOMER', id: existing.id },
               data: { shipmentId: created.id }
             });
             paymentAction = 'PAYMENT_LINKED';
@@ -525,11 +525,11 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
         if (!paymentRowId && idempotency.type === 'new') {
           const idempotencyKeyForPayment = `shipment-create:${tenantId}:${idempotency.key}`;
           const existingByKey = await tx.payment.findFirst({
-            where: { tenantId, idempotencyKey: idempotencyKeyForPayment, shipmentId: null }
+            where: { kind: 'TENANT_CUSTOMER', tenantId, idempotencyKey: idempotencyKeyForPayment, shipmentId: null }
           });
           if (existingByKey) {
             const linked = await tx.payment.update({
-              where: { id: existingByKey.id },
+              where: { kind: 'TENANT_CUSTOMER', id: existingByKey.id },
               data: { shipmentId: created.id }
             });
             paymentAction = 'PAYMENT_LINKED';
@@ -543,6 +543,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           try {
             const createdPayment = await tx.payment.create({
               data: {
+                kind: 'TENANT_CUSTOMER',
                 tenantId,
                 shipmentId: created.id,
                 customerId: payload.customerId,
@@ -558,7 +559,7 @@ export async function registerShipmentRoutes(app: FastifyInstance) {
           } catch (err) {
             if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
               const reFound = await tx.payment.findFirst({
-                where: { tenantId, shipmentId: created.id }
+                where: { kind: 'TENANT_CUSTOMER', tenantId, shipmentId: created.id }
               });
               if (reFound) {
                 paymentAction = 'PAYMENT_LINKED';

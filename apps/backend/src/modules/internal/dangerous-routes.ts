@@ -9,7 +9,29 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/iam/users/:id/mfa/reset' },
   { method: 'POST', url: '/api/internal/iam/role-assignments' },
   { method: 'DELETE', url: '/api/internal/iam/role-assignments/:id' },
-  // revenue.billing (WP-0.6)
+  // platform.tenants (WP-1.1 move; WP-1.2 adds close and feature overrides)
+  { method: 'POST', url: '/api/internal/tenants/:id/suspend' },
+  { method: 'POST', url: '/api/internal/tenants/:id/unsuspend' },
+  { method: 'POST', url: '/api/internal/tenants/:id/plan-overrides' },
+  { method: 'DELETE', url: '/api/internal/tenants/:id/plan-overrides/:overrideId' },
+  { method: 'POST', url: '/api/internal/tenants/region-requests/:id/decision' },
+  { method: 'POST', url: '/api/internal/tenants/:id/feature-overrides' },
+  { method: 'PATCH', url: '/api/internal/tenants/:id/limits' },
+  { method: 'POST', url: '/api/internal/tenants/:id/close' },
+  { method: 'DELETE', url: '/api/internal/tenants/:id/feature-overrides/:overrideId' },
+  // platform.flags (WP-1.4 native overrides)
+  { method: 'POST', url: '/api/internal/flags/:key/overrides' },
+  { method: 'DELETE', url: '/api/internal/flags/:key/overrides/:id' },
+  // platform.impersonation (WP-1.1 move)
+  { method: 'POST', url: '/api/internal/impersonation/sessions' },
+  // trust.jit (WP-1.7)
+  { method: 'POST', url: '/api/internal/jit/requests/:id/approve' },
+  // trust.audit (WP-1.9)
+  { method: 'POST', url: '/api/internal/audit/export' },
+  // revenue.billing (WP-0.6, WP-1.5)
+  { method: 'POST', url: '/api/internal/billing/invoices/:id/void' },
+  { method: 'POST', url: '/api/internal/billing/payments' },
+  { method: 'POST', url: '/api/internal/billing/credit-notes' },
   { method: 'POST', url: '/api/internal/billing/refunds' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' }

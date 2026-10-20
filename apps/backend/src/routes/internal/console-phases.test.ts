@@ -21,8 +21,8 @@ vi.mock('../../queues/queues.js', () => ({
 vi.mock('../../middleware/authenticate-platform-session.js', () => ({
   authenticatePlatformSession: async (request: { platform?: unknown }) => {
     request.platform = {
-      user: { id: 'staff_001', email: 'ops@fauward.com', role: 'SUPER_ADMIN' },
-      session: { id: 'platform_session_001' }
+      user: { id: 'staff_001', email: 'ops@fauward.com', name: 'Ops', role: 'SUPER_ADMIN', mfaEnabled: true },
+      session: { id: 'platform_session_001', mfaVerifiedAt: new Date() }
     };
   }
 }));
@@ -31,12 +31,35 @@ vi.mock('../../middleware/require-platform-csrf.js', () => ({
   requirePlatformCsrf: async () => undefined
 }));
 
-vi.mock('../../middleware/require-internal-permission.js', () => ({
-  requireInternalPermission: (permission: Permission) => async (_request: unknown, reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => {
-    if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
-    return undefined;
-  }
+vi.mock('../../middleware/require-console-permission.js', () => {
+  type ReplyLike = { status: (code: number) => { send: (body: unknown) => unknown } };
+  return {
+    requireConsolePermission: (permission: Permission) => async (_request: unknown, reply: ReplyLike) => {
+      if (!currentPermissions.includes(permission)) return reply.status(403).send({ error: 'Forbidden', permission });
+      return undefined;
+    },
+    requireAnyConsolePermission: (permissions: Permission[]) => async (_request: unknown, reply: ReplyLike) => {
+      if (!permissions.some((permission) => currentPermissions.includes(permission))) return reply.status(403).send({ error: 'Forbidden', permission: permissions[0] });
+      return undefined;
+    },
+    consoleUserHas: async (_request: unknown, permission: Permission) => currentPermissions.includes(permission),
+    loadConsoleContext: async () => ({ permissions: currentPermissions, jit: new Map() })
+  };
+});
+
+const suspendTenantMock = vi.hoisted(() => vi.fn(async (_app: unknown, input: { tenantId: string }) => ({ record: { id: 'susp_001', tenantId: input.tenantId }, tenant: { id: input.tenantId, status: 'SUSPENDED' }, becameSuspended: true, duplicate: false })));
+const liftSuspensionMock = vi.hoisted(() => vi.fn(async () => ({ lifted: [], remaining: [], tenant: { status: 'ACTIVE' }, becameActive: true })));
+vi.mock('../../services/tenant-suspension.service.js', () => ({
+  suspendTenant: suspendTenantMock,
+  liftSuspension: liftSuspensionMock,
+  staffSuspensionActor: () => ({ type: 'STAFF', platformUserId: 'staff_001', email: 'staff@fauward.com', label: 'Staff' })
 }));
+
+const createFeatureOverrideMock = vi.hoisted(() => vi.fn(async (_app: unknown, input: Record<string, unknown>) => ({ id: 'tfo_001', ...input })));
+vi.mock('../../services/feature-override.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/feature-override.service.js')>();
+  return { ...actual, createFeatureOverride: createFeatureOverrideMock };
+});
 
 vi.mock('../../services/staff-iam.service.js', () => ({
   staffPermissionContextForPlatformUser: async () => ({
@@ -122,12 +145,12 @@ describe('internal console phase routes', () => {
     vi.clearAllMocks();
   });
 
-  it('suspends a tenant after dunning retry attempts exceed the limit and writes audit', async () => {
+  it('ACC-SUS-1 (caller 2) the dunning retry limit suspends through the suspension service with DUNNING/BILLING and the invoice', async () => {
     currentPermissions = ['revenue.dunning.write'];
     const tenant = { id: 'tenant_001', name: 'Acme', status: 'ACTIVE' };
     const prisma = {
-      invoice: { findUnique: vi.fn(async () => ({ id: 'inv_001', tenantId: tenant.id, tenant })) },
-      tenant: { update: vi.fn(async () => ({ ...tenant, status: 'SUSPENDED' })) },
+      invoice: { findUnique: vi.fn(async () => ({ id: 'inv_001', invoiceNumber: 'INV-001', tenantId: tenant.id, tenant })) },
+      tenant: { update: vi.fn() },
       dunningEvent: delegate({ count: vi.fn(async () => 3) })
     };
     const app = await buildApp(prisma);
@@ -135,51 +158,45 @@ describe('internal console phase routes', () => {
     const response = await app.inject({ method: 'POST', url: '/api/internal/dunning/retry/inv_001', payload: { reason: 'Retry ceiling' } });
 
     expect(response.statusCode).toBe(200);
-    expect(prisma.tenant.update).toHaveBeenCalledWith({ where: { id: tenant.id }, data: { status: 'SUSPENDED' } });
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'dunning.tenant.suspend_after_retry_limit', target_id: tenant.id }));
+    expect(response.json()).toMatchObject({ suspended: true, suspension: { id: 'susp_001' } });
+    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: tenant.id, source: 'DUNNING', category: 'BILLING', sourceRef: 'inv_001' }));
+    expect(prisma.tenant.update).not.toHaveBeenCalled();
   });
 
-  it('rejects self approval for JIT requests', async () => {
-    currentPermissions = ['trust.jit.approve'];
+  it('ACC-SUS-4 a fraud SUSPEND decision creates a FRAUD suspension whose sourceRef is the signal id', async () => {
+    currentPermissions = ['trust.safety.suspend'];
+    const prisma = { fraudSignal: delegate({ findUnique: vi.fn(async () => ({ id: 'sig_042', tenantId: 'tenant_009' })) }), notificationLog: { create: vi.fn() } };
+    const app = await buildApp(prisma);
+    const response = await app.inject({ method: 'POST', url: '/api/internal/safety/fraud/sig_042/decision', payload: { decision: 'suspend', reason: 'Radar confirmed card testing' } });
+    expect(response.statusCode).toBe(200);
+    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', source: 'FRAUD', category: 'FRAUD', sourceRef: 'sig_042', sourceSignalId: 'sig_042', reason: 'Radar confirmed card testing' }));
+    expect(prisma.notificationLog.create).not.toHaveBeenCalled();
+  });
+
+  it('approving an appeal lifts the suspension linked server-side (via APPEAL), ignoring any suspensionId in the body', async () => {
+    currentPermissions = ['trust.safety.suspend'];
     const prisma = {
-      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_001', requesterPlatformUserId: 'staff_001', rootRequest: false, durationMinutes: 60 })) }),
-      jitAccessApproval: delegate()
+      tenantAppeal: delegate({ findUnique: vi.fn(async () => ({ id: 'appeal_1', tenantId: 'tenant_009', status: 'PENDING', suspensionId: 'susp_linked' })) }),
+      suspensionRecord: { findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => (where.id === 'susp_linked' ? { id: 'susp_linked', tenantId: 'tenant_009', status: 'ACTIVE' } : null)) }
     };
     const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_001/approve', payload: { notes: 'self' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Self approval is not allowed' });
+    const response = await app.inject({ method: 'PATCH', url: '/api/internal/safety/appeals/appeal_1', payload: { status: 'APPROVED', suspensionId: 'susp_from_client', reason: 'Customer provided invoices' } });
+    expect(response.statusCode).toBe(200);
+    expect(liftSuspensionMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', suspensionId: 'susp_linked', via: 'APPEAL' }));
   });
 
-  it('ACC-IAM-2 rejects JIT approval when the approver is the requesting StaffUser', async () => {
-    currentPermissions = ['trust.jit.approve'];
-    const approvalModel = delegate();
-    const prisma = {
-      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_002', requesterPlatformUserId: 'other_platform_user', requesterStaffId: 'staff_row_001', rootRequest: false, durationMinutes: 60 })) }),
-      jitAccessApproval: approvalModel,
-      staffUser: { findUnique: vi.fn(async () => ({ id: 'staff_row_001' })) }
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_002/approve', payload: { notes: 'self' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(approvalModel.upsert).not.toHaveBeenCalled();
-  });
-
-  it('ACC-SEC-2 the flag override route makes no LaunchDarkly call and returns 501', async () => {
+  it('ACC-SEC-2 ACC-FLG-1 the flag override route never calls LaunchDarkly and writes a per-tenant TenantFeatureOverride', async () => {
     currentPermissions = ['platform.flags.write'];
     process.env.LAUNCHDARKLY_API_TOKEN = 'ld-test-token';
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const audit = delegate();
     const app = await buildApp({ featureFlagOverrideAudit: audit });
 
-    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-checkout/overrides', payload: { tenantId: 'tenant_001', value: true, reason: 'Pilot for one tenant' } });
+    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', enabled: true, reason: 'Pilot for one tenant' } });
 
-    expect(response.statusCode).toBe(501);
-    expect(response.json()).toMatchObject({ error: 'FLAG_OVERRIDE_UNAVAILABLE', notWired: 'WP-1.4' });
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({ override: { id: 'tfo_001' }, mirror: { status: 'NOT_MIRRORED' } });
+    expect(createFeatureOverrideMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_001', featureKey: 'apiAccess', enabled: true, reason: 'Pilot for one tenant' }));
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(audit.create).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
@@ -405,11 +422,13 @@ describe('internal console phase routes', () => {
     }));
   });
 
-  it('ACC-SEC-2 the flag override route returns 501 even when LaunchDarkly is unconfigured', async () => {
+  it('the flag override route is dangerous: no reason → 400, no enabled flag → 400', async () => {
     currentPermissions = ['platform.flags.write'];
     const app = await buildApp({});
-    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-flow/overrides', payload: { tenantId: 'tenant_001', value: true } });
-    expect(response.statusCode).toBe(501);
+    const noReason = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', enabled: true } });
+    expect(noReason.json()).toMatchObject({ error: 'REASON_REQUIRED' });
+    const noEnabled = await app.inject({ method: 'POST', url: '/api/internal/flags/apiAccess/overrides', payload: { tenantId: 'tenant_001', value: true, reason: 'Pilot for one tenant' } });
+    expect(noEnabled.json()).toMatchObject({ error: 'ENABLED_REQUIRED' });
   });
 
   it('rejects secret metadata mutations for read-only secret users', async () => {

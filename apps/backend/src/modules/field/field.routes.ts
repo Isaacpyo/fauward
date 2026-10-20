@@ -734,10 +734,10 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
           }
         });
 
-        const existingPayment = await app.prisma.payment.findFirst({ where: { tenantId, shipmentId: shipment.id } });
+        const existingPayment = await app.prisma.payment.findFirst({ where: { kind: 'TENANT_CUSTOMER', tenantId, shipmentId: shipment.id } });
         const paymentRow = existingPayment
           ? await app.prisma.payment.update({
-              where: { id: existingPayment.id },
+              where: { kind: 'TENANT_CUSTOMER', id: existingPayment.id },
               data: {
                 status: 'COMPLETED',
                 amount: codAmount,
@@ -748,6 +748,7 @@ async function processMutation(app: FastifyInstance, request: FastifyRequest, te
             })
           : await app.prisma.payment.create({
               data: {
+                kind: 'TENANT_CUSTOMER',
                 tenantId,
                 shipmentId: shipment.id,
                 customerId: shipment.customerId,

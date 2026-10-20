@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SuperAdminGuard } from "@/auth/SuperAdminGuard";
-import { consoleApi, consoleClientHooks, loginUrlFor, platformApi, refreshClient } from "./console-api";
+import { consoleApi, consoleClientHooks, loginUrlFor, refreshClient } from "./console-api";
 import { ConsoleApiError } from "./console-api-error";
 import { registerStepUpHandler } from "./mfa-step-up";
 
@@ -20,7 +20,7 @@ function adapterFrom(handler: Handler): AxiosAdapter {
   };
 }
 
-const originalAdapters = { console: consoleApi.defaults.adapter, platform: platformApi.defaults.adapter, refresh: refreshClient.defaults.adapter };
+const originalAdapters = { console: consoleApi.defaults.adapter, refresh: refreshClient.defaults.adapter };
 let redirects: string[] = [];
 
 beforeEach(() => {
@@ -36,7 +36,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   consoleApi.defaults.adapter = originalAdapters.console;
-  platformApi.defaults.adapter = originalAdapters.platform;
   refreshClient.defaults.adapter = originalAdapters.refresh;
 });
 

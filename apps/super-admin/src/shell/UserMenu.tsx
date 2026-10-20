@@ -2,7 +2,7 @@ import { LogOut, UserCircle } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { platformApi as api } from "@/lib/console-api";
+import { consoleApi as api } from "@/lib/console-api";
 import type { PlatformSessionUser } from "@/lib/platform-session";
 
 type UserMenuProps = {

@@ -3,7 +3,7 @@ import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from './authenticate-platform-session.js';
 import { requirePlatformCsrf } from './require-platform-csrf.js';
 import { requireFreshMfa } from './require-fresh-platform-mfa.js';
-import { requireInternalPermission } from './require-internal-permission.js';
+import { requireConsolePermission } from './require-console-permission.js';
 
 export type ReasonGuard = ((request: FastifyRequest, reply: FastifyReply) => Promise<FastifyReply | undefined>) & { reasonGuard: true; minLength: number };
 
@@ -21,5 +21,5 @@ export function requireReason(minLength = 8): ReasonGuard {
 
 /** Pre-handler chain for every `D:` route in the service catalogue (architecture §9.2). */
 export function dangerous(permission: Permission, opts?: { minReason?: number }) {
-  return [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission(permission), requireFreshMfa, requireReason(opts?.minReason ?? 8)];
+  return [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission(permission), requireFreshMfa, requireReason(opts?.minReason ?? 8)];
 }
