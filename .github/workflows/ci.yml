@@ -1,14 +1,20 @@
 name: CI
 on:
   push:
-    branches: [main, develop, 'phase/**']
+    branches: [master]
   pull_request:
-  schedule:
-    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+# No schedule: GitHub disables a scheduled workflow after 60 days without repo
+# activity, and a disabled workflow stops running on pull_request too.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:15
