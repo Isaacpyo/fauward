@@ -192,6 +192,7 @@ export function startWebhookWorker(app: FastifyInstance) {
       ...job.data,
       queue: 'webhook',
       jobId: job.id,
+      jobName: job.name,
       failedAt: new Date().toISOString(),
       reason: error.message,
       attemptsMade: job.attemptsMade

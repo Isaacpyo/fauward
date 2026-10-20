@@ -3,6 +3,7 @@ import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { mrrForSubscription } from '../../../services/revenue/mrr.service.js';
+import { healthScoringModel } from '../../../services/health-score.service.js';
 import { resolveTenantEntitlements } from '../../../services/tenant-entitlements.service.js';
 import { loadConsoleContext } from '../../../middleware/require-console-permission.js';
 import { activityListQuery, listActivity } from '../shell/activity.routes.js';
@@ -151,8 +152,10 @@ export async function registerCustomer360Routes(app: FastifyInstance) {
     const history = await app.prisma.tenantHealthScore.findMany({ where: { tenantId: tenant.id, computedAt: { gte: since } }, orderBy: { computedAt: 'desc' }, take: 200 });
     const latest = history[0] ?? null;
     return reply.send({
-      latest: latest ? { score: latest.score, trend: latest.trend, factors: latest.factors, computedAt: latest.computedAt.toISOString() } : null,
-      history: history.map((row) => ({ score: row.score, computedAt: row.computedAt.toISOString() }))
+      latest: latest ? { score: latest.score, trend: latest.trend, factors: latest.factors, inputs: latest.inputs ?? null, version: latest.version, computedAt: latest.computedAt.toISOString() } : null,
+      history: history.map((row) => ({ score: row.score, computedAt: row.computedAt.toISOString() })),
+      // WP-3.3: labels and weights to render the factors; tenants without a row read "Not yet scored".
+      model: healthScoringModel()
     });
   });
 

@@ -8,10 +8,14 @@ import { registerInternalConsolePhaseRoutes } from './console-phases.routes.js';
 import { registerStaffNotificationRoutes } from './shell/notifications.routes.js';
 import { registerConsoleActivityRoutes } from './shell/activity.routes.js';
 import { registerConsoleMetricsRoutes } from './shell/metrics.routes.js';
+import { registerConsoleBadgeRoutes } from './shell/badges.routes.js';
 import { registerConsoleSearchRoutes } from './shell/search.routes.js';
 import { registerConsoleTenantRoutes } from './platform/tenants.routes.js';
 import { registerConsoleImpersonationRoutes } from './platform/impersonation.routes.js';
 import { registerConsoleOperationsRoutes } from './platform/operations.routes.js';
+import { registerConsoleQueueRoutes } from './platform/queues.routes.js';
+import { registerConsoleHealthRoutes } from './platform/health.routes.js';
+import { registerConsoleJobRoutes } from './platform/jobs.routes.js';
 import { registerConsoleEscalationRoutes } from './platform/escalations.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
@@ -21,6 +25,7 @@ import { registerJitRoutes } from './trust/jit.routes.js';
 import { registerConsoleSafetyRoutes } from './trust/safety.routes.js';
 import { registerConsoleComplianceRoutes } from './trust/compliance.routes.js';
 import { registerConsoleSubscriptionRoutes } from './revenue/subscriptions.routes.js';
+import { registerConsoleRevenueAnalyticsRoutes } from './revenue/analytics.routes.js';
 
 /**
  * Every console endpoint lives under /api/internal (D2). This is the only console registration call in app.ts; the
@@ -31,8 +36,12 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleTenantRoutes(app);
   await registerConsoleImpersonationRoutes(app);
   await registerConsoleOperationsRoutes(app);
+  await registerConsoleQueueRoutes(app);
+  await registerConsoleHealthRoutes(app);
+  await registerConsoleJobRoutes(app);
   await registerConsoleEscalationRoutes(app);
   await registerConsoleMetricsRoutes(app);
+  await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);
   await registerConsoleCommsRoutes(app);
   await registerConsoleSupportRoutes(app);
@@ -44,6 +53,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleComplianceRoutes(app);
   await registerInternalBillingRoutes(app);
   await registerConsoleSubscriptionRoutes(app);
+  await registerConsoleRevenueAnalyticsRoutes(app);
   await registerCustomer360Routes(app);
   await registerInternalConsolePhaseRoutes(app);
   await registerStaffNotificationRoutes(app);

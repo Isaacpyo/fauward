@@ -1,43 +1,30 @@
 import { hasPermission, usePermission } from "@fauward/internal-rbac";
 import { DenseTable, EmptyState } from "@fauward/internal-ui";
-import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { fetchBadge } from "@/lib/badges";
+import { useActivitySummary } from "@/lib/overview";
 import type { PlatformPermissionContext } from "@/lib/platform-session";
 import { StatusPill } from "@/components/service-kit/StatusPill";
 import { navigableServices, type PillarManifest, type PillarServiceManifest } from "@/pillars/_manifests";
+import { ServiceBadge } from "@/shell/ServiceBadge";
 
 type PillarOverviewBaseProps = {
   manifest: PillarManifest;
   beforeGrid?: ReactNode;
 };
 
-function StatusCell({ service }: { service: PillarServiceManifest }) {
-  const badgeKey = service.badgeKey;
-  const query = useQuery({
-    queryKey: ["pillar-overview-status", service.id, badgeKey ?? "none"],
-    queryFn: () => fetchBadge(badgeKey!),
-    enabled: Boolean(badgeKey),
-    staleTime: 30_000
-  });
-  if (!badgeKey) return null;
-
-  const tone = query.data?.tone ?? "neutral";
-  const className =
-    tone === "green"
-      ? "border-green-200 bg-green-50 text-green-700"
-      : tone === "amber"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : tone === "red"
-          ? "border-red-200 bg-red-50 text-red-700"
-          : "border-[var(--color-border)] bg-[var(--color-surface-50)] text-[var(--color-text-muted)]";
-
+/** Latest activity the caller can see for the service (GET /activity/summary, WP-3.5). */
+function LastActivity({ serviceKey }: { serviceKey: string }) {
+  const summary = useActivitySummary();
+  if (summary.isLoading) return <span className="text-xs text-[var(--color-text-muted)]">Loading…</span>;
+  if (summary.isError) return <span className="text-xs text-[var(--color-text-muted)]">Unavailable</span>;
+  const entry = summary.data?.services?.find((item) => item.service === serviceKey);
+  if (!entry?.lastOccurredAt) return <span className="text-xs text-[var(--color-text-muted)]">No activity recorded</span>;
   return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${className}`}>
-      {query.isLoading ? "..." : query.isError ? "-" : query.data?.label ?? "-"}
-    </span>
+    <time data-testid={`last-activity-${serviceKey}`} dateTime={entry.lastOccurredAt} className="text-xs">
+      {new Date(entry.lastOccurredAt).toLocaleString()}
+    </time>
   );
 }
 
@@ -89,15 +76,12 @@ export function PillarOverviewBase({ manifest, beforeGrid }: PillarOverviewBaseP
           {
             id: "lastActivity",
             header: "Last activity",
-            cell: () => {
-              // TODO: Replace with per-service activity endpoints as services are implemented.
-              return <span className="text-[var(--color-text-muted)]">-</span>;
-            }
+            cell: (row) => <LastActivity serviceKey={`${manifest.id}.${row.id}`} />
           },
           {
             id: "status",
             header: "Status",
-            cell: (row) => <StatusCell service={row} />
+            cell: (row) => <ServiceBadge badgeKey={row.badgeKey} />
           },
           {
             id: "owner",

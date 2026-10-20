@@ -18,6 +18,8 @@ const PERMISSION_REFRESH_MS = 60_000;
 const listQuery = z.object({
   tenantId: z.string().min(1).optional(),
   service: z.string().min(1).optional(),
+  /** WP-3.5 dashboard feed: every visible service of one pillar. */
+  pillar: z.enum(['platform', 'revenue', 'customer', 'trust', 'gtm']).optional(),
   severity: z.enum(['INFO', 'ATTENTION', 'CRITICAL']).optional(),
   type: z.string().min(1).optional(),
   from: z.string().datetime().optional(),
@@ -49,7 +51,8 @@ async function tenantLabels(app: FastifyInstance, rows: Array<Pick<PlatformActiv
 
 /** Shared by the cross-tenant list and Customer 360's Activity tab. */
 export async function listActivity(app: FastifyInstance, context: ConsoleRequestContext, query: z.infer<typeof listQuery>) {
-  const services = query.service ? (canSeeService(context, query.service) ? [query.service] : []) : visibleServices(context);
+  const visible = query.service ? (canSeeService(context, query.service) ? [query.service] : []) : visibleServices(context);
+  const services = query.pillar ? visible.filter((service) => service.startsWith(`${query.pillar}.`)) : visible;
   const where: Prisma.PlatformActivityWhereInput = {
     service: { in: services },
     ...(query.tenantId ? { tenantId: query.tenantId } : {}),
@@ -95,15 +98,21 @@ export async function registerConsoleActivityRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
     const context = await loadConsoleContext(request);
     const services = visibleServices(context);
-    const groups = await app.prisma.platformActivity.groupBy({
-      by: ['service'],
-      where: { service: { in: services }, ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) },
-      _max: { occurredAt: true },
-      _count: { _all: true }
-    });
+    const scope = { service: { in: services }, ...(parsed.data.tenantId ? { tenantId: parsed.data.tenantId } : {}) };
+    const [groups, alerts] = await Promise.all([
+      app.prisma.platformActivity.groupBy({ by: ['service'], where: scope, _max: { occurredAt: true }, _count: { _all: true } }),
+      // WP-3.1: pillar alert counts = ATTENTION/CRITICAL activity in the last 24 h.
+      app.prisma.platformActivity.groupBy({
+        by: ['service'],
+        where: { ...scope, severity: { in: ['ATTENTION', 'CRITICAL'] }, occurredAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+        _max: { occurredAt: true },
+        _count: { _all: true }
+      })
+    ]);
+    const alertsByService = new Map(alerts.map((group) => [group.service, group._count._all]));
     return reply.send({
       services: groups
-        .map((group) => ({ service: group.service, lastOccurredAt: group._max.occurredAt?.toISOString() ?? null, count: group._count._all }))
+        .map((group) => ({ service: group.service, lastOccurredAt: group._max.occurredAt?.toISOString() ?? null, count: group._count._all, alerts24h: alertsByService.get(group.service) ?? 0 }))
         .sort((a, b) => a.service.localeCompare(b.service))
     });
   });

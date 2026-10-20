@@ -12,7 +12,6 @@ type WorkflowOpsPageProps = {
   title: string;
   description: string;
   endpoint: string;
-  primaryAction?: string;
   related?: Array<{ label: string; to: string }>;
 };
 
@@ -130,7 +129,7 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
         path: () => "/dunning/save-offers",
         fields: [
           { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "discount", label: "Discount GBP", type: "number", required: true },
+          { name: "discount", label: "Discount %", type: "number", required: true },
           { name: "expiresAt", label: "Expires At", type: "date" },
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Save offer" }
         ],
@@ -403,7 +402,7 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
       {
         id: "approve",
         label: "Approve Payout",
-        description: "Approve a payout. Amounts over GBP 5,000 require Finance plus CFO approval.",
+        description: "Approve a payout. Payouts above 5,000 in the payout currency need Finance and CFO approval.",
         method: "post",
         path: (values) => `/commissions/payouts/${encodeURIComponent(values.payoutId)}/approve`,
         fields: [
@@ -534,7 +533,7 @@ function ActionPanel({ actions, resolvedEndpoint }: { actions: WorkflowAction[];
   );
 }
 
-export function WorkflowOpsPage({ title, description, endpoint, primaryAction, related = [] }: WorkflowOpsPageProps) {
+export function WorkflowOpsPage({ title, description, endpoint, related = [] }: WorkflowOpsPageProps) {
   const params = useParams();
   const resolvedEndpoint = Object.entries(params).reduce((path, [key, value]) => path.replace(`:${key}`, value ?? ""), endpoint);
   const actions = useMemo(() => actionPresets(endpoint, title), [endpoint, title]);
@@ -558,7 +557,6 @@ export function WorkflowOpsPage({ title, description, endpoint, primaryAction, r
               {item.label}
             </Link>
           ))}
-          {primaryAction ? <span className="rounded-md bg-[var(--fauward-navy)] px-3 py-2 text-xs font-semibold text-white">{primaryAction}</span> : null}
         </div>
       </header>
 
@@ -588,7 +586,7 @@ export function WorkflowOpsPage({ title, description, endpoint, primaryAction, r
                   <dl className="mt-3 grid gap-2 text-xs md:grid-cols-3">
                     {compactFields(row).map(([key, value]) => (
                       <div key={key}>
-                        <dt className="font-medium capitalize text-[var(--color-text-muted)]">{key.replace(/([A-Z])/g, " $1")}</dt>
+                        <dt className="font-medium capitalize text-[var(--color-text-muted)]">{key.replace(/[A-Z]/g, (letter) => ` ${letter}`)}</dt>
                         <dd className="mt-0.5 truncate text-[var(--color-text-primary)]">{value}</dd>
                       </div>
                     ))}

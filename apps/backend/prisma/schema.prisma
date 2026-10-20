@@ -2361,6 +2361,9 @@ model TenantHealthScore {
   score      Int
   trend      String   @default("flat")
   factors    Json
+  /// WP-3.3: the raw inputs the score was computed from, and the model version (health-score.config.ts).
+  inputs     Json?
+  version    Int      @default(1)
   computedAt DateTime @default(now())
 
   @@index([tenantId, computedAt])
@@ -3490,4 +3493,25 @@ model StaffNotification {
 
   @@index([platformUserId, readAt, createdAt])
   @@map("staff_notifications")
+}
+
+/// One execution of a scheduled job (platform.jobs, WP-3.8): written by registerScheduledJob's wrapper for every run,
+/// scheduled or triggered from the console.
+model ScheduledJobRun {
+  id          String    @id @default(uuid())
+  jobName     String
+  bullJobId   String?
+  /// RUNNING | SUCCEEDED | FAILED | TIMED_OUT
+  status      String
+  /// SCHEDULE or the PlatformUser id that triggered the run
+  triggeredBy String
+  reason      String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+  durationMs  Int?
+  error       String?
+  result      Json?
+
+  @@index([jobName, startedAt])
+  @@map("scheduled_job_runs")
 }

@@ -205,7 +205,7 @@ describe('internal console phase routes', () => {
     expect(response.json()).toEqual({ queued: true, jobId: 'job_001', name: 'customer.health-scoring' });
     expect(scheduledAddMock).toHaveBeenCalledWith(
       'customer.health-scoring',
-      { requestedBy: 'staff_001', source: 'manual-console' },
+      { triggeredBy: 'staff_001', reason: 'Manual health scoring run from the CS console' },
       expect.objectContaining({ jobId: expect.stringContaining('customer.health-scoring.manual.') })
     );
     expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'success.health_score.enqueue' }));

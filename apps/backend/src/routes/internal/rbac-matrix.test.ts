@@ -44,6 +44,8 @@ const SESSION_ONLY_ROUTES = new Set([
   'POST /api/internal/notifications/staff/read-all',
   'POST /api/internal/notifications/staff/:id/read',
   'GET /api/internal/metrics/overview',
+  // WP-3.4 badges: only the keys the caller's permissions can read
+  'GET /api/internal/badges',
   'GET /api/internal/search',
   // D7 activity feed (WP-2.1): rows filtered by the caller's service read permissions (C60)
   'GET /api/internal/activity',

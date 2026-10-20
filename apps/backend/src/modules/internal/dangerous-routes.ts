@@ -25,6 +25,13 @@ export const DANGEROUS_ROUTES = [
   // L13 user lock (WP-2.15)
   { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/lock' },
   { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/unlock' },
+  // platform.queues (WP-3.6)
+  { method: 'POST', url: '/api/internal/queues/:name/dlq/replay' },
+  { method: 'POST', url: '/api/internal/queues/:name/clean' },
+  { method: 'POST', url: '/api/internal/queues/:name/pause' },
+  { method: 'POST', url: '/api/internal/queues/:name/resume' },
+  // platform.jobs (WP-3.8)
+  { method: 'POST', url: '/api/internal/jobs/:name/trigger' },
   // platform.integrations: webhook replay (WP-2.13)
   { method: 'POST', url: '/api/internal/integrations/webhooks/deliveries/:id/replay' },
   // platform.flags (WP-1.4 native overrides)

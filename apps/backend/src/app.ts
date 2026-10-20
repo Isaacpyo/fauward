@@ -66,6 +66,7 @@ import { registerAppealRoutes } from './modules/appeals/appeals.routes.js';
 import { registerOnboardingRoutes } from './modules/onboarding/onboarding.routes.js';
 import { registerTenantHealthRoutes } from './modules/tenants/health.routes.js';
 import { createAdminHostGuard } from './middleware/admin-host-guard.js';
+import { registerRequestMetrics } from './services/metrics/request-metrics.js';
 
 function escapeRegex(source: string) {
   return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -130,6 +131,8 @@ export async function buildApp() {
 
   await registerPrisma(app);
   await registerRedis(app);
+  // platform.health (WP-3.7): latency and 5xx rate per route group, in Redis minute buckets.
+  registerRequestMetrics(app);
 
   app.addHook('onRequest', createAdminHostGuard({
     enabled: config.adminHardening.phase1,
