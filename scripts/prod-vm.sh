@@ -3,10 +3,13 @@
 #
 #   bash scripts/prod-vm.sh init                 one time: folders, env templates, Redis password, control script
 #   bash scripts/prod-vm.sh deploy [ref]         ship a commit (default origin/master): upload, build, start, health-check
+#   bash scripts/prod-vm.sh stage [ref]          upload and build without starting, so migrations and backfills run first
 #   bash scripts/prod-vm.sh status | check-env | rollback | backup | install-cron | migrate-status
 #   bash scripts/prod-vm.sh logs [service...]    LOG_LINES=500 / FOLLOW=1 work too
 #   bash scripts/prod-vm.sh restart [service...]
 #   bash scripts/prod-vm.sh migrate --yes        prisma migrate deploy against PRODUCTION
+#   bash scripts/prod-vm.sh migrate-resolve --applied <migration> --yes   baseline a database without migration history
+#   bash scripts/prod-vm.sh backfill <id> --dry-run | --yes [--clear-legacy]
 #   bash scripts/prod-vm.sh edit-env <file>      open backend.env / python.env / cloudflared.env on the VM
 #
 # Production is a separate compose project (fauward-prod) under /data/fauward-prod. It never touches
@@ -20,6 +23,22 @@ PROJECT=${FAUWARD_PROD_PROJECT:-fauward-prod}
 die() { echo "prod-vm: $*" >&2; exit 1; }
 vm() { ssh "$VM" "$@"; }
 ctl() { ssh -t "$VM" "FAUWARD_PROD_ROOT=$ROOT FAUWARD_PROD_PROJECT=$PROJECT LOG_LINES=${LOG_LINES:-200} FOLLOW=${FOLLOW:-0} $ROOT/bin/prodctl.sh $*"; }
+
+# Upload <ref> to releases/<commit> (once) and install its prodctl.sh. Sets rel.
+upload_release() {
+  local ref=$1 sha
+  git fetch -q origin
+  sha=$(git rev-parse --verify "$ref^{commit}") || die "unknown ref $ref"
+  rel=${sha:0:12}
+  git cat-file -e "$sha:deploy/oracle-prod/docker-compose.yml" 2>/dev/null \
+    || die "$ref has no deploy/oracle-prod/ yet (merge chore/prod-oracle-vm first, or deploy that branch)"
+  echo "$cmd $ref ($rel) to $VM"
+  if ! vm "test -d $ROOT/releases/$rel"; then
+    git archive --format=tar "$sha" \
+      | vm "rm -rf $ROOT/releases/$rel.tmp && mkdir -p $ROOT/releases/$rel.tmp && tar -x -C $ROOT/releases/$rel.tmp && mv $ROOT/releases/$rel.tmp $ROOT/releases/$rel"
+  fi
+  vm "printf '%s\n' '$ref' > $ROOT/releases/$rel/.ref && date -u +%FT%TZ > $ROOT/releases/$rel/.time && install -m 700 $ROOT/releases/$rel/deploy/oracle-prod/bin/prodctl.sh $ROOT/bin/prodctl.sh"
+}
 
 cmd=${1:-help}; shift || true
 case $cmd in
@@ -65,24 +84,18 @@ EOF
     ;;
 
   deploy)
-    ref=${1:-origin/master}
-    git fetch -q origin
-    sha=$(git rev-parse --verify "$ref^{commit}") || die "unknown ref $ref"
-    rel=${sha:0:12}
-    git cat-file -e "$sha:deploy/oracle-prod/docker-compose.yml" 2>/dev/null \
-      || die "$ref has no deploy/oracle-prod/ yet (merge chore/prod-oracle-vm first, or deploy that branch)"
-    echo "deploying $ref ($rel) to $VM"
-    if ! vm "test -d $ROOT/releases/$rel"; then
-      git archive --format=tar "$sha" \
-        | vm "rm -rf $ROOT/releases/$rel.tmp && mkdir -p $ROOT/releases/$rel.tmp && tar -x -C $ROOT/releases/$rel.tmp && mv $ROOT/releases/$rel.tmp $ROOT/releases/$rel"
-    fi
-    vm "printf '%s\n' '$ref' > $ROOT/releases/$rel/.ref && date -u +%FT%TZ > $ROOT/releases/$rel/.time && install -m 700 $ROOT/releases/$rel/deploy/oracle-prod/bin/prodctl.sh $ROOT/bin/prodctl.sh"
+    upload_release "${1:-origin/master}"
     ctl up "$rel"
     ;;
 
-  status|check-env|rollback|backup|install-cron|migrate-status|logs|restart|migrate)
+  stage)
+    upload_release "${1:-origin/master}"
+    ctl stage "$rel"
+    ;;
+
+  status|check-env|rollback|backup|install-cron|migrate-status|logs|restart|migrate|migrate-resolve|backfill)
     ctl "$cmd" "$@"
     ;;
 
-  *) sed -n '2,12p' "$0"; exit 2 ;;
+  *) sed -n '2,13p' "$0"; exit 2 ;;
 esac

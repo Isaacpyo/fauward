@@ -3,14 +3,18 @@
 # by scripts/prod-vm.sh (init and every deploy). See docs/deploy-oracle-prod.md.
 #
 #   prodctl.sh up <release>          build + start a release uploaded to releases/<release>, roll back if unhealthy
+#   prodctl.sh stage <release>       build a release without starting it, so its migrations can run first
 #   prodctl.sh rollback              start the previous release again (images are kept, nothing is rebuilt)
 #   prodctl.sh status | check-env
 #   prodctl.sh logs [service...]     last 200 lines (LOG_LINES=n to change, FOLLOW=1 to follow)
 #   prodctl.sh restart [service...]
 #   prodctl.sh migrate-status
 #   prodctl.sh migrate --yes         prisma migrate deploy against the production database
+#   prodctl.sh migrate-resolve --applied <migration> --yes   baseline: mark a migration applied without running it
+#   prodctl.sh backfill <id> --dry-run | --yes [--clear-legacy]   one-off data backfill (apps/backend/src/scripts/backfills)
 #   prodctl.sh backup                pg_dump of the production database into backups/ (keeps 14)
 #   prodctl.sh install-cron          daily backup at 03:30 UTC
+# migrate-status, migrate, migrate-resolve and backfill run in the staged release if there is one, else the live one.
 set -euo pipefail
 
 ROOT=${FAUWARD_PROD_ROOT:-/data/fauward-prod}
@@ -23,6 +27,7 @@ export FAUWARD_PROD_ENV_DIR=$ENV_DIR
 die() { echo "prodctl: $*" >&2; exit 1; }
 current() { cat "$ROOT/CURRENT" 2>/dev/null || true; }
 previous() { cat "$ROOT/PREVIOUS" 2>/dev/null || true; }
+staged() { cat "$ROOT/STAGED" 2>/dev/null || true; }
 
 dc() { # dc <release> <compose args...>
   local rel=$1; shift
@@ -35,6 +40,13 @@ dc() { # dc <release> <compose args...>
 }
 
 need_current() { local c; c=$(current); [ -n "$c" ] || die "nothing deployed yet"; echo "$c"; }
+
+# Release whose image runs the database tools: the staged one (its migrations are not live yet), else the live one.
+tool_release() {
+  local r; r=$(staged); [ -n "$r" ] || r=$(current)
+  [ -n "$r" ] || die "nothing staged or deployed yet: run prod-vm.sh stage first"
+  echo "$r"
+}
 
 # Value of KEY in an env file, with quotes and inline " # comments" removed (as docker compose reads it).
 env_value() {
@@ -93,7 +105,7 @@ wait_healthy() { # up to 4 minutes
 
 prune_releases() {
   local keep rel tag
-  keep=$( { ls -1t "$ROOT/releases" | grep -vE '\.tmp$' | head -n "$KEEP_RELEASES"; current; previous; } | sort -u)
+  keep=$( { ls -1t "$ROOT/releases" | grep -vE '\.tmp$' | head -n "$KEEP_RELEASES"; current; previous; staged; } | sort -u)
   for rel in $(ls -1 "$ROOT/releases" | grep -vE '\.tmp$'); do
     echo "$keep" | grep -qx "$rel" && continue
     for tag in backend python-services route-optimizer; do
@@ -104,20 +116,34 @@ prune_releases() {
   done
 }
 
-cmd_up() {
-  local rel=${1:-} prev avail
-  [ -n "$rel" ] || die "usage: up <release>"
+build_release() {
+  local rel=$1 avail
   cmd_check_env
   avail=$(df -BG --output=avail /data | tail -n 1 | tr -dc 0-9)
   [ "${avail:-0}" -ge 6 ] || die "/data has only ${avail}G free (need 6G to build)"
-  prev=$(current)
   echo "building release $rel"
   dc "$rel" build
+}
+
+cmd_stage() {
+  local rel=${1:-}
+  [ -n "$rel" ] || die "usage: stage <release>"
+  build_release "$rel"
+  echo "$rel" > "$ROOT/STAGED"
+  echo "release $rel is built but not started; migrate-status, migrate and backfill now run in it"
+}
+
+cmd_up() {
+  local rel=${1:-} prev
+  [ -n "$rel" ] || die "usage: up <release>"
+  prev=$(current)
+  build_release "$rel"
   echo "starting release $rel"
   dc "$rel" up -d --remove-orphans
   if wait_healthy "$rel"; then
     if [ -n "$prev" ] && [ "$prev" != "$rel" ]; then echo "$prev" > "$ROOT/PREVIOUS"; fi
     echo "$rel" > "$ROOT/CURRENT"
+    rm -f "$ROOT/STAGED"   # the database tools follow the live release again
     prune_releases
     echo "release $rel is live (backend healthy)"
   else
@@ -175,6 +201,30 @@ cmd_backup() {
   echo "backup: $out ($(du -h "$out" | cut -f1))"
 }
 
+cmd_backfill() { # backfill <id> --dry-run | --yes [--clear-legacy]
+  local id=${1:-} rel script f a dry=0 yes=0 args=()
+  [[ $id =~ ^[0-9]{4}[a-z]?$ ]] || die "usage: backfill <id, e.g. 0037> --dry-run | --yes [--clear-legacy]"
+  shift
+  for a in "$@"; do
+    case $a in
+      --dry-run) dry=1; args+=("$a") ;;
+      --clear-legacy) args+=("$a") ;;
+      --yes) yes=1 ;;
+      *) die "unknown backfill flag $a" ;;
+    esac
+  done
+  [ "$dry" = 1 ] || [ "$yes" = 1 ] || die "backfill $id writes to the PRODUCTION database: run it with --dry-run first, then --yes"
+  rel=$(tool_release)
+  script=
+  for f in "$ROOT/releases/$rel/apps/backend/src/scripts/backfills/$id"-*.ts; do
+    [ -f "$f" ] && script=src/scripts/backfills/${f##*/}
+  done
+  [ -n "$script" ] || die "release $rel has no backfill $id (see apps/backend/src/scripts/backfills/)"
+  echo "running $script${args[*]:+ ${args[*]}} in release $rel"
+  # With deps: some backfills load services that connect to Redis, so compose starts it first.
+  dc "$rel" run --rm backend npx tsx "$script" ${args[@]+"${args[@]}"}
+}
+
 cmd_install_cron() {
   local line="30 3 * * * $ROOT/bin/prodctl.sh backup >> $ROOT/backups/backup.log 2>&1"
   ( crontab -l 2>/dev/null | grep -v 'prodctl.sh backup' || true; echo "$line" ) | crontab -
@@ -184,6 +234,7 @@ cmd_install_cron() {
 cmd=${1:-status}; shift || true
 case $cmd in
   up) cmd_up "$@" ;;
+  stage) cmd_stage "$@" ;;
   rollback) cmd_rollback ;;
   status) cmd_status ;;
   check-env) cmd_check_env ;;
@@ -191,11 +242,16 @@ case $cmd in
     cur=$(need_current)
     if [ "${FOLLOW:-0}" = 1 ]; then dc "$cur" logs --tail "${LOG_LINES:-200}" -f "$@"; else dc "$cur" logs --tail "${LOG_LINES:-200}" "$@"; fi ;;
   restart) cur=$(need_current); dc "$cur" restart "$@" ;;
-  migrate-status) cur=$(need_current); dc "$cur" run --rm --no-deps backend npx prisma migrate status ;;
+  migrate-status) rel=$(tool_release); dc "$rel" run --rm --no-deps backend npx prisma migrate status ;;
   migrate)
     [ "${1:-}" = --yes ] || die "this applies pending migrations to the PRODUCTION database; re-run with --yes"
-    cur=$(need_current); dc "$cur" run --rm --no-deps backend npx prisma migrate deploy ;;
+    rel=$(tool_release); echo "migrating with release $rel"; dc "$rel" run --rm --no-deps backend npx prisma migrate deploy ;;
+  migrate-resolve)
+    [ "${1:-}" = --applied ] && [[ ${2:-} =~ ^[0-9]{4}_[a-z0-9_]+$ ]] && [ "${3:-}" = --yes ] \
+      || die "usage: migrate-resolve --applied <migration, e.g. 0036_x> --yes (records it as applied in PRODUCTION without running it)"
+    rel=$(tool_release); dc "$rel" run --rm --no-deps backend npx prisma migrate resolve --applied "$2" ;;
+  backfill) cmd_backfill "$@" ;;
   backup) cmd_backup ;;
   install-cron) cmd_install_cron ;;
-  *) sed -n '2,15p' "$0"; exit 2 ;;
+  *) sed -n '2,17p' "$0"; exit 2 ;;
 esac

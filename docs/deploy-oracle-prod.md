@@ -38,18 +38,31 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
    2. On the install step, copy the token (the long string after `--token`). Run `bash scripts/prod-vm.sh edit-env cloudflared.env` and set `TUNNEL_TOKEN=`. You don't need to install anything; the `cloudflared` container runs it.
    3. **Public Hostname**: subdomain `api`, domain `fauward.com`, service type `HTTP`, URL `backend:3001`. Cloudflare creates the DNS record.
    4. Optional, only if the status dashboard's Python observability panel is used: add a second hostname, `py.fauward.com`, pointing to `HTTP python-api:8000`, and set `PYTHON_API_URL=https://py.fauward.com` in the status-dashboard Vercel project.
-4. **Database, then deploy.** `master` contains console Phases 0–2. Their migrations (0037 onward) and backfills must reach the Supabase database before the new backend serves traffic.
-   1. Run `bash scripts/prod-vm.sh deploy`. If it fails on missing tables, first run `migrate-status`, then `backup`, then `migrate --yes`, then `deploy` again.
-   2. Read the output of `bash scripts/prod-vm.sh migrate-status` before you migrate. If the Supabase database was created with `prisma db push` (as CI does) and has no migration history, `migrate deploy` would try to replay everything from 0001. In that case, baseline it first with `prisma migrate resolve --applied <name>` for the migrations already reflected in the schema.
-   3. Run the backfills listed under "Deferred for owner" in the console-run PROGRESS.md (0037 TOTP encryption, 0039a role assignments, and the Phase 2 ones). Each script has a `--dry-run`.
+4. **Database, then deploy.** `master` contains console Phases 0–3: migrations `0037_console_mfa` to `0062_health_score_inputs`, and eight one-off backfills (`apps/backend/src/scripts/backfills/`). No migration drops or renames anything or adds a required column without a default, so the Railway backend keeps working while you migrate. Three backfills (0037, 0055, 0059) rewrite data the old code reads, so they wait for the cutover (step 7).
+   1. `bash scripts/prod-vm.sh stage` uploads and builds `origin/master` without starting it. The database commands below now run in this release, which has the new migrations.
+   2. `bash scripts/prod-vm.sh migrate-status`. Read it before you migrate. If the Supabase database has no migration history (it was created with `prisma db push`), `migrate deploy` would replay everything from 0001. Baseline it first: for each migration already reflected in the schema, run `bash scripts/prod-vm.sh migrate-resolve --applied <name> --yes`, then check `migrate-status` again.
+   3. `bash scripts/prod-vm.sh backup`, then `bash scripts/prod-vm.sh migrate --yes`.
+   4. The backfills that only add data. Run each with `--dry-run` first, read the counts, then with `--yes`, for example `bash scripts/prod-vm.sh backfill 0039a --dry-run`:
+      - `0039a`: staff users and role assignments from the old platform roles
+      - `0042`: suspension records for suspended tenants
+      - `0045`: marks console-created billing rows as platform rows
+      - `0047`: support message authors and ticket audiences
+      - `0051`: subscription history. Revenue analytics shows existing subscriptions only after this.
+   5. `bash scripts/prod-vm.sh deploy`. The VM backend now runs; nothing sends it traffic until step 5.
+   6. Dry-run the cutover backfills now, so step 7 is only the `--yes` runs: `backfill 0037 --dry-run`, `backfill 0055 --dry-run`, `backfill 0059 --dry-run`.
 5. **Point the frontends at the new API** in Vercel. Open each project, then Settings, then Environment Variables, make the change and redeploy:
    - tenant-portal: `VITE_API_BASE_URL=https://api.fauward.com`
-   - fauward-Go (if deployed separately): `VITE_API_BASE_URL=https://api.fauward.com`
+   - fauward-Go (if deployed separately): `VITE_API_BASE_URL=https://api.fauward.com`. The emailed sign-in link opens Fauward Go at `FAUWARD_GO_URL` (default `https://fauward.com/go`); set it in `backend.env` if Fauward Go lives elsewhere.
    - status-dashboard: `BACKEND_URL=https://api.fauward.com`
    - super-admin needs no variable change: its `vercel.json` rewrites now go to `https://api.fauward.com`.
 6. **Point the inbound webhooks at the new host.** In Stripe, open Developers, then Webhooks, and change the endpoint to `https://api.fauward.com/api/v1/payments/webhook/stripe`. Put its new signing secret in `backend.env` as `STRIPE_WEBHOOK_SECRET`, then run `bash scripts/prod-vm.sh restart backend`. Do the same for any PagerDuty, Persona, ComplyAdvantage or DocuSign webhook you use (`/api/internal/.../webhooks/...`).
-7. **Backups.** Run `bash scripts/prod-vm.sh backup` once to check it works, then `bash scripts/prod-vm.sh install-cron` to run it daily at 03:30 UTC. If `pg_dump` cannot connect, the direct Supabase host is probably IPv6-only. Set `DIRECT_URL` to the **Session pooler** connection string (Supabase, Connect, Session pooler, port 5432), which works over IPv4.
-8. **Shut down Railway.** Once `https://api.fauward.com/health` answers, delete the Railway project so nothing tries to bill or deploy there.
+7. **Cutover backfills**, straight after steps 5 and 6, in this order (0059 reads the gateways 0055 creates):
+   - `bash scripts/prod-vm.sh backfill 0037 --yes` encrypts console TOTP secrets. The new backend also accepts the old plaintext ones and encrypts each at its next sign-in.
+   - `bash scripts/prod-vm.sh backfill 0055 --yes` moves tenant gateway keys into encrypted `TenantPaymentGateway` rows and encrypts tenant webhook secrets. The new backend reads gateways only from those rows, so tenants cannot take payments until this has run.
+   - `bash scripts/prod-vm.sh backfill 0059 --yes` re-derives onboarding steps from real data.
+   - Later, once tenant payments are confirmed working on the new backend, clear the old plaintext keys: `backfill 0055 --dry-run --clear-legacy`, then `backfill 0055 --yes --clear-legacy`.
+8. **Backups.** Run `bash scripts/prod-vm.sh backup` once to check it works, then `bash scripts/prod-vm.sh install-cron` to run it daily at 03:30 UTC. If `pg_dump` cannot connect, the direct Supabase host is probably IPv6-only. Set `DIRECT_URL` to the **Session pooler** connection string (Supabase, Connect, Session pooler, port 5432), which works over IPv4.
+9. **Shut down Railway.** Once `https://api.fauward.com/health` answers, delete the Railway project so nothing tries to bill or deploy there.
 
 ## Deploying
 
@@ -65,12 +78,16 @@ The command does the following:
 4. Waits up to 4 minutes for the backend health check.
 5. If the backend becomes healthy, it records the release as `CURRENT`. If not, it prints the backend logs and **starts the previous release again**.
 
-Database migrations never run automatically:
+Database migrations never run automatically. For a release with new migrations, stage it first so they are applied before its code starts. `migrate-status`, `migrate`, `migrate-resolve` and `backfill` run in the staged release if there is one, else in the live one.
 
 ```bash
+bash scripts/prod-vm.sh stage                  # upload + build origin/master, not started
 bash scripts/prod-vm.sh migrate-status
 bash scripts/prod-vm.sh backup && bash scripts/prod-vm.sh migrate --yes   # back up first
+bash scripts/prod-vm.sh deploy                 # start it (reuses the staged upload and build)
 ```
+
+A new backfill ships as `apps/backend/src/scripts/backfills/<id>-<name>.ts`. Run it with `bash scripts/prod-vm.sh backfill <id> --dry-run`, then `--yes`.
 
 ## Operating
 
@@ -96,4 +113,5 @@ Services: `backend`, `python-api`, `python-worker`, `python-beat`, `route-optimi
 - **The VM is shared.** It also runs the dev slots (`scripts/vm-slot.sh`), TipSignal and vitalos-platform. Each production container has a memory limit, about 5 GB in total. If the VM runs short of memory, stop idle dev slots first.
 - **Idle reclamation.** Oracle can reclaim an Always Free instance whose CPU, network and memory all stay under 20% for 7 days. This VM's memory use is far above that, but upgrading the Oracle account to Pay As You Go removes the risk. Usage within the Always Free limits stays free.
 - **No host ports.** Nothing in `fauward-prod` binds a port on the VM, and the Oracle firewall stays closed. The tunnel is the only way in. To reach Redis or the backend directly, use `ssh oracle-vm` and `docker exec`.
+- **First nightly run after console Phase 3.** Health scores switch to model v2: tenants younger than 14 days read "Not yet scored", and the activity feed shows a burst of `health.score_changed`. That is expected.
 - **Secrets backup.** If the VM is lost, the release folders can be rebuilt from git, but the `env/` files cannot. Keep them in your password manager.
