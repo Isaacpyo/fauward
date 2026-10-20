@@ -44,7 +44,11 @@ const SESSION_ONLY_ROUTES = new Set([
   'POST /api/internal/notifications/staff/read-all',
   'POST /api/internal/notifications/staff/:id/read',
   'GET /api/internal/metrics/overview',
-  'GET /api/internal/search'
+  'GET /api/internal/search',
+  // D7 activity feed (WP-2.1): rows filtered by the caller's service read permissions (C60)
+  'GET /api/internal/activity',
+  'GET /api/internal/activity/summary',
+  'GET /api/internal/activity/stream'
 ]);
 /** Machine routes for the status dashboard / Python services, guarded by MONITORING_API_KEY (S8). */
 const MACHINE_ROUTES = new Set([
@@ -152,7 +156,7 @@ describe('console RBAC matrix (architecture §4)', () => {
 });
 
 describe('one console namespace (D2)', () => {
-  it('ACC-RBAC-3 no /api/v1/platform route remains outside tracking and control-tower (moved in WP-2.11)', { timeout: 30_000 }, async () => {
+  it('ACC-RBAC-3 ACC-L15-2 no /api/v1/platform route remains (tracking and control-tower moved to /api/internal/operations in WP-2.11)', { timeout: 30_000 }, async () => {
     const root = resolve(process.cwd(), 'src');
     const offenders: string[] = [];
     async function scan(dir: string) {
@@ -165,9 +169,7 @@ describe('one console namespace (D2)', () => {
         if (!entry.name.endsWith('.ts') || entry.name.endsWith('.test.ts')) continue;
         const source = await readFile(full, 'utf8');
         for (const match of source.matchAll(/app\.(get|post|put|patch|delete)\(\s*['`](\/api\/v1\/platform[^'`]*)/g)) {
-          const url = match[2];
-          if (url.startsWith('/api/v1/platform/tracking') || url.startsWith('/api/v1/platform/control-tower') || /^\/api\/v1\/platform\/tenants\/:tenantId\/shipments\/:shipmentId\/tracking/.test(url)) continue;
-          offenders.push(`${full}: ${url}`);
+          offenders.push(`${full}: ${match[2]}`);
         }
       }
     }

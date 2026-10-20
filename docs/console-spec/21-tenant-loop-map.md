@@ -94,7 +94,7 @@ Tenant saves gateway keys in `IntegrationsTab` → `TenantPaymentGateway` (encry
 
 ### L12 Plan gates, overrides, flags, feature requests
 Console override/feature override → `resolveTenantEntitlements` → backend `requireFeature` and tenant `PlanGate` both honour it. Tenant hitting a gate can "Request this feature" → `FeedbackItem` → console triage → status back to the tenant.
-**Activity:** `entitlement.override_set`, `entitlement.override_revoked` (platform.flags), `feedback.created`, `feedback.status_changed` (customer.feedback). **Notify:** T on override (plan) and feedback status; S `customer.feedback.read` on feature requests.
+**Activity:** `tenant.plan_overridden`, `tenant.plan_override_revoked` (platform.tenants), `tenant.feature_overridden`, `tenant.feature_override_revoked` (platform.flags) (C79 renamed the spec's entitlement override events), `feedback.created`, `feedback.status_changed` (customer.feedback). **Notify:** T on override (plan) and feedback status; S `customer.feedback.read` on feature requests.
 - ACC-L12-1 override → tenant backend and UI agree within 5 s.
 - ACC-L12-2 gate request → console → PLANNED → tenant sees status.
 

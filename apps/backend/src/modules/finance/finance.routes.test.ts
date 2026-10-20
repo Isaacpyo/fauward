@@ -12,6 +12,9 @@ vi.mock('../../shared/middleware/featureGuard.js', () => ({
 vi.mock('../../shared/middleware/requireRole.js', () => ({
   requireRole: vi.fn(() => async () => {})
 }));
+const queueAdd = vi.hoisted(() => vi.fn(async (_name: string, _data: Record<string, unknown>) => ({ id: 'job' })));
+vi.mock('../../queues/queues.js', () => ({ notificationQueue: { add: queueAdd } }));
+vi.mock('../../queues/python-services.js', () => ({ publishPythonServiceJob: vi.fn(async () => undefined) }));
 vi.mock('../../shared/middleware/idempotency.js', () => ({
   resolveIdempotency: vi.fn(async () => ({ type: 'bypass' })),
   storeIdempotencyResult: vi.fn(async () => {})
@@ -207,16 +210,18 @@ describe('GET /api/v1/finance/invoices/:id', () => {
 
 describe('runOverdueInvoiceSweep', () => {
   it('marks SENT invoices past their due date as OVERDUE', async () => {
-    const overdueInvoice = { id: 'inv-overdue', tenantId: 'tenant-1', status: 'SENT', dueDate: new Date('2026-01-01') };
+    const { Prisma } = await import('@prisma/client');
+    const overdueInvoice = { id: 'inv-overdue', tenantId: 'tenant-1', invoiceNumber: 'ACME-INV-2026-0007', status: 'SENT', dueDate: new Date('2026-01-01'), total: new Prisma.Decimal('150.00'), currency: 'GBP', customerId: 'u-customer', organisationId: null };
     const prisma = {
       invoice: {
         findMany: vi.fn().mockResolvedValue([overdueInvoice]),
         update: vi.fn().mockResolvedValue({ ...overdueInvoice, status: 'OVERDUE' })
       },
-      notificationLog: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      user: { findFirst: vi.fn().mockResolvedValue({ id: 'u-customer', email: 'ap@customer.test' }) },
       $transaction: vi.fn(async (ops: any[]) => Promise.all(ops))
     };
-    const app = { prisma } as any;
+    const app = { prisma, log: { error: vi.fn() } } as any;
+    queueAdd.mockClear();
 
     const count = await runOverdueInvoiceSweep(app);
 
@@ -226,7 +231,9 @@ describe('runOverdueInvoiceSweep', () => {
     expect(prisma.invoice.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { kind: 'TENANT_CUSTOMER', id: 'inv-overdue' }, data: { status: 'OVERDUE' } })
     );
-    expect(prisma.notificationLog.createMany).toHaveBeenCalledTimes(1);
+    // The customer is emailed through the queue (D6); the worker writes the NotificationLog.
+    expect(queueAdd).toHaveBeenCalledTimes(1);
+    expect(queueAdd.mock.calls[0][1]).toMatchObject({ tenantId: 'tenant-1', to: 'ap@customer.test', template: 'invoice_overdue', data: { invoiceNumber: 'ACME-INV-2026-0007', amount: '150.00', currency: 'GBP' } });
   });
 
   it('returns 0 when no invoices are overdue', async () => {

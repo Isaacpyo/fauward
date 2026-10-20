@@ -6,7 +6,17 @@ import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
 import { domainService } from '../modules/tenants/domain.service.js';
 import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
+import { pruneOldActivity } from '../jobs/activity-prune.js';
+import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
+import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
+import { dispatchNpsSurveys, npsHealthComponent } from '../services/feedback.service.js';
+import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
+import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
+import { runWithTenantContext } from '../context/tenant.context.js';
+import { systemContext } from '../shared/middleware/tenant.resolver.js';
+import { recordAndPublishActivity, SYSTEM_ACTOR } from '../services/platform-activity.service.js';
+import { monthKey } from '../services/usage-storage.service.js';
 
 type ScheduledJobData = Record<string, unknown>;
 
@@ -21,7 +31,12 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string) {
+/** Health bands used for playbook triggers and the `health.score_changed` activity (L19). */
+export function healthBand(score: number) {
+  return score < 45 ? 'AT_RISK' : score >= 80 ? 'HEALTHY' : 'NEUTRAL';
+}
+
+export async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string) {
   const now = new Date();
   const [
     tenant,
@@ -34,7 +49,13 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     negativeTickets,
     apiKeys,
     webhooks,
-    previous
+    previous,
+    nps,
+    returns30,
+    customs30,
+    documents30,
+    usageMonth,
+    aiMonth
   ] = await Promise.all([
     app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, customDomain: true } }),
     app.prisma.user.findMany({ where: { tenantId, isActive: true }, select: { lastLogin: true } }),
@@ -46,7 +67,14 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     app.prisma.supportVendorTicket.count({ where: { tenantId, sentiment: { in: ['negative', 'angry', 'frustrated'] } } }),
     app.prisma.apiKey.count({ where: { tenantId, isActive: true } }),
     app.prisma.webhookEndpoint.count({ where: { tenantId, isActive: true } }),
-    app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } })
+    app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
+    npsHealthComponent(app.prisma, tenantId, now),
+    // L19 (WP-2.18): usage inputs recorded with every score; WP-3.3 decides their weights.
+    app.prisma.returnRequest.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
+    app.prisma.customsDeclaration.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
+    app.prisma.shipmentDocument.count({ where: { tenantId, generatedAt: { gte: daysAgo(30) } } }),
+    app.prisma.usageRecord.findUnique({ where: { tenantId_month: { tenantId, month: monthKey(now) } } }),
+    app.prisma.tenantAiUsage.aggregate({ where: { tenantId, month: monthKey(now) }, _sum: { requestCount: true, costUsd: true } })
   ]);
 
   const recentLogins = users.filter((user) => user.lastLogin && user.lastLogin >= daysAgo(30)).length;
@@ -67,7 +95,7 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
     (tenant?.customDomain ? 3 : 0);
   const paymentScore = clamp(15 - failedPayments * 5, 0, 15);
   const ticketScore = clamp(15 - openTickets * 2 - negativeTickets * 4, 0, 15);
-  const npsScore = 10;
+  const npsScore = nps.score;
   const score = clamp(loginScore + shipmentScore + featureScore + paymentScore + ticketScore + npsScore, 0, 100);
   const trend = !previous ? 'flat' : score > previous.score ? 'up' : score < previous.score ? 'down' : 'flat';
 
@@ -82,10 +110,43 @@ async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string
         featureBreadth: { score: featureScore, apiKeys, webhooks, customDomain: Boolean(tenant?.customDomain) },
         paymentHealth: { score: paymentScore, failedPayments },
         ticketSentimentVolume: { score: ticketScore, openTickets, negativeTickets },
-        nps: { score: npsScore, source: 'neutral_default' }
+        nps: { score: npsScore, source: nps.source, responses: nps.responses, value: nps.nps },
+        inputs: {
+          returns30,
+          customsDeclarations30: customs30,
+          documents30,
+          month: monthKey(now),
+          apiCalls: usageMonth?.apiCalls ?? 0,
+          emailsSent: usageMonth?.emailsSent ?? 0,
+          smsSent: usageMonth?.smsSent ?? 0,
+          storageBytes: Number(usageMonth?.storageBytes ?? 0),
+          aiRequests: aiMonth._sum.requestCount ?? 0,
+          aiCostUsd: Number((aiMonth._sum.costUsd ?? 0).toFixed(2))
+        }
       }
     }
   });
+
+  const band = healthBand(score);
+  const previousBand = previous ? healthBand(previous.score) : null;
+  if (previousBand && previousBand !== band) {
+    await recordAndPublishActivity(
+      { prisma: app.prisma, redis: app.redis, log: app.log },
+      {
+        service: 'customer.success',
+        type: 'health.score_changed',
+        tenantId,
+        ...SYSTEM_ACTOR,
+        subjectType: 'tenant',
+        subjectId: tenantId,
+        summary: `Health ${previous!.score} → ${score} (${previousBand.replace('_', ' ').toLowerCase()} → ${band.replace('_', ' ').toLowerCase()})`,
+        severity: band === 'AT_RISK' ? 'ATTENTION' : 'INFO',
+        consoleLink: `/customer/360/${tenantId}?tab=health`,
+        metadata: { from: previous!.score, to: score, fromBand: previousBand, toBand: band },
+        dedupeKey: `health.score_changed:${row.id}`
+      }
+    );
+  }
 
   const triggers: string[] = [];
   if (score < 45 && (!previous || previous.score >= 45)) triggers.push('health_below_45');
@@ -177,6 +238,26 @@ export async function registerScheduledJobs() {
     repeat: { pattern: '*/5 * * * *', tz: 'UTC' }
   });
 
+  await scheduledJobsQueue.add('customer.support-sla-sweep', {}, {
+    jobId: 'customer.support-sla-sweep',
+    repeat: { pattern: '*/15 * * * *', tz: 'UTC' }
+  });
+
+  await scheduledJobsQueue.add('customer.nps-survey-dispatch', {}, {
+    jobId: 'customer.nps-survey-dispatch',
+    repeat: { pattern: '10 7 * * *', tz: 'UTC' }
+  });
+
+  await scheduledJobsQueue.add('trust.dsar-overdue-sweep', {}, {
+    jobId: 'trust.dsar-overdue-sweep',
+    repeat: { pattern: '20 6 * * *', tz: 'UTC' }
+  });
+
+  await scheduledJobsQueue.add('platform.activity-prune', {}, {
+    jobId: 'platform.activity-prune',
+    repeat: { pattern: '40 3 * * *', tz: 'UTC' }
+  });
+
   repeatableJobsRegistered = true;
 }
 
@@ -214,74 +295,38 @@ export async function startScheduledWorker(app: FastifyInstance) {
       }
 
       if (job.name === 'tenant.trial-expiry-warning') {
-        const now = new Date();
-        const inThreeDays = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-        const subs = await app.prisma.subscription.findMany({
-          where: {
-            status: 'TRIALING',
-            trialEnd: {
-              gte: now,
-              lte: inThreeDays
-            }
-          },
-          select: { tenantId: true }
-        });
-
-        if (subs.length > 0) {
-          await app.prisma.notificationLog.createMany({
-            data: subs.map((sub) => ({
-              tenantId: sub.tenantId,
-              channel: 'EMAIL',
-              event: 'trial_expiring',
-              status: 'QUEUED'
-            }))
-          });
-        }
-
-        app.log.info({ count: subs.length }, 'Scheduled trial expiry warning job finished');
+        const result = await sendTrialExpiryWarnings(app);
+        app.log.info(result, 'Scheduled trial expiry warning job finished');
         return;
       }
 
       if (job.name === 'tenant.usage-report') {
-        const month = new Date().toISOString().slice(0, 7);
-        const usageRecords = await app.prisma.usageRecord.findMany({
-          where: { month },
-          select: { tenantId: true }
-        });
-
-        if (usageRecords.length > 0) {
-          await app.prisma.notificationLog.createMany({
-            data: usageRecords.map((usage) => ({
-              tenantId: usage.tenantId,
-              channel: 'EMAIL',
-              event: 'daily_usage_report',
-              status: 'QUEUED'
-            }))
-          });
-        }
-
-        app.log.info({ count: usageRecords.length }, 'Scheduled usage report job finished');
+        const result = await sendUsageThresholdNotices(app);
+        app.log.info(result, 'Scheduled usage threshold notices finished');
         return;
       }
 
       if (job.name === 'customer.health-scoring') {
-        const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
-        for (const tenant of tenants) {
-          await computeAndStoreHealthScore(app, tenant.id);
-        }
-        app.log.info({ count: tenants.length }, 'Scheduled customer health scoring finished');
+        // Reads tenant-scoped models for every tenant: system context (workers have no request context).
+        const count = await runWithTenantContext(systemContext(), async () => {
+          const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
+          for (const tenant of tenants) {
+            await computeAndStoreHealthScore(app, tenant.id);
+          }
+          return tenants.length;
+        });
+        app.log.info({ count }, 'Scheduled customer health scoring finished');
         return;
       }
 
       if (job.name === 'trust.security-anomaly-scan') {
-        const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+        const cutoff = new Date(Date.now() - FAILED_LOGIN_SPIKE_RULE.windowMinutes * 60 * 1000);
         const failedAttempts = await app.prisma.staffLoginAttempt.groupBy({
           by: ['staffEmail'],
           where: { success: false, createdAt: { gte: cutoff } },
           _count: { id: true }
         });
-        for (const attempt of failedAttempts.filter((row) => row._count.id > 5)) {
+        for (const attempt of failedAttempts.filter((row) => row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerAccount)) {
           await app.prisma.securityAnomaly.create({
             data: { anomalyType: 'failed_login_spike', severity: 'HIGH', status: 'OPEN', payload: { staffEmail: attempt.staffEmail, count: attempt._count.id } }
           });
@@ -291,11 +336,11 @@ export async function startScheduledWorker(app: FastifyInstance) {
           where: { success: false, createdAt: { gte: cutoff }, ipAddress: { not: null } },
           _count: { id: true }
         });
-        for (const attempt of failedIpAttempts.filter((row) => row.ipAddress && row._count.id > 5)) {
+        for (const attempt of failedIpAttempts.filter((row) => row.ipAddress && row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerIp)) {
           await app.prisma.ipBlock.upsert({
             where: { ipAddress: attempt.ipAddress! },
-            create: { ipAddress: attempt.ipAddress!, reason: 'Failed login spike', expiresAt: new Date(Date.now() + 60 * 60 * 1000), createdBy: 'trust.security-anomaly-scan' },
-            update: { reason: 'Failed login spike', expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
+            create: { ipAddress: attempt.ipAddress!, reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000), createdBy: 'trust.security-anomaly-scan' },
+            update: { reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000) }
           });
         }
         app.log.info({ count: failedAttempts.length }, 'Scheduled security anomaly scan finished');
@@ -369,6 +414,42 @@ export async function startScheduledWorker(app: FastifyInstance) {
       if (job.name === 'platform.impersonation-expiry-sweep') {
         const ended = await sweepExpiredImpersonationSessions(app.prisma);
         app.log.info({ ended }, 'Scheduled impersonation expiry sweep finished');
+        return;
+      }
+
+      if (job.name === 'customer.support-sla-sweep') {
+        const result = await sweepSupportSla(app);
+        app.log.info(result, 'Scheduled support SLA sweep finished');
+        return;
+      }
+
+      if (job.name === DSAR_GATHER_JOB) {
+        const result = await gatherDsar(app, { dsarId: String(job.data.dsarId ?? ''), exportId: String(job.data.exportId ?? '') });
+        app.log.info({ ...result, dsarId: job.data.dsarId }, 'DSAR gather finished');
+        return;
+      }
+
+      if (job.name === DSAR_ERASE_JOB) {
+        const result = await eraseDsar(app, { dsarId: String(job.data.dsarId ?? ''), tenantId: String(job.data.tenantId ?? '') });
+        app.log.info({ status: result.status, dsarId: job.data.dsarId }, 'DSAR erasure finished');
+        return;
+      }
+
+      if (job.name === 'customer.nps-survey-dispatch') {
+        const result = await dispatchNpsSurveys(app);
+        app.log.info(result, 'Scheduled NPS survey dispatch finished');
+        return;
+      }
+
+      if (job.name === 'trust.dsar-overdue-sweep') {
+        const result = await sweepOverdueDsars(app);
+        app.log.info(result, 'Scheduled DSAR overdue sweep finished');
+        return;
+      }
+
+      if (job.name === 'platform.activity-prune') {
+        const result = await pruneOldActivity(app.prisma);
+        app.log.info(result, 'Scheduled console activity prune finished');
         return;
       }
 

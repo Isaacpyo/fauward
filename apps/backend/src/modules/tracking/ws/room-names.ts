@@ -6,14 +6,9 @@ export function tenantRoom(tenantId: string): string {
   return `tracking:tenant:${tenantId}`;
 }
 
-export function escalationsRoom(): string {
-  return 'escalations:all';
-}
-
-export function parseRoomName(room: string): { type: 'shipment' | 'tenant' | 'escalations'; tenantId?: string; trackingNumber?: string } | null {
-  if (room === 'escalations:all') {
-    return { type: 'escalations' };
-  }
+// The cross-tenant `escalations:all` room is gone (WP-2.11): shipment escalations reach the console as
+// PlatformActivity on the activity SSE stream, filtered by console permission.
+export function parseRoomName(room: string): { type: 'shipment' | 'tenant'; tenantId?: string; trackingNumber?: string } | null {
   if (room.startsWith('tracking:tenant:')) {
     const tenantId = room.slice('tracking:tenant:'.length);
     return { type: 'tenant', tenantId };

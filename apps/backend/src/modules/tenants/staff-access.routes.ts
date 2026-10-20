@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
+import { z } from 'zod';
 
 // D8 tenant visibility: tenant admins see every Fauward staff session on their workspace — who, why, which scope, when
 // it started and ended, and how many audit rows it wrote. Everything is scoped to the caller's tenant.
@@ -71,5 +72,29 @@ export async function registerStaffAccessRoutes(app: FastifyInstance) {
       include: { platformUser: { select: { name: true, email: true } } }
     });
     return reply.send({ data: sessions.map((session) => present(session, 0, now)) });
+  });
+
+  // D8: whether staff-access emails are sent (in-app notices always are). Only Enterprise workspaces may turn them off.
+  app.get('/api/v1/tenants/me/staff-access/settings', { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] }, async (request, reply) => {
+    const tenantId = tenantIdOf(request);
+    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+    const [tenant, settings] = await Promise.all([
+      app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } }),
+      app.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { notifyOnStaffAccess: true } })
+    ]);
+    return reply.send({ notifyOnStaffAccess: settings?.notifyOnStaffAccess ?? true, canDisableEmail: tenant?.plan === 'ENTERPRISE' });
+  });
+
+  app.patch('/api/v1/tenants/me/staff-access/settings', { preHandler: [authenticate, requireRole(['TENANT_ADMIN'])] }, async (request, reply) => {
+    const tenantId = tenantIdOf(request);
+    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
+    const parsed = z.object({ notifyOnStaffAccess: z.boolean() }).safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'VALIDATION', message: 'notifyOnStaffAccess must be true or false' });
+    const tenant = await app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { plan: true } });
+    if (!parsed.data.notifyOnStaffAccess && tenant?.plan !== 'ENTERPRISE') {
+      return reply.status(403).send({ error: 'PLAN_REQUIRED', message: 'Only Enterprise workspaces can turn off staff-access emails. In-app notices are always shown.' });
+    }
+    await app.prisma.tenantSettings.upsert({ where: { tenantId }, update: { notifyOnStaffAccess: parsed.data.notifyOnStaffAccess }, create: { tenantId, notifyOnStaffAccess: parsed.data.notifyOnStaffAccess } });
+    return reply.send({ notifyOnStaffAccess: parsed.data.notifyOnStaffAccess, canDisableEmail: tenant?.plan === 'ENTERPRISE' });
   });
 }

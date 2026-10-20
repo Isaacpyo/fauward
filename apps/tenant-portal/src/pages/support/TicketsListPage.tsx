@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -9,11 +9,12 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Table, TableCell, TableRow } from "@/components/ui/Table";
 import { Textarea } from "@/components/ui/Textarea";
-import { useAppStore } from "@/stores/useAppStore";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { fallbackTickets, listDraftTickets, saveDraftTicket, type Ticket, type TicketDetail } from "@/pages/support/supportData";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { apiErrorMessage } from "@/lib/api-error";
+import type { Ticket, TicketDetail } from "@/pages/support/supportData";
 
 async function fetchTickets(filters: Record<string, string>) {
   const query = new URLSearchParams(filters).toString();
@@ -24,12 +25,10 @@ async function fetchTickets(filters: Record<string, string>) {
 export function TicketsListPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const addToast = useAppStore((state) => state.addToast);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [priority, setPriority] = useState("");
   const [category, setCategory] = useState("");
-  const [draftTickets, setDraftTickets] = useState<Ticket[]>(() => listDraftTickets());
   const [createOpen, setCreateOpen] = useState(false);
   const [subjectDraft, setSubjectDraft] = useState("");
   const [categoryDraft, setCategoryDraft] = useState("DELIVERY_ISSUE");
@@ -51,88 +50,27 @@ export function TicketsListPage() {
 
   const createTicket = useMutation({
     mutationFn: async () => {
-      const fallbackTicket: TicketDetail = {
-        id: `draft-${crypto.randomUUID()}`,
-        ticketNumber: `SUP-${Math.floor(10000 + Math.random() * 89999)}`,
+      const response = await api.post<TicketDetail | { ticket: TicketDetail }>("/v1/support/tickets", {
         subject: subjectDraft.trim(),
         category: categoryDraft,
         priority: priorityDraft,
-        status: "OPEN",
-        messages: [
-          {
-            id: `msg-${crypto.randomUUID()}`,
-            body: messageDraft.trim(),
-            isInternal: false,
-            createdAt: new Date().toISOString(),
-            author: {
-              email: "admin@fauward.com",
-              role: "TENANT_ADMIN"
-            }
-          }
-        ]
-      };
-
-      try {
-        const response = await api.post<TicketDetail | { ticket: TicketDetail }>("/v1/support/tickets", {
-          subject: subjectDraft.trim(),
-          category: categoryDraft,
-          priority: priorityDraft,
-          body: messageDraft.trim()
-        });
-
-        const ticket = "ticket" in response.data ? response.data.ticket : response.data;
-        return { ticket, localOnly: false };
-      } catch {
-        saveDraftTicket(fallbackTicket);
-        return { ticket: fallbackTicket, localOnly: true };
-      }
+        body: messageDraft.trim()
+      });
+      return "ticket" in response.data ? response.data.ticket : response.data;
     },
-    onSuccess: async ({ ticket, localOnly }) => {
+    onSuccess: async (ticket) => {
       setCreateOpen(false);
       setSubjectDraft("");
       setCategoryDraft("DELIVERY_ISSUE");
       setPriorityDraft("NORMAL");
       setMessageDraft("");
-
-      if (localOnly) {
-        setDraftTickets(listDraftTickets());
-        addToast({
-          title: "Support ticket created",
-          description: "Saved locally for this demo session.",
-          variant: "success"
-        });
-      } else {
-        await queryClient.invalidateQueries({ queryKey: ["support-tickets"] });
-      }
-
+      await queryClient.invalidateQueries({ queryKey: ["support-tickets"] });
       navigate(`/support/${ticket.id}`);
     }
   });
 
-  const tickets = ticketsQuery.data ?? fallbackTickets;
-  const display = useMemo(() => {
-    const merged = [...draftTickets, ...tickets];
-    const matches = merged.filter((ticket) => {
-      const searchable = [
-        ticket.ticketNumber,
-        ticket.subject,
-        ticket.customer?.email,
-        ticket.customer?.firstName,
-        ticket.customer?.lastName
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      const searchMatch = !debouncedSearch || searchable.includes(debouncedSearch.toLowerCase());
-      const statusMatch = !status || ticket.status === status;
-      const priorityMatch = !priority || ticket.priority === priority;
-      const categoryMatch = !category || ticket.category === category;
-      return searchMatch && statusMatch && priorityMatch && categoryMatch;
-    });
-
-    return matches;
-  }, [category, debouncedSearch, draftTickets, priority, status, tickets]);
+  // Filters are applied by the API (`/v1/support/tickets?search=&status=&priority=&category=`).
+  const display: Ticket[] = ticketsQuery.data ?? [];
 
   return (
     <PageShell
@@ -188,6 +126,18 @@ export function TicketsListPage() {
           />
         </div>
 
+        {ticketsQuery.isLoading ? <p className="text-sm text-gray-500">Loading tickets…</p> : null}
+        {ticketsQuery.isError ? (
+          <ErrorState
+            title="Tickets could not be loaded"
+            description={apiErrorMessage(ticketsQuery.error, "The support inbox is unavailable.")}
+            onRetry={() => void ticketsQuery.refetch()}
+          />
+        ) : null}
+        {ticketsQuery.isSuccess && display.length === 0 ? (
+          <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">No tickets match these filters.</p>
+        ) : null}
+        {display.length > 0 ? (
         <Table columns={["Ticket", "Subject", "Customer", "Category", "Priority", "Status", "Assigned", "Created", "More info"]}>
           {display.map((ticket) => (
             <TableRow key={ticket.id} onClick={() => navigate(`/support/${ticket.id}`)}>
@@ -242,6 +192,7 @@ export function TicketsListPage() {
             </TableRow>
           ))}
         </Table>
+        ) : null}
       </div>
 
       <Dialog
@@ -303,6 +254,12 @@ export function TicketsListPage() {
               className="mt-2"
             />
           </label>
+
+          {createTicket.isError ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              {apiErrorMessage(createTicket.error, "The ticket was not created.")} Your message is kept so you can try again.
+            </p>
+          ) : null}
 
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setCreateOpen(false)}>

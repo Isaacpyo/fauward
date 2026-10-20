@@ -90,7 +90,7 @@ describe('control tower and exceptions', () => {
     const resolved = await exceptionsService.resolve(prisma as any, 'tenant-a', 'case-existing', 'Done');
 
     expect(resolved).toEqual(expect.objectContaining({ status: 'RESOLVED', notes: 'Done' }));
-    expect(resolved.resolvedAt).toBeInstanceOf(Date);
+    expect(resolved?.resolvedAt).toBeInstanceOf(Date);
   });
 
   it('SlaPolicy with isDefault=true is used when no serviceType-specific policy exists', async () => {

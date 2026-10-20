@@ -1,5 +1,5 @@
 import { ArrowLeft } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
@@ -13,69 +13,12 @@ import { TrackingTimeline } from "@/components/tracking/TrackingTimeline";
 import { TrackingNumber } from "@/components/shared/TrackingNumber";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
+import { isAxiosError } from "axios";
 import type { TrackingResult } from "@/types/tracking";
 import type { ShipmentState } from "@/types/domain";
-
-const fallbackTrackingResult = (trackingNumber: string): TrackingResult => {
-  const failed = trackingNumber.toLowerCase().includes("fail");
-  const delivered = trackingNumber.toLowerCase().includes("done");
-  const status: ShipmentState = failed
-    ? "FAILED_DELIVERY"
-    : delivered
-      ? "DELIVERED"
-      : "OUT_FOR_DELIVERY";
-
-  const now = Date.now();
-  return {
-    tracking_number: trackingNumber,
-    status,
-    origin_city: "Lagos",
-    destination_city: "London",
-    estimated_delivery_date: new Date(now + 1000 * 60 * 60 * 8).toISOString(),
-    delivered_at: delivered ? new Date(now - 1000 * 60 * 30).toISOString() : undefined,
-    service_tier: "Express",
-    events: [
-      {
-        id: "e1",
-        status,
-        description:
-          status === "FAILED_DELIVERY"
-            ? "Delivery attempt failed"
-            : status === "DELIVERED"
-              ? "Shipment delivered"
-              : "Out for delivery",
-        location: "London",
-        timestamp: new Date(now - 1000 * 60 * 45).toISOString()
-      },
-      {
-        id: "e2",
-        status: "IN_TRANSIT",
-        description: "Shipment arrived at destination hub",
-        location: "London Hub",
-        timestamp: new Date(now - 1000 * 60 * 60 * 5).toISOString()
-      },
-      {
-        id: "e3",
-        status: "PICKED_UP",
-        description: "Shipment picked up",
-        location: "Lagos",
-        timestamp: new Date(now - 1000 * 60 * 60 * 12).toISOString()
-      },
-      {
-        id: "e4",
-        status: "PROCESSING",
-        description: "Shipment created",
-        timestamp: new Date(now - 1000 * 60 * 60 * 18).toISOString()
-      }
-    ],
-    exception_reason: failed ? "Recipient unavailable at delivery address." : undefined,
-    pod_photo_url: delivered ? "https://images.unsplash.com/photo-1518773553398-650c184e0bb3?w=500" : undefined,
-    signature_url: delivered ? "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500" : undefined,
-    support_email: "support@tenant.com",
-    support_phone: "+44 20 7946 0000"
-  };
-};
 
 async function fetchTrackingResult(number: string): Promise<TrackingResult> {
   const response = await api.get<TrackingResult>(`/v1/tracking/${number}`);
@@ -148,7 +91,8 @@ export function TrackingResultPage() {
     };
   }, [decodedNumber, query.data]);
 
-  const data = useMemo(() => liveData ?? query.data ?? fallbackTrackingResult(decodedNumber), [decodedNumber, liveData, query.data]);
+  const data = liveData ?? query.data;
+  const notFound = query.isError && isAxiosError(query.error) && query.error.response?.status === 404;
 
   if (!decodedNumber) {
     return (
@@ -165,6 +109,26 @@ export function TrackingResultPage() {
         Track another shipment
       </Link>
 
+      {query.isLoading && !data ? (
+        <div className="mt-4 space-y-2">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-36 w-full" />
+        </div>
+      ) : notFound ? (
+        <section className="mt-3 rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-700" role="status">
+          <p className="text-base font-semibold text-gray-900">Tracking number not found</p>
+          <p className="mt-1">We could not find a shipment with the tracking number <span className="font-mono">{decodedNumber}</span>. Check the number and try again.</p>
+        </section>
+      ) : !data ? (
+        <div className="mt-3">
+          <ErrorState
+            title="Tracking is unavailable"
+            description={apiErrorMessage(query.error, "Tracking could not be loaded right now.")}
+            onRetry={() => void query.refetch()}
+          />
+        </div>
+      ) : (
+        <>
       <section className="mt-3 rounded-lg border border-gray-200 bg-white p-4">
         <TrackingNumber value={data.tracking_number} />
         <div className="mt-3">
@@ -176,12 +140,6 @@ export function TrackingResultPage() {
         {!socketConnected ? <p className="mt-3 text-xs text-amber-600">Reconnecting to live updates...</p> : null}
       </section>
 
-      {query.isLoading ? (
-        <div className="mt-4 space-y-2">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-36 w-full" />
-        </div>
-      ) : (
         <div className="mt-4 space-y-4">
           {data.status === "DELIVERED" && data.delivered_at ? (
             <DeliveredBanner
@@ -202,6 +160,7 @@ export function TrackingResultPage() {
             </section>
           ) : null}
         </div>
+        </>
       )}
 
       <PoweredByFooter />

@@ -9,7 +9,8 @@ type UsageMeterProps = {
 };
 
 export function UsageMeter({ label, used, limit, onUpgrade }: UsageMeterProps) {
-  const percentage = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  const unlimited = limit < 0;
+  const percentage = !unlimited && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
   const tone = percentage >= 100 ? "error" : percentage >= 80 ? "warning" : "success";
 
   return (
@@ -17,7 +18,7 @@ export function UsageMeter({ label, used, limit, onUpgrade }: UsageMeterProps) {
       <div className="flex items-center justify-between gap-2 text-sm">
         <p className="font-medium text-gray-900">{label}</p>
         <p className="text-gray-600">
-          {used} / {limit}
+          {used} / {unlimited ? "Unlimited" : limit}
         </p>
       </div>
       <div className="mt-2 h-2 rounded-full bg-gray-200">

@@ -43,16 +43,11 @@ export async function fetchMetrics() {
   return response.data;
 }
 
-export async function fetchPlaceholderBadge(_key: BadgeKey): Promise<BadgeResult> {
-  // TODO(WP-3.4): one GET /api/internal/badges endpoint replaces per-key fetches.
-  return { label: "-", tone: "neutral" };
-}
-
-export async function fetchBadge(key: BadgeKey | undefined): Promise<BadgeResult> {
+// WP-3.4 replaces these per-key fetches with one GET /api/internal/badges endpoint.
+export async function fetchBadge(key: BadgeKey): Promise<BadgeResult> {
   if (key === "tenant-count") return fetchTenantCountBadge();
   if (key === "dlq-depth") return fetchDlqDepthBadge();
-  if (key === "mrr") return fetchMrrBadge();
-  return fetchPlaceholderBadge(key ?? "placeholder");
+  return fetchMrrBadge();
 }
 
 export async function fetchP95Latency(): Promise<BadgeResult> {

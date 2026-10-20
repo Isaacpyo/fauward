@@ -34,6 +34,9 @@ export function AuditLogPage() {
             <p className="mt-1 text-sm text-[var(--color-text-muted)]">{entries.isLoading ? "Loading…" : `${total} ${total === 1 ? "entry matches" : "entries match"} these filters`}</p>
           </div>
           <div className="flex items-center gap-3">
+            <Link to="/trust/audit/tenant-events" className="text-sm font-semibold text-[var(--fauward-navy)] hover:underline">
+              Tenant events
+            </Link>
             <Link to="/trust/audit/integrity" className="text-sm font-semibold text-[var(--fauward-navy)] hover:underline">
               Chain integrity
             </Link>

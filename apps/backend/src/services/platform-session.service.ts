@@ -18,6 +18,9 @@ export type PlatformJwtClaims = {
   mfaVerifiedAt: string | null;
   iss: 'fauward-platform';
   aud: 'fauward-platform-admin';
+  /** Registered claims added by jsonwebtoken (seconds since epoch). */
+  iat?: number;
+  exp?: number;
 };
 
 export type PlatformRefreshClaims = {

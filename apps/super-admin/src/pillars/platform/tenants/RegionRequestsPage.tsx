@@ -1,278 +1,131 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Globe2 } from "lucide-react";
 
 import { ActionDialog } from "@/components/service-kit/ActionDialog";
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantChip } from "@/components/service-kit/TenantChip";
-import { Check, Clock3, Globe2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type RegionRequest, useDecideRegionRequest, useRegionRequests } from "./api";
 
-import { consoleApi as api } from "@/lib/console-api";
-
-type RegionChangeStatus = "PENDING" | "APPROVED" | "REJECTED";
-
-type RegionChangeRequest = {
-  id: string;
-  tenantId: string;
-  tenantName: string;
-  tenantSlug: string;
-  currentRegion: string;
-  requestedRegion: string;
-  requestedBy: string;
-  status: RegionChangeStatus;
-  createdAt: string;
-  reviewedAt?: string;
-  reviewedBy?: string;
-};
-
-type RegionConfig = {
-  key: string;
-  label: string;
-  paymentProviders: string[];
-};
-
-type RegionsResponse = {
-  requests: RegionChangeRequest[];
-  regions: RegionConfig[];
-};
-
-const tabs = [
-  { id: "overview", label: "Overview" },
-  { id: "requests", label: "Region change requests" },
-  { id: "payment", label: "Payment regions" },
-  { id: "audit", label: "Audit" }
+const FILTERS = [
+  { id: "PENDING", label: "Pending" },
+  { id: "APPLIED", label: "Applied" },
+  { id: "REJECTED", label: "Rejected" },
+  { id: "", label: "All" }
 ] as const;
 
-type TabId = (typeof tabs)[number]["id"];
+const statusClass: Record<RegionRequest["status"], string> = {
+  PENDING: "border-amber-200 bg-amber-50 text-amber-700",
+  APPROVED: "border-green-200 bg-green-50 text-green-700",
+  APPLIED: "border-green-200 bg-green-50 text-green-700",
+  REJECTED: "border-red-200 bg-red-50 text-red-700",
+  CANCELLED: "border-[var(--color-border)] bg-[var(--color-surface-50)] text-[var(--color-text-muted)]"
+};
 
-async function fetchRegions() {
-  const response = await api.get<RegionsResponse>("/tenants/region-requests");
-  return response.data;
+function dateLabel(value: string | null) {
+  return value ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—";
 }
 
-function formatRegion(region: string) {
-  if (region === "northAmerica") return "North America";
-  return region.charAt(0).toUpperCase() + region.slice(1);
-}
-
-function statusClass(status: RegionChangeStatus) {
-  if (status === "APPROVED") return "border-green-200 bg-green-50 text-green-700";
-  if (status === "REJECTED") return "border-red-200 bg-red-50 text-red-700";
-  return "border-amber-200 bg-amber-50 text-amber-700";
-}
-
-function dateLabel(value?: string) {
-  if (!value) return "n/a";
-  return new Intl.DateTimeFormat("en-GB", {
-    dateStyle: "medium",
-    timeStyle: "short"
-  }).format(new Date(value));
-}
-
-/** Tenant region change requests (WP-1.2 move from /admin/regions; the store stays in memory until WP-2.6). */
+/** Tenant region change requests (L5, WP-2.6): approving applies the region to the tenant at once and tells its admins. */
 export function RegionRequestsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["admin-regions"], queryFn: fetchRegions });
-
-  // Decisions are dangerous (fresh MFA + a free-text reason); the console client opens the step-up modal on demand.
-  const [decision, setDecision] = useState<{ id: string; status: "APPROVED" | "REJECTED"; tenant: string } | null>(null);
-  const [decided, setDecided] = useState<string | null>(null);
-
+  const [filter, setFilter] = useState<string>("PENDING");
+  const query = useRegionRequests(filter || undefined);
+  const decide = useDecideRegionRequest();
+  const [decision, setDecision] = useState<{ request: RegionRequest; status: "APPROVED" | "REJECTED" } | null>(null);
+  const regions = query.data?.regions ?? [];
+  const label = (key: string) => regions.find((region) => region.key === key)?.label ?? key;
   const requests = query.data?.requests ?? [];
-  const pendingRequests = requests.filter((request) => request.status === "PENDING");
-  const reviewedRequests = requests.filter((request) => request.status !== "PENDING");
-
-  const regionCounts = useMemo(() => {
-    return requests.reduce<Record<string, number>>((counts, request) => {
-      counts[request.requestedRegion] = (counts[request.requestedRegion] ?? 0) + 1;
-      return counts;
-    }, {});
-  }, [requests]);
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Region</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-            Review tenant region changes, payment-region coverage, and approval history.
-          </p>
+          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Region change requests</h1>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Approving moves the tenant to the requested region immediately; payment options follow the region.</p>
         </div>
-        <div className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-text-primary)]">
-          <Globe2 size={16} className="text-[var(--fauward-navy)]" />
-          {pendingRequests.length} pending
-        </div>
-      </div>
+        {filter === "PENDING" && query.data ? (
+          <span className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-semibold">
+            <Globe2 size={16} className="text-[var(--fauward-navy)]" />
+            {requests.length} pending
+          </span>
+        ) : null}
+      </header>
 
-      <div className="rounded-xl border border-[var(--color-border)] bg-white">
-        <div className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-3 py-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                activeTab === tab.id
-                  ? "bg-[var(--fauward-navy)] text-white"
-                  : "text-[var(--color-text-muted)] hover:bg-[var(--color-surface-50)] hover:text-[var(--color-text-primary)]"
-              }`}
-            >
-              {tab.label}
-            </button>
+      <nav aria-label="Request status" className="flex flex-wrap gap-1">
+        {FILTERS.map((item) => (
+          <button
+            key={item.id || "all"}
+            type="button"
+            aria-pressed={filter === item.id}
+            onClick={() => setFilter(item.id)}
+            className={`rounded-md border px-3 py-1.5 text-sm ${filter === item.id ? "border-[var(--fauward-navy)] bg-[var(--fauward-navy)] text-white" : "border-[var(--color-border)] bg-white"}`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      {query.isError ? <ConsoleApiErrorPanel error={query.error} onRetry={() => void query.refetch()} title="Unable to load region requests" /> : null}
+      {!query.isError ? (
+        <ul className="space-y-3">
+          {requests.map((request) => (
+            <li key={request.id} data-testid="region-request" className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {request.tenant ? <TenantChip tenantId={request.tenant.id} name={request.tenant.name} slug={request.tenant.slug} /> : <span className="font-mono text-xs">{request.tenantId}</span>}
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass[request.status]}`}>{request.status.toLowerCase()}</span>
+                  </div>
+                  <p className="text-sm">
+                    {label(request.currentRegion)} → <span className="font-semibold">{label(request.requestedRegion)}</span>
+                  </p>
+                  <p className="text-xs text-[var(--color-text-muted)]">Requested {dateLabel(request.createdAt)}</p>
+                  {request.decidedAt ? (
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Decided {dateLabel(request.decidedAt)}
+                      {request.decisionReason ? `: ${request.decisionReason}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+                {request.status === "PENDING" ? (
+                  <div className="flex gap-2">
+                    <PermissionButton permission="platform.tenants.write" onClick={() => setDecision({ request, status: "APPROVED" })} className="rounded-md bg-green-700 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                      Approve
+                    </PermissionButton>
+                    <PermissionButton permission="platform.tenants.write" onClick={() => setDecision({ request, status: "REJECTED" })} className="rounded-md border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50">
+                      Reject
+                    </PermissionButton>
+                  </div>
+                ) : null}
+              </div>
+            </li>
           ))}
-        </div>
-
-        <div className="p-4">
-          {query.isLoading ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              {[0, 1, 2].map((item) => (
-                <div key={item} className="h-28 animate-pulse rounded-lg bg-[var(--color-surface-50)]" />
-              ))}
-            </div>
-          ) : null}
-
-          {query.isError ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              Could not load region data.
-            </div>
-          ) : null}
-
-          {!query.isLoading && !query.isError && activeTab === "overview" ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="rounded-lg border border-[var(--color-border)] p-4">
-                <p className="text-sm text-[var(--color-text-muted)]">Pending tenant requests</p>
-                <p className="mt-2 text-2xl font-bold text-[var(--color-text-primary)]">{pendingRequests.length}</p>
-              </div>
-              <div className="rounded-lg border border-[var(--color-border)] p-4">
-                <p className="text-sm text-[var(--color-text-muted)]">Reviewed requests</p>
-                <p className="mt-2 text-2xl font-bold text-[var(--color-text-primary)]">{reviewedRequests.length}</p>
-              </div>
-              <div className="rounded-lg border border-[var(--color-border)] p-4">
-                <p className="text-sm text-[var(--color-text-muted)]">Configured regions</p>
-                <p className="mt-2 text-2xl font-bold text-[var(--color-text-primary)]">{query.data?.regions.length ?? 0}</p>
-              </div>
-            </div>
-          ) : null}
-
-          {!query.isLoading && !query.isError && activeTab === "requests" ? (
-            <div className="space-y-3">
-              {requests.length === 0 ? (
-                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-50)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
-                  No tenant region change requests yet.
-                </div>
-              ) : null}
-
-              {requests.map((request) => (
-                <div key={request.id} className="rounded-lg border border-[var(--color-border)] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <TenantChip tenantId={request.tenantId} name={request.tenantName} slug={request.tenantSlug} />
-                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass(request.status)}`}>
-                          {request.status}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                        {formatRegion(request.currentRegion)} to {formatRegion(request.requestedRegion)}
-                      </p>
-                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                        Requested by {request.requestedBy} on {dateLabel(request.createdAt)}
-                      </p>
-                      {request.reviewedAt ? (
-                        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                          Reviewed by {request.reviewedBy ?? "Super admin"} on {dateLabel(request.reviewedAt)}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    {request.status === "PENDING" ? (
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setDecision({ id: request.id, status: "APPROVED", tenant: request.tenantName ?? request.tenantId })}
-                          className="inline-flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-                        >
-                          <Check size={14} />
-                          Approve
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDecision({ id: request.id, status: "REJECTED", tenant: request.tenantName ?? request.tenantId })}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                        >
-                          <X size={14} />
-                          Reject
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {!query.isLoading && !query.isError && activeTab === "payment" ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              {(query.data?.regions ?? []).map((region) => (
-                <div key={region.key} className="rounded-lg border border-[var(--color-border)] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="font-semibold text-[var(--color-text-primary)]">{region.label}</h2>
-                    <span className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-50)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
-                      {regionCounts[region.key] ?? 0} request{regionCounts[region.key] === 1 ? "" : "s"}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {region.paymentProviders.map((provider) => (
-                      <span key={provider} className="rounded-md bg-[var(--color-surface-50)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-primary)]">
-                        {provider}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          {!query.isLoading && !query.isError && activeTab === "audit" ? (
-            <div className="space-y-3">
-              {requests.length === 0 ? (
-                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-50)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
-                  No region activity has been recorded.
-                </div>
-              ) : null}
-              {requests.map((request) => (
-                <div key={request.id} className="flex gap-3 rounded-lg border border-[var(--color-border)] p-4">
-                  <Clock3 size={16} className="mt-0.5 shrink-0 text-[var(--color-text-muted)]" />
-                  <div>
-                    <p className="text-sm font-semibold text-[var(--color-text-primary)]">
-                      <TenantChip tenantId={request.tenantId} name={request.tenantName} slug={request.tenantSlug} /> requested {formatRegion(request.requestedRegion)}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Status: {request.status} - Created: {dateLabel(request.createdAt)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      {decided ? (
-        <p role="status" className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
-          {decided}
-        </p>
+          {!query.isLoading && requests.length === 0 ? <li className="rounded-lg border border-[var(--color-border)] bg-white px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">No region change requests here.</li> : null}
+        </ul>
       ) : null}
+
+      {regions.length > 0 ? (
+        <section className="rounded-lg border border-[var(--color-border)] bg-white p-4">
+          <h2 className="text-sm font-semibold">Payment options by region</h2>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {regions.map((region) => (
+              <div key={region.key} className="rounded-md border border-[var(--color-border)] p-3 text-sm">
+                <p className="font-semibold">{region.label}</p>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{region.paymentProviders.join(" · ")}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <ActionDialog
         open={decision !== null}
-        title={decision ? `${decision.status === "APPROVED" ? "Approve" : "Reject"} the region change for ${decision.tenant}?` : ""}
-        confirmLabel={decision?.status === "APPROVED" ? "Approve change" : "Reject change"}
+        title={decision ? `${decision.status === "APPROVED" ? "Approve" : "Reject"} the move to ${label(decision.request.requestedRegion)} for ${decision.request.tenant?.name ?? decision.request.tenantId}?` : ""}
+        description={decision?.status === "APPROVED" ? "The tenant's region changes as soon as you confirm, and its admins are told." : "The tenant's admins see your reason."}
+        confirmLabel={decision?.status === "APPROVED" ? "Approve and apply" : "Reject change"}
         dangerous
         onClose={() => setDecision(null)}
-        onSubmit={async (reason) => {
-          if (!decision) return;
-          await api.post(`/tenants/region-requests/${decision.id}/decision`, { status: decision.status, reason }, { idempotent: true });
-          setDecided(`Region change ${decision.status === "APPROVED" ? "approved" : "rejected"} for ${decision.tenant}.`);
-          await queryClient.invalidateQueries({ queryKey: ["admin-regions"] });
-        }}
+        onSubmit={async (reason) => decide.mutateAsync({ id: decision!.request.id, status: decision!.status, reason })}
       />
     </div>
   );

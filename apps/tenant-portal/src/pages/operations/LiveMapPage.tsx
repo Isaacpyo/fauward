@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { APIProvider, Map, Marker } from "@vis.gl/react-google-maps";
 
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Select } from "@/components/ui/Select";
 import { PageShell } from "@/layouts/PageShell";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 
 type DriverLocation = {
   driverId: string;
@@ -26,50 +28,6 @@ type LiveShipment = {
   recipientName: string;
   estimatedDelivery?: string;
 };
-
-const fallbackDrivers: DriverLocation[] = [
-  {
-    driverId: "drv-1",
-    driverName: "Amina Yusuf",
-    lat: 6.5244,
-    lng: 3.3792,
-    lastUpdated: new Date(Date.now() - 1000 * 60 * 3).toISOString(),
-    activeShipments: 5,
-    vehicleType: "Van"
-  },
-  {
-    driverId: "drv-2",
-    driverName: "Daniel Cole",
-    lat: 6.4654,
-    lng: 3.4064,
-    lastUpdated: new Date(Date.now() - 1000 * 60 * 8).toISOString(),
-    activeShipments: 3,
-    vehicleType: "Bike"
-  }
-];
-
-const fallbackShipments: LiveShipment[] = [
-  {
-    shipmentId: "ship-1",
-    trackingNumber: "FWD-2026-10451",
-    lat: 6.5128,
-    lng: 3.3841,
-    status: "OUT_FOR_DELIVERY",
-    driverName: "Amina Yusuf",
-    recipientName: "Atlas Retail",
-    estimatedDelivery: "Today 14:30"
-  },
-  {
-    shipmentId: "ship-2",
-    trackingNumber: "FWD-2026-10432",
-    lat: 6.4581,
-    lng: 3.395,
-    status: "IN_TRANSIT",
-    driverName: "Daniel Cole",
-    recipientName: "Northline Freight",
-    estimatedDelivery: "Today 16:10"
-  }
-];
 
 async function fetchDriverLocations() {
   const response = await api.get<DriverLocation[]>("/v1/driver/locations");
@@ -98,8 +56,9 @@ export function LiveMapPage() {
     refetchInterval: 60_000
   });
 
-  const drivers = driversQuery.data ?? fallbackDrivers;
-  const shipments = shipmentsQuery.data ?? fallbackShipments;
+  const drivers = useMemo(() => driversQuery.data ?? [], [driversQuery.data]);
+  const shipments = useMemo(() => shipmentsQuery.data ?? [], [shipmentsQuery.data]);
+  const loadError = driversQuery.error ?? shipmentsQuery.error;
 
   const filteredShipments = useMemo(() => {
     return shipments.filter((shipment) => {
@@ -119,6 +78,18 @@ export function LiveMapPage() {
 
   return (
     <PageShell title="Live Map" description="Command center for active field operator locations and in-flight deliveries.">
+      {loadError ? (
+        <div className="mb-4">
+          <ErrorState
+            title="Live locations could not be loaded"
+            description={apiErrorMessage(loadError, "The live map service returned an error.")}
+            onRetry={() => {
+              void driversQuery.refetch();
+              void shipmentsQuery.refetch();
+            }}
+          />
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[280px,1fr]">
         <aside className="space-y-3 rounded-lg border border-gray-200 bg-white p-4">
           <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
@@ -201,6 +172,8 @@ export function LiveMapPage() {
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <h3 className="text-sm font-semibold text-gray-900">Field operator fleet</h3>
               <div className="mt-3 space-y-3">
+                {driversQuery.isLoading ? <p className="text-sm text-gray-500">Loading field operators…</p> : null}
+                {driversQuery.isSuccess && drivers.length === 0 ? <p className="text-sm text-gray-500">No field operator has sent a location yet.</p> : null}
                 {drivers.map((driver) => (
                   <div key={driver.driverId} className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
                     <div className="flex items-center justify-between gap-3">
@@ -219,6 +192,8 @@ export function LiveMapPage() {
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <h3 className="text-sm font-semibold text-gray-900">Shipment watchlist</h3>
               <div className="mt-3 space-y-3">
+                {shipmentsQuery.isLoading ? <p className="text-sm text-gray-500">Loading shipments…</p> : null}
+                {shipmentsQuery.isSuccess && filteredShipments.length === 0 ? <p className="text-sm text-gray-500">No shipments in flight match these filters.</p> : null}
                 {filteredShipments.map((shipment) => (
                   <div key={shipment.shipmentId} className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
                     <div className="flex items-center justify-between gap-3">

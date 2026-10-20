@@ -2,7 +2,6 @@ import {
   BarChart3,
   Bot,
   Map,
-  BookOpen,
   BriefcaseBusiness,
   CreditCard,
   Gauge,
@@ -19,7 +18,9 @@ import {
   ShieldCheck,
   Settings,
   Users,
-  Wallet
+  Wallet,
+  Lightbulb,
+  TriangleAlert
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -47,7 +48,6 @@ export type NavItem = {
 
 const settingsChildren: NavChild[] = [
   { to: "/settings?tab=profile", label: "Profile", tabValue: "profile", minimumPlan: "starter" },
-  { to: "/settings?tab=general", label: "General", tabValue: "general", minimumPlan: "starter" },
   { to: "/settings?tab=domain", label: "Domain", tabValue: "domain", minimumPlan: "pro" },
   { to: "/settings?tab=integrations", label: "Integrations", tabValue: "integrations", minimumPlan: "starter" },
   { to: "/settings?tab=billing", label: "Billing", tabValue: "billing", minimumPlan: "starter" },
@@ -118,6 +118,13 @@ export const navItems: NavItem[] = [
     icon: Package,
     feature: "shipments",
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF", "CUSTOMER_ADMIN", "CUSTOMER_USER"]
+  },
+  {
+    to: "/exceptions",
+    label: "Exceptions",
+    icon: TriangleAlert,
+    feature: "shipments",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
   },
   {
     to: "/fauward-go",
@@ -191,6 +198,20 @@ export const navItems: NavItem[] = [
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_STAFF"]
   },
   {
+    to: "/help/tickets",
+    label: "Contact Fauward",
+    icon: MessageSquare,
+    feature: "support",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF"]
+  },
+  {
+    to: "/help/feedback",
+    label: "Feedback & ideas",
+    icon: Lightbulb,
+    feature: "support",
+    roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE", "TENANT_STAFF"]
+  },
+  {
     to: "/reports",
     label: "Reports",
     icon: FileSpreadsheet,
@@ -261,13 +282,6 @@ export const navItems: NavItem[] = [
     feature: "settings",
     roles: ["TENANT_ADMIN", "TENANT_MANAGER", "TENANT_FINANCE"],
     children: settingsChildren
-  },
-  {
-    to: "/book",
-    label: "Book Shipment",
-    icon: BookOpen,
-    feature: "shipments",
-    roles: ["CUSTOMER_ADMIN", "CUSTOMER_USER"]
   },
   {
     to: "/finance",

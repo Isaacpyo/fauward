@@ -54,4 +54,24 @@ describe("SuspendedOverlay (D3 tenant touchpoint)", () => {
     renderOverlay();
     expect(await screen.findByTestId("suspension-appeal")).toHaveTextContent("Evidence did not show consent");
   });
+
+  it("ACC-L3-2 a rejected appeal shows its resolution text", async () => {
+    get.mockResolvedValue({ data: { ...base, appealable: true, appeal: { id: "a1", status: "REJECTED", createdAt: "2026-10-18T10:00:00.000Z", decidedAt: "2026-10-18T11:00:00.000Z", resolution: "The chargebacks came from accounts your team created.", question: null, canReply: false, reply: null } } });
+    renderOverlay();
+    expect(await screen.findByTestId("appeal-resolution")).toHaveTextContent("The chargebacks came from accounts your team created.");
+    expect(screen.getByText("Your appeal was reviewed and the suspension stays in place.")).toBeInTheDocument();
+  });
+
+  it("WP-2.4 Fauward's question is shown and the answer is posted to the appeal", async () => {
+    get.mockResolvedValueOnce({ data: { ...base, appealable: false, appeal: { id: "a1", status: "INFO_REQUESTED", createdAt: "2026-10-18T10:00:00.000Z", decidedAt: null, resolution: null, question: "Which customer made the retried payments?", canReply: true, reply: null } } });
+    get.mockResolvedValue({ data: { ...base, appealable: false, appeal: { id: "a1", status: "PENDING", createdAt: "2026-10-18T10:00:00.000Z", decidedAt: null, resolution: null, question: null, canReply: false, reply: "Acme Retail, account 4411." } } });
+    post.mockResolvedValue({ data: { appeal: { id: "a1", status: "PENDING" } } });
+    renderOverlay();
+    expect(await screen.findByTestId("appeal-question")).toHaveTextContent("Which customer made the retried payments?");
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Acme Retail, account 4411." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/v1/tenants/me/suspension-appeal/a1/reply", { message: "Acme Retail, account 4411." }));
+    expect(await screen.findByText(/Your answer:/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Your answer")).not.toBeInTheDocument();
+  });
 });

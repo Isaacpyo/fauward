@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { requireFeature } from '../../shared/middleware/featureGuard.js';
 import { webhooksService } from './webhooks.service.js';
+import { recordAndPublishActivity } from '../../services/platform-activity.service.js';
 
 export async function registerWebhookRoutes(app: FastifyInstance) {
   app.get('/api/v1/tenant/webhooks', { preHandler: [authenticate, requireFeature('webhooks')] },
@@ -87,6 +88,22 @@ export async function registerWebhookRoutes(app: FastifyInstance) {
       const { id, deliveryId } = req.params as { id: string; deliveryId: string };
       const result = await webhooksService.replay(app.prisma, tenantId, id, deliveryId);
       if (!result) return reply.status(404).send({ error: 'Webhook delivery not found' });
+      // L10 (WP-2.13): replays show in the console activity stream (actor: the tenant user).
+      await recordAndPublishActivity(
+        { prisma: app.prisma, redis: app.redis, log: app.log },
+        {
+          service: 'platform.integrations',
+          type: 'webhook.replayed',
+          tenantId,
+          actorType: 'TENANT_USER',
+          actorId: req.user?.sub ?? null,
+          actorLabel: req.user?.email ?? 'Tenant user',
+          subjectType: 'webhook_delivery',
+          subjectId: deliveryId,
+          summary: 'Webhook delivery replayed by the tenant',
+          consoleLink: '/platform/integrations/webhooks'
+        }
+      );
       reply.send(result);
     });
 

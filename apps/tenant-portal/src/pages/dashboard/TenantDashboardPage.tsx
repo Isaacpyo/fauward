@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -15,13 +15,16 @@ import {
 import { Link } from "react-router-dom";
 
 import { DashboardChecklist } from "@/components/onboarding/DashboardChecklist";
+import { useOnboardingChecklist } from "@/components/onboarding/checklist-api";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { ErrorState } from "@/components/shared/ErrorState";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageShell } from "@/layouts/PageShell";
 import { getAccessToken } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/api-error";
 import { formatCurrency, formatDateTime, cn } from "@/lib/utils";
 import { useAppStore } from "@/stores/useAppStore";
 import { useTenantStore } from "@/stores/useTenantStore";
@@ -116,10 +119,6 @@ type StaffAnalyticsResponse = {
   data: StaffRow[];
 };
 
-type OnboardingResponse = {
-  paymentConnected?: boolean;
-};
-
 type ShipmentsMetaResponse = {
   data: unknown[];
   meta: {
@@ -137,190 +136,6 @@ type TenantHealthResponse = {
   tier: "HEALTHY" | "AT_RISK" | "CRITICAL";
   tips: string[];
 };
-
-const fallbackOverview: AnalyticsFullResponse = {
-  totals: {
-    shipments: { value: 124, previousValue: 111, changePct: 11.7 },
-    revenue: { value: 58320, previousValue: 53400, changePct: 9.2 },
-    onTimeRate: { value: 96.4, previousValue: 94.1, changePct: 2.4 },
-    avgDeliveryDays: { value: 1.8, previousValue: 2.1, changePct: -14.3 }
-  }
-};
-
-const fallbackShipmentAnalytics: ShipmentAnalyticsResponse = {
-  lifecycleFunnel: [
-    { status: "PENDING", count: 26, pct: 100 },
-    { status: "PROCESSING", count: 24, pct: 92.3 },
-    { status: "PICKED_UP", count: 21, pct: 80.8 },
-    { status: "IN_TRANSIT", count: 19, pct: 73.1 },
-    { status: "OUT_FOR_DELIVERY", count: 14, pct: 53.8 },
-    { status: "DELIVERED", count: 11, pct: 42.3 },
-    { status: "FAILED_DELIVERY", count: 3, pct: 11.5 },
-    { status: "RETURNED", count: 1, pct: 3.8 }
-  ],
-  slaCompliance: {
-    onTime: 108,
-    late: 7,
-    compliancePct: 93.9,
-    avgDeliveryHours: 28.4,
-    breachesByReason: [
-      { reason: "FAILED_DELIVERY", count: 3 },
-      { reason: "EXCEPTION", count: 4 }
-    ]
-  },
-  exceptions: {
-    activeExceptions: 6,
-    stalePendingOver24h: 4,
-    failedDeliveryRate: 6.2,
-    topExceptionRoutes: [
-      { route: "Lagos -> London", count: 3 },
-      { route: "Abuja -> Manchester", count: 2 },
-      { route: "Birmingham -> Glasgow", count: 1 }
-    ]
-  }
-};
-
-const fallbackFinanceSummary: FinanceSummaryResponse = {
-  totalInvoiced: 124000,
-  collected: 91350,
-  outstanding: 32650,
-  overdue: 8200
-};
-
-const fallbackRevenueAnalytics: RevenueAnalyticsResponse = {
-  byServiceTier: [
-    { serviceTier: "EXPRESS", revenue: 28210 },
-    { serviceTier: "STANDARD", revenue: 18450 },
-    { serviceTier: "SAME_DAY", revenue: 11660 }
-  ],
-  topCustomers: [
-    { customerId: "cust-1", customerName: "Acme Retail", revenue: 18420 },
-    { customerId: "cust-2", customerName: "Northline Logistics", revenue: 14980 },
-    { customerId: "cust-3", customerName: "PortBridge", revenue: 11830 }
-  ],
-  collectionRate: 78.6
-};
-
-const fallbackActivity: ActivityEntry[] = [
-  {
-    id: "activity-1",
-    type: "shipment",
-    title: "Shipment FWD-2026-00051 out for delivery",
-    subtitle: "Assigned to Amina Yusuf for the west London run",
-    link: "/shipments",
-    timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(),
-    icon: "truck",
-    colour: "blue"
-  },
-  {
-    id: "activity-2",
-    type: "ticket",
-    title: "Support issue opened",
-    subtitle: "Need POD photo for invoice dispute",
-    link: "/support",
-    timestamp: new Date(Date.now() - 1000 * 60 * 26).toISOString(),
-    icon: "message-square",
-    colour: "emerald"
-  },
-  {
-    id: "activity-3",
-    type: "invoice",
-    title: "Invoice FW-INV-2026-0012 paid",
-    subtitle: "4,820.00 GBP settled via Stripe",
-    link: "/finance",
-    timestamp: new Date(Date.now() - 1000 * 60 * 48).toISOString(),
-    icon: "file-text",
-    colour: "violet"
-  },
-  {
-    id: "activity-4",
-    type: "return",
-    title: "Return approved",
-    subtitle: "Reattempt exceeded for customer order RET-284",
-    link: "/returns",
-    timestamp: new Date(Date.now() - 1000 * 60 * 82).toISOString(),
-    icon: "rotate-ccw",
-    colour: "amber"
-  }
-];
-
-const fallbackMapShipments: LiveMapShipment[] = [
-  {
-    shipmentId: "map-1",
-    trackingNumber: "FWD-2026-00051",
-    lat: 51.509,
-    lng: -0.118,
-    status: "OUT_FOR_DELIVERY",
-    driverName: "Amina Yusuf",
-    recipientName: "Acme Retail",
-    estimatedDelivery: new Date(Date.now() + 1000 * 60 * 45).toISOString(),
-    origin: "Heathrow Hub",
-    destination: "Soho, London"
-  },
-  {
-    shipmentId: "map-2",
-    trackingNumber: "FWD-2026-00048",
-    lat: 51.515,
-    lng: -0.072,
-    status: "IN_TRANSIT",
-    driverName: "Daniel Cole",
-    recipientName: "Northline Logistics",
-    estimatedDelivery: new Date(Date.now() + 1000 * 60 * 90).toISOString(),
-    origin: "Barking Hub",
-    destination: "Canary Wharf"
-  },
-  {
-    shipmentId: "map-3",
-    trackingNumber: "FWD-2026-00042",
-    lat: 51.486,
-    lng: -0.135,
-    status: "OUT_FOR_DELIVERY",
-    driverName: "Lara Okafor",
-    recipientName: "PortBridge",
-    estimatedDelivery: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
-    origin: "Croydon Hub",
-    destination: "Vauxhall"
-  }
-];
-
-const fallbackStaff: StaffRow[] = [
-  { staffId: "staff-1", staffName: "Amina Yusuf", role: "TENANT_DRIVER", shipmentsProcessed: 9, completedStops: 7, avgHandleMinutes: 11.2 },
-  { staffId: "staff-2", staffName: "Daniel Cole", role: "TENANT_DRIVER", shipmentsProcessed: 7, completedStops: 6, avgHandleMinutes: 13.1 },
-  { staffId: "staff-3", staffName: "Lara Okafor", role: "TENANT_DRIVER", shipmentsProcessed: 3, completedStops: 2, avgHandleMinutes: 9.6 }
-];
-
-const fallbackActiveDeliveryCount = 53;
-const fallbackOpenTicketCount = 4;
-
-function DashboardShimmer() {
-  return (
-    <PageShell title="Dashboard" description="Loading your operational command centre.">
-      <div className="space-y-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="mt-4 h-8 w-20" />
-              <Skeleton className="mt-3 h-3 w-32" />
-            </div>
-          ))}
-        </div>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Skeleton className="h-72 rounded-2xl" />
-          <Skeleton className="h-72 rounded-2xl" />
-        </div>
-        <div className="grid gap-4 xl:grid-cols-[1.3fr,0.7fr]">
-          <Skeleton className="h-80 rounded-2xl" />
-          <div className="space-y-3">
-            <Skeleton className="h-24 rounded-2xl" />
-            <Skeleton className="h-24 rounded-2xl" />
-            <Skeleton className="h-24 rounded-2xl" />
-          </div>
-        </div>
-      </div>
-    </PageShell>
-  );
-}
 
 function startOfDay(date = new Date()) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -539,8 +354,28 @@ function MapSnapshot({ shipments }: { shipments: LiveMapShipment[] }) {
   );
 }
 
+/** Section body for one dashboard query: loading skeleton, the API's error with Retry, or the content. */
+function QuerySection<T>({
+  query,
+  rows,
+  what,
+  children
+}: {
+  query: { isError: boolean; error: unknown; data: T | undefined; refetch: () => unknown };
+  rows?: number;
+  what: string;
+  children: (data: T) => ReactNode;
+}) {
+  if (query.isError) {
+    return <ErrorState title={`${what} could not be loaded`} description={apiErrorMessage(query.error, "The server returned an error.")} onRetry={() => void query.refetch()} />;
+  }
+  if (query.data === undefined) return <SectionLoading rows={rows} />;
+  return <>{children(query.data)}</>;
+}
+
+const UNAVAILABLE = "—";
+
 export function TenantDashboardPage() {
-  const [showShimmer, setShowShimmer] = useState(true);
   const tenant = useTenantStore((state) => state.tenant);
   const user = useAppStore((state) => state.user);
   const dashboardChecklistDismissed = useAppStore((state) => state.dashboardChecklistDismissed);
@@ -638,71 +473,54 @@ export function TenantDashboardPage() {
     refetchInterval: 60_000
   });
 
-  const onboardingQuery = useQuery({
-    queryKey: ["dashboard-onboarding-state"],
-    queryFn: () => fetchJson<OnboardingResponse>("/v1/tenant/onboarding"),
-    enabled: hasApiSession,
-    retry: false,
-    refetchInterval: 60_000
-  });
+  // The server checklist (WP-2.17) is the only source for what is set up.
+  const onboardingQuery = useOnboardingChecklist(hasApiSession);
 
-  const overview = overviewQuery.data ?? fallbackOverview;
-  const shipmentAnalyticsToday = shipmentAnalyticsTodayQuery.data ?? fallbackShipmentAnalytics;
-  const shipmentAnalyticsWeek = shipmentAnalyticsWeekQuery.data ?? fallbackShipmentAnalytics;
-  const activity = activityQuery.data?.entries ?? fallbackActivity;
-  const liveShipments = liveMapQuery.data?.shipments ?? fallbackMapShipments;
-  const financeSummary = financeSummaryQuery.data ?? fallbackFinanceSummary;
-  const revenue = revenueQuery.data ?? fallbackRevenueAnalytics;
-  const staff = staffQuery.data?.data ?? fallbackStaff;
+  const overview = overviewQuery.data;
+  const shipmentAnalyticsToday = shipmentAnalyticsTodayQuery.data;
+  const shipmentAnalyticsWeek = shipmentAnalyticsWeekQuery.data;
+  const activity = activityQuery.data?.entries;
+  const liveShipments = liveMapQuery.data?.shipments;
+  const staff = staffQuery.data?.data;
 
-  const deliveredToday =
-    shipmentAnalyticsToday.lifecycleFunnel.find((entry) => entry.status === "DELIVERED")?.count ?? 0;
-  const activeDeliveries = activeDeliveriesQuery.data?.meta.total ?? fallbackActiveDeliveryCount;
-  const openTickets = supportOpenQuery.data?.total ?? fallbackOpenTicketCount;
-  const mapDriversOnline = new Set(liveShipments.map((shipment) => shipment.driverName).filter(Boolean)).size;
-  const overloadedDrivers = staff.filter((row) => row.shipmentsProcessed >= 8).length;
-  const totalDriverWorkload = staff.reduce((sum, row) => sum + row.shipmentsProcessed, 0);
-  const averageJobsPerDriver = staff.length > 0 ? totalDriverWorkload / staff.length : 0;
-  const riskItems = [
+  const deliveredToday = shipmentAnalyticsToday?.lifecycleFunnel.find((entry) => entry.status === "DELIVERED")?.count ?? 0;
+  const activeDeliveries = activeDeliveriesQuery.data?.meta.total;
+  const openTickets = supportOpenQuery.data?.total;
+  const mapDriversOnline = new Set((liveShipments ?? []).map((shipment) => shipment.driverName).filter(Boolean)).size;
+  const overloadedDrivers = (staff ?? []).filter((row) => row.shipmentsProcessed >= 8).length;
+  const totalDriverWorkload = (staff ?? []).reduce((sum, row) => sum + row.shipmentsProcessed, 0);
+  const averageJobsPerDriver = staff && staff.length > 0 ? totalDriverWorkload / staff.length : 0;
+  const riskItems = (week: ShipmentAnalyticsResponse) => [
     {
       label: "Overdue pending jobs",
-      value: shipmentAnalyticsWeek.exceptions.stalePendingOver24h,
+      value: week.exceptions.stalePendingOver24h,
       tone: "border-amber-200 bg-amber-50 text-amber-900",
       hint: "Shipments stuck without progress for more than 24 hours.",
       href: "/shipments?status=PENDING"
     },
     {
       label: "Active exceptions",
-      value: shipmentAnalyticsWeek.exceptions.activeExceptions,
+      value: week.exceptions.activeExceptions,
       tone: "border-amber-200 bg-amber-50 text-amber-900",
       hint: "Operational exceptions needing intervention.",
       href: "/shipments?status=EXCEPTION"
     },
     {
       label: "Failed delivery rate",
-      value: `${shipmentAnalyticsWeek.exceptions.failedDeliveryRate.toFixed(1)}%`,
+      value: `${week.exceptions.failedDeliveryRate.toFixed(1)}%`,
       tone: "border-gray-200 bg-gray-50 text-gray-800",
       hint: "Share of out-for-delivery jobs ending in a failed attempt.",
       href: "/analytics"
     },
     {
       label: "Open support cases",
-      value: openTickets,
+      value: openTickets ?? UNAVAILABLE,
       tone: "border-gray-200 bg-gray-50 text-gray-800",
       hint: "Tickets still open across customer and ops support.",
       href: "/support"
     }
   ];
   const financeForbidden = queryErrorStatus(financeSummaryQuery.error) === 403 || queryErrorStatus(revenueQuery.error) === 403;
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setShowShimmer(false), 1400);
-    return () => window.clearTimeout(timer);
-  }, []);
-
-  if (showShimmer) {
-    return <DashboardShimmer />;
-  }
 
   return (
     <PageShell
@@ -722,7 +540,7 @@ export function TenantDashboardPage() {
       <div className="space-y-6">
         {!hasApiSession ? (
           <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Dev session detected. Dashboard widgets fall back to local sample data until a real API token is present.
+            Dev session detected. Widgets stay empty until a real API token is present.
           </div>
         ) : null}
 
@@ -752,18 +570,8 @@ export function TenantDashboardPage() {
                 className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
-                label: "Bulk import",
-                to: "/reports",
-                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
-              },
-              {
-                label: "Dispatch jobs",
-                to: "/dispatch",
-                className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
-              },
-              {
-                label: "Build route",
-                to: "/routes",
+                label: "Fleet",
+                to: "/fleet",
                 className: "border-gray-200 bg-white text-gray-800 hover:border-[var(--tenant-primary)] hover:bg-gray-50"
               },
               {
@@ -805,17 +613,17 @@ export function TenantDashboardPage() {
         <div className="grid auto-rows-fr gap-4 md:grid-cols-2 xl:grid-cols-3">
           <MetricCard
             label="Shipments today"
-            value={String(overview.totals.shipments.value)}
-            delta={`${formatDelta(overview.totals.shipments.changePct)} vs previous window`}
+            value={overview ? String(overview.totals.shipments.value) : UNAVAILABLE}
+            delta={overview ? `${formatDelta(overview.totals.shipments.changePct)} vs previous window` : overviewQuery.isError ? "Could not load" : "Loading…"}
             href="/shipments?datePreset=today"
             icon={<PackageCheck size={18} />}
-            accent={overview.totals.shipments.changePct >= 0 ? "border-gray-200 bg-gray-50 text-gray-700" : "border-amber-200 bg-amber-50 text-amber-900"}
+            accent={(overview?.totals.shipments.changePct ?? 0) >= 0 ? "border-gray-200 bg-gray-50 text-gray-700" : "border-amber-200 bg-amber-50 text-amber-900"}
             subtitle="New shipments created since midnight"
           />
           <MetricCard
             label="Active deliveries"
-            value={String(activeDeliveries)}
-            delta={`${activeDeliveries} live in transit or out for delivery`}
+            value={activeDeliveries === undefined ? UNAVAILABLE : String(activeDeliveries)}
+            delta={activeDeliveries === undefined ? (activeDeliveriesQuery.isError ? "Could not load" : "Loading…") : `${activeDeliveries} live in transit or out for delivery`}
             href="/shipments?status=IN_TRANSIT,OUT_FOR_DELIVERY"
             icon={<Truck size={18} />}
             accent="border-gray-200 bg-gray-50 text-gray-700"
@@ -823,8 +631,8 @@ export function TenantDashboardPage() {
           />
           <MetricCard
             label="Delivered today"
-            value={String(deliveredToday)}
-            delta={`${shipmentAnalyticsToday.slaCompliance.onTime} on time today`}
+            value={shipmentAnalyticsToday ? String(deliveredToday) : UNAVAILABLE}
+            delta={shipmentAnalyticsToday ? `${shipmentAnalyticsToday.slaCompliance.onTime} on time today` : shipmentAnalyticsTodayQuery.isError ? "Could not load" : "Loading…"}
             href="/shipments?status=DELIVERED"
             icon={<PackageCheck size={18} />}
             accent="border-gray-200 bg-gray-50 text-gray-700"
@@ -832,8 +640,8 @@ export function TenantDashboardPage() {
           />
           <MetricCard
             label="Exception queue"
-            value={String(shipmentAnalyticsWeek.exceptions.activeExceptions)}
-            delta={`${shipmentAnalyticsWeek.exceptions.stalePendingOver24h} ageing jobs over 24h`}
+            value={shipmentAnalyticsWeek ? String(shipmentAnalyticsWeek.exceptions.activeExceptions) : UNAVAILABLE}
+            delta={shipmentAnalyticsWeek ? `${shipmentAnalyticsWeek.exceptions.stalePendingOver24h} ageing jobs over 24h` : shipmentAnalyticsWeekQuery.isError ? "Could not load" : "Loading…"}
             href="/shipments?status=EXCEPTION"
             icon={<ShieldAlert size={18} />}
             accent="border-amber-200 bg-amber-50 text-amber-900"
@@ -841,8 +649,8 @@ export function TenantDashboardPage() {
           />
           <MetricCard
             label="Support tickets"
-            value={String(openTickets)}
-            delta={`${activity.filter((entry) => entry.type === "ticket").length} ticket events in 24h`}
+            value={openTickets === undefined ? UNAVAILABLE : String(openTickets)}
+            delta={activity ? `${activity.filter((entry) => entry.type === "ticket").length} ticket events in 24h` : supportOpenQuery.isError ? "Could not load" : "Loading…"}
             href="/support"
             icon={<Ticket size={18} />}
             accent="border-gray-200 bg-gray-50 text-gray-700"
@@ -850,8 +658,8 @@ export function TenantDashboardPage() {
           />
           <MetricCard
             label="SLA compliance"
-            value={`${shipmentAnalyticsWeek.slaCompliance.compliancePct.toFixed(1)}%`}
-            delta={`${shipmentAnalyticsWeek.slaCompliance.late} late deliveries in range`}
+            value={shipmentAnalyticsWeek ? `${shipmentAnalyticsWeek.slaCompliance.compliancePct.toFixed(1)}%` : UNAVAILABLE}
+            delta={shipmentAnalyticsWeek ? `${shipmentAnalyticsWeek.slaCompliance.late} late deliveries in range` : shipmentAnalyticsWeekQuery.isError ? "Could not load" : "Loading…"}
             href="/analytics"
             icon={<Clock3 size={18} />}
             accent="border-gray-200 bg-gray-50 text-gray-700"
@@ -861,17 +669,8 @@ export function TenantDashboardPage() {
 
         <div className="grid gap-6 xl:grid-cols-[1.45fr,0.95fr]">
           <div className="space-y-6">
-            {tenant?.onboarding_complete === false && !dashboardChecklistDismissed ? (
-              <DashboardChecklist
-                state={{
-                  brandConfigured: Boolean(tenant?.name),
-                  firstShipmentCreated: overview.totals.shipments.value > 0,
-                  teamInvited: staff.length > 1,
-                  paymentsConnected: onboardingQuery.data?.paymentConnected ?? financeSummary.collected > 0,
-                  domainConfigured: Boolean(tenant?.domain)
-                }}
-                onDismiss={() => setDashboardChecklistDismissed(true)}
-              />
+            {onboardingQuery.data && !onboardingQuery.data.completedAt && !dashboardChecklistDismissed ? (
+              <DashboardChecklist checklist={onboardingQuery.data} onDismiss={() => setDashboardChecklistDismissed(true)} />
             ) : null}
 
             <SectionCard
@@ -883,11 +682,10 @@ export function TenantDashboardPage() {
                 </Button>
               }
             >
-              {shipmentAnalyticsWeekQuery.isLoading && hasApiSession ? (
-                <SectionLoading />
-              ) : (
+              <QuerySection query={shipmentAnalyticsWeekQuery} what="Risk indicators">
+                {(week) => (
                 <div className="space-y-3">
-                  {riskItems.map((item) => (
+                  {riskItems(week).map((item) => (
                     <Link
                       key={item.label}
                       to={item.href}
@@ -904,14 +702,14 @@ export function TenantDashboardPage() {
                     </Link>
                   ))}
 
-                  {shipmentAnalyticsWeek.exceptions.topExceptionRoutes.length > 0 ? (
+                  {week.exceptions.topExceptionRoutes.length > 0 ? (
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-gray-900">Top exception routes</p>
                         <Badge variant="neutral">Last 7 days</Badge>
                       </div>
                       <div className="mt-3 space-y-2">
-                        {shipmentAnalyticsWeek.exceptions.topExceptionRoutes.map((route) => (
+                        {week.exceptions.topExceptionRoutes.map((route) => (
                           <div key={route.route} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-sm text-gray-700">
                             <span>{compactRouteLabel(route.route)}</span>
                             <Badge variant="warning">{route.count}</Badge>
@@ -921,7 +719,8 @@ export function TenantDashboardPage() {
                     </div>
                   ) : null}
                 </div>
-              )}
+                )}
+              </QuerySection>
             </SectionCard>
 
             <SectionCard
@@ -933,7 +732,9 @@ export function TenantDashboardPage() {
                 </Button>
               }
             >
-              {activityQuery.isLoading && hasApiSession ? (
+              {activityQuery.isError ? (
+                <ErrorState title="Activity could not be loaded" description={apiErrorMessage(activityQuery.error, "The server returned an error.")} onRetry={() => void activityQuery.refetch()} />
+              ) : !activity ? (
                 <SectionLoading rows={5} />
               ) : activity.length === 0 ? (
                 <EmptyState
@@ -982,7 +783,9 @@ export function TenantDashboardPage() {
                 </Button>
               }
             >
-              {liveMapQuery.isLoading && hasApiSession ? <SectionLoading rows={3} /> : <MapSnapshot shipments={liveShipments} />}
+              <QuerySection query={liveMapQuery} rows={3} what="Live locations">
+                {(map) => <MapSnapshot shipments={map.shipments} />}
+              </QuerySection>
             </SectionCard>
 
             <SectionCard
@@ -998,9 +801,9 @@ export function TenantDashboardPage() {
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   Finance is plan-gated for this tenant. Upgrade the finance module to unlock invoices, payments, and collections analytics here.
                 </div>
-              ) : financeSummaryQuery.isLoading && hasApiSession ? (
-                <SectionLoading />
               ) : (
+                <QuerySection query={financeSummaryQuery} what="Finance summary">
+                {(financeSummary) => (
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -1021,6 +824,8 @@ export function TenantDashboardPage() {
                     </div>
                   </div>
 
+                  <QuerySection query={revenueQuery} what="Revenue analytics">
+                  {(revenue) => (
                   <div className="rounded-xl border border-gray-200 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-semibold text-gray-900">Collections and top customers</p>
@@ -1035,7 +840,11 @@ export function TenantDashboardPage() {
                       ))}
                     </div>
                   </div>
+                  )}
+                  </QuerySection>
                 </div>
+                )}
+                </QuerySection>
               )}
             </SectionCard>
 
@@ -1048,9 +857,8 @@ export function TenantDashboardPage() {
                 </Button>
               }
             >
-              {staffQuery.isLoading && hasApiSession ? (
-                <SectionLoading />
-              ) : (
+              <QuerySection query={staffQuery} what="Team analytics">
+                {({ data: staffRows }) => (
                 <div className="space-y-4">
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -1068,15 +876,15 @@ export function TenantDashboardPage() {
                     <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Average handle time</p>
                       <p className="mt-2 text-2xl font-semibold text-gray-900">
-                        {staff.length > 0
-                          ? `${(staff.reduce((sum, row) => sum + row.avgHandleMinutes, 0) / staff.length).toFixed(1)}m`
-                          : "0m"}
+                        {staffRows.length > 0
+                          ? `${(staffRows.reduce((sum, row) => sum + row.avgHandleMinutes, 0) / staffRows.length).toFixed(1)}m`
+                          : "No data"}
                       </p>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    {staff.slice(0, 4).map((member) => (
+                    {staffRows.slice(0, 4).map((member) => (
                       <div key={member.staffId} className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-4 py-3">
                         <div>
                           <p className="text-sm font-semibold text-gray-900">{member.staffName}</p>
@@ -1090,7 +898,8 @@ export function TenantDashboardPage() {
                     ))}
                   </div>
                 </div>
-              )}
+                )}
+              </QuerySection>
             </SectionCard>
           </div>
         </div>

@@ -17,12 +17,14 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0042_tenant_close (real: `0044_tenant_close`, C11) | P1 / WP-1.2 | `Tenant.closedAt`, `closedReason`, `purgeAfter`; `limitsOverriddenAt` (C42) |
 | 0043_platform_activity (real: `0040_platform_activity`, C11) | P1 / WP-1.0 | `PlatformActivity`; `OutboxEvent.tenantId` |
 | 0044_staff_notifications (real: `0041_staff_notifications`, C11) | P1 / WP-1.0 | `StaffNotification` |
-| 0045_support_audience | P2 / WP-2.3 | `TicketAudience`, `MessageAuthorType`, `MessageVisibility`; ticket/message columns; backfill |
-| 0046_region_change_requests | P2 / WP-2.6 | `RegionChangeRequest` |
-| 0047_plan_change | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
-| 0048_feedback | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
+| 0046_notification_delivery (real number; not in the original plan, C62) | P2 / WP-2.2 | `NotificationLog.tenantId` optional; `platformUserId`, `template`, `recipient`, `jobId @unique`, `attempts`, `provider`, `updatedAt` |
+| 0045_support_audience (real: `0047_support_audience`, backfill `0047-ticket-messages.ts`, C11/C63; adds `slaBreachedAt`) | P2 / WP-2.3 | `TicketAudience`, `MessageAuthorType`, `MessageVisibility`; ticket/message columns; backfill |
+| 0048_trust_safety_appeals (real number; not in the original plan, C64) | P2 / WP-2.4 | `FraudSignal.category/decisionNote/decidedAt`; `TenantAppeal.infoRequest/infoRequestedAt/tenantReply/tenantRepliedAt/decidedAt` |
+| 0046_region_change_requests (real: `0050_region_change_requests`, C66; Tenant relation) | P2 / WP-2.6 | `RegionChangeRequest` |
+| 0047_plan_change (real: `0051_plan_change`, backfill `0051-subscription-events.ts`, C67; adds `SubscriptionEvent.stripeEventId/planChangeRequestId`, `SaveOffer.redeemedCreditNoteId`) | P2 / WP-2.7 | `PlanChangeRequest`, `SubscriptionEvent`; `SaveOffer` redemption fields |
+| 0048_feedback (real: `0052_feedback`, C68; Tenant/FeedbackItem relations) | P2 / WP-2.8 | `FeedbackItem`, `FeedbackComment`, `NpsPromptState` |
 | 0049_announcement_receipts | P2 / WP-2.14 | `AnnouncementReceipt`; `PlatformAnnouncement.updatedAt/archivedAt` |
-| 0050_dsar_exports | P2 / WP-2.5 | `DSARRequest` fields; `ComplianceExport` fields; `ExportBlob`; `LegalHold.releaseReason` |
+| 0050_dsar_exports (real: `0049_dsar_exports`, C65; adds `DSARRequest.overdueAt`, `ExportBlob.tenantId`) | P2 / WP-2.5 | `DSARRequest` fields; `ComplianceExport` fields; `ExportBlob`; `LegalHold.releaseReason` |
 | 0051_tenant_payment_gateways | P2 / WP-2.12 | `TenantPaymentGateway` (encrypted); `TenantSettings.webhookSecret` encrypted in place |
 | 0052_tenant_user_lock | P2 / WP-2.15 | `User.lockedAt/lockedReason/lockedByPlatformUserId` |
 | 0053_ai_limits_and_escalations | P2 / WP-2.10, 2.11 | `TenantAiLimit` audit columns; `ExceptionCase` escalation columns |

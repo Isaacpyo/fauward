@@ -10,6 +10,22 @@ import { findServiceByKey } from "@/pillars/_manifests";
 import { CustomerOverview } from "@/pillars/customer/CustomerOverview";
 import { Customer360IndexPage } from "@/pillars/customer/customer360/Customer360IndexPage";
 import { Customer360Page } from "@/pillars/customer/customer360/Customer360Page";
+import { DeliveryLogPage } from "@/pillars/customer/comms/DeliveryLogPage";
+import { AnnouncementsPage } from "@/pillars/customer/comms/AnnouncementsPage";
+import { OnboardingFunnelPage, StuckTenantsPage } from "@/pillars/customer/onboarding/OnboardingPages";
+import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
+import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
+import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
+import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
+import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
+import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
+import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
+import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/customer/feedback/FeedbackPages";
+import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
+import { WebhookFailuresPage } from "@/pillars/platform/integrations/WebhookFailuresPage";
+import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
+import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
+import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
 import { InternalOpsPage } from "@/pillars/InternalOpsPage";
 import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
@@ -34,6 +50,7 @@ import { AuditExportPage } from "@/pillars/trust/audit/AuditExportPage";
 import { AuditIntegrityPage } from "@/pillars/trust/audit/AuditIntegrityPage";
 import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
 import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
+import { TenantAuditEventsPage } from "@/pillars/trust/audit/TenantAuditEventsPage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
 import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
 import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
@@ -98,7 +115,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/flags/:key", element: <OpsRoute permission="platform.flags.read" title="Feature Flag Detail" description="Flag detail, tenant overrides and local audit entries." endpoint="/flags/:key" related={[{ label: "Audit", to: "audit" }]} notice={flagOverridesNotWired} /> },
   { path: "/platform/flags/:key/audit", element: <OpsRoute permission="platform.flags.read" title="Flag Audit" description="Local audit of per-tenant LaunchDarkly override changes." endpoint="/flags/:key/audit" /> },
   { path: "/platform/releases", element: <OpsRoute permission="platform.flags.read" title="Releases" description="Current deployed versions and release workflow links." endpoint="/releases" /> },
-  { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }]} /> },
+  { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }, { label: "Tenant escalations", to: "/platform/incidents/escalations" }]} /> },
+  { path: "/platform/incidents/escalations", element: <PermissionRoute permission="platform.incidents.read">
+                <EscalationsPage />
+              </PermissionRoute> },
   { path: "/platform/incidents/runbooks", element: <OpsRoute permission="platform.incidents.read" title="Incident Runbooks" description="Markdown runbook library for incident responders." endpoint="/incidents/runbooks" /> },
   { path: "/platform/incidents/:id", element: <OpsRoute permission="platform.incidents.read" title="Incident Detail" description="Incident timeline and tenant impact mapping." endpoint="/incidents/:id" /> },
   { path: "/platform/incidents/:id/postmortem", element: <OpsRoute permission="platform.incidents.read" title="Postmortem" description="Postmortem link and incident closure context." endpoint="/incidents/:id" /> },
@@ -106,7 +126,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
   { path: "/platform/integrations", element: <OpsRoute permission="platform.integrations.read" title="Integration Health" description="Third-party provider status, credentials and webhook delivery health." endpoint="/integrations" related={[{ label: "Credentials", to: "/platform/integrations/credentials" }, { label: "Webhooks", to: "/platform/integrations/webhooks" }]} /> },
   { path: "/platform/integrations/credentials", element: <OpsRoute permission="platform.integrations.read" title="Integration Credentials" description="Credential metadata shared with the secret rotation tracker." endpoint="/integrations/credentials" /> },
-  { path: "/platform/integrations/webhooks", element: <OpsRoute permission="platform.integrations.read" title="Webhook Health" description="Outbound webhook delivery attempts, retries and failures." endpoint="/integrations/webhooks" /> },
+  { path: "/platform/integrations/webhooks", element: <PermissionRoute permission="platform.integrations.read">
+                <WebhookFailuresPage />
+              </PermissionRoute> },
   { path: "/platform/integrations/:provider", element: <OpsRoute permission="platform.integrations.read" title="Provider Detail" description="Provider health detail and recent status." endpoint="/integrations/:provider" /> },
   { path: "/platform/impersonation", element: <PermissionRoute permission="platform.impersonation.start">
                 <ImpersonationCenterPage />
@@ -156,10 +178,21 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/tax/returns", element: <OpsRoute permission="revenue.tax.read" title="Tax Returns" description="Per-region return periods and filing status." endpoint="/tax/returns" /> },
   { path: "/revenue/tax/registrations", element: <OpsRoute permission="revenue.tax.read" title="Tax Registrations" description="VAT and GST registrations across Fauward operating regions." endpoint="/tax/registrations" /> },
   { path: "/revenue/tax/exemptions", element: <OpsRoute permission="revenue.tax.read" title="Tax Exemptions" description="Tenant exemption certificates and approval state." endpoint="/tax/exemptions" /> },
-  { path: "/revenue/subscriptions", element: <OpsRoute permission="revenue.subscriptions.read" title="Subscription Manager" description="Custom contracts, pricing overrides and subscription state." endpoint="/subscriptions" related={[{ label: "Contracts", to: "/revenue/subscriptions/contracts" }, { label: "Overrides", to: "/revenue/subscriptions/overrides" }]} /> },
-  { path: "/revenue/subscriptions/:id", element: <OpsRoute permission="revenue.subscriptions.read" title="Subscription Detail" description="Subscription and custom contract context." endpoint="/subscriptions" /> },
-  { path: "/revenue/subscriptions/contracts", element: <OpsRoute permission="revenue.subscriptions.read" title="Enterprise MSAs" description="Custom contracts and signed agreement metadata." endpoint="/subscriptions/contracts" /> },
-  { path: "/revenue/subscriptions/overrides", element: <OpsRoute permission="revenue.subscriptions.read" title="Pricing Overrides" description="Non-standard pricing approvals and active override rules." endpoint="/subscriptions/overrides" /> },
+  { path: "/revenue/subscriptions", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <SubscriptionsListPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/plan-change-requests", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <PlanChangeRequestsPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/contracts", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <ContractsPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/overrides", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <OverridesPage />
+              </PermissionRoute> },
+  { path: "/revenue/subscriptions/:id", element: <PermissionRoute permission="revenue.subscriptions.read">
+                <SubscriptionDetailPage />
+              </PermissionRoute> },
   { path: "/revenue/commissions", element: <OpsRoute permission="revenue.commissions.read" title="Reseller Commissions" description="Partner commission ledger and payout controls." endpoint="/commissions" related={[{ label: "Payouts", to: "/revenue/commissions/payouts" }, { label: "Disputes", to: "/revenue/commissions/disputes" }]} /> },
   { path: "/revenue/commissions/payouts", element: <OpsRoute permission="revenue.commissions.read" title="Commission Payouts" description="Finance-approved payout queue with CFO threshold controls." endpoint="/commissions/payouts" /> },
   { path: "/revenue/commissions/disputes", element: <OpsRoute permission="revenue.commissions.read" title="Commission Disputes" description="Partner disputes over commission attribution or payout." endpoint="/commissions/disputes" /> },
@@ -168,22 +201,49 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/360", element: <PermissionRoute permission="customer.360.read">
                 <Customer360IndexPage />
               </PermissionRoute> },
-  { path: "/customer/feedback", element: <ComingSoonRoute serviceKey="customer.feedback" /> },
+  { path: "/customer/feedback", element: <PermissionRoute permission="customer.feedback.read">
+                <FeedbackBoardPage />
+              </PermissionRoute> },
+  { path: "/customer/feedback/nps", element: <PermissionRoute permission="customer.feedback.read">
+                <NpsPage />
+              </PermissionRoute> },
+  { path: "/customer/feedback/:id", element: <PermissionRoute permission="customer.feedback.read">
+                <FeedbackDetailPage />
+              </PermissionRoute> },
   { path: "/customer/kb", element: <ComingSoonRoute serviceKey="customer.kb" /> },
   { path: "/customer/360/:tenantId", element: <PermissionRoute permission="customer.360.read">
                 <Customer360Page />
               </PermissionRoute> },
-  { path: "/customer/support", element: <OpsRoute permission="customer.support.read" title="Support Desk" description="Zendesk tickets and SLA risk surfaced by tenant context." endpoint="/support/tickets" related={[{ label: "SLA", to: "/customer/support/sla" }, { label: "Macros", to: "/customer/support/macros" }]} /> },
-  { path: "/customer/support/sla", element: <OpsRoute permission="customer.support.read" title="SLA Risk" description="Open support tickets ordered by oldest update and breach risk." endpoint="/support/sla" /> },
-  { path: "/customer/support/macros", element: <OpsRoute permission="customer.support.read" title="Support Macros" description="Canned responses sourced from Zendesk when configured." endpoint="/support/macros" /> },
+  { path: "/customer/support", element: <PermissionRoute permission="customer.support.read">
+                <TicketQueuePage />
+              </PermissionRoute> },
+  { path: "/customer/support/tickets/:id", element: <PermissionRoute permission="customer.support.read">
+                <TicketDetailPage />
+              </PermissionRoute> },
+  { path: "/customer/support/sla", element: <PermissionRoute permission="customer.support.read">
+                <SlaPage />
+              </PermissionRoute> },
+  { path: "/customer/support/macros", element: <PermissionRoute permission="customer.support.read">
+                <MacrosPage />
+              </PermissionRoute> },
   { path: "/customer/success", element: <OpsRoute permission="customer.success.read" title="CS Console" description="CSM book of business and tenant health score rollups." endpoint="/success" related={[{ label: "At Risk", to: "/customer/success/at-risk" }, { label: "Expansion", to: "/customer/success/expansion" }, { label: "Playbooks", to: "/customer/success/playbooks" }, { label: "Health Scoring", to: "/customer/success/health-scoring" }]} /> },
   { path: "/customer/success/at-risk", element: <OpsRoute permission="customer.success.read" title="At-Risk Accounts" description="Low health score tenants queued for intervention." endpoint="/success/at-risk" /> },
   { path: "/customer/success/expansion", element: <OpsRoute permission="customer.success.read" title="Expansion Ready" description="High health score tenants ready for expansion motion." endpoint="/success/expansion" /> },
   { path: "/customer/success/playbooks", element: <OpsRoute permission="customer.success.read" title="CS Playbooks" description="Health-triggered customer success playbooks." endpoint="/success/playbooks" /> },
   { path: "/customer/success/playbooks/:id/runs", element: <OpsRoute permission="customer.success.read" title="Playbook Runs" description="Sequential playbook execution status for tenant workflows." endpoint="/success/playbooks/:id/runs" /> },
   { path: "/customer/success/health-scoring", element: <OpsRoute permission="customer.success.read" title="Health Scoring" description="Weighted model configuration for nightly health scoring." endpoint="/success/health-scoring" /> },
-  { path: "/customer/comms", element: <OpsRoute permission="customer.comms.read" title="Communications Hub" description="Tenant-facing announcements and incident notices." endpoint="/announcements" primaryAction="New announcement" /> },
-  { path: "/customer/onboarding", element: <OpsRoute permission="customer.onboarding.read" title="Onboarding Tracker" description="Activation funnel for recently created tenants." endpoint="/onboarding/funnel" /> },
+  { path: "/customer/comms", element: <PermissionRoute permission="customer.comms.read">
+                <AnnouncementsPage />
+              </PermissionRoute> },
+  { path: "/customer/comms/delivery-log", element: <PermissionRoute permission="customer.comms.read">
+                <DeliveryLogPage />
+              </PermissionRoute> },
+  { path: "/customer/onboarding", element: <PermissionRoute permission="customer.onboarding.read">
+                <OnboardingFunnelPage />
+              </PermissionRoute> },
+  { path: "/customer/onboarding/stuck", element: <PermissionRoute permission="customer.onboarding.read">
+                <StuckTenantsPage />
+              </PermissionRoute> },
   { path: "/customer/qbr", element: <OpsRoute permission="customer.qbr.read" title="QBR Center" description="Quarterly business review calendar and generated decks." endpoint="/qbr" related={[{ label: "Templates", to: "/customer/qbr/templates" }]} /> },
   { path: "/customer/qbr/templates", element: <OpsRoute permission="customer.qbr.read" title="QBR Templates" description="HTML/CSS deck templates by customer segment." endpoint="/qbr/templates" /> },
   { path: "/customer/qbr/:tenantId", element: <OpsRoute permission="customer.qbr.read" title="Tenant QBR" description="Generated QBR decks and export status for one tenant." endpoint="/qbr/:tenantId" /> },
@@ -210,6 +270,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/audit", element: <PermissionRoute permission="trust.audit.read">
                 <AuditLogPage />
               </PermissionRoute> },
+  { path: "/trust/audit/tenant-events", element: <PermissionRoute permission="trust.audit.read">
+                <TenantAuditEventsPage />
+              </PermissionRoute> },
   { path: "/trust/audit/timeline", element: <PermissionRoute permission="trust.audit.read">
                 <AuditTimelinePage />
               </PermissionRoute> },
@@ -233,19 +296,36 @@ export const consoleRoutes: ConsoleRoute[] = [
                 <JitHistoryPage />
               </PermissionRoute> },
   { path: "/trust/compliance", element: <Navigate to="/trust/compliance/dsar" replace /> },
-  { path: "/trust/compliance/dsar", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Queue" description="GDPR data subject request workflow and SLA countdown." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/dsar/:id", element: <OpsRoute permission="trust.compliance.dsar.read" title="DSAR Detail" description="DSAR transition history and export delivery status." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/legal-hold", element: <OpsRoute permission="trust.compliance.legal-hold.read" title="Legal Holds" description="Active holds that block tenant data deletion and erasure completion." endpoint="/compliance/legal-hold" /> },
-  { path: "/trust/compliance/legal-hold/:id", element: <OpsRoute permission="trust.compliance.legal-hold.read" title="Legal Hold Detail" description="Hold scope and affected data." endpoint="/compliance/legal-hold" /> },
-  { path: "/trust/compliance/exports", element: <OpsRoute permission="trust.compliance.dsar.read" title="Compliance Exports" description="Bulk export jobs and signed delivery links." endpoint="/audit/entries?action=compliance" /> },
-  { path: "/trust/compliance/dpa", element: <OpsRoute permission="trust.compliance.dsar.read" title="DPA Tracking" description="Data processing agreement tracking surface." endpoint="/compliance/dsar" /> },
-  { path: "/trust/compliance/subpoenas", element: <OpsRoute permission="trust.compliance.dsar.read" title="Subpoenas" description="Subpoena response queue and audit trail." endpoint="/compliance/dsar" /> },
-  { path: "/trust/safety", element: <Navigate to="/trust/safety/fraud" replace /> },
-  { path: "/trust/safety/fraud", element: <OpsRoute permission="trust.safety.read" title="Fraud Queue" description="Manual, Stripe Radar and velocity fraud signals." endpoint="/safety/fraud" /> },
-  { path: "/trust/safety/aup", element: <OpsRoute permission="trust.safety.read" title="AUP Violations" description="Acceptable use policy review queue." endpoint="/safety/aup" /> },
-  { path: "/trust/safety/suspensions", element: <OpsRoute permission="trust.safety.read" title="Suspensions" description="Suspended tenants and enforcement state." endpoint="/safety/suspensions" /> },
-  { path: "/trust/safety/appeals", element: <OpsRoute permission="trust.safety.read" title="Appeals" description="Tenant suspension appeals and resolution status." endpoint="/safety/appeals" /> },
-  { path: "/trust/safety/rules", element: <OpsRoute permission="trust.safety.read" title="Safety Rules" description="Phase 4 placeholder for automated trust and safety rules." endpoint="/safety/rules" /> },
+  { path: "/trust/compliance/dsar", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <DsarQueuePage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/dsar/:id", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <DsarDetailPage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/legal-hold", element: <PermissionRoute permission="trust.compliance.legal-hold.read">
+                <LegalHoldsPage />
+              </PermissionRoute> },
+  { path: "/trust/compliance/exports", element: <PermissionRoute permission="trust.compliance.dsar.read">
+                <ExportsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety", element: <Navigate to="/trust/safety/appeals" replace /> },
+  { path: "/trust/safety/fraud", element: <Navigate to="/trust/safety/signals?category=FRAUD" replace /> },
+  { path: "/trust/safety/aup", element: <Navigate to="/trust/safety/signals?category=AUP" replace /> },
+  { path: "/trust/safety/signals", element: <PermissionRoute permission="trust.safety.read">
+                <SignalsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/suspensions", element: <PermissionRoute permission="trust.safety.read">
+                <SuspensionsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/appeals", element: <PermissionRoute permission="trust.safety.read">
+                <AppealsPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/appeals/:id", element: <PermissionRoute permission="trust.safety.read">
+                <AppealDetailPage />
+              </PermissionRoute> },
+  { path: "/trust/safety/rules", element: <PermissionRoute permission="trust.safety.read">
+                <RulesPage />
+              </PermissionRoute> },
   { path: "/trust/secrets", element: <OpsRoute permission="trust.secrets.read" title="Secret Management" description="Doppler metadata inventory, expiry tracking and access audit." endpoint="/secrets" related={[{ label: "Expiring", to: "/trust/secrets/expiring" }, { label: "Audit", to: "/trust/secrets/audit" }]} /> },
   { path: "/trust/secrets/expiring", element: <OpsRoute permission="trust.secrets.read" title="Expiring Secrets" description="Credentials expiring within 30 days." endpoint="/secrets/expiring" /> },
   { path: "/trust/secrets/audit", element: <OpsRoute permission="trust.secrets.read" title="Secret Access Audit" description="Metadata-only secret access audit log." endpoint="/secrets/audit" /> },

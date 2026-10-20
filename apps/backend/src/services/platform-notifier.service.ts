@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { ActivitySeverity } from '@prisma/client';
 import type { Permission } from '@fauward/internal-rbac';
 import { createInAppNotifications } from '../modules/notifications/notifications.routes.js';
-import { sendEmail } from '../modules/notifications/notifications.service.js';
+import { sendEmail, sendStaffEmail } from '../modules/notifications/notifications.service.js';
+import { config } from '../config/index.js';
 import type { EMAIL_TEMPLATES } from '../modules/notifications/email-templates.js';
 
 // PlatformNotifier (D6): the one entrypoint for Fauward → tenant and Fauward → staff notifications. Tenant side reuses
@@ -87,6 +88,8 @@ export type StaffNotificationInput = ({ permission: Permission; platformUserIds?
   tenantId?: string | null;
   /** Never notify these staff, e.g. the requester of a JIT request who also holds the approve permission. */
   excludePlatformUserIds?: string[];
+  /** Also email each recipient (`staff_notification` template, through the notification worker). */
+  email?: boolean;
 };
 
 /** Platform users of active staff holding `permission` through an unexpired role assignment. */
@@ -104,10 +107,10 @@ async function platformUsersWithPermission(app: NotifierApp, permission: Permiss
 }
 
 /**
- * Console bell entries (StaffNotification) for the given staff, or for every active staff member holding a permission.
- * Staff email is not sent yet: the notification worker needs a tenant id for its log row (WP-2.2 adds the system path).
+ * Console bell entries (StaffNotification) for the given staff, or for every active staff member holding a permission;
+ * with `email: true` each recipient also gets an email (logged by the worker without a tenant, WP-2.2).
  */
-export async function notifyStaff(app: NotifierApp, input: StaffNotificationInput): Promise<{ inApp: number }> {
+export async function notifyStaff(app: NotifierApp, input: StaffNotificationInput): Promise<{ inApp: number; emailsQueued?: number }> {
   try {
     const excluded = new Set(input.excludePlatformUserIds ?? []);
     const candidates = input.permission ? await platformUsersWithPermission(app, input.permission) : [...new Set(input.platformUserIds)];
@@ -124,7 +127,15 @@ export async function notifyStaff(app: NotifierApp, input: StaffNotificationInpu
         tenantId: input.tenantId ?? null
       }))
     });
-    return { inApp: recipients.length };
+    if (!input.email) return { inApp: recipients.length };
+    const users = await app.prisma.platformUser.findMany({ where: { id: { in: recipients }, status: 'ACTIVE' }, select: { id: true, email: true } });
+    const link = input.link ? `${config.consoleUrl}${input.link}` : undefined;
+    const results = await Promise.allSettled(
+      users.map((user) => sendStaffEmail({ platformUserId: user.id, to: user.email, template: 'staff_notification', data: { title: input.title, body: input.body, link } }))
+    );
+    const emailsQueued = results.filter((result) => result.status === 'fulfilled').length;
+    if (emailsQueued < users.length) app.log.error({ event: input.event, failed: users.length - emailsQueued }, 'Failed to enqueue some staff notification emails');
+    return { inApp: recipients.length, emailsQueued };
   } catch (err) {
     app.log.error({ err, event: input.event }, 'Failed to notify staff');
     return { inApp: 0 };

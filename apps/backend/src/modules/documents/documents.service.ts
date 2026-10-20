@@ -1,3 +1,4 @@
+import { recordStorageBytes } from '../../services/usage-storage.service.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
@@ -51,15 +52,18 @@ export const documentsService = {
     });
 
     const fileUrl = storeLocalDocument(`delivery-note-${shipment.trackingNumber}.html`, html);
+    const fileSize = Buffer.byteLength(html);
     const document = await app.prisma.shipmentDocument.create({
       data: {
         tenantId,
         shipmentId: shipment.id,
         type: DocumentType.DELIVERY_NOTE,
         fileUrl,
+        fileSize,
         generatedBy: 'system'
       }
     });
+    await recordStorageBytes(app.prisma, tenantId, fileSize);
 
     return {
       documentId: document.id,
@@ -92,15 +96,18 @@ export const documentsService = {
     });
 
     const fileUrl = storeLocalDocument(`invoice-${invoice.invoiceNumber}.html`, html);
+    const fileSize = Buffer.byteLength(html);
     const document = await app.prisma.shipmentDocument.create({
       data: {
         tenantId,
         shipmentId: invoice.shipmentId,
         type: DocumentType.INVOICE,
         fileUrl,
+        fileSize,
         generatedBy: 'system'
       }
     });
+    await recordStorageBytes(app.prisma, tenantId, fileSize);
     await publishPythonServiceJob(app, 'fauward:pdf:generate', {
       jobId: document.id,
       tenantId,

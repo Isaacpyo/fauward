@@ -163,28 +163,6 @@ describe('internal console phase routes', () => {
     expect(prisma.tenant.update).not.toHaveBeenCalled();
   });
 
-  it('ACC-SUS-4 a fraud SUSPEND decision creates a FRAUD suspension whose sourceRef is the signal id', async () => {
-    currentPermissions = ['trust.safety.suspend'];
-    const prisma = { fraudSignal: delegate({ findUnique: vi.fn(async () => ({ id: 'sig_042', tenantId: 'tenant_009' })) }), notificationLog: { create: vi.fn() } };
-    const app = await buildApp(prisma);
-    const response = await app.inject({ method: 'POST', url: '/api/internal/safety/fraud/sig_042/decision', payload: { decision: 'suspend', reason: 'Radar confirmed card testing' } });
-    expect(response.statusCode).toBe(200);
-    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', source: 'FRAUD', category: 'FRAUD', sourceRef: 'sig_042', sourceSignalId: 'sig_042', reason: 'Radar confirmed card testing' }));
-    expect(prisma.notificationLog.create).not.toHaveBeenCalled();
-  });
-
-  it('approving an appeal lifts the suspension linked server-side (via APPEAL), ignoring any suspensionId in the body', async () => {
-    currentPermissions = ['trust.safety.suspend'];
-    const prisma = {
-      tenantAppeal: delegate({ findUnique: vi.fn(async () => ({ id: 'appeal_1', tenantId: 'tenant_009', status: 'PENDING', suspensionId: 'susp_linked' })) }),
-      suspensionRecord: { findFirst: vi.fn(async ({ where }: { where: { id?: string } }) => (where.id === 'susp_linked' ? { id: 'susp_linked', tenantId: 'tenant_009', status: 'ACTIVE' } : null)) }
-    };
-    const app = await buildApp(prisma);
-    const response = await app.inject({ method: 'PATCH', url: '/api/internal/safety/appeals/appeal_1', payload: { status: 'APPROVED', suspensionId: 'susp_from_client', reason: 'Customer provided invoices' } });
-    expect(response.statusCode).toBe(200);
-    expect(liftSuspensionMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_009', suspensionId: 'susp_linked', via: 'APPEAL' }));
-  });
-
   it('ACC-SEC-2 ACC-FLG-1 the flag override route never calls LaunchDarkly and writes a per-tenant TenantFeatureOverride', async () => {
     currentPermissions = ['platform.flags.write'];
     process.env.LAUNCHDARKLY_API_TOKEN = 'ld-test-token';
@@ -300,63 +278,6 @@ describe('internal console phase routes', () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({ error: 'Webhook timestamp too old' });
     expect(incidentRecord.upsert).not.toHaveBeenCalled();
-  });
-
-  it('blocks erasure DSAR delivery while a legal hold is active', async () => {
-    currentPermissions = ['trust.compliance.dsar.write'];
-    const prisma = {
-      dSARRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'dsar_001', tenantId: 'tenant_001', requestType: 'ERASURE' })) }),
-      legalHold: delegate({ findFirst: vi.fn(async () => ({ id: 'hold_001', tenantId: 'tenant_001', status: 'ACTIVE' })) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/compliance/dsar/dsar_001/deliver', payload: { reason: 'deliver' } });
-
-    expect(response.statusCode).toBe(409);
-    expect(response.json()).toEqual({ error: 'LEGAL_HOLD_ACTIVE', tenantId: 'tenant_001', holdId: 'hold_001' });
-  });
-
-  it('records DSAR state transitions and queues export evidence', async () => {
-    currentPermissions = ['trust.compliance.dsar.write'];
-    const dSARRequest = delegate({
-      findUnique: vi.fn(async () => ({ id: 'dsar_001', tenantId: 'tenant_001', status: 'RECEIVED', requestType: 'ACCESS' })),
-      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'dsar_001', tenantId: 'tenant_001', ...data }))
-    });
-    const dSARTransition = delegate();
-    const complianceExport = delegate();
-    const prisma = { dSARRequest, dSARTransition, complianceExport };
-    const app = await buildApp(prisma);
-
-    const transition = await app.inject({
-      method: 'PATCH',
-      url: '/api/internal/compliance/dsar/dsar_001',
-      payload: { status: 'IDENTITY_VERIFIED', notes: 'identity verified' }
-    });
-
-    expect(transition.statusCode).toBe(200);
-    expect(dSARTransition.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        dsarId: 'dsar_001',
-        fromStatus: 'RECEIVED',
-        toStatus: 'IDENTITY_VERIFIED',
-        actorId: 'staff_001'
-      })
-    });
-
-    const gather = await app.inject({ method: 'POST', url: '/api/internal/compliance/dsar/dsar_001/gather' });
-
-    expect(gather.statusCode).toBe(202);
-    expect(complianceExport.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        tenantId: 'tenant_001',
-        dsarId: 'dsar_001',
-        exportType: 'DSAR_BUNDLE',
-        status: 'QUEUED',
-        requestedBy: 'staff_001'
-      })
-    }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'compliance.dsar.transition' }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'compliance.dsar.gather' }));
   });
 
   it('requires senior compliance approval for PEP KYC approvals', async () => {

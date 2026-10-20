@@ -60,8 +60,8 @@ export function ActionDialog({ open, title, description, confirmLabel, dangerous
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
-      <form onSubmit={submit} className="w-full max-w-md space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-xl">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
+      <form onSubmit={submit} className="my-auto w-full max-w-md space-y-4 rounded-lg border border-[var(--color-border)] bg-white p-5 shadow-xl">
         <div>
           <h2 id="action-dialog-title" className="text-base font-semibold text-[var(--color-text-primary)]">
             {title}

@@ -15,7 +15,17 @@ export type TenantSuspensionState = {
   publicReason: string | null;
   since: string | null;
   appealable: boolean;
-  appeal: { id: string; status: string; createdAt: string; decidedAt: string | null; resolution: string | null } | null;
+  appeal: {
+    id: string;
+    status: string;
+    createdAt: string;
+    decidedAt: string | null;
+    resolution: string | null;
+    /** REQUEST_INFO (L3): Fauward's question, answered once from this overlay. */
+    question?: string | null;
+    canReply?: boolean;
+    reply?: string | null;
+  } | null;
 };
 
 const CATEGORY_LABEL: Record<NonNullable<TenantSuspensionState["category"]>, string> = {
@@ -41,8 +51,11 @@ function errorMessage(error: unknown) {
 function appealStatusText(appeal: NonNullable<TenantSuspensionState["appeal"]>) {
   if (appeal.status === "APPROVED") return "Your appeal was approved.";
   if (appeal.status === "REJECTED") return "Your appeal was reviewed and the suspension stays in place.";
+  if (appeal.status === "INFO_REQUESTED") return "Fauward needs more information before deciding.";
   return "Your appeal is with Fauward for review.";
 }
+
+const REPLY_MIN_LENGTH = 10;
 
 type SuspendedOverlayProps = { active: boolean };
 
@@ -54,6 +67,9 @@ export function SuspendedOverlay({ active }: SuspendedOverlayProps) {
   const [contactEmail, setContactEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [answer, setAnswer] = useState("");
+  const [answering, setAnswering] = useState(false);
+  const [answerError, setAnswerError] = useState<string | null>(null);
 
   const state = useQuery({
     queryKey: SUSPENSION_QUERY_KEY,
@@ -78,6 +94,21 @@ export function SuspendedOverlay({ active }: SuspendedOverlayProps) {
     }
   }
 
+  async function submitAnswer(event: FormEvent<HTMLFormElement>, appealId: string) {
+    event.preventDefault();
+    setAnswering(true);
+    setAnswerError(null);
+    try {
+      await api.post(`/v1/tenants/me/suspension-appeal/${appealId}/reply`, { message: answer.trim() });
+      setAnswer("");
+      await queryClient.invalidateQueries({ queryKey: SUSPENSION_QUERY_KEY });
+    } catch (error) {
+      setAnswerError(errorMessage(error));
+    } finally {
+      setAnswering(false);
+    }
+  }
+
   const data = state.data;
   return (
     <div className="fixed inset-0 z-[1250] flex items-center justify-center bg-black/45 p-4">
@@ -99,7 +130,27 @@ export function SuspendedOverlay({ active }: SuspendedOverlayProps) {
             {data.appeal ? (
               <div data-testid="suspension-appeal" className="rounded-md border border-gray-200 bg-gray-50 p-3">
                 <p className="font-semibold">{appealStatusText(data.appeal)}</p>
-                {data.appeal.resolution ? <p className="mt-1">{data.appeal.resolution}</p> : null}
+                {data.appeal.resolution ? <p className="mt-1" data-testid="appeal-resolution">{data.appeal.resolution}</p> : null}
+                {data.appeal.question ? (
+                  <p className="mt-2 rounded border border-blue-100 bg-blue-50 p-2" data-testid="appeal-question">
+                    <span className="block text-xs font-semibold text-blue-800">Fauward asks</span>
+                    {data.appeal.question}
+                  </p>
+                ) : null}
+                {data.appeal.reply ? (
+                  <p className="mt-2 text-xs text-gray-600">
+                    <span className="font-semibold">Your answer:</span> {data.appeal.reply}
+                  </p>
+                ) : null}
+                {data.appeal.canReply ? (
+                  <form className="mt-2 space-y-2" onSubmit={(event) => void submitAnswer(event, data.appeal!.id)}>
+                    <Textarea required aria-label="Your answer" value={answer} onChange={(event) => setAnswer(event.target.value)} rows={3} />
+                    <Button type="submit" disabled={answering || answer.trim().length < REPLY_MIN_LENGTH}>
+                      {answering ? "Sending..." : "Send answer"}
+                    </Button>
+                    {answerError ? <p className="text-sm text-red-700">{answerError}</p> : null}
+                  </form>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 
 import { config } from '../../config/index.js';
 import { readRange } from './realtime/stream.service.js';
-import { shipmentRoom, tenantRoom, escalationsRoom, parseRoomName } from './ws/room-names.js';
+import { shipmentRoom, tenantRoom, parseRoomName } from './ws/room-names.js';
 import { canJoinRoom } from './ws/connect-authz.js';
 import type { AuthzContext } from './ws/connect-authz.js';
 
@@ -169,18 +169,4 @@ export function emitTrackingRealtimeUpdate(payload: {
   };
   io.to(room).emit('message', message);
   io.to(tenantRm).emit('message', message);
-}
-
-export function emitEscalationUpdate(payload: {
-  tenantId: string;
-  shipmentId: string;
-  trackingNumber: string;
-  reason: string;
-  flaggedAt: string;
-}) {
-  if (!io) return;
-  io.to(escalationsRoom()).emit('message', {
-    type: 'escalation',
-    data: payload,
-  });
 }

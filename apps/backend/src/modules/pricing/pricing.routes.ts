@@ -54,6 +54,20 @@ export async function registerPricingRoutes(app: FastifyInstance) {
       }
     );
 
+    // The saved insurance tiers (WP-2.0: the page used to show built-in defaults as if they were saved).
+    pricingApp.get(
+      '/insurance',
+      { preHandler: [authenticate, requireRole(['TENANT_ADMIN', 'TENANT_MANAGER'])] },
+      async (request, reply) => {
+        const tenantId = getTenantId(request, reply);
+        if (!tenantId) return;
+        const settings = await pricingApp.prisma.tenantSettings.findUnique({ where: { tenantId }, select: { insuranceConfig: true } });
+        const config = settings?.insuranceConfig;
+        const tiers = config && typeof config === 'object' && !Array.isArray(config) && Array.isArray((config as { tiers?: unknown }).tiers) ? (config as { tiers: unknown[] }).tiers : null;
+        reply.send({ configured: tiers !== null, tiers: tiers ?? [] });
+      }
+    );
+
     pricingApp.patch(
       '/insurance',
       { preHandler: [authenticate, requireRole(['TENANT_ADMIN', 'TENANT_MANAGER'])] },

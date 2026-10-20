@@ -4,9 +4,12 @@ import jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const staffPermissions = new Set<string>();
+const queueAdd = vi.hoisted(() => vi.fn(async (_name: string, _data: Record<string, unknown>) => ({ id: 'job' })));
+const tenantPlan = { plan: 'PRO', notifyOnStaffAccess: true };
+const inApp: Array<Record<string, unknown>> = [];
 const auditCalls: Array<{ action: string; reason?: string | null; metadata?: unknown }> = [];
 
-vi.mock('../../../queues/queues.js', () => ({ analyticsQueue: {}, notificationQueue: {}, outboxQueue: {}, scheduledJobsQueue: {}, webhookQueue: {} }));
+vi.mock('../../../queues/queues.js', () => ({ analyticsQueue: {}, notificationQueue: { add: queueAdd }, outboxQueue: {}, scheduledJobsQueue: {}, webhookQueue: {} }));
 vi.mock('../../notifications/notifications.worker.js', () => ({ dlqNotificationQueue: {} }));
 vi.mock('../../../queues/outbox.worker.js', () => ({ dlqOutboxQueue: {} }));
 vi.mock('../../../queues/webhook.worker.js', () => ({ dlqWebhookQueue: {} }));
@@ -82,13 +85,16 @@ function createPrisma() {
     sessions,
     tenant: {
       findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
-        where.id === 'tenant_1' ? { id: 'tenant_1', name: 'Northwind', slug: 'northwind', plan: 'PRO', status: 'ACTIVE' } : null
+        where.id === 'tenant_1' ? { id: 'tenant_1', name: 'Northwind', slug: 'northwind', plan: tenantPlan.plan, status: 'ACTIVE' } : null
       )
     },
+    tenantSettings: { findUnique: vi.fn(async () => ({ notifyOnStaffAccess: tenantPlan.notifyOnStaffAccess })) },
+    inAppNotification: { createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => inApp.push(...data)) },
     user: {
       findFirst: vi.fn(async ({ where }: { where: { tenantId: string } }) =>
         where.tenantId === 'tenant_1' ? { id: 'user_admin', email: 'admin@northwind.test', role: 'TENANT_ADMIN', isActive: true } : null
-      )
+      ),
+      findMany: vi.fn(async () => [{ id: 'user_admin', email: 'admin@northwind.test' }])
     },
     tenantPlanOverride: { findFirst: vi.fn(async () => null) },
     auditLog: {
@@ -165,6 +171,27 @@ describe('impersonation start (S6, S18)', () => {
     const write = await start(app, { reason: 'Fixing a broken rate card on behalf of tenant', scopes: ['write'] });
     expect(write.statusCode).toBe(403);
     expect(write.json()).toMatchObject({ permission: 'platform.impersonation.mutate' });
+  });
+
+  it('ACC-L18-1 starting a session tells the tenant admins in-app and by email; only Enterprise can turn the email off', async () => {
+    inApp.length = 0;
+    queueAdd.mockClear();
+    const { app } = await buildConsoleApp();
+    expect((await start(app, { reason: 'Investigating a failed label print' })).statusCode).toBe(200);
+    expect(inApp).toEqual([expect.objectContaining({ userId: 'user_admin', type: 'staff_access.started', title: 'Fauward staff opened your workspace (read-only)', link: '/settings?tab=staff-access' })]);
+    expect(queueAdd.mock.calls.map(([, job]) => job.template)).toEqual(['staff_access_started']);
+
+    tenantPlan.notifyOnStaffAccess = false;
+    queueAdd.mockClear();
+    await start(app, { reason: 'Investigating a failed label print again' });
+    expect(queueAdd.mock.calls.map(([, job]) => job.template)).toEqual(['staff_access_started']);
+    tenantPlan.plan = 'ENTERPRISE';
+    queueAdd.mockClear();
+    await start(app, { reason: 'Investigating a failed label print once more' });
+    expect(queueAdd).not.toHaveBeenCalled();
+    expect(inApp).toHaveLength(3);
+    tenantPlan.plan = 'PRO';
+    tenantPlan.notifyOnStaffAccess = true;
   });
 
   it('ACC-IMP-2 write with the permission and a 20-character reason is 200 and capped at 15 minutes', async () => {

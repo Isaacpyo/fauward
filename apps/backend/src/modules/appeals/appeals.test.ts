@@ -11,9 +11,11 @@ async function buildApp(tenant: Record<string, unknown>, data: { active?: Record
   const prisma = {
     suspensionRecord: { findFirst: vi.fn(async () => data.active ?? null) },
     tenantAppeal: { findFirst: vi.fn(async () => data.appeal ?? null), create: vi.fn() },
-    notificationLog: { create: vi.fn() }
+    platformActivity: { upsert: vi.fn(async ({ create }: { create: Record<string, unknown> }) => ({ id: 'act_1', ...create })) },
+    staffUser: { findMany: vi.fn(async () => []) }
   };
   app.decorate('prisma', prisma as never);
+  app.decorate('redis', { publish: vi.fn(async () => 1) } as never);
   app.addHook('onRequest', async (request) => {
     request.tenant = tenant as never;
   });
@@ -45,7 +47,7 @@ describe('tenant suspension state (D3)', () => {
       publicReason: 'Your workspace sent bulk unsolicited messages.',
       since: since.toISOString(),
       appealable: true,
-      appeal: { id: 'appeal_1', status: 'REJECTED', createdAt: since.toISOString(), decidedAt: '2026-10-18T11:00:00.000Z', resolution: 'Evidence did not show consent' }
+      appeal: { id: 'appeal_1', status: 'REJECTED', createdAt: since.toISOString(), decidedAt: '2026-10-18T11:00:00.000Z', resolution: 'Evidence did not show consent', question: null, canReply: false, reply: null }
     });
     expect(response.body).not.toContain('INTERNAL');
   });
