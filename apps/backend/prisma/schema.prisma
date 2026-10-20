@@ -2361,6 +2361,9 @@ model TenantHealthScore {
   score      Int
   trend      String   @default("flat")
   factors    Json
+  /// WP-3.3: the raw inputs the score was computed from, and the model version (health-score.config.ts).
+  inputs     Json?
+  version    Int      @default(1)
   computedAt DateTime @default(now())
 
   @@index([tenantId, computedAt])

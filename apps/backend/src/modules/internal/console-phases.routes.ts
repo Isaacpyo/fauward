@@ -14,6 +14,7 @@ import { dangerous } from '../../middleware/dangerous.js';
 import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
 import { mrrForSubscription } from '../../services/revenue/mrr.service.js';
+import { healthScoringModel } from '../../services/health-score.service.js';
 
 type Delegate = {
   findMany: (args?: unknown) => Promise<unknown[]>;
@@ -568,23 +569,16 @@ function registerSuccess(app: FastifyInstance) {
     reply.send(await listWithMeta(delegate(app, 'cSPlaybookRun'), { where: { playbookId: id }, orderBy: { createdAt: 'desc' } }));
   });
 
+  // WP-3.3: the model from health-score.config.ts (weights, factor definitions, version), read-only.
   app.get('/api/internal/success/health-scoring', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    reply.send({
-      weights: {
-        login: 20,
-        shipmentTrend: 25,
-        featureBreadth: 15,
-        paymentHealth: 15,
-        ticketSentimentVolume: 15,
-        nps: 10
-      }
-    });
+    reply.send(healthScoringModel());
   });
 
   app.post('/api/internal/success/health-scoring/run', { preHandler: writePre('customer.success.write') }, async (request, reply) => {
     const job = await scheduledJobsQueue.add(
       'customer.health-scoring',
-      { requestedBy: actorId(request), source: 'manual-console' },
+      // WP-3.8: the run row records who started it.
+      { triggeredBy: actorId(request), reason: 'Manual health scoring run from the CS console' },
       { jobId: `customer.health-scoring.manual.${Date.now()}` }
     );
     await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');

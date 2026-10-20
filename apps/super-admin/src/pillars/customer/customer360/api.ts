@@ -48,7 +48,14 @@ export type C360Tickets = {
   audienceTracked: boolean;
 };
 
-export type C360Health = { latest: { score: number; trend: string; factors: unknown; computedAt: string } | null; history: Array<{ score: number; computedAt: string }> };
+export type HealthFactorResult = { weight: number; included: boolean; fraction: number | null; points: number | null };
+export type HealthModel = { version: number; minTenantAgeDays: number; factors: Array<{ key: string; label: string; weight: number; definition: string }> };
+export type C360Health = {
+  latest: { score: number; trend: string; factors: unknown; inputs: unknown; version: number; computedAt: string } | null;
+  history: Array<{ score: number; computedAt: string }>;
+  /** Absent from backends before WP-3.3. */
+  model?: HealthModel;
+};
 
 export type C360Ai = {
   usage: Array<{ id: string; month: string; model: string; feature: string; requestCount: number; tokenCount: number; costUsd: number }>;

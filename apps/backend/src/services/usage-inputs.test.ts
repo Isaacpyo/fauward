@@ -35,12 +35,14 @@ function healthPrisma(previousScore: number | null) {
   return {
     created,
     activity,
-    tenant: { findUnique: vi.fn(async () => ({ id: 'tenant_a', customDomain: null })) },
+    tenant: { findUnique: vi.fn(async () => ({ id: 'tenant_a', createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000), onboardingSteps: {} })) },
     user: { findMany: vi.fn(async () => [{ lastLogin: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }]) },
     shipment: { count: vi.fn(async () => 0) },
     payment: { count: vi.fn(async () => 0) },
-    supportVendorTicket: { count: vi.fn(async () => 0) },
-    apiKey: { count: vi.fn(async () => 0) },
+    invoice: { count: vi.fn(async () => 0) },
+    subscription: { findUnique: vi.fn(async () => null) },
+    supportTicket: { count: vi.fn(async () => 0), findFirst: vi.fn(async () => null) },
+    aiAgentRun: { count: vi.fn(async () => 0) },
     webhookEndpoint: { count: vi.fn(async () => 0) },
     tenantHealthScore: {
       findFirst: vi.fn(async () => (previousScore === null ? null : { score: previousScore })),
@@ -70,18 +72,10 @@ describe('health score inputs (WP-2.18)', () => {
     const { computeAndStoreHealthScore } = await import('../queues/scheduled.worker.js');
     const prisma = healthPrisma(null);
     await computeAndStoreHealthScore({ prisma, redis: { publish: vi.fn(async () => 1) }, log: { error: vi.fn() } } as never, 'tenant_a');
-    expect((prisma.created[0].factors as { inputs: Record<string, unknown> }).inputs).toEqual({
-      returns30: 3,
-      customsDeclarations30: 2,
-      documents30: 5,
-      month: expect.stringMatching(/^\d{4}-\d{2}$/),
-      apiCalls: 1200,
-      emailsSent: 40,
-      smsSent: 7,
-      storageBytes: 3_145_728,
-      aiRequests: 19,
-      aiCostUsd: 1.23
-    });
+    // WP-3.3: inputs are stored in their own column; feature use feeds the adoption factor.
+    const inputs = prisma.created[0].inputs as { features: Record<string, number>; usage: Record<string, unknown> };
+    expect(inputs.features).toEqual({ returns30: 3, customsDeclarations30: 2, documents30: 5, aiAgentRuns30: 0, apiCallsThisMonth: 1200, activeWebhooks: 0 });
+    expect(inputs.usage).toEqual({ month: expect.stringMatching(/^\d{4}-\d{2}$/), emailsSent: 40, smsSent: 7, storageBytes: 3_145_728, aiRequests: 19, aiCostUsd: 1.23 });
     expect(prisma.activity).toEqual([]);
   });
 

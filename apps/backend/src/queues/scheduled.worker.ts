@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify';
 import { Worker } from 'bullmq';
-import { Prisma } from '@prisma/client';
 
 import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
 import { domainService } from '../modules/tenants/domain.service.js';
@@ -9,167 +8,20 @@ import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-
 import { pruneOldActivity } from '../jobs/activity-prune.js';
 import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tenant-notices.js';
 import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
-import { dispatchNpsSurveys, npsHealthComponent } from '../services/feedback.service.js';
+import { dispatchNpsSurveys } from '../services/feedback.service.js';
+import { computeAndStoreHealthScore, healthBand } from '../services/health-score.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
-import { runWithTenantContext } from '../context/tenant.context.js';
-import { systemContext } from '../shared/middleware/tenant.resolver.js';
-import { recordAndPublishActivity, SYSTEM_ACTOR } from '../services/platform-activity.service.js';
 import { findScheduledJob, listScheduledJobs, registerScheduledJob, runScheduledJob } from './scheduled-job-runner.js';
-import { monthKey } from '../services/usage-storage.service.js';
 
 type ScheduledJobData = Record<string, unknown>;
 
 let worker: Worker<ScheduledJobData> | null = null;
 let repeatableJobsRegistered = false;
 
-function daysAgo(days: number) {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-/** Health bands used for playbook triggers and the `health.score_changed` activity (L19). */
-export function healthBand(score: number) {
-  return score < 45 ? 'AT_RISK' : score >= 80 ? 'HEALTHY' : 'NEUTRAL';
-}
-
-export async function computeAndStoreHealthScore(app: FastifyInstance, tenantId: string) {
-  const now = new Date();
-  const [
-    tenant,
-    users,
-    shipments30,
-    shipmentsPrevious30,
-    shipments90,
-    failedPayments,
-    openTickets,
-    negativeTickets,
-    apiKeys,
-    webhooks,
-    previous,
-    nps,
-    returns30,
-    customs30,
-    documents30,
-    usageMonth,
-    aiMonth
-  ] = await Promise.all([
-    app.prisma.tenant.findUnique({ where: { id: tenantId }, select: { id: true, customDomain: true } }),
-    app.prisma.user.findMany({ where: { tenantId, isActive: true }, select: { lastLogin: true } }),
-    app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
-    app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(60), lt: daysAgo(30) } } }),
-    app.prisma.shipment.count({ where: { tenantId, createdAt: { gte: daysAgo(90) } } }),
-    app.prisma.payment.count({ where: { kind: 'TENANT_CUSTOMER', tenantId, status: 'FAILED' } }),
-    app.prisma.supportVendorTicket.count({ where: { tenantId, status: { in: ['new', 'open', 'pending'] } } }),
-    app.prisma.supportVendorTicket.count({ where: { tenantId, sentiment: { in: ['negative', 'angry', 'frustrated'] } } }),
-    app.prisma.apiKey.count({ where: { tenantId, isActive: true } }),
-    app.prisma.webhookEndpoint.count({ where: { tenantId, isActive: true } }),
-    app.prisma.tenantHealthScore.findFirst({ where: { tenantId }, orderBy: { computedAt: 'desc' } }),
-    npsHealthComponent(app.prisma, tenantId, now),
-    // L19 (WP-2.18): usage inputs recorded with every score; WP-3.3 decides their weights.
-    app.prisma.returnRequest.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
-    app.prisma.customsDeclaration.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }),
-    app.prisma.shipmentDocument.count({ where: { tenantId, generatedAt: { gte: daysAgo(30) } } }),
-    app.prisma.usageRecord.findUnique({ where: { tenantId_month: { tenantId, month: monthKey(now) } } }),
-    app.prisma.tenantAiUsage.aggregate({ where: { tenantId, month: monthKey(now) }, _sum: { requestCount: true, costUsd: true } })
-  ]);
-
-  const recentLogins = users.filter((user) => user.lastLogin && user.lastLogin >= daysAgo(30)).length;
-  const lastLoginAt = users.map((user) => user.lastLogin?.getTime() ?? 0).sort((a, b) => b - a)[0] ?? 0;
-  const daysSinceLogin = lastLoginAt > 0 ? Math.floor((now.getTime() - lastLoginAt) / (24 * 60 * 60 * 1000)) : 999;
-  const loginRecency = daysSinceLogin <= 7 ? 12 : daysSinceLogin <= 30 ? 8 : daysSinceLogin <= 60 ? 4 : 0;
-  const loginFrequency = users.length > 0 ? Math.round((recentLogins / users.length) * 8) : 0;
-  const loginScore = clamp(loginRecency + loginFrequency, 0, 20);
-
-  const shipmentGrowth = shipmentsPrevious30 > 0 ? (shipments30 - shipmentsPrevious30) / shipmentsPrevious30 : shipments30 > 0 ? 1 : -1;
-  const shipmentScore = clamp(Math.round(10 + shipmentGrowth * 15), 0, 25);
-
-  const featureScore =
-    (shipments90 > 0 ? 2 : 0) +
-    (users.length > 1 ? 2 : 0) +
-    (apiKeys > 0 ? 4 : 0) +
-    (webhooks > 0 ? 4 : 0) +
-    (tenant?.customDomain ? 3 : 0);
-  const paymentScore = clamp(15 - failedPayments * 5, 0, 15);
-  const ticketScore = clamp(15 - openTickets * 2 - negativeTickets * 4, 0, 15);
-  const npsScore = nps.score;
-  const score = clamp(loginScore + shipmentScore + featureScore + paymentScore + ticketScore + npsScore, 0, 100);
-  const trend = !previous ? 'flat' : score > previous.score ? 'up' : score < previous.score ? 'down' : 'flat';
-
-  const row = await app.prisma.tenantHealthScore.create({
-    data: {
-      tenantId,
-      score,
-      trend,
-      factors: {
-        login: { score: loginScore, daysSinceLogin, recentLogins, activeUsers: users.length },
-        shipmentTrend: { score: shipmentScore, shipments30, shipmentsPrevious30, shipments90 },
-        featureBreadth: { score: featureScore, apiKeys, webhooks, customDomain: Boolean(tenant?.customDomain) },
-        paymentHealth: { score: paymentScore, failedPayments },
-        ticketSentimentVolume: { score: ticketScore, openTickets, negativeTickets },
-        nps: { score: npsScore, source: nps.source, responses: nps.responses, value: nps.nps },
-        inputs: {
-          returns30,
-          customsDeclarations30: customs30,
-          documents30,
-          month: monthKey(now),
-          apiCalls: usageMonth?.apiCalls ?? 0,
-          emailsSent: usageMonth?.emailsSent ?? 0,
-          smsSent: usageMonth?.smsSent ?? 0,
-          storageBytes: Number(usageMonth?.storageBytes ?? 0),
-          aiRequests: aiMonth._sum.requestCount ?? 0,
-          aiCostUsd: Number((aiMonth._sum.costUsd ?? 0).toFixed(2))
-        }
-      }
-    }
-  });
-
-  const band = healthBand(score);
-  const previousBand = previous ? healthBand(previous.score) : null;
-  if (previousBand && previousBand !== band) {
-    await recordAndPublishActivity(
-      { prisma: app.prisma, redis: app.redis, log: app.log },
-      {
-        service: 'customer.success',
-        type: 'health.score_changed',
-        tenantId,
-        ...SYSTEM_ACTOR,
-        subjectType: 'tenant',
-        subjectId: tenantId,
-        summary: `Health ${previous!.score} → ${score} (${previousBand.replace('_', ' ').toLowerCase()} → ${band.replace('_', ' ').toLowerCase()})`,
-        severity: band === 'AT_RISK' ? 'ATTENTION' : 'INFO',
-        consoleLink: `/customer/360/${tenantId}?tab=health`,
-        metadata: { from: previous!.score, to: score, fromBand: previousBand, toBand: band },
-        dedupeKey: `health.score_changed:${row.id}`
-      }
-    );
-  }
-
-  const triggers: string[] = [];
-  if (score < 45 && (!previous || previous.score >= 45)) triggers.push('health_below_45');
-  if (score >= 80 && previous && previous.score < 80) triggers.push('health_above_80');
-
-  if (triggers.length > 0) {
-    const playbooks = await app.prisma.cSPlaybook.findMany({ where: { active: true, trigger: { in: triggers } } });
-    for (const playbook of playbooks) {
-      await app.prisma.cSPlaybookRun.create({
-        data: {
-          playbookId: playbook.id,
-          tenantId,
-          status: 'PENDING',
-          steps: playbook.steps === null ? Prisma.JsonNull : playbook.steps,
-          currentStep: 0
-        }
-      });
-    }
-  }
-
-  return row;
-}
+// customer.success scoring lives in services/health-score.service.ts (WP-3.3); re-exported for existing callers.
+export { computeAndStoreHealthScore, healthBand };
 
 // ---- Scheduled jobs (platform.jobs, WP-3.8). Names, crons and repeat ids are unchanged from before the registry. ----
 
@@ -232,10 +84,12 @@ registerScheduledJob({
   timeoutMs: 60 * 60_000,
   handler: async (app) => {
     const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true } });
+    let scored = 0;
     for (const tenant of tenants) {
-      await computeAndStoreHealthScore(app, tenant.id);
+      if (await computeAndStoreHealthScore(app, tenant.id)) scored += 1;
     }
-    return { tenants: tenants.length };
+    // Tenants younger than HEALTH_MIN_TENANT_AGE_DAYS are not scored ("Not yet scored"; no fallback score).
+    return { tenants: tenants.length, scored, notYetScored: tenants.length - scored };
   }
 });
 
