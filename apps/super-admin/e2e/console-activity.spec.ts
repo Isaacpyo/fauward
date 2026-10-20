@@ -50,7 +50,7 @@ test("ACC-ACT-6 a new activity appears in the dashboard feed without a reload an
       // First connection: ready, then the server ends it; the browser reconnects after `retry` and gets the new row.
       const body =
         streamRequests === 1
-          ? `retry: 300\nevent: ready\ndata: {}\n\n`
+          ? `retry: 2500\nevent: ready\ndata: {}\n\n`
           : `retry: 60000\nevent: ready\ndata: {}\n\nid: 2\nevent: activity\ndata: ${JSON.stringify(
               row("00000000-0000-4000-8000-000000000002", { service: "platform.queues", type: "queue.paused", summary: "notification queue paused: SendGrid incident", severity: "ATTENTION", tenantId: null, tenant: null, consoleLink: "/platform/queues/notification", actorType: "STAFF", actorLabel: "Ops" })
             )}\n\n`;
