@@ -13,7 +13,7 @@ export const api = axios.create({
 });
 
 function isPublicAuthEndpoint(url?: string) {
-  return Boolean(url && /^\/?v1\/auth\/(login|register|forgot-password|reset-password|refresh)/.test(url));
+  return Boolean(url && /^\/?v1\/auth\/(login|register|forgot-password|reset-password|refresh|impersonation\/exchange)/.test(url));
 }
 
 // Inject the stored access token into every outgoing request.

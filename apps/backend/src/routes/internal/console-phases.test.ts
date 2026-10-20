@@ -153,6 +153,39 @@ describe('internal console phase routes', () => {
     expect(response.json()).toEqual({ error: 'Self approval is not allowed' });
   });
 
+  it('ACC-IAM-2 rejects JIT approval when the approver is the requesting StaffUser', async () => {
+    currentPermissions = ['trust.jit.approve'];
+    const approvalModel = delegate();
+    const prisma = {
+      jitAccessRequest: delegate({ findUnique: vi.fn(async () => ({ id: 'jit_002', requesterPlatformUserId: 'other_platform_user', requesterStaffId: 'staff_row_001', rootRequest: false, durationMinutes: 60 })) }),
+      jitAccessApproval: approvalModel,
+      staffUser: { findUnique: vi.fn(async () => ({ id: 'staff_row_001' })) }
+    };
+    const app = await buildApp(prisma);
+
+    const response = await app.inject({ method: 'POST', url: '/api/internal/jit/requests/jit_002/approve', payload: { notes: 'self' } });
+
+    expect(response.statusCode).toBe(403);
+    expect(approvalModel.upsert).not.toHaveBeenCalled();
+  });
+
+  it('ACC-SEC-2 the flag override route makes no LaunchDarkly call and returns 501', async () => {
+    currentPermissions = ['platform.flags.write'];
+    process.env.LAUNCHDARKLY_API_TOKEN = 'ld-test-token';
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const audit = delegate();
+    const app = await buildApp({ featureFlagOverrideAudit: audit });
+
+    const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-checkout/overrides', payload: { tenantId: 'tenant_001', value: true, reason: 'Pilot for one tenant' } });
+
+    expect(response.statusCode).toBe(501);
+    expect(response.json()).toMatchObject({ error: 'FLAG_OVERRIDE_UNAVAILABLE', notWired: 'WP-1.4' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(audit.create).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    delete process.env.LAUNCHDARKLY_API_TOKEN;
+  });
+
   it('requires CFO-level permission for quote discounts over 25 percent', async () => {
     currentPermissions = ['gtm.contracts.write', 'gtm.contracts.discount.large'];
     const prisma = {
@@ -372,15 +405,11 @@ describe('internal console phase routes', () => {
     }));
   });
 
-  it('fails vendor mutations with 503 when LaunchDarkly is unconfigured', async () => {
+  it('ACC-SEC-2 the flag override route returns 501 even when LaunchDarkly is unconfigured', async () => {
     currentPermissions = ['platform.flags.write'];
-    const prisma = {};
-    const app = await buildApp(prisma);
-
+    const app = await buildApp({});
     const response = await app.inject({ method: 'POST', url: '/api/internal/flags/new-flow/overrides', payload: { tenantId: 'tenant_001', value: true } });
-
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toMatchObject({ error: 'LAUNCHDARKLY_NOT_CONFIGURED' });
+    expect(response.statusCode).toBe(501);
   });
 
   it('rejects secret metadata mutations for read-only secret users', async () => {
@@ -423,30 +452,6 @@ describe('internal console phase routes', () => {
     expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       action: 'secrets.metadata.update',
       reason: 'routine rotation'
-    }));
-  });
-
-  it('writes change-management audit evidence for feature flag overrides', async () => {
-    process.env.LAUNCHDARKLY_API_TOKEN = 'ld_test_token';
-    currentPermissions = ['platform.flags.write'];
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ id: 'flag_001' }), { status: 200 })));
-    const featureFlagOverrideAudit = delegate();
-    const prisma = { featureFlagOverrideAudit };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/flags/new-flow/overrides',
-      payload: { tenantId: 'tenant_001', value: true, reason: 'controlled rollout' }
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(featureFlagOverrideAudit.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ flagKey: 'new-flow', tenantId: 'tenant_001', value: true, vendorRef: 'launchdarkly' })
-    }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: 'flags.override.set',
-      reason: 'controlled rollout'
     }));
   });
 

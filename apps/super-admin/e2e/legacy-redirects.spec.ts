@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { mockConsoleSession } from './support/console-session';
+
 const permissions = [
   'platform.tenants.read',
   'platform.health.read',
@@ -28,21 +30,7 @@ test.beforeEach(async ({ context, page }) => {
     }
   ]);
 
-  await page.route('**/api/v1/platform/auth/me', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        user: {
-          id: 'staff_001',
-          email: 'staff@fauward.com',
-          name: 'Staff User',
-          role: 'SUPER_ADMIN',
-          permissions
-        }
-      })
-    });
-  });
+  await mockConsoleSession(page, permissions);
 });
 
 for (const redirect of redirects) {

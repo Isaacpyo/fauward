@@ -14,6 +14,7 @@ import { tenantResolver } from './shared/middleware/tenant.resolver.js';
 import { registerAuthRoutes } from './modules/auth/auth.routes.js';
 import { registerShipmentRoutes } from './modules/shipments/shipments.routes.js';
 import { runWithTenantContext } from './context/tenant.context.js';
+import { requestActorStorage } from './context/request-actor.context.js';
 import { registerTenantRoutes } from './modules/tenants/tenant.routes.js';
 import { registerApiKeyRoutes } from './modules/api-keys/api-keys.routes.js';
 import { registerWebhookRoutes } from './modules/webhooks/webhooks.routes.js';
@@ -47,6 +48,8 @@ import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.real
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerSuperAdminRoutes } from './modules/super-admin/super-admin.routes.js';
 import { registerPlatformRoutes } from './modules/platform/platform.routes.js';
+import { registerConsoleAuthRoutes } from './modules/internal/auth/console-auth.routes.js';
+import { registerImpersonationExchangeRoutes } from './modules/auth/impersonation-exchange.routes.js';
 import { registerInternalIamRoutes } from './modules/internal/iam.routes.js';
 import { registerInternalAuditRoutes } from './modules/internal/audit.routes.js';
 import { registerInternalBillingRoutes } from './modules/internal/billing.routes.js';
@@ -146,8 +149,11 @@ export async function buildApp() {
   app.addHook('onRequest', (req, reply, done) => {
     (async () => {
       const ctx = await tenantResolver(req, reply);
-      if (!ctx) return done();
-      runWithTenantContext(ctx, done);
+      // One mutable actor holder per request (impersonation attribution for tenant audit rows).
+      requestActorStorage.run({}, () => {
+        if (!ctx) return done();
+        runWithTenantContext(ctx, done);
+      });
     })().catch(done);
   });
   app.addHook('preHandler', enforceTenantStatus);
@@ -268,6 +274,8 @@ export async function buildApp() {
   await registerExceptionsRoutes(app);
   await registerControlTowerRoutes(app);
   await registerFleetRoutes(app);
+  await registerConsoleAuthRoutes(app);
+  await registerImpersonationExchangeRoutes(app);
   await registerPlatformRoutes(app);
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);

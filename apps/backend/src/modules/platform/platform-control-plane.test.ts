@@ -107,10 +107,11 @@ describe('platform control plane security primitives', () => {
 
   it('requires fresh MFA for dangerous platform actions', async () => {
     const reply = makeReply();
-    await requireFreshPlatformMfa({ platform: { session: { mfaVerifiedAt: new Date(Date.now() - 11 * 60 * 1000) } } } as any, reply as any);
+    await requireFreshPlatformMfa({ platform: { user: { mfaEnabled: true }, session: { mfaVerifiedAt: new Date(Date.now() - 11 * 60 * 1000) } } } as any, reply as any);
     expect(reply.status).toHaveBeenCalledWith(403);
     expect(reply.send).toHaveBeenCalledWith({
       error: 'MFA_REQUIRED',
+      stepUp: true,
       message: 'Fresh MFA verification is required for this action.'
     });
   });

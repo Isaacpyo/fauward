@@ -1,4 +1,4 @@
-import { internalApi } from "@/lib/internal-api";
+import { consoleApi as internalApi } from "@/lib/console-api";
 
 export type StaffStatus = "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
 
@@ -61,13 +61,16 @@ export async function createStaffUser(input: { email: string; name: string; pass
   return response.data;
 }
 
-export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser, "name" | "status" | "mfaEnabled">> & { reason?: string }) {
+export async function updateStaffUser(id: string, input: Partial<Pick<StaffUser, "name" | "status">> & { reason?: string }) {
   const response = await internalApi.patch<StaffUser>(`/iam/users/${id}`, input);
   return response.data;
 }
 
-export async function offboardStaffUser(id: string, reason: string) {
-  const response = await internalApi.delete<StaffUser>(`/iam/users/${id}`, { data: { reason } });
+export type StaffLifecycleAction = "suspend" | "reactivate" | "offboard";
+
+/** Suspend / reactivate / offboard (dangerous: fresh MFA + reason). Suspend and offboard revoke every session. */
+export async function changeStaffStatus(id: string, action: StaffLifecycleAction, reason: string) {
+  const response = await internalApi.post<StaffUser>(`/iam/users/${id}/${action}`, { reason }, { idempotent: true });
   return response.data;
 }
 
@@ -81,13 +84,13 @@ export async function fetchStaffRole(id: string) {
   return response.data;
 }
 
-export async function assignStaffRole(input: { staffId: string; roleId: string; expiresAt?: string; reason: string }) {
-  const response = await internalApi.post<StaffRoleAssignment>("/iam/role-assignments", input);
+export async function assignStaffRole(input: { staffId: string; roleId: string; expiresAt?: string; reason: string; hardwareKeyAssertion?: string }) {
+  const response = await internalApi.post<StaffRoleAssignment>("/iam/role-assignments", input, { idempotent: true });
   return response.data;
 }
 
 export async function revokeStaffRole(id: string, reason: string) {
-  await internalApi.delete(`/iam/role-assignments/${id}`, { data: { reason } });
+  await internalApi.delete(`/iam/role-assignments/${id}`, { data: { reason }, idempotent: true });
 }
 
 export async function fetchPermissionInventory() {
@@ -95,7 +98,8 @@ export async function fetchPermissionInventory() {
   return response.data.data;
 }
 
-export async function enrollTotp(id: string) {
-  const response = await internalApi.post<{ otpauth: string; qrCode: string }>(`/iam/users/${id}/totp-enrollment`, {});
+// Enrolment is self-service at login; admins can only reset another person's MFA (dangerous: fresh MFA + reason).
+export async function resetStaffMfa(id: string, reason: string) {
+  const response = await internalApi.post<{ id: string; mfaEnabled: false; sessionsRevokedAt: string }>(`/iam/users/${id}/mfa/reset`, { reason }, { idempotent: true });
   return response.data;
 }

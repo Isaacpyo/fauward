@@ -1,3 +1,4 @@
+import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { PERMISSIONS, type Permission } from '@fauward/internal-rbac';
@@ -738,9 +739,12 @@ function registerJit(app: FastifyInstance) {
     if (!permission || !reason) return reply.status(400).send({ error: 'permission and reason are required' });
     const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
     const rootRequest = permission === 'trust.iam.root' || body.rootRequest === true;
-    const expectedHardwareAssertion = process.env.DEV_HARDWARE_KEY_ASSERTION ?? 'dev-hardware-key';
-    const hardwareKeyVerified = !rootRequest || stringValue(body.hardwareKeyAssertion) === expectedHardwareAssertion;
-    if (rootRequest && !hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
+    // No literal fallback (S2): without DEV_HARDWARE_KEY_ASSERTION, ROOT JIT is unavailable.
+    const rootCheck = rootRequest ? checkRootHardwareAssertion(body.hardwareKeyAssertion) : null;
+    if (rootCheck && !rootCheck.ok) {
+      return reply.status(rootCheck.status).send({ error: rootCheck.error, message: rootCheck.status === 403 ? 'ROOT JIT requires hardware key verification' : rootCheck.message });
+    }
+    const hardwareKeyVerified = !rootRequest || Boolean(rootCheck?.ok);
     const jit = await createAndAudit(
       request,
       delegate(app, 'jitAccessRequest'),
@@ -770,9 +774,14 @@ function registerJit(app: FastifyInstance) {
     const body = bodyObject(request);
     const jitModel = delegate(app, 'jitAccessRequest');
     const approvalModel = delegate(app, 'jitAccessApproval');
-    const before = await jitModel.findUnique({ where: { id } }) as { requesterPlatformUserId?: string; rootRequest?: boolean; durationMinutes?: number; hardwareKeyVerified?: boolean } | null;
+    const before = await jitModel.findUnique({ where: { id } }) as { requesterPlatformUserId?: string; requesterStaffId?: string | null; rootRequest?: boolean; durationMinutes?: number; hardwareKeyVerified?: boolean } | null;
     if (!before) return reply.status(404).send({ error: 'JIT request not found' });
+    // Compare both identities: the request stores the requester's PlatformUser id and StaffUser id (S3).
     if (before.requesterPlatformUserId === actorId(request)) return reply.status(403).send({ error: 'Self approval is not allowed' });
+    if (before.requesterStaffId) {
+      const approverStaff = await app.prisma.staffUser.findUnique({ where: { platformUserId: actorId(request) }, select: { id: true } });
+      if (approverStaff?.id === before.requesterStaffId) return reply.status(403).send({ error: 'Self approval is not allowed' });
+    }
     if (before.rootRequest && !before.hardwareKeyVerified) return reply.status(403).send({ error: 'ROOT JIT requires hardware key verification' });
     await approvalModel.upsert({
       where: { requestId_approverPlatformUserId: { requestId: id, approverPlatformUserId: actorId(request) } },
@@ -996,25 +1005,14 @@ function registerFlags(app: FastifyInstance) {
     reply.send({ key, audits, vendor: vendorUnavailable('launchdarkly') });
   });
 
-  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (request, reply) => {
-    const vendor = vendorUnavailable('launchdarkly');
-    const { key } = request.params as { key: string };
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    if (vendor) return reply.status(503).send({ error: 'LAUNCHDARKLY_NOT_CONFIGURED', vendor });
-    const vendorResult = await vendorJson<unknown>('launchdarkly', `/flags/default/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        environmentKey: 'production',
-        instructions: [{ kind: 'turnFlagOn' }],
-        comment: stringValue(body.reason, `Tenant override for ${tenantId}`),
-        tenantId,
-        value: body.value ?? false
-      })
+  // S9: the old handler called LaunchDarkly `turnFlagOn`, switching the flag on for every tenant. Until native
+  // per-tenant overrides land (WP-1.4) this route makes no vendor call and reports that it is unavailable.
+  app.post('/api/internal/flags/:key/overrides', { preHandler: writePre('platform.flags.write') }, async (_request, reply) => {
+    reply.status(501).send({
+      error: 'FLAG_OVERRIDE_UNAVAILABLE',
+      message: 'Per-tenant flag overrides are not available yet; they arrive with native overrides in WP-1.4.',
+      notWired: 'WP-1.4'
     });
-    const audit = await createAndAudit(request, delegate(app, 'featureFlagOverrideAudit'), { flagKey: key, tenantId, value: body.value ?? false, actorId: actorId(request), vendorRef: 'launchdarkly' }, 'flags.override.set', 'feature_flag', stringValue(body.reason, 'Feature flag override'));
-    reply.status(201).send({ audit, vendor: vendorResult, vendorUnavailable: vendor });
   });
 
   app.get('/api/internal/flags/:key/audit', { preHandler: readPre('platform.flags.read') }, async (request, reply) => {

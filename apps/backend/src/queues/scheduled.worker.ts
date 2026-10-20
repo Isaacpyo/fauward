@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
 import { domainService } from '../modules/tenants/domain.service.js';
 import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
+import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 
 type ScheduledJobData = Record<string, unknown>;
@@ -169,6 +170,11 @@ export async function registerScheduledJobs() {
   await scheduledJobsQueue.add('revenue.commission-aggregation', {}, {
     jobId: 'revenue.commission-aggregation.monthly',
     repeat: { pattern: '0 4 1 * *', tz: 'UTC' }
+  });
+
+  await scheduledJobsQueue.add('platform.impersonation-expiry-sweep', {}, {
+    jobId: 'platform.impersonation-expiry-sweep',
+    repeat: { pattern: '*/5 * * * *', tz: 'UTC' }
   });
 
   repeatableJobsRegistered = true;
@@ -357,6 +363,12 @@ export async function startScheduledWorker(app: FastifyInstance) {
           ]);
         }
         app.log.info({ count: expired.length }, 'Scheduled demo expiry finished');
+        return;
+      }
+
+      if (job.name === 'platform.impersonation-expiry-sweep') {
+        const ended = await sweepExpiredImpersonationSessions(app.prisma);
+        app.log.info({ ended }, 'Scheduled impersonation expiry sweep finished');
         return;
       }
 

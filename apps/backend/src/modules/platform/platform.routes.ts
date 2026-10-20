@@ -1,28 +1,23 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { TenantPlan, TenantStatus } from '@prisma/client';
-import { verifyPassword } from '../../shared/utils/hash.js';
-import { verifyTotp } from '../../shared/utils/totp.js';
-import { signAccessToken } from '../../shared/utils/jwt.js';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireFreshPlatformMfa } from '../../middleware/require-fresh-platform-mfa.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { requirePlatformReason } from '../../middleware/require-platform-reason.js';
 import { requireAnyPlatformPermission, requirePlatformPermission } from '../../middleware/require-platform-permission.js';
-import {
-  PLATFORM_REFRESH_COOKIE,
-  clearPlatformCookies,
-  hashPlatformToken,
-  platformCookieOptions,
-  setPlatformCsrfCookies,
-  signPlatformAccessToken,
-  signPlatformRefreshToken,
-  verifyPlatformRefreshToken
-} from '../../services/platform-session.service.js';
 import { permissionsForPlatformRole } from '../../services/platform-permission.service.js';
-import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { writePlatformAuditLog, verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
 import { redactPlatformLogValue } from '../../services/platform-redaction.service.js';
-import { getActiveTenantPlanOverride, resolveEffectiveTenantPlan } from '../../services/platform-plan-override.service.js';
+import { resolveEffectiveTenantPlan } from '../../services/platform-plan-override.service.js';
+import { platformUserHasConsolePermission } from '../../services/staff-iam.service.js';
+import {
+  WRITE_SCOPE_MIN_REASON,
+  createExchangeCode,
+  impersonationActiveKey,
+  impersonationDurationMinutes,
+  impersonationPortalUrl,
+  parseImpersonationScopes
+} from '../../services/impersonation.service.js';
 import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../queues/queues.js';
 import { dlqNotificationQueue } from '../notifications/notifications.worker.js';
 import { dlqOutboxQueue } from '../../queues/outbox.worker.js';
@@ -46,12 +41,6 @@ function reasonFrom(request: FastifyRequest) {
   return typeof reason === 'string' ? reason.trim() : null;
 }
 
-function setAuthCookies(reply: FastifyReply, accessToken: string, refreshToken: string) {
-  reply.setCookie('fw_platform_access', accessToken, { ...platformCookieOptions(), maxAge: 15 * 60 });
-  reply.setCookie(PLATFORM_REFRESH_COOKIE, refreshToken, { ...platformCookieOptions(), maxAge: 7 * 24 * 60 * 60 });
-  setPlatformCsrfCookies(reply);
-}
-
 function authPre(permission?: Parameters<typeof requirePlatformPermission>[0]) {
   const handlers = [authenticatePlatformSession];
   if (permission) handlers.push(requirePlatformPermission(permission));
@@ -63,206 +52,6 @@ function dangerousPre(permission: Parameters<typeof requirePlatformPermission>[0
 }
 
 export async function registerPlatformRoutes(app: FastifyInstance) {
-  app.post('/api/v1/platform/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
-    const { email, password } = request.body as { email?: string; password?: string };
-    const normalizedEmail = email?.toLowerCase().trim();
-
-    if (!normalizedEmail || !password) {
-      return reply.status(401).send({ error: 'Invalid credentials' });
-    }
-
-    const user = await app.prisma.platformUser.findUnique({ where: { email: normalizedEmail } });
-    const passwordOk = user ? await verifyPassword(password, user.passwordHash) : false;
-
-    if (!user || !passwordOk || user.status !== 'ACTIVE') {
-      await app.prisma.staffLoginAttempt.create({
-        data: {
-          staffEmail: normalizedEmail,
-          platformUserId: user?.id,
-          success: false,
-          ipAddress: ipAddress(request),
-          userAgent: userAgent(request),
-          failureReason: user?.status === 'DISABLED' ? 'disabled_user' : 'invalid_credentials'
-        }
-      });
-      await writePlatformAuditLog(app.prisma, {
-        actorType: 'SYSTEM',
-        actorId: 'platform-auth',
-        actorEmail: normalizedEmail,
-        action: 'PLATFORM_LOGIN_FAILURE',
-        metadata: { reason: user?.status === 'DISABLED' ? 'disabled_user' : 'invalid_credentials' },
-        ipAddress: ipAddress(request),
-        userAgent: userAgent(request)
-      });
-      return reply.status(401).send({ error: 'Invalid credentials' });
-    }
-
-    const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, user);
-    const mfaVerifiedAt = user.mfaEnabled ? null : null;
-    const session = await app.prisma.platformSession.create({
-      data: {
-        platformUserId: user.id,
-        refreshTokenHash: 'pending',
-        mfaVerifiedAt,
-        ipAddress: ipAddress(request),
-        userAgent: userAgent(request),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-      }
-    });
-    await app.prisma.staffSession.create({
-      data: {
-        staffId: permissionContext.staff.id,
-        platformSessionId: session.id,
-        ipAddress: ipAddress(request),
-        userAgent: userAgent(request),
-        expiresAt: session.expiresAt
-      }
-    });
-    const accessToken = signPlatformAccessToken({ platformUserId: user.id, role: user.role, permissions: permissionContext.permissions, sessionId: session.id, mfaVerifiedAt });
-    const refreshToken = signPlatformRefreshToken({ platformUserId: user.id, sessionId: session.id });
-
-    await app.prisma.$transaction([
-      app.prisma.platformSession.update({
-        where: { id: session.id },
-        data: { refreshTokenHash: hashPlatformToken(refreshToken) }
-      }),
-      app.prisma.platformUser.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    ]);
-
-    setAuthCookies(reply, accessToken, refreshToken);
-    await writePlatformAuditLog(app.prisma, {
-      actorType: 'PLATFORM_USER',
-      actorId: user.id,
-      actorEmail: user.email,
-      action: 'PLATFORM_LOGIN_SUCCESS',
-      metadata: { mfaRequired: user.mfaEnabled },
-      ipAddress: ipAddress(request),
-      userAgent: userAgent(request)
-    });
-    await app.prisma.staffLoginAttempt.create({
-      data: {
-        staffEmail: user.email,
-        platformUserId: user.id,
-        success: true,
-        ipAddress: ipAddress(request),
-        userAgent: userAgent(request)
-      }
-    });
-
-    reply.send({
-      mfaRequired: user.mfaEnabled,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, roles: permissionContext.roles, permissions: permissionContext.permissions }
-    });
-  });
-
-  app.post('/api/v1/platform/auth/mfa/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf] }, async (request, reply) => {
-    const { code } = request.body as { code?: string };
-    const platform = request.platform;
-    if (!platform || !code) return reply.status(400).send({ error: 'code is required' });
-
-    const user = await app.prisma.platformUser.findUnique({ where: { id: platform.user.id } });
-    if (!user?.mfaEnabled || !user.mfaSecretEncrypted) {
-      return reply.status(400).send({ error: 'MFA not enabled for account' });
-    }
-
-    const valid = verifyTotp(code, user.mfaSecretEncrypted);
-    await writePlatformAuditLog(app.prisma, {
-      actorType: 'PLATFORM_USER',
-      actorId: user.id,
-      actorEmail: user.email,
-      action: valid ? 'PLATFORM_MFA_SUCCESS' : 'PLATFORM_MFA_FAILURE',
-      metadata: {},
-      ipAddress: ipAddress(request),
-      userAgent: userAgent(request)
-    });
-    if (!valid) return reply.status(400).send({ error: 'Invalid MFA code' });
-
-    const mfaVerifiedAt = new Date();
-    const session = await app.prisma.platformSession.update({
-      where: { id: platform.session.id },
-      data: { mfaVerifiedAt }
-    });
-    const accessToken = signPlatformAccessToken({ platformUserId: user.id, role: user.role, sessionId: session.id, mfaVerifiedAt });
-    reply.setCookie('fw_platform_access', accessToken, { ...platformCookieOptions(), maxAge: 15 * 60 });
-    setPlatformCsrfCookies(reply);
-    reply.send({ success: true, mfaVerifiedAt: mfaVerifiedAt.toISOString() });
-  });
-
-  app.post('/api/v1/platform/auth/logout', { preHandler: [authenticatePlatformSession, requirePlatformCsrf] }, async (request, reply) => {
-    if (request.platform) {
-      await app.prisma.platformSession.updateMany({
-        where: { id: request.platform.session.id, revokedAt: null },
-        data: { revokedAt: new Date() }
-      });
-      await writePlatformAuditLog(app.prisma, {
-        actorType: 'PLATFORM_USER',
-        actorId: request.platform.user.id,
-        actorEmail: request.platform.user.email,
-        action: 'PLATFORM_SESSION_REVOKED',
-        metadata: { sessionId: request.platform.session.id },
-        ipAddress: ipAddress(request),
-        userAgent: userAgent(request)
-      });
-    }
-    clearPlatformCookies(reply);
-    reply.status(204).send();
-  });
-
-  app.post('/api/v1/platform/auth/refresh', { preHandler: [requirePlatformCsrf] }, async (request, reply) => {
-    const refreshToken = request.cookies?.[PLATFORM_REFRESH_COOKIE];
-    if (!refreshToken) return reply.status(401).send({ error: 'Unauthorized' });
-
-    try {
-      const claims = verifyPlatformRefreshToken(refreshToken);
-      const session = await app.prisma.platformSession.findUnique({ where: { id: claims.sessionId }, include: { platformUser: true } });
-      if (
-        !session ||
-        session.platformUserId !== claims.sub ||
-        session.revokedAt ||
-        session.expiresAt <= new Date() ||
-        session.refreshTokenHash !== hashPlatformToken(refreshToken) ||
-        session.platformUser.status !== 'ACTIVE'
-      ) {
-        return reply.status(401).send({ error: 'Unauthorized' });
-      }
-
-      const nextRefreshToken = signPlatformRefreshToken({ platformUserId: session.platformUserId, sessionId: session.id });
-      await app.prisma.platformSession.update({
-        where: { id: session.id },
-        data: { refreshTokenHash: hashPlatformToken(nextRefreshToken), expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }
-      });
-      const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, session.platformUser);
-      const accessToken = signPlatformAccessToken({
-        platformUserId: session.platformUserId,
-        role: session.platformUser.role,
-        permissions: permissionContext.permissions,
-        sessionId: session.id,
-        mfaVerifiedAt: session.mfaVerifiedAt
-      });
-      setAuthCookies(reply, accessToken, nextRefreshToken);
-      reply.send({ success: true });
-    } catch {
-      return reply.status(401).send({ error: 'Unauthorized' });
-    }
-  });
-
-  app.get('/api/v1/platform/auth/me', { preHandler: authPre() }, async (request, reply) => {
-    const user = request.platform!.user;
-    const permissionContext = await staffPermissionContextForPlatformUser(app.prisma, user);
-    reply.send({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        roles: permissionContext.roles,
-        permissions: permissionContext.permissions,
-        mfaEnabled: user.mfaEnabled,
-        mfaVerifiedAt: request.platform!.session.mfaVerifiedAt?.toISOString() ?? null
-      }
-    });
-  });
-
   app.get('/api/v1/platform/tenants', { preHandler: authPre('tenant:read') }, async (request, reply) => {
     const query = request.query as { page?: string; limit?: string; search?: string; plan?: string; status?: string };
     const page = Math.max(1, Number(query.page ?? 1));
@@ -409,7 +198,20 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/platform/tenants/:id/impersonation-sessions', { preHandler: dangerousPre('tenant:impersonate') }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const payload = request.body as { reason?: string; targetUserId?: string; scopes?: string[]; expiresInMinutes?: number };
+    const payload = request.body as { reason?: string; targetUserId?: string; scopes?: unknown; expiresInMinutes?: unknown };
+    const reason = payload.reason!.trim();
+    const scopeRequest = parseImpersonationScopes(payload.scopes);
+    if (!scopeRequest.ok) return reply.status(400).send({ error: 'INVALID_SCOPE', message: scopeRequest.error });
+    // Write access needs its own permission and a longer reason, and is capped at 15 minutes (S6, D8).
+    if (scopeRequest.write) {
+      if (!(await platformUserHasConsolePermission(app.prisma, request.platform!.user, 'platform.impersonation.mutate'))) {
+        return reply.status(403).send({ error: 'Forbidden', permission: 'platform.impersonation.mutate', message: 'Write impersonation requires platform.impersonation.mutate.' });
+      }
+      if (reason.length < WRITE_SCOPE_MIN_REASON) {
+        return reply.status(400).send({ error: 'REASON_REQUIRED', message: `Write impersonation needs a reason of at least ${WRITE_SCOPE_MIN_REASON} characters.` });
+      }
+    }
+
     const tenant = await app.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
 
@@ -418,31 +220,14 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       : await app.prisma.user.findFirst({ where: { tenantId: tenant.id, role: 'TENANT_ADMIN', isActive: true }, orderBy: { createdAt: 'asc' } });
     if (!targetUser) return reply.status(404).send({ error: 'No active target tenant user found for impersonation' });
 
-    const expiresAt = new Date(Date.now() + Math.min(Math.max(payload.expiresInMinutes ?? 30, 5), 30) * 60 * 1000);
-    const scopes = Array.isArray(payload.scopes) && payload.scopes.length > 0 ? payload.scopes : ['read'];
+    const minutes = impersonationDurationMinutes(payload.expiresInMinutes, scopeRequest.write);
+    const expiresAt = new Date(Date.now() + minutes * 60 * 1000);
     const session = await app.prisma.platformImpersonationSession.create({
-      data: { platformUserId: request.platform!.user.id, targetTenantId: tenant.id, targetUserId: targetUser.id, scopes, reason: payload.reason!.trim(), expiresAt }
+      data: { platformUserId: request.platform!.user.id, targetTenantId: tenant.id, targetUserId: targetUser.id, scopes: scopeRequest.scopes, reason, expiresAt }
     });
 
-    const token = signAccessToken({
-      sub: targetUser.id,
-      email: targetUser.email,
-      role: targetUser.role,
-      tenantId: tenant.id,
-      tenantSlug: tenant.slug,
-      plan: (await getActiveTenantPlanOverride(app.prisma, tenant.id))?.plan ?? tenant.plan,
-      mfaVerified: true,
-      impersonator: request.platform!.user.id,
-      impersonatorEmail: request.platform!.user.email,
-      actorType: 'PLATFORM_USER',
-      actorId: request.platform!.user.id,
-      targetTenantId: tenant.id,
-      targetUserId: targetUser.id,
-      impersonationSessionId: session.id,
-      scopes,
-      mode: 'IMPERSONATION'
-    });
-    await app.redis.set(`platform:impersonation:${session.id}`, '1', 'EX', Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    await app.redis.set(impersonationActiveKey(session.id), '1', 'EX', minutes * 60);
+    const exchangeCode = await createExchangeCode(app.redis, session.id);
     await writePlatformAuditLog(app.prisma, {
       actorType: 'PLATFORM_USER',
       actorId: request.platform!.user.id,
@@ -451,13 +236,15 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
       targetTenantId: tenant.id,
       targetUserId: targetUser.id,
       impersonationSessionId: session.id,
-      reason: payload.reason,
-      metadata: { scopes, expiresAt: expiresAt.toISOString() },
+      reason,
+      metadata: { scopes: scopeRequest.scopes, expiresAt: expiresAt.toISOString() },
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
     });
+    // The token is only issued to the tenant portal through the one-time exchange code (S18).
     reply.send({
-      token,
+      exchangeCode,
+      portalUrl: impersonationPortalUrl(tenant.slug, exchangeCode),
       impersonationSessionId: session.id,
       expiresAt: expiresAt.toISOString(),
       targetUser: { id: targetUser.id, email: targetUser.email, role: targetUser.role },
@@ -468,15 +255,21 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
   app.delete('/api/v1/platform/impersonation-sessions/:id', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requirePlatformPermission('tenant:impersonate')] }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const session = await app.prisma.platformImpersonationSession.updateMany({ where: { id, revokedAt: null }, data: { revokedAt: new Date() } });
-    await app.redis.del(`platform:impersonation:${id}`);
+    const reason = reasonFrom(request) || 'Ended by staff';
+    const now = new Date();
+    const session = await app.prisma.platformImpersonationSession.updateMany({
+      where: { id, revokedAt: null, endedAt: null },
+      data: { revokedAt: now, endedAt: now, endedReason: 'REVOKED' }
+    });
+    await app.redis.del(impersonationActiveKey(id));
     await writePlatformAuditLog(app.prisma, {
       actorType: 'PLATFORM_USER',
       actorId: request.platform!.user.id,
       actorEmail: request.platform!.user.email,
       action: 'TENANT_IMPERSONATION_END',
       impersonationSessionId: id,
-      metadata: { revoked: session.count > 0 },
+      reason,
+      metadata: { revoked: session.count > 0, endedReason: 'REVOKED' },
       ipAddress: ipAddress(request),
       userAgent: userAgent(request)
     });
@@ -485,7 +278,7 @@ export async function registerPlatformRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/platform/impersonation-sessions/active', { preHandler: authPre('tenant:impersonate') }, async (_request, reply) => {
     const sessions = await app.prisma.platformImpersonationSession.findMany({
-      where: { revokedAt: null, expiresAt: { gt: new Date() } },
+      where: { revokedAt: null, endedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
       take: 50,
       include: { targetTenant: { select: { id: true, name: true, slug: true } } }

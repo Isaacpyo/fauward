@@ -1,4 +1,4 @@
-import { internalApi } from "@/lib/internal-api";
+import { consoleApi as internalApi } from "@/lib/console-api";
 
 export type Invoice = {
   id: string;
@@ -18,7 +18,24 @@ export type Invoice = {
 };
 
 export type Payment = { id: string; tenantId: string; invoiceId: string | null; amount: string; currency: string; status: string; gatewayRef: string | null; refundedAmount: string; createdAt: string };
-export type Refund = { id: string; tenantId: string; paymentId: string; amount: string; reason: string | null; status: string; gatewayRef: string | null; createdAt: string };
+export type RefundApproval = { id: string; requestedBy: string; approvedBy: string | null; status: string; reason: string; decidedAt: string | null };
+export type Refund = {
+  id: string;
+  tenantId: string;
+  paymentId: string;
+  amount: string;
+  currency: string | null;
+  reason: string | null;
+  status: string;
+  gatewayRef: string | null;
+  failureReason: string | null;
+  initiatedBy: string | null;
+  createdAt: string;
+  tenant?: { id: string; name: string; slug: string };
+  payment?: Payment;
+  approvals?: RefundApproval[];
+};
+export type RefundResult = { refund: Refund; path: "stripe" | "approval"; approvalRequired: boolean; replayed?: boolean };
 export type CreditNote = { id: string; tenantId: string; invoiceId: string | null; creditNumber: string; amount: string; currency: string; reason: string | null; createdAt: string };
 
 export async function fetchInvoices() {
@@ -46,9 +63,15 @@ export async function fetchRefunds() {
   return response.data.data;
 }
 
-export async function createRefund(input: { paymentId: string; amount: number; reason: string }) {
-  const response = await internalApi.post<Refund>("/billing/refunds", input);
+/** Amount is a major-unit decimal string in the payment's currency (e.g. "12.34"). Dangerous: fresh MFA + reason. */
+export async function createRefund(input: { paymentId: string; amount: string; reason: string }) {
+  const response = await internalApi.post<RefundResult>("/billing/refunds", input, { idempotent: true });
   return response.data;
+}
+
+export async function decideRefund(id: string, decision: "approve" | "reject", reason: string) {
+  const response = await internalApi.post<{ refund: Refund }>(`/billing/refunds/${encodeURIComponent(id)}/${decision}`, { reason }, { idempotent: true });
+  return response.data.refund;
 }
 
 export async function fetchCreditNotes() {

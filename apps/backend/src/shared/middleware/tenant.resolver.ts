@@ -41,6 +41,7 @@ const PUBLIC_PATHS = new Set([
   '/api/v1/auth/mfa/validate',
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
+  '/api/v1/auth/impersonation/exchange',
   '/api/v1/tenant/region-change-requests/dev',
   '/api/v1/payments/webhook/stripe'
 ]);
@@ -52,7 +53,7 @@ const SYSTEM_PATHS = new Set([
   '/version'
 ]);
 
-function systemContext(): TenantContext {
+export function systemContext(): TenantContext {
   return {
     tenantId: 'system',
     tenantSlug: 'system',

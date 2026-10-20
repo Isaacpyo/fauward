@@ -1,7 +1,8 @@
 import { EmptyState, HealthPill } from "@fauward/internal-ui";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
-import { internalApi } from "@/lib/internal-api";
+import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
+import { consoleApi as internalApi } from "@/lib/console-api";
 
 type InternalOpsPageProps = {
   title: string;
@@ -94,7 +95,7 @@ export function InternalOpsPage({ title, description, endpoint, primaryAction, r
       ) : null}
 
       {query.isLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading...</p> : null}
-      {query.isError ? <EmptyState title="Unable to load" message="The service endpoint returned an error or is not configured for this environment." /> : null}
+      {query.isError ? <ConsoleApiErrorPanel error={query.error} onRetry={() => void query.refetch()} /> : null}
       {!query.isLoading && !query.isError && rows.length === 0 ? <EmptyState title="No records" message="No records matched this operational view yet." /> : null}
 
       {rows.length > 0 ? (

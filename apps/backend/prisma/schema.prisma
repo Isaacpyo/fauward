@@ -459,6 +459,9 @@ model PlatformUser {
   status             PlatformUserStatus @default(ACTIVE)
   mfaEnabled         Boolean            @default(false)
   mfaSecretEncrypted String?
+  // TOTP enrolment in progress (field-encryption ciphertext); moved to mfaSecretEncrypted on confirm.
+  mfaPendingSecretEncrypted String?
+  mfaEnrolledAt             DateTime?
   lastLoginAt        DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
@@ -573,10 +576,14 @@ model PlatformImpersonationSession {
   expiresAt      DateTime
   revokedAt      DateTime?
   createdAt      DateTime     @default(now())
+  exchangedAt    DateTime? // one-time exchange code redeemed by the tenant portal
+  endedAt        DateTime? // revoked, expired (sweeper) or logged out
+  endedReason    String? // REVOKED | EXPIRED | LOGOUT
 
   @@index([platformUserId])
   @@index([targetTenantId])
   @@index([expiresAt])
+  @@index([targetTenantId, createdAt])
   @@map("platform_impersonation_sessions")
 }
 
@@ -627,6 +634,7 @@ model TenantSettings {
   updatedAt                    DateTime @updatedAt
 
   @@map("tenant_settings")
+  notifyOnStaffAccess Boolean @default(true)
 }
 
 model Subscription {
@@ -1455,9 +1463,12 @@ model Refund {
   reason      String?
   gatewayRef  String?
   idempotencyKey String? @unique
+  // PENDING_APPROVAL | PROCESSING | SUCCEEDED | FAILED | RECORDED_MANUAL | REJECTED (WP-0.6)
   status      String   @default("PENDING")
   initiatedBy String?
   createdAt   DateTime @default(now())
+  currency      String?
+  failureReason String?
 
   approvals RefundApproval[]
 

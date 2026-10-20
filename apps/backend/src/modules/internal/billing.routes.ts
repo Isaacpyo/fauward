@@ -1,14 +1,16 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { writeAudit } from '@fauward/internal-audit';
-import type { PlatformAuditClient } from '@fauward/internal-audit';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { requireInternalPermission } from '../../middleware/require-internal-permission.js';
-import { staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
+import { dangerous } from '../../middleware/dangerous.js';
+import { config } from '../../config/index.js';
+import { platformAuditClient } from '../../services/platform-audit-client.js';
+import { platformUserHasConsolePermission } from '../../services/staff-iam.service.js';
+import { RefundError, decideRefund, requestRefund } from '../../services/refund.service.js';
 import { stripeService } from '../payments/stripe.service.js';
-import { LARGE_REFUND_PENCE } from '../../config/billing.js';
 
 const readPre = [authenticatePlatformSession, requireInternalPermission('revenue.invoices.read')];
 const writePre = [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.write')];
@@ -22,15 +24,21 @@ function requestIdempotencyKey(request: FastifyRequest) {
   return typeof header === 'string' && header.trim().length > 0 ? header.trim() : null;
 }
 
-function refundIdempotencyKey(request: FastifyRequest, tenantId: string, paymentId: string, amount: number, reason: string, bodyKey?: string) {
+/** Client-supplied key (Idempotency-Key header or body) wins; otherwise a key derived from the request content. */
+function refundIdempotencyKey(request: FastifyRequest, paymentId: string, amount: unknown, reason: string, bodyKey?: string) {
   const supplied = bodyKey?.trim() || requestIdempotencyKey(request);
-  if (supplied) return `refund:${tenantId}:${supplied}`;
+  if (supplied) return `refund:${paymentId}:${supplied}`;
   const reasonHash = createHash('sha256').update(reason).digest('hex').slice(0, 24);
-  return `refund:${tenantId}:${paymentId}:${amount}:${reasonHash}`;
+  return `refund:${paymentId}:${String(amount)}:${reasonHash}`;
+}
+
+function sendRefundError(reply: FastifyReply, error: unknown) {
+  if (error instanceof RefundError) return reply.status(error.status).send({ error: error.code, message: error.message, ...error.extra });
+  throw error;
 }
 
 async function auditBilling(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
-  await writeAudit(request.server.prisma as unknown as PlatformAuditClient, {
+  await writeAudit(platformAuditClient(request.server.prisma), {
     actor_id: request.platform!.user.id,
     actor_email: request.platform!.user.email,
     actor_role: request.platform!.user.role,
@@ -115,48 +123,60 @@ export async function registerInternalBillingRoutes(app: FastifyInstance) {
     reply.status(201).send(credit);
   });
 
-  app.get('/api/internal/billing/refunds', { preHandler: readPre }, async (_request, reply) => {
-    const data = await app.prisma.refund.findMany({ include: { tenant: true, payment: true, approvals: true }, orderBy: { createdAt: 'desc' }, take: 100 });
+  app.get('/api/internal/billing/refunds', { preHandler: readPre }, async (request, reply) => {
+    const query = request.query as { status?: string };
+    const data = await app.prisma.refund.findMany({
+      where: { status: query.status || undefined },
+      include: { tenant: { select: { id: true, name: true, slug: true } }, payment: true, approvals: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
     reply.send({ data });
   });
 
-  app.post('/api/internal/billing/refunds', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireInternalPermission('revenue.invoices.refund')] }, async (request, reply) => {
-    const body = request.body as { paymentId?: string; amount?: number; reason?: string; idempotencyKey?: string };
-    const amount = Number(body.amount);
-    const reason = body.reason?.trim();
-    if (!body.paymentId || !Number.isFinite(amount) || amount <= 0 || !reason) return reply.status(400).send({ error: 'paymentId, amount, and reason are required' });
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    if (amount >= LARGE_REFUND_PENCE && !context.permissions.includes('revenue.invoices.refund.large')) {
-      return reply.status(403).send({
-        error: 'Refunds of £500 or more require revenue.invoices.refund.large permission',
-        code: 'PERMISSION_REQUIRED',
-        required: 'revenue.invoices.refund.large'
+  // WP-0.6: over-refund guard under a payment row lock, approval path for manual/large refunds, Stripe in minor units.
+  app.post('/api/internal/billing/refunds', { preHandler: dangerous('revenue.invoices.refund') }, async (request, reply) => {
+    const body = request.body as { paymentId?: string; amount?: unknown; reason: string; idempotencyKey?: string };
+    if (!body.paymentId || body.amount === undefined || body.amount === null || body.amount === '') {
+      return reply.status(400).send({ error: 'paymentId and amount are required' });
+    }
+    const reason = body.reason.trim();
+    const idempotencyKey = refundIdempotencyKey(request, body.paymentId, body.amount, reason, body.idempotencyKey);
+    const canRefundLarge = await platformUserHasConsolePermission(app.prisma, request.platform!.user, 'revenue.invoices.refund.large');
+    try {
+      const result = await requestRefund(app.prisma, { stripe: stripeService, largeRefundThreshold: config.billing.largeRefundThreshold }, {
+        paymentId: body.paymentId,
+        amount: body.amount,
+        reason,
+        idempotencyKey,
+        actorId: request.platform!.user.id,
+        canRefundLarge
       });
+      if (!result.created) return reply.send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval', replayed: true });
+      await auditBilling(request, result.path === 'approval' ? 'refund.request' : 'invoice.refund', 'refund', result.refund.id, null, { refund: result.refund, path: result.path }, reason);
+      return reply.status(201).send({ refund: result.refund, path: result.path, approvalRequired: result.path === 'approval' });
+    } catch (error) {
+      if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {
+        await auditBilling(request, 'refund.failed', 'refund', String(error.extra.refundId ?? ''), null, { vendor: 'stripe', message: error.message }, reason);
+      }
+      return sendRefundError(reply, error);
     }
-
-    const payment = await app.prisma.payment.findUnique({ where: { id: body.paymentId }, include: { invoice: true } });
-    if (!payment) return reply.status(404).send({ error: 'Payment not found' });
-    const stripeIdempotencyKey = refundIdempotencyKey(request, payment.tenantId, payment.id, amount, reason, body.idempotencyKey);
-    const existingRefund = await app.prisma.refund.findFirst({ where: { idempotencyKey: stripeIdempotencyKey } as unknown as Prisma.RefundWhereInput });
-    if (existingRefund) return reply.send(existingRefund);
-
-    const refundData = {
-      tenantId: payment.tenantId,
-      paymentId: payment.id,
-      amount: money(amount),
-      reason,
-      status: 'APPROVED',
-      initiatedBy: request.platform!.user.id,
-      idempotencyKey: stripeIdempotencyKey
-    };
-    const refund = await app.prisma.refund.create({
-      data: refundData
-    });
-    if (payment.gatewayRef) {
-      const stripeRefund = await stripeService.createRefund(payment.gatewayRef, amount, reason, stripeIdempotencyKey);
-      await app.prisma.refund.update({ where: { id: refund.id }, data: { gatewayRef: stripeRefund.id, status: stripeRefund.status } });
-    }
-    await auditBilling(request, 'invoice.refund', 'refund', refund.id, { payment, invoice: payment.invoice ?? null }, { refund, invoice: payment.invoice ?? null, stripeIdempotencyKey }, reason);
-    reply.status(201).send(refund);
   });
+
+  for (const decision of ['approve', 'reject'] as const) {
+    app.post(`/api/internal/billing/refunds/:id/${decision}`, { preHandler: dangerous('revenue.invoices.refund') }, async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const reason = (request.body as { reason: string }).reason.trim();
+      try {
+        const refund = await decideRefund(app.prisma, { stripe: stripeService }, { refundId: id, decision: decision === 'approve' ? 'APPROVE' : 'REJECT', actorId: request.platform!.user.id, reason });
+        await auditBilling(request, `refund.${decision}`, 'refund', id, null, { status: refund.status }, reason);
+        return reply.send({ refund });
+      } catch (error) {
+        if (error instanceof RefundError && error.code === 'VENDOR_ERROR') {
+          await auditBilling(request, 'refund.failed', 'refund', id, null, { vendor: 'stripe', message: error.message }, reason);
+        }
+        return sendRefundError(reply, error);
+      }
+    });
+  }
 }

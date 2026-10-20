@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { mockConsoleSession } from "./support/console-session";
+
 const permissions = [
   "platform.incidents.read",
   "platform.incidents.write",
@@ -22,22 +24,6 @@ test.beforeEach(async ({ context, page }) => {
       path: "/"
     }
   ]);
-
-  await page.route("**/api/v1/platform/auth/me", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        user: {
-          id: "staff_001",
-          email: "staff@fauward.com",
-          name: "Staff User",
-          role: "SUPER_ADMIN",
-          permissions
-        }
-      })
-    });
-  });
 
   await page.route("**/api/internal/**", async (route) => {
     const request = route.request();
@@ -68,6 +54,8 @@ test.beforeEach(async ({ context, page }) => {
       body: JSON.stringify({ ok: true, path, body: request.postDataJSON() })
     });
   });
+
+  await mockConsoleSession(page, permissions);
 });
 
 test("navigates critical Phase 2-6 workflow pages", async ({ page }) => {

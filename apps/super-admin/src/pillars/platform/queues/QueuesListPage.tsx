@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { QueueMessageViewer } from "@/components/admin/QueueMessageViewer";
 import { QueueTable } from "@/components/admin/QueueTable";
 import type { QueueRow } from "@/components/admin/QueueTable";
-import { api } from "@/lib/api";
+import { platformApi as api } from "@/lib/console-api";
 
 type QueueStatsResponse = {
   queues: Array<{
