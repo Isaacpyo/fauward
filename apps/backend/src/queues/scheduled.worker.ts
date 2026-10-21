@@ -14,6 +14,7 @@ import { runSecretInventory } from '../services/secret-inventory.service.js';
 import { pollIntegrations } from '../services/integration-health.service.js';
 import { runDunningAdvance } from '../services/dunning.service.js';
 import { sweepDisputeDeadlines } from '../services/dispute.service.js';
+import { runPlaybookExecutor } from '../services/customer-success.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -234,6 +235,14 @@ registerScheduledJob({
   repeatJobId: 'platform.activity-prune',
   description: 'Deletes console activity older than 180 days.',
   handler: async (app) => pruneOldActivity(app.prisma)
+});
+
+registerScheduledJob({
+  name: 'customer.playbook-executor',
+  pattern: '*/10 * * * *',
+  repeatJobId: 'customer.playbook-executor',
+  description: 'Starts CS playbooks whose trigger matches (once per tenant per 30 days) and runs due playbook steps.',
+  handler: async (app) => runPlaybookExecutor(app)
 });
 
 registerScheduledJob({

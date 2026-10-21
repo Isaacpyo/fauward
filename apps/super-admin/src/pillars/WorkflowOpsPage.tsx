@@ -37,7 +37,6 @@ type WorkflowAction = {
 
 const WORKFLOW_PREFIXES = [
   "/announcements",
-  "/success",
   "/flags",
   "/security",
   "/kyc",
@@ -130,33 +129,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           expiresAt: values.expiresAt || undefined,
           dismissible: true
         })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/success")) {
-    return [
-      {
-        id: "health",
-        label: "Queue Health Scoring",
-        description: "Run the weighted health score computation through BullMQ.",
-        method: "post",
-        path: () => "/success/health-scoring/run",
-        fields: [{ name: "reason", label: "Reason", type: "textarea", defaultValue: "Manual health scoring run" }],
-        payload: (values) => ({ reason: values.reason })
-      },
-      {
-        id: "playbook",
-        label: "Create Playbook",
-        description: "Create a threshold-triggered CS playbook definition.",
-        method: "post",
-        path: () => "/success/playbooks",
-        fields: [
-          { name: "name", label: "Name", required: true },
-          { name: "trigger", label: "Trigger", type: "select", options: ["health_below_45", "health_above_80"], defaultValue: "health_below_45" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "CS playbook" }
-        ],
-        payload: (values) => ({ name: values.name, trigger: values.trigger, steps: [{ type: "notify_csm", status: "PENDING" }], reason: values.reason })
       }
     ];
   }

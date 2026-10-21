@@ -3,8 +3,6 @@ import { expect, test } from "@playwright/test";
 import { mockConsoleSession } from "./support/console-session";
 
 const permissions = [
-  "customer.success.read",
-  "customer.success.write",
   "gtm.contracts.read",
   "gtm.contracts.write",
 ];
@@ -26,9 +24,7 @@ test.beforeEach(async ({ context, page }) => {
 
     if (request.method() === "GET") {
       const data =
-        path === "/success/health-scoring"
-            ? { weights: { login: 20, shipmentTrend: 25, featureBreadth: 15, paymentHealth: 15, ticketSentimentVolume: 15, nps: 10 } }
-            : path === "/contracts/quotes"
+        path === "/contracts/quotes"
               ? { data: [{ id: "quote_001", quoteNumber: "Q-001", status: "DRAFT" }] }
               : { data: [] };
 
@@ -48,7 +44,6 @@ test.beforeEach(async ({ context, page }) => {
 
 test("navigates critical Phase 2-6 workflow pages", async ({ page }) => {
   const pages = [
-    ["/customer/success/health-scoring", "Health Scoring"],
     ["/gtm/contracts/quotes", "Quote Builder"],
   ] as const;
 
@@ -68,12 +63,8 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
     }
   });
 
-  await page.goto("/customer/success/health-scoring");
-  await page.getByRole("button", { name: "Queue Health Scoring" }).click();
-
   await page.goto("/gtm/contracts/quotes");
   await page.getByRole("button", { name: "Create Quote" }).click();
 
-  await expect.poll(() => calls).toContain("POST /api/internal/success/health-scoring/run");
-  expect(calls).toContain("POST /api/internal/contracts/quotes");
+  await expect.poll(() => calls).toContain("POST /api/internal/contracts/quotes");
 });

@@ -40,6 +40,7 @@ import { FlagAuditPage, FlagDetailPage, FlagsListPage, ReleasesPage } from "@/pi
 import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
+import { AtRiskPage, CsOverviewPage, ExpansionPage, PlaybookEditorPage, PlaybookRunsPage, PlaybooksPage, ScoringModelPage } from "@/pillars/customer/success/SuccessPages";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
@@ -236,12 +237,13 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/support/macros", element: <PermissionRoute permission="customer.support.read">
                 <MacrosPage />
               </PermissionRoute> },
-  { path: "/customer/success", element: <OpsRoute permission="customer.success.read" title="CS Console" description="CSM book of business and tenant health score rollups." endpoint="/success" related={[{ label: "At Risk", to: "/customer/success/at-risk" }, { label: "Expansion", to: "/customer/success/expansion" }, { label: "Playbooks", to: "/customer/success/playbooks" }, { label: "Health Scoring", to: "/customer/success/health-scoring" }]} /> },
-  { path: "/customer/success/at-risk", element: <OpsRoute permission="customer.success.read" title="At-Risk Accounts" description="Low health score tenants queued for intervention." endpoint="/success/at-risk" /> },
-  { path: "/customer/success/expansion", element: <OpsRoute permission="customer.success.read" title="Expansion Ready" description="High health score tenants ready for expansion motion." endpoint="/success/expansion" /> },
-  { path: "/customer/success/playbooks", element: <OpsRoute permission="customer.success.read" title="CS Playbooks" description="Health-triggered customer success playbooks." endpoint="/success/playbooks" /> },
-  { path: "/customer/success/playbooks/:id/runs", element: <OpsRoute permission="customer.success.read" title="Playbook Runs" description="Sequential playbook execution status for tenant workflows." endpoint="/success/playbooks/:id/runs" /> },
-  { path: "/customer/success/health-scoring", element: <OpsRoute permission="customer.success.read" title="Health Scoring" description="Weighted model configuration for nightly health scoring." endpoint="/success/health-scoring" /> },
+  { path: "/customer/success", element: <PermissionRoute permission="customer.success.read"><CsOverviewPage /></PermissionRoute> },
+  { path: "/customer/success/at-risk", element: <PermissionRoute permission="customer.success.read"><AtRiskPage /></PermissionRoute> },
+  { path: "/customer/success/expansion", element: <PermissionRoute permission="customer.success.read"><ExpansionPage /></PermissionRoute> },
+  { path: "/customer/success/playbooks", element: <PermissionRoute permission="customer.success.read"><PlaybooksPage /></PermissionRoute> },
+  { path: "/customer/success/playbooks/:id", element: <PermissionRoute permission="customer.success.read"><PlaybookEditorPage /></PermissionRoute> },
+  { path: "/customer/success/playbooks/:id/runs", element: <PermissionRoute permission="customer.success.read"><PlaybookRunsPage /></PermissionRoute> },
+  { path: "/customer/success/health-scoring", element: <PermissionRoute permission="customer.success.read"><ScoringModelPage /></PermissionRoute> },
   { path: "/customer/comms", element: <PermissionRoute permission="customer.comms.read">
                 <AnnouncementsPage />
               </PermissionRoute> },

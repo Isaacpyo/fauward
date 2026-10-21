@@ -116,86 +116,11 @@ async function updateAndAudit(
 }
 
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
-  registerSuccess(app);
   registerSecurity(app);
   registerKyc(app);
   registerContracts(app);
   registerQbr(app);
   registerGtm(app);
-}
-
-function registerSuccess(app: FastifyInstance) {
-  app.get('/api/internal/success', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    const latest = await delegate(app, 'tenantHealthScore').findMany({ orderBy: { computedAt: 'desc' }, take: 100 });
-    reply.send({ data: latest });
-  });
-
-  app.get('/api/internal/success/at-risk', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    const scores = await app.prisma.tenantHealthScore.findMany({ where: { score: { lt: 45 } }, orderBy: [{ score: 'asc' }, { computedAt: 'desc' }], take: 200 });
-    const tenants = await app.prisma.tenant.findMany({
-      where: { id: { in: scores.map((score) => score.tenantId) } },
-      include: { subscription: true }
-    });
-    const tenantById = new Map(tenants.map((tenant) => [tenant.id, tenant]));
-    // WP-3.1: ARR from mrrForSubscription (list price, overrides, contracts, FX) — no plan-price literals.
-    const mrrByTenant = new Map(
-      await Promise.all(tenants.map(async (tenant) => [tenant.id, await mrrForSubscription(app.prisma, tenant, tenant.subscription)] as const))
-    );
-    const data = scores
-      .map((score) => {
-        const tenant = tenantById.get(score.tenantId);
-        const mrr = mrrByTenant.get(score.tenantId);
-        const arr = mrr ? Number(new Prisma.Decimal(mrr.amount).mul(12).toFixed(2)) : 0;
-        const churnProbability = Math.max(0, Math.min(1, (60 - score.score) / 60));
-        return { ...score, tenant, arr, arrCurrency: mrr?.currency ?? null, churnProbability, riskPriority: arr * churnProbability };
-      })
-      .sort((left, right) => right.riskPriority - left.riskPriority || left.score - right.score)
-      .slice(0, 100);
-    reply.send({ data });
-  });
-
-  app.get('/api/internal/success/expansion', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    const data = await delegate(app, 'tenantHealthScore').findMany({ where: { score: { gte: 80 } }, orderBy: { computedAt: 'desc' }, take: 100 });
-    reply.send({ data });
-  });
-
-  app.get('/api/internal/success/playbooks', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'cSPlaybook'), { orderBy: { createdAt: 'desc' } }));
-  });
-
-  app.post('/api/internal/success/playbooks', { preHandler: writePre('customer.success.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const playbook = await createAndAudit(
-      request,
-      delegate(app, 'cSPlaybook'),
-      { name: stringValue(body.name, 'Untitled playbook'), trigger: stringValue(body.trigger, 'manual'), steps: body.steps ?? [], active: body.active !== false },
-      'success.playbook.create',
-      'cs_playbook',
-      stringValue(body.reason, 'Create playbook')
-    );
-    reply.status(201).send(playbook);
-  });
-
-  app.get('/api/internal/success/playbooks/:id/runs', { preHandler: readPre('customer.success.read') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    reply.send(await listWithMeta(delegate(app, 'cSPlaybookRun'), { where: { playbookId: id }, orderBy: { createdAt: 'desc' } }));
-  });
-
-  // WP-3.3: the model from health-score.config.ts (weights, factor definitions, version), read-only.
-  app.get('/api/internal/success/health-scoring', { preHandler: readPre('customer.success.read') }, async (_request, reply) => {
-    reply.send(healthScoringModel());
-  });
-
-  app.post('/api/internal/success/health-scoring/run', { preHandler: writePre('customer.success.write') }, async (request, reply) => {
-    const job = await scheduledJobsQueue.add(
-      'customer.health-scoring',
-      // WP-3.8: the run row records who started it.
-      { triggeredBy: actorId(request), reason: 'Manual health scoring run from the CS console' },
-      { jobId: `customer.health-scoring.manual.${Date.now()}` }
-    );
-    await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');
-    reply.status(202).send({ queued: true, jobId: job.id, name: job.name });
-  });
 }
 
 function registerSecurity(app: FastifyInstance) {

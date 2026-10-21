@@ -144,23 +144,6 @@ describe('internal console phase routes', () => {
     expect(response.json()).toEqual({ error: 'CFO approval required', required: 'revenue.subscriptions.override' });
   });
 
-  it('queues manual health scoring runs instead of computing synchronously', async () => {
-    currentPermissions = ['customer.success.write'];
-    const prisma = {};
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/success/health-scoring/run', payload: { reason: 'manual' } });
-
-    expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({ queued: true, jobId: 'job_001', name: 'customer.health-scoring' });
-    expect(scheduledAddMock).toHaveBeenCalledWith(
-      'customer.health-scoring',
-      { triggeredBy: 'staff_001', reason: 'Manual health scoring run from the CS console' },
-      expect.objectContaining({ jobId: expect.stringContaining('customer.health-scoring.manual.') })
-    );
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'success.health_score.enqueue' }));
-  });
-
   it('requires senior compliance approval for PEP KYC approvals', async () => {
     currentPermissions = ['trust.kyc.approve'];
     currentRoles = ['FINANCE_ADMIN'];

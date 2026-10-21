@@ -2456,14 +2456,19 @@ model TenantHealthScore {
   @@map("tenant_health_scores")
 }
 
+/// customer.success (WP-4.8, 0068): trigger MANUAL | HEALTH_BELOW (triggerValue = score) | TRIAL_ENDING (triggerValue =
+/// days) | PAYMENT_FAILED; steps = [{ type: EMAIL_TENANT_ADMINS | CREATE_PLATFORM_TICKET | NOTIFY_STAFF | WAIT, … }].
 model CSPlaybook {
-  id        String   @id @default(uuid())
-  name      String
-  trigger   String
-  steps     Json
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  trigger      String
+  steps        Json
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  triggerValue Int?
+  description  String?
+  createdBy    String?
 
   runs CSPlaybookRun[]
 
@@ -2471,22 +2476,32 @@ model CSPlaybook {
   @@map("cs_playbooks")
 }
 
+/// One execution of a playbook for one tenant. `steps` is the playbook's steps at start, each with its result; the
+/// executor claims step `currentStep` with a conditional update (exactly once). Status RUNNING | WAITING | COMPLETED |
+/// FAILED | CANCELLED.
 model CSPlaybookRun {
-  id          String   @id @default(uuid())
-  playbookId  String?
-  tenantId    String
-  status      String   @default("PENDING")
-  steps       Json
-  currentStep Int      @default(0)
-  startedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String    @id @default(uuid())
+  playbookId    String?
+  tenantId      String
+  status        String    @default("PENDING")
+  steps         Json
+  currentStep   Int       @default(0)
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  nextActionAt  DateTime?
+  /// MANUAL or the trigger that started it.
+  triggerSource String?
+  startedBy     String?
+  error         String?
 
   playbook CSPlaybook? @relation(fields: [playbookId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, createdAt])
   @@index([status])
+  @@index([status, nextActionAt])
+  @@index([playbookId, tenantId, createdAt])
   @@map("cs_playbook_runs")
 }
 
