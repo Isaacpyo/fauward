@@ -3326,16 +3326,25 @@ model SalesHandoff {
 model MarketingAttribution {
   id          String   @id @default(uuid())
   tenantId    String?
+  /// FIRST_TOUCH (written at signup from the fw_attr cookie, WP-4.16)
+  touchType   String   @default("FIRST_TOUCH")
+  /// First touch: periodStart = first seen on fauward.com, periodEnd = signup.
   periodStart DateTime
   periodEnd   DateTime
+  /// utm_source, else the referring host, else "direct"; "unknown" when no consented cookie came with the signup.
   source      String
+  medium      String?
   campaign    String?
+  term        String?
+  content     String?
+  referrer    String?
   landingPage String?
   weight      Decimal  @db.Decimal(8, 4)
   revenue     Decimal  @default(0) @db.Decimal(12, 2)
   payload     Json?
   createdAt   DateTime @default(now())
 
+  @@unique([tenantId, touchType])
   @@index([tenantId])
   @@index([source, periodStart])
   @@map("marketing_attributions")

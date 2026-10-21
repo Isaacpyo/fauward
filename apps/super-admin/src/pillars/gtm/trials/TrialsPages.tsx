@@ -92,7 +92,7 @@ function Notice({ message }: { message: string | null }) {
 
 function ActivationCell({ activation }: { activation: Activation | null }) {
   if (!activation) return <span className="text-xs text-[var(--color-text-muted)]">Not scored yet</span>;
-  const tone = activation.score < 50 ? "text-red-700" : "text-green-700";
+  const tone = activation.interventionStatus === "CSM_INTERVENTION" ? "text-red-700" : "text-green-700";
   return (
     <span className={`text-xs font-semibold ${tone}`} title={`Scored ${new Date(activation.scoredAt).toLocaleString()}`}>
       Activation {activation.score}/100{activation.interventionStatus === "CSM_INTERVENTION" ? " · needs CSM" : ""}
@@ -129,8 +129,8 @@ export function TrialsPage() {
   const trials = useQuery({
     queryKey: [...KEY, "list", lowActivation],
     queryFn: async () => {
-      const data = (await consoleApi.get<{ data?: TrialRow[]; truncated?: boolean }>("/trials", { params: lowActivation ? { lowActivation: "true" } : {} })).data;
-      return { rows: data.data ?? [], truncated: data.truncated ?? false };
+      const data = (await consoleApi.get<{ data?: TrialRow[]; truncated?: boolean; activationThreshold?: number }>("/trials", { params: lowActivation ? { lowActivation: "true" } : {} })).data;
+      return { rows: data.data ?? [], truncated: data.truncated ?? false, threshold: data.activationThreshold ?? null };
     }
   });
   return (
@@ -144,7 +144,7 @@ export function TrialsPage() {
       </header>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={lowActivation} onChange={(event) => setParams(event.target.checked ? { lowActivation: "true" } : {}, { replace: true })} />
-        Only activation below 50
+        {trials.data?.threshold ? `Only activation below ${trials.data.threshold}` : "Only low activation"}
       </label>
       {trials.isError ? <ConsoleApiErrorPanel error={trials.error} onRetry={() => void trials.refetch()} title="Unable to load trials" /> : null}
       {trials.data ? <TrialTable rows={trials.data.rows} empty="No tenant is on a trial." /> : null}

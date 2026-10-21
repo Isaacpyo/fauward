@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import AttributionCapture from "@/components/marketing/AttributionCapture";
 import CookieConsent from "@/components/marketing/CookieConsent";
 import Footer from "@/components/marketing/Footer";
 import Navbar from "@/components/marketing/Navbar";
@@ -89,6 +90,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <main>{children}</main>
         <Footer />
         <RelayWidget greeting="Hi, how can we help?" />
+        <AttributionCapture />
         <CookieConsent />
         <Analytics />
         <SpeedInsights />

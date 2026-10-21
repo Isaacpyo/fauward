@@ -11,6 +11,7 @@ import { config } from '../../config/index.js';
 import { isReservedSlug } from '../tenants/reserved-slugs.js';
 import { assertNotLocked, recordSignIn } from '../../services/tenant-user-lifecycle.service.js';
 import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
+import { firstTouchData, type AttributionInput } from '../../services/attribution.service.js';
 
 type RegisterPayload = {
   companyName: string;
@@ -20,6 +21,7 @@ type RegisterPayload = {
   password: string;
   fullName?: string;
   desiredSlug?: string;
+  attribution?: AttributionInput;
 };
 
 type LoginPayload = {
@@ -250,6 +252,8 @@ export const authService = {
           billingCycle: 'MONTHLY'
         }
       });
+
+      await tx.marketingAttribution.create({ data: firstTouchData(tenant.id, payload.attribution, new Date()) });
 
       await tx.outboxEvent.createMany({
         data: [

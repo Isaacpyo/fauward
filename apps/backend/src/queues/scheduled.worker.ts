@@ -3,6 +3,7 @@ import { Worker } from 'bullmq';
 
 import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
 import { expireDemos } from '../services/demos.service.js';
+import { ACTIVATION_THRESHOLD } from '../config/activation.js';
 import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
 import { pruneOldActivity } from '../jobs/activity-prune.js';
@@ -167,7 +168,7 @@ registerScheduledJob({
         paymentMethodConnected: payments > 0,
         webhookConfigured: webhooks > 0,
         customDomainSet: Boolean(tenant.customDomain),
-        interventionStatus: score < 50 ? 'CSM_INTERVENTION' : 'NONE'
+        interventionStatus: score < ACTIVATION_THRESHOLD ? 'CSM_INTERVENTION' : 'NONE'
       };
       await app.prisma.trialActivation.upsert({ where: { tenantId: tenant.id }, create: { tenantId: tenant.id, ...fields }, update: fields });
     }

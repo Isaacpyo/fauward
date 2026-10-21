@@ -5,6 +5,7 @@ import { auditedMutation, staffMutationActor } from './console-mutation.js';
 import { recordAndPublishActivity } from './platform-activity.service.js';
 import { notifyStaff, notifyTenantAdmins } from './platform-notifier.service.js';
 import { stripeAdapter } from './vendors/stripe.adapter.js';
+import { ACTIVATION_THRESHOLD } from '../config/activation.js';
 
 // gtm.trials (WP-4.14). Trials are tenants whose Subscription is TRIALING (DEMO tenants excluded). A tenant admin asks
 // for more time from the trial banner (≤ 14 days, one pending request per tenant, enforced by the unique
@@ -128,8 +129,8 @@ export async function listTrials(app: Pick<FastifyInstance, 'prisma'>, query: z.
   });
   const truncated = tenants.length > LIST_LIMIT;
   let rows = await presentTrials(app, tenants.slice(0, LIST_LIMIT).sort(byTrialEnd), now);
-  if (query.lowActivation === 'true') rows = rows.filter((row) => row.activation !== null && row.activation.score < 50);
-  return { data: rows, truncated };
+  if (query.lowActivation === 'true') rows = rows.filter((row) => row.activation !== null && row.activation.score < ACTIVATION_THRESHOLD);
+  return { data: rows, truncated, activationThreshold: ACTIVATION_THRESHOLD };
 }
 
 export async function listExpiring(app: Pick<FastifyInstance, 'prisma'>, now = new Date()) {

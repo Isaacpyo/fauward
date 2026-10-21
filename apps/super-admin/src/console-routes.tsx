@@ -71,6 +71,7 @@ import { JitPendingPage } from "@/pillars/trust/jit/JitPendingPage";
 import { JitRequestPage } from "@/pillars/trust/jit/JitRequestPage";
 import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
+import { AttributionPage } from "@/pillars/gtm/attribution/AttributionPage";
 import { CreateDemoPage, DemoDetailPage, DemoTemplatesPage, DemosPage } from "@/pillars/gtm/demos/DemosPages";
 import { ExtensionsPage, TrialDetailPage, TrialsExpiringPage, TrialsPage } from "@/pillars/gtm/trials/TrialsPages";
 import { RolesPage } from "@/pillars/trust/iam/RolesPage";
@@ -358,6 +359,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/pipeline", element: <OpsRoute permission="gtm.pipeline.read" title="Sales Pipeline" description="HubSpot deal sync with Fauward tenant linking." endpoint="/pipeline" related={[{ label: "Forecasting", to: "/gtm/pipeline/forecasting" }]} /> },
   { path: "/gtm/pipeline/forecasting", element: <OpsRoute permission="gtm.pipeline.read" title="Forecasting" description="Quarterly forecast from synced HubSpot deal amount and probability." endpoint="/pipeline/forecasting" /> },
   { path: "/gtm/pipeline/:dealId", element: <OpsRoute permission="gtm.pipeline.read" title="Deal Detail" description="Deal detail and linked tenant context." endpoint="/pipeline/:dealId" /> },
+  { path: "/gtm/attribution", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="sources" /></PermissionRoute> },
+  { path: "/gtm/attribution/campaigns", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="campaigns" /></PermissionRoute> },
+  { path: "/gtm/attribution/funnel", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="funnel" /></PermissionRoute> },
+  { path: "/gtm/attribution/landing-pages", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="landing-pages" /></PermissionRoute> },
   { path: "/gtm/demos", element: <PermissionRoute permission="gtm.demos.read"><DemosPage /></PermissionRoute> },
   { path: "/gtm/demos/create", element: <PermissionRoute permission="gtm.demos.write"><CreateDemoPage /></PermissionRoute> },
   { path: "/gtm/demos/templates", element: <PermissionRoute permission="gtm.demos.read"><DemoTemplatesPage /></PermissionRoute> },
@@ -370,10 +375,6 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/handoff", element: <Navigate to="/gtm/handoff/won" replace /> },
   { path: "/gtm/handoff/onboarding-queue", element: <OpsRoute permission="gtm.handoff.read" title="Onboarding Queue" description="Handed-off accounts waiting for CSM acceptance." endpoint="/handoff/onboarding-queue" /> },
   { path: "/gtm/handoff/templates", element: <OpsRoute permission="gtm.handoff.read" title="Handoff Templates" description="Structured handoff document templates." endpoint="/handoff/templates" /> },
-  { path: "/gtm/attribution", element: <OpsRoute permission="gtm.attribution.read" title="Marketing Attribution" description="PostHog-based multi-touch source and campaign attribution." endpoint="/attribution" related={[{ label: "Campaigns", to: "/gtm/attribution/campaigns" }, { label: "Funnel", to: "/gtm/attribution/funnel" }, { label: "Landing Pages", to: "/gtm/attribution/landing-pages" }]} /> },
-  { path: "/gtm/attribution/campaigns", element: <OpsRoute permission="gtm.attribution.read" title="Campaign Performance" description="Campaign-level source and revenue attribution." endpoint="/attribution/campaigns" /> },
-  { path: "/gtm/attribution/funnel", element: <OpsRoute permission="gtm.attribution.read" title="Attribution Funnel" description="Visit to signup to activation to paid conversion." endpoint="/attribution/funnel" /> },
-  { path: "/gtm/attribution/landing-pages", element: <OpsRoute permission="gtm.attribution.read" title="Landing Pages" description="Landing page attribution and conversion performance." endpoint="/attribution/landing-pages" /> },
   { path: "/gtm/pricing", element: <ComingSoonRoute serviceKey="gtm.pricing" /> },
   { path: "/gtm/contracts/quotes", element: <OpsRoute permission="gtm.contracts.read" title="Quote Builder" description="CPQ quotes, discount approvals and DocuSign handoff." endpoint="/contracts/quotes" related={[{ label: "Discounts", to: "/gtm/contracts/discounts" }, { label: "MSAs", to: "/gtm/contracts/msas" }]} /> },
   { path: "/gtm/contracts", element: <Navigate to="/gtm/contracts/quotes" replace /> },

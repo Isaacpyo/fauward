@@ -237,20 +237,4 @@ function registerGtm(app: FastifyInstance) {
   app.get('/api/internal/handoff/templates', { preHandler: readPre('gtm.handoff.read') }, async (_request, reply) => {
     reply.send({ data: [{ id: 'default', name: 'Default handoff', fields: ['stakeholders', 'successCriteria', 'risks'] }] });
   });
-
-  app.get('/api/internal/attribution', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'marketingAttribution'), { orderBy: { periodStart: 'desc' }, take: 100 })), vendor: null });
-  });
-
-  app.get('/api/internal/attribution/campaigns', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'marketingAttribution'), { where: { campaign: { not: null } }, orderBy: { periodStart: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/attribution/funnel', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {
-    reply.send({ data: [] });
-  });
-
-  app.get('/api/internal/attribution/landing-pages', { preHandler: readPre('gtm.attribution.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'marketingAttribution'), { where: { landingPage: { not: null } }, orderBy: { periodStart: 'desc' }, take: 100 }));
-  });
 }

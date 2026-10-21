@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { ATTRIBUTION_COOKIE, parseTouch } from "@/lib/attribution";
+
 type RegisterPayload = {
   name?: string;
   email?: string;
@@ -27,7 +29,15 @@ function isValidPayload(payload: RegisterPayload): boolean {
   );
 }
 
+function cookieValue(request: Request, name: string) {
+  const header = request.headers.get("cookie") ?? "";
+  const entry = header.split(/;\s*/).find((part) => part.startsWith(`${name}=`));
+  return entry ? entry.slice(name.length + 1) : null;
+}
+
 export async function POST(request: Request) {
+  // First-touch attribution (WP-4.16): present only when the visitor accepted non-essential cookies.
+  const attribution = parseTouch(cookieValue(request, ATTRIBUTION_COOKIE));
   const payload = (await request.json().catch(() => null)) as RegisterPayload | null;
 
   if (!payload || !isValidPayload(payload)) {
@@ -46,7 +56,8 @@ export async function POST(request: Request) {
           region: "global",
           email: payload.email,
           plan: payload.plan,
-          password: payload.password
+          password: payload.password,
+          ...(attribution ? { attribution } : {})
         })
       });
       const result = (await response.json().catch(() => null)) as
