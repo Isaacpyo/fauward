@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { nextAuditTimestamp, withAuditChainLock } from '@fauward/internal-audit';
 
 type PlatformAuditInput = {
   actorType: 'PLATFORM_USER' | 'TENANT_USER' | 'SYSTEM';
@@ -32,11 +33,18 @@ export function computePlatformAuditHash(fields: Record<string, unknown>, previo
     .digest('hex');
 }
 
+type AuditDb = Pick<PrismaClient, 'platformAuditLog'>;
+
 // Accepts a transaction client too, so callers can write the audit row in the same transaction as the change.
-export async function writePlatformAuditLog(prisma: Pick<PrismaClient, 'platformAuditLog'>, input: PlatformAuditInput) {
+// Appends are serialised by the audit chain lock (see @fauward/internal-audit chain-lock.ts).
+export async function writePlatformAuditLog(prisma: AuditDb, input: PlatformAuditInput) {
+  return withAuditChainLock(prisma, (db) => appendPlatformAuditLog(db, input));
+}
+
+async function appendPlatformAuditLog(prisma: AuditDb, input: PlatformAuditInput) {
   const previous = await prisma.platformAuditLog.findFirst({
     orderBy: { createdAt: 'desc' },
-    select: { hash: true }
+    select: { hash: true, createdAt: true }
   });
 
   const fields = {
@@ -60,7 +68,8 @@ export async function writePlatformAuditLog(prisma: Pick<PrismaClient, 'platform
       ...fields,
       metadata: fields.metadata,
       previousHash,
-      hash
+      hash,
+      createdAt: nextAuditTimestamp(previous)
     }
   });
 }

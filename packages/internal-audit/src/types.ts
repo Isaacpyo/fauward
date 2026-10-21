@@ -58,11 +58,17 @@ export type PlatformAuditRow = {
 
 export type PlatformAuditClient = {
   platformAuditLog: {
-    findFirst: (args: unknown) => Promise<{ hash: string } | null>;
+    findFirst: (args: unknown) => Promise<{ hash: string; createdAt?: Date } | null>;
     create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
     findMany?: (args: unknown) => Promise<PlatformAuditRow[]>;
   };
+  /** Present on a Prisma client: writeAudit appends inside a transaction holding the audit chain lock. */
+  $transaction?: <T>(fn: (tx: PlatformAuditClient) => Promise<T>, options?: AuditTransactionOptions) => Promise<T>;
+  /** Present on a Prisma (transaction) client: used to take the audit chain lock. */
+  $executeRawUnsafe?: (query: string) => Promise<number>;
 };
+
+export type AuditTransactionOptions = { maxWait?: number; timeout?: number };
 
 export type AuditMetadata = {
   before?: unknown;
