@@ -68,6 +68,7 @@ import { formatPlanLabel, getFeatureMinimumPlan, type FeatureKey } from "@/lib/p
 import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { useAppStore } from "@/stores/useAppStore";
 import { ImpersonateCallbackPage } from "@/pages/auth/ImpersonateCallbackPage";
+import { DemoLinkPage } from "@/pages/auth/DemoLinkPage";
 import { setTenantSlug } from "@/lib/auth";
 
 function AuthGuard() {
@@ -197,6 +198,7 @@ export function AppRouter() {
   return (
     <Routes>
       <Route path="/auth/impersonate" element={<ImpersonateCallbackPage />} />
+      <Route path="/demo/:token" element={<DemoLinkPage />} />
 
       <Route element={<GuestGuard />}>
         <Route path="/login" element={<LoginPage />} />

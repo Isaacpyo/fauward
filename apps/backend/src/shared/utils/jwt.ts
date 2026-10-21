@@ -18,13 +18,22 @@ export interface JwtPayload {
   targetUserId?: string | null;
   impersonationSessionId?: string;
   scopes?: string[];
-  mode?: 'IMPERSONATION';
+  mode?: 'IMPERSONATION' | 'DEMO';
+  /** DEMO mode (WP-4.15): the demo environment and the share token the session came from (rotation ends it). */
+  demoEnvironmentId?: string;
+  demoTokenFingerprint?: string;
 }
 
 export function signAccessToken(payload: JwtPayload) {
   return jwt.sign(payload, config.jwt.accessSecret, {
     expiresIn: config.jwt.accessExpiresIn as jwt.SignOptions['expiresIn']
   });
+}
+
+/** A read-only demo share-link session (WP-4.15): lives until `expiresAt`; every request re-checks the demo row. */
+export function signDemoAccessToken(payload: JwtPayload, expiresAt: Date) {
+  const seconds = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+  return jwt.sign(payload, config.jwt.accessSecret, { expiresIn: seconds });
 }
 
 export function signRefreshToken(payload: JwtPayload) {

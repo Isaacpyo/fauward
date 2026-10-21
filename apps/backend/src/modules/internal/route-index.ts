@@ -3,6 +3,7 @@
 // (D1 check (d)). Plain data on purpose: no imports, one route per line.
 export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'DELETE /api/internal/announcements/:id',
+  'DELETE /api/internal/demos/:id',
   'DELETE /api/internal/dunning/sequences/:id',
   'DELETE /api/internal/dunning/sequences/:id/steps/:stepId',
   'DELETE /api/internal/flags/:key/overrides/:id',
@@ -60,6 +61,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'GET /api/internal/database/slow-queries',
   'GET /api/internal/database/tables',
   'GET /api/internal/demos',
+  'GET /api/internal/demos/:id',
   'GET /api/internal/demos/templates',
   'GET /api/internal/disputes',
   'GET /api/internal/disputes/:id',
@@ -225,6 +227,8 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/contracts/quotes/:id/send',
   'POST /api/internal/contracts/webhooks/docusign',
   'POST /api/internal/demos',
+  'POST /api/internal/demos/:id/extend',
+  'POST /api/internal/demos/:id/share-link',
   'POST /api/internal/disputes/:id/evidence',
   'POST /api/internal/disputes/:id/notes',
   'POST /api/internal/dunning/enrollments/:id/cancel',

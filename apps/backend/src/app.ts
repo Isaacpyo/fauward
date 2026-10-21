@@ -50,6 +50,7 @@ import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.
 import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.realtime.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerImpersonationExchangeRoutes } from './modules/auth/impersonation-exchange.routes.js';
+import { registerDemoExchangeRoutes } from './modules/auth/demo-exchange.routes.js';
 import { registerConsoleRoutes } from './modules/internal/register.js';
 import { vendorErrorHandler } from './services/vendors/vendor-error.js';
 import { auditMiddleware } from '@fauward/internal-audit';
@@ -283,6 +284,7 @@ export async function buildApp() {
   await registerExceptionsRoutes(app);
   await registerFleetRoutes(app);
   await registerImpersonationExchangeRoutes(app);
+  await registerDemoExchangeRoutes(app);
   await registerConsoleRoutes(app);
   await registerLabelRoutes(app);
   await registerShippingLabelRoutes(app);

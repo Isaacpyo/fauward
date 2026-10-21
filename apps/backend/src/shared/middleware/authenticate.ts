@@ -2,6 +2,7 @@ import { USER_LOCKED_MESSAGE } from '../../services/tenant-user-lifecycle.servic
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'crypto';
 import { currentRequestActor } from '../../context/request-actor.context.js';
+import { demoSessionValid } from '../../services/demo-session.js';
 
 function monthKey(date = new Date()) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -178,6 +179,15 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
       }
       const actor = currentRequestActor();
       if (actor) actor.impersonation = { sessionId, platformUserId: session.platformUserId };
+    }
+    // Demo share-link sessions (WP-4.15) are read-only and end with the demo or when the link is replaced.
+    if (request.user?.mode === 'DEMO') {
+      if (!(await demoSessionValid(request.server.prisma, { tenantId, demoEnvironmentId: request.user.demoEnvironmentId, demoTokenFingerprint: request.user.demoTokenFingerprint }))) {
+        return reply.status(401).send({ error: 'Demo session ended', code: 'DEMO_SESSION_ENDED' });
+      }
+      if (!isReadMethod(request.method)) {
+        return reply.status(403).send({ error: 'DEMO_READ_ONLY', message: 'This demo link is read-only. Sign in with the demo credentials to make changes.' });
+      }
     }
     const user = await request.server.prisma.user.findFirst({
       where: { id: userId, tenantId },

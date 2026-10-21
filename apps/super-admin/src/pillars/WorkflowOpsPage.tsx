@@ -38,8 +38,7 @@ type WorkflowAction = {
 const WORKFLOW_PREFIXES = [
   "/announcements",
   "/flags",
-  "/contracts",
-  "/demos"
+  "/contracts"
 ];
 
 export function hasWorkflowSurface(endpoint: string) {
@@ -169,24 +168,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Send to DocuSign" }
         ],
         payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/demos")) {
-    return [
-      {
-        id: "create",
-        label: "Create Demo Tenant",
-        description: "Provision a DEMO tenant from a sales template.",
-        method: "post",
-        path: () => "/demos",
-        fields: [
-          { name: "template", label: "Template", type: "select", options: ["logistics-3pl", "retail", "manufacturing"], defaultValue: "logistics-3pl" },
-          { name: "expiresAt", label: "Expires At", type: "date" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Create demo" }
-        ],
-        payload: (values) => ({ template: values.template, expiresAt: values.expiresAt || undefined, reason: values.reason })
       }
     ];
   }

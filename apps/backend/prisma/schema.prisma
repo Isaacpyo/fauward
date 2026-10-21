@@ -3286,10 +3286,21 @@ model DemoEnvironment {
   id             String   @id @default(uuid())
   tenantId       String   @unique
   template       String
-  shareTokenHash String?
+  /// sha256 of the share-link token (the token itself is shown once); null once torn down.
+  shareTokenHash String?  @unique
+  shareRotatedAt DateTime?
   expiresAt      DateTime
+  /// ACTIVE | EXPIRED (expiry job) | TORN_DOWN (staff)
   status         String   @default("ACTIVE")
   createdBy      String
+  prospectName   String?
+  adminUserId    String?
+  adminEmail     String?
+  /// Counts of the rows the template seeded, e.g. { organisations, shipments }.
+  seedSummary    Json?
+  endedAt        DateTime?
+  endedBy        String?
+  endReason      String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

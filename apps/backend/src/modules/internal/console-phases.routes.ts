@@ -226,30 +226,6 @@ function registerGtm(app: FastifyInstance) {
     reply.send(deal);
   });
 
-  app.get('/api/internal/demos', { preHandler: readPre('gtm.demos.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'demoEnvironment'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/demos', { preHandler: writePre('gtm.demos.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const template = stringValue(body.template, 'logistics-3pl');
-    const tenant = await app.prisma.tenant.create({
-      data: {
-        name: stringValue(body.name, `Demo ${template}`),
-        slug: `demo-${Date.now()}`,
-        plan: 'TRIALING',
-        status: 'DEMO',
-        demoExpiresAt: dateValue(body.expiresAt, inDays(30))
-      }
-    });
-    const demo = await createAndAudit(request, delegate(app, 'demoEnvironment'), { tenantId: tenant.id, template, expiresAt: tenant.demoExpiresAt ?? inDays(30), status: 'ACTIVE', createdBy: actorId(request), shareTokenHash: `demo_${tenant.id}` }, 'demos.create', 'demo_environment', stringValue(body.reason, 'Create demo environment'));
-    reply.status(201).send({ tenant, demo });
-  });
-
-  app.get('/api/internal/demos/templates', { preHandler: readPre('gtm.demos.read') }, async (_request, reply) => {
-    reply.send({ data: ['logistics-3pl', 'retail', 'manufacturing'] });
-  });
-
   app.get('/api/internal/handoff/won', { preHandler: readPre('gtm.handoff.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'salesDeal'), { where: { stage: 'WON' }, orderBy: { updatedAt: 'desc' } }));
   });

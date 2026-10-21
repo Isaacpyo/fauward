@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { Worker } from 'bullmq';
 
 import { runOverdueInvoiceSweep } from '../modules/finance/finance.routes.js';
-import { domainService } from '../modules/tenants/domain.service.js';
+import { expireDemos } from '../services/demos.service.js';
 import { cleanupExpiredSlugHistory } from '../jobs/slug-history-cleanup.js';
 import { sweepExpiredImpersonationSessions } from '../jobs/impersonation-expiry-sweep.js';
 import { pruneOldActivity } from '../jobs/activity-prune.js';
@@ -179,18 +179,8 @@ registerScheduledJob({
   name: 'gtm.demo-expiry',
   pattern: '30 * * * *',
   repeatJobId: 'gtm.demo-expiry.hourly',
-  description: 'Expires demo environments past their end date and cancels their tenants.',
-  handler: async (app) => {
-    const expired = await app.prisma.demoEnvironment.findMany({ where: { status: 'ACTIVE', expiresAt: { lte: new Date() } } });
-    for (const demo of expired) {
-      await domainService.removeCustomDomain(app.prisma, { tenantId: demo.tenantId, actorUserId: null, actorIp: null, actorType: 'SYSTEM' });
-      await app.prisma.$transaction([
-        app.prisma.demoEnvironment.update({ where: { id: demo.id }, data: { status: 'EXPIRED' } }),
-        app.prisma.tenant.update({ where: { id: demo.tenantId }, data: { status: 'CANCELLED' } })
-      ]);
-    }
-    return { expired: expired.length };
-  }
+  description: 'Ends demo environments past their expiry: closes the DEMO workspace, deactivates its users, clears the share link.',
+  handler: async (app) => expireDemos(app)
 });
 
 registerScheduledJob({

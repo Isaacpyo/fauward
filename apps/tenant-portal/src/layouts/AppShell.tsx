@@ -10,6 +10,7 @@ import { SuspendedOverlay } from "@/components/billing/SuspendedOverlay";
 import { TrialBanner } from "@/components/billing/TrialBanner";
 import { UsageWarningBanner } from "@/components/billing/UsageWarningBanner";
 import { AnnouncementBanner } from "@/components/layout/AnnouncementBanner";
+import { DemoBanner } from "@/components/layout/DemoBanner";
 import { ImpersonationBanner } from "@/components/layout/ImpersonationBanner";
 import { CommandPalette } from "@/components/shared/CommandPalette";
 import { ToastStack } from "@/components/shared/ToastStack";
@@ -63,6 +64,7 @@ export function AppShell() {
           </>
         ) : null}
         <ImpersonationBanner />
+        <DemoBanner />
         <StaffAccessActiveBanner />
         <AnnouncementBanner />
         <NpsPrompt enabled={Boolean(summary) && !suspended} />
