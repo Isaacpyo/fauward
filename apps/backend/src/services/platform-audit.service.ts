@@ -4,8 +4,10 @@ import {
   AUDIT_HASH_VERSION,
   computeAuditRowHash,
   initialAuditChainCursor,
+  nextAuditTimestamp,
   normalizeAuditJson,
   verifyAuditChainBatch,
+  withAuditChainLock,
   type AuditChainBreakReason,
   type AuditJson,
   type AuditRowData,
@@ -14,8 +16,9 @@ import {
 import { currentRequestActor } from '../context/request-actor.context.js';
 
 // trust.audit (WP-5.1, S14): every PlatformAuditLog row is written here. One scheme (@fauward/internal-audit
-// computeAuditRowHash, hashVersion 2); the writer takes a transaction-scoped advisory lock, reads the latest row by `seq`,
-// hashes and inserts, so concurrent writers cannot fork the chain.
+// computeAuditRowHash, hashVersion 2); the writer holds the audit chain lock (@fauward/internal-audit chain-lock.ts, a
+// transaction-scoped advisory lock), reads the latest row by `seq`, hashes and inserts, so concurrent writers cannot
+// fork the chain. createdAt stays strictly increasing, so createdAt order is chain order too.
 
 type PlatformAuditInput = {
   actorType: 'PLATFORM_USER' | 'TENANT_USER' | 'SYSTEM';
@@ -33,11 +36,8 @@ type PlatformAuditInput = {
 
 export type AuditDb = PrismaClient | Prisma.TransactionClient;
 
-/** Arbitrary constant key for pg_advisory_xact_lock; only the audit writer uses it. */
-export const AUDIT_CHAIN_LOCK_KEY = 7_011_975_001;
 export const AUDIT_CHAIN_META_ID = 'platform_audit_logs';
 export const AUDIT_VERIFY_BATCH_SIZE = 1_000;
-const AUDIT_TX_OPTIONS = { maxWait: 20_000, timeout: 20_000 };
 
 function jsonColumn(value: AuditJson): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return value === null ? Prisma.DbNull : value;
@@ -49,11 +49,11 @@ function markAuditWritten() {
   if (holder) holder.auditWritten = true;
 }
 
-async function appendLocked(tx: Prisma.TransactionClient, row: AuditRowData) {
-  // Real clients always have $executeRaw; the in-memory fakes some unit tests pass do not (they are single-threaded).
-  if (typeof tx.$executeRaw === 'function') await tx.$executeRaw`SELECT pg_advisory_xact_lock(7011975001)`;
-  const latest = await tx.platformAuditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true } });
+/** Runs with the chain lock held; `tx` is the lock's transaction (or the caller's). */
+async function appendLocked(tx: Prisma.TransactionClient, input: AuditRowData) {
+  const latest = await tx.platformAuditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true, createdAt: true } });
   const previousHash = latest?.hash ?? null;
+  const row = { ...input, createdAt: nextAuditTimestamp(latest, input.createdAt) };
   return tx.platformAuditLog.create({
     data: {
       ...row,
@@ -67,11 +67,9 @@ async function appendLocked(tx: Prisma.TransactionClient, row: AuditRowData) {
   });
 }
 
-/** Appends one row. A root client gets its own interactive transaction; a transaction client keeps the caller's. */
+/** Appends one row. A root client gets its own locked transaction; a transaction client takes the lock in the caller's. */
 export async function appendPlatformAuditRow(db: AuditDb, row: AuditRowData) {
-  const created = '$transaction' in db && typeof db.$transaction === 'function'
-    ? await db.$transaction((tx) => appendLocked(tx, row), AUDIT_TX_OPTIONS)
-    : await appendLocked(db, row);
+  const created = await withAuditChainLock<AuditDb, Awaited<ReturnType<typeof appendLocked>>>(db, (tx) => appendLocked(tx, row));
   markAuditWritten();
   return created;
 }
