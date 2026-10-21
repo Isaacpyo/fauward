@@ -21,6 +21,7 @@ import { registerConsoleEscalationRoutes } from './platform/escalations.routes.j
 import { registerConsoleIncidentRoutes } from './platform/incidents.routes.js';
 import { registerConsoleSecretRoutes } from './trust/secrets.routes.js';
 import { registerConsoleIntegrationRoutes } from './platform/integrations.routes.js';
+import { registerConsoleDatabaseRoutes } from './platform/database.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
@@ -48,6 +49,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleIncidentRoutes(app);
   await registerConsoleSecretRoutes(app);
   await registerConsoleIntegrationRoutes(app);
+  await registerConsoleDatabaseRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);

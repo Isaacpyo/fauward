@@ -71,7 +71,7 @@ describe("manifest reconciliation (D1)", () => {
   it("manifest statuses match the services that met the definition of done (Phases 1–3)", () => {
     expect(SERVICES).toHaveLength(41);
     expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key).sort()).toEqual(
-      ["customer.360", "customer.comms", "customer.feedback", "customer.onboarding", "customer.support", "platform.flags", "platform.health", "platform.impersonation", "platform.incidents", "platform.integrations", "platform.jobs", "platform.queues", "platform.tenants", "revenue.analytics", "revenue.billing", "revenue.subscriptions", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.safety", "trust.secrets"]
+      ["customer.360", "customer.comms", "customer.feedback", "customer.onboarding", "customer.support", "platform.database", "platform.flags", "platform.health", "platform.impersonation", "platform.incidents", "platform.integrations", "platform.jobs", "platform.queues", "platform.tenants", "revenue.analytics", "revenue.billing", "revenue.subscriptions", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.safety", "trust.secrets"]
     );
     expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "gtm.partners", "gtm.pricing", "revenue.commissions", "revenue.recognition"]);
     for (const service of SERVICES.filter((item) => item.status === "preview")) {
@@ -98,7 +98,7 @@ describe("manifest reconciliation (D1)", () => {
   });
 
   it("ACC-MAN-4 planned services without a page show ComingSoonPage with their phase and keep a preview entry", () => {
-    const planned = ["platform.database", "revenue.disputes"];
+    const planned = ["revenue.disputes"];
     for (const key of planned) {
       const service = SERVICES.find((item) => item.key === key)!;
       expect(service.status).toBe("preview");

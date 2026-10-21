@@ -23,6 +23,7 @@ import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/custom
 import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
 import { IncidentDetailPage, IncidentsListPage, RunbookEditorPage, RunbooksPage } from "@/pillars/platform/incidents/IncidentsPages";
 import { WebhookFailuresPage } from "@/pillars/platform/integrations/WebhookFailuresPage";
+import { DatabasePage } from "@/pillars/platform/database/DatabasePage";
 import { CredentialsPage, IntegrationsListPage, ProviderDetailPage, TenantGatewaysPage } from "@/pillars/platform/integrations/IntegrationsPages";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
@@ -130,7 +131,7 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/jobs/:name", element: <PermissionRoute permission="platform.jobs.read">
                 <JobRunsPage />
               </PermissionRoute> },
-  { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
+  { path: "/platform/database", element: <PermissionRoute permission="platform.database.read"><DatabasePage /></PermissionRoute> },
   { path: "/platform/integrations", element: <PermissionRoute permission="platform.integrations.read"><IntegrationsListPage /></PermissionRoute> },
   { path: "/platform/integrations/tenant-gateways", element: <PermissionRoute permission="platform.integrations.read"><TenantGatewaysPage /></PermissionRoute> },
   { path: "/platform/integrations/credentials", element: <PermissionRoute permission="platform.integrations.read"><CredentialsPage /></PermissionRoute> },

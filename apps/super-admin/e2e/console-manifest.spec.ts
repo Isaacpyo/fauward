@@ -101,14 +101,10 @@ test("ACC-MAN-4 deferred services show ComingSoonPage and are absent from the si
 });
 
 test("ACC-MAN-4 planned services without a page show their target phase and keep a Preview sidebar entry", async ({ page }) => {
-  await page.goto("/platform/database");
-  await expect(page.getByTestId("coming-soon")).toContainText("Coming in Phase 4");
-  const entry = page.locator('aside nav a[href="/platform/database"]');
-  await expect(entry).toContainText("Database Operations");
-  await expect(entry).toContainText("Preview");
-
   await page.goto("/revenue/disputes");
   await expect(page.getByTestId("coming-soon")).toContainText("Coming in Phase 4");
+  const entry = page.locator('aside nav a[href="/revenue/disputes"]');
+  await expect(entry).toContainText("Preview");
 });
 
 test("preview service pages carry the PreviewBanner; the live IAM service does not", async ({ page }) => {
