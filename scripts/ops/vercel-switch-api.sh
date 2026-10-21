@@ -8,6 +8,9 @@
 # If env/vercel-admin.token exists (a token made in Vercel → Account Settings → Tokens, scoped to the team), it is
 # used instead of backend.env's VERCEL_API_TOKEN. Delete it afterwards. On a 403 the script prints which account and
 # teams the token can see, so a wrong VERCEL_TEAM_ID or a token from another account shows up.
+#   --backend-token   use backend.env's VERCEL_API_TOKEN even if vercel-admin.token exists
+#   --team <id>       use this team instead of backend.env's VERCEL_TEAM_ID
+# The plan lists each project's domains and marks the one backend.env's VERCEL_PORTAL_PROJECT_ID names.
 #
 # Projects are matched by their Vercel root directory, not by name:
 #   apps/frontend          BACKEND_URL
@@ -25,11 +28,21 @@ command -v python3 >/dev/null || { echo "python3 is not installed on the VM" >&2
 env_value() { # last duplicate wins, CRs and surrounding quotes stripped
   grep -E "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
 }
+APPLY=0 FORCE_BACKEND=0 TEAM=$(env_value VERCEL_TEAM_ID)
+while [ $# -gt 0 ]; do
+  case $1 in
+    --yes) APPLY=1 ;;
+    --backend-token) FORCE_BACKEND=1 ;;
+    --team) TEAM=$2; shift ;;
+    *) echo "unknown option $1" >&2; exit 2 ;;
+  esac
+  shift
+done
 ADMIN_TOKEN_FILE=$(dirname "$ENV_FILE")/vercel-admin.token
-if [ -s "$ADMIN_TOKEN_FILE" ]; then TOKEN=$(tr -d '\r\n ' < "$ADMIN_TOKEN_FILE"); TOKEN_SRC=vercel-admin.token
+if [ -s "$ADMIN_TOKEN_FILE" ] && [ $FORCE_BACKEND = 0 ]; then TOKEN=$(tr -d '\r\n ' < "$ADMIN_TOKEN_FILE"); TOKEN_SRC=vercel-admin.token
 else TOKEN=$(env_value VERCEL_API_TOKEN); TOKEN_SRC="backend.env VERCEL_API_TOKEN"; fi
-TOKEN_SRC=$TOKEN_SRC VERCEL_API_TOKEN=$TOKEN VERCEL_TEAM_ID=$(env_value VERCEL_TEAM_ID) \
-MONITORING_API_KEY=$(env_value MONITORING_API_KEY) APPLY=$([ "${1:-}" = --yes ] && echo 1 || echo 0) \
+TOKEN_SRC=$TOKEN_SRC VERCEL_API_TOKEN=$TOKEN VERCEL_TEAM_ID=$TEAM PORTAL_ID=$(env_value VERCEL_PORTAL_PROJECT_ID) \
+MONITORING_API_KEY=$(env_value MONITORING_API_KEY) APPLY=$APPLY \
 python3 - <<'PY'
 import json, os, sys, time, urllib.error, urllib.parse, urllib.request
 
@@ -48,7 +61,7 @@ WANT = {  # root directory -> {key: (value, secret)}
 
 def call(method, path, body=None, **query):
     query["teamId"] = TEAM
-    req = urllib.request.Request(f"https://api.vercel.com{path}?{urllib.parse.urlencode(query)}", method=method,
+    req = urllib.request.Request(f"{os.environ.get('VERCEL_API', 'https://api.vercel.com')}{path}?{urllib.parse.urlencode(query)}", method=method,
                                  data=None if body is None else json.dumps(body).encode(),
                                  headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"})
     try:
@@ -65,7 +78,7 @@ except RuntimeError as err:
     print(f"cannot list the team's projects with {os.environ['TOKEN_SRC']}: {err}")
     print(f"configured VERCEL_TEAM_ID: {TEAM[:9]}... ({len(TEAM)} chars)")
     def who(path):
-        req = urllib.request.Request(f"https://api.vercel.com{path}", headers={"Authorization": f"Bearer {TOKEN}"})
+        req = urllib.request.Request(f"{os.environ.get('VERCEL_API', 'https://api.vercel.com')}{path}", headers={"Authorization": f"Bearer {TOKEN}"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
         except urllib.error.HTTPError as e: return {"error": f"HTTP {e.code}"}
@@ -76,12 +89,20 @@ except RuntimeError as err:
         print(f"  team it can see: {team.get('slug')}  id {team.get('id')}  {'<- matches VERCEL_TEAM_ID' if team.get('id') == TEAM else ''}")
     if "error" in t: print("  teams:", t["error"])
     sys.exit(1)
-print(f"{'APPLY' if APPLY else 'PLAN (nothing changes; add --yes to apply)'}: {len(projects)} projects in team")
+print(f"{'APPLY' if APPLY else 'PLAN (nothing changes; add --yes to apply)'}: {len(projects)} projects in team "
+      f"{TEAM} with {os.environ['TOKEN_SRC']}")
+PORTAL_ID = os.environ.get("PORTAL_ID", "")
 redeploy = []
 for p in sorted(projects, key=lambda p: p["name"]):
     root = (p.get("rootDirectory") or "").rstrip("/")
     want = WANT.get(root)
-    print(f"\n{p['name']}  [{root or 'repo root'}]")
+    try:
+        domains = [d["name"] for d in call("GET", f"/v9/projects/{p['id']}/domains").get("domains", [])]
+    except RuntimeError:
+        domains = []
+    mark = "  <- backend VERCEL_PORTAL_PROJECT_ID" if p["id"] == PORTAL_ID else ""
+    print(f"\n{p['name']}  [{root or 'repo root'}]  domains: {', '.join(domains[:6]) or 'none'}"
+          f"{f' (+{len(domains) - 6} more)' if len(domains) > 6 else ''}{mark}")
     if not want:
         print("  no change needed"); continue
     try:
