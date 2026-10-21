@@ -37,7 +37,8 @@ function envList(name, fallback) {
     .filter((item) => ENVIRONMENTS.includes(item));
 }
 
-const RAILWAY_LOGS = 'https://railway.app/dashboard'; // TODO: replace with direct project/service log URL
+// Production runs on the Oracle VM; logs are read with `bash scripts/prod-vm.sh logs <service>`.
+const SERVER_LOGS = 'https://github.com/Isaacpyo/fauward/blob/master/docs/deploy-oracle-prod.md#logs';
 const VERCEL_LOGS  = 'https://vercel.com/dashboard';
 const SUPABASE_LOGS= `https://supabase.com/dashboard/project/${(process.env.SUPABASE_URL ?? '').split('//')[1]?.split('.')[0]}/logs/postgres`;
 const SUPABASE_LOCAL_REST_URL = supabaseRestUrl(process.env.SUPABASE_LOCAL_URL ?? 'http://localhost:54321');
@@ -58,7 +59,7 @@ export const SERVICES = [
     dependencies: [],
     affectedWorkflows: ['ops-monitoring'],
     healthPaths: {},
-    logUrl:     RAILWAY_LOGS,
+    logUrl:     SERVER_LOGS,
     runbookUrl: null,
     environments: {
       local:   { url: 'http://localhost:4000', enabled: true },
@@ -79,11 +80,11 @@ export const SERVICES = [
     dependencies: ['postgres', 'redis', 'redis-queue'],
     affectedWorkflows: ['shipment-creation', 'tracking', 'billing', 'auth', 'notifications'],
     healthPaths: { live: '/live', ready: '/ready', health: '/health', version: '/version' },
-    logUrl:     RAILWAY_LOGS,
+    logUrl:     SERVER_LOGS,
     runbookUrl: 'https://fauward.com/docs/runbooks/api-down',
     environments: {
       local:   { url: 'http://localhost:3001', enabled: true },
-      prod:    { url: 'https://fauwardbackend-production.up.railway.app', enabled: true },
+      prod:    { url: 'https://api.fauward.com', enabled: true },
       staging: null,
     },
     fix: 'npm run dev:backend',
@@ -153,7 +154,7 @@ export const SERVICES = [
     description: 'AI-powered conversation relay — routes, queues, and escalates support threads. Status derived from API + Redis + AI models.',
     dependencies: ['main-api', 'redis', 'redis-queue', 'supabase', 'deepseek', 'moonshot'],
     affectedWorkflows: ['customer-support', 'ai-routing', 'escalation', 'auto-reply', 'message-delivery'],
-    logUrl:     RAILWAY_LOGS,
+    logUrl:     SERVER_LOGS,
     runbookUrl: null,
     environments: {},
   },
@@ -228,8 +229,8 @@ export const SERVICES = [
     dependencies: [],
     affectedWorkflows: ['queue-processing', 'notifications', 'webhook-delivery', 'scheduled-jobs'],
     healthPaths: {},
-    logUrl:     RAILWAY_LOGS,
-    runbookUrl: RAILWAY_LOGS,
+    logUrl:     SERVER_LOGS,
+    runbookUrl: SERVER_LOGS,
     environments: {
       local:   { host: 'localhost', port: 6379, enabled: true },
       prod:    parseTcpFromUrl(process.env.REDIS_QUEUE_URL),

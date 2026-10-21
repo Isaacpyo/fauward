@@ -17,7 +17,7 @@ Owner: Temitope Agbola · Treny Limited · Active development.
 | Build | Turborepo · npm workspaces (Node 20) |
 | Queue | BullMQ on Redis |
 | Email | SendGrid |
-| Deploy | Railway (backend + Python services) · Vercel (frontends) |
+| Deploy | Oracle VM via Cloudflare Tunnel (backend + Python services, `scripts/prod-vm.sh`, docs/deploy-oracle-prod.md) · Vercel (frontends) |
 
 ## Monorepo
 
