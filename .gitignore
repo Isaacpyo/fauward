@@ -38,3 +38,7 @@ __pycache__/
 
 # Claude Code agent worktrees (local only)
 .claude/worktrees/
+
+# Local dev artefacts: request/response logs and the Supabase CLI cache (it names the linked project).
+dev-logs/
+supabase/.temp/
