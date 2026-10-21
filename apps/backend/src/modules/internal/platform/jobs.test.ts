@@ -126,7 +126,9 @@ describe('platform.jobs (WP-3.8)', () => {
     await registerScheduledJobs();
     const registered = listScheduledJobs().map((job) => job.name).sort();
     // Every definition is also a BullMQ repeatable with the same cron (and the repeat ids did not change).
-    expect(repeatAdds.map((add) => add.name).sort()).toEqual(registered);
+    expect(repeatAdds.filter((add) => add.opts.repeat).map((add) => add.name).sort()).toEqual(registered);
+    // trust.secret-inventory also runs once at boot (WP-4.12), as a one-off job.
+    expect(repeatAdds.filter((add) => !add.opts.repeat).map((add) => add.name)).toEqual(['trust.secret-inventory']);
     expect(repeatAdds.find((add) => add.name === 'customer.health-scoring')?.opts).toMatchObject({ jobId: 'customer.health-scoring.nightly', repeat: { pattern: '30 1 * * *' } });
     expect(registered).toContain('platform.activity-prune');
 

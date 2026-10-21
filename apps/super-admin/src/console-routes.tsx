@@ -55,6 +55,7 @@ import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
 import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
 import { TenantAuditEventsPage } from "@/pillars/trust/audit/TenantAuditEventsPage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
+import { ExpiringPage, SecretDetailPage, SecretsInventoryPage } from "@/pillars/trust/secrets/SecretsPages";
 import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
 import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
 import { JitPendingPage } from "@/pillars/trust/jit/JitPendingPage";
@@ -328,9 +329,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/safety/rules", element: <PermissionRoute permission="trust.safety.read">
                 <RulesPage />
               </PermissionRoute> },
-  { path: "/trust/secrets", element: <OpsRoute permission="trust.secrets.read" title="Secret Management" description="Doppler metadata inventory, expiry tracking and access audit." endpoint="/secrets" related={[{ label: "Expiring", to: "/trust/secrets/expiring" }, { label: "Audit", to: "/trust/secrets/audit" }]} /> },
-  { path: "/trust/secrets/expiring", element: <OpsRoute permission="trust.secrets.read" title="Expiring Secrets" description="Credentials expiring within 30 days." endpoint="/secrets/expiring" /> },
-  { path: "/trust/secrets/audit", element: <OpsRoute permission="trust.secrets.read" title="Secret Access Audit" description="Metadata-only secret access audit log." endpoint="/secrets/audit" /> },
+  { path: "/trust/secrets", element: <PermissionRoute permission="trust.secrets.read"><SecretsInventoryPage /></PermissionRoute> },
+  { path: "/trust/secrets/expiring", element: <PermissionRoute permission="trust.secrets.read"><ExpiringPage /></PermissionRoute> },
+  { path: "/trust/secrets/:id", element: <PermissionRoute permission="trust.secrets.read"><SecretDetailPage /></PermissionRoute> },
   { path: "/trust/security", element: <Navigate to="/trust/security/anomalies" replace /> },
   { path: "/trust/security/anomalies", element: <OpsRoute permission="trust.security.read" title="Security Anomalies" description="Anomaly detection queue built on platform audit and login telemetry." endpoint="/security/anomalies" /> },
   { path: "/trust/security/logins", element: <OpsRoute permission="trust.security.read" title="Login Monitoring" description="Staff login successes, failures and lockout signals." endpoint="/security/logins" /> },

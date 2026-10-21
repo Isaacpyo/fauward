@@ -242,49 +242,6 @@ describe('internal console phase routes', () => {
     }));
   });
 
-  it('rejects secret metadata mutations for read-only secret users', async () => {
-    currentPermissions = ['trust.secrets.read'];
-    const secretCredential = delegate();
-    const prisma = { secretCredential };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/internal/secrets/sec_001',
-      payload: { rotationNotes: 'rotate this week' }
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'Forbidden', permission: 'trust.secrets.write' });
-    expect(secretCredential.update).not.toHaveBeenCalled();
-  });
-
-  it('allows secret metadata mutations for trust.secrets.write users', async () => {
-    currentPermissions = ['trust.secrets.write'];
-    const secretCredential = delegate();
-    const prisma = { secretCredential };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/internal/secrets/sec_001',
-      payload: { rotationNotes: 'rotate this week', reason: 'routine rotation', value: 'do-not-store-this-secret' }
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(secretCredential.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 'sec_001' },
-      data: expect.objectContaining({ rotationNotes: 'rotate this week' })
-    }));
-    expect(secretCredential.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.not.objectContaining({ value: expect.anything() })
-    }));
-    expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      action: 'secrets.metadata.update',
-      reason: 'routine rotation'
-    }));
-  });
-
   it('persists DocuSign completion webhooks and creates the signed contract', async () => {
     process.env.DOCUSIGN_WEBHOOK_SECRET = 'ds_secret';
     const salesQuote = delegate({

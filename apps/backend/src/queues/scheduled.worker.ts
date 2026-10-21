@@ -10,12 +10,15 @@ import { sendTrialExpiryWarnings, sendUsageThresholdNotices } from '../jobs/tena
 import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
 import { dispatchNpsSurveys } from '../services/feedback.service.js';
 import { computeAndStoreHealthScore, healthBand } from '../services/health-score.service.js';
+import { runSecretInventory } from '../services/secret-inventory.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 import { findScheduledJob, listScheduledJobs, registerScheduledJob, runScheduledJob } from './scheduled-job-runner.js';
 
 type ScheduledJobData = Record<string, unknown>;
+
+const SECRET_INVENTORY_JOB = 'trust.secret-inventory';
 
 let worker: Worker<ScheduledJobData> | null = null;
 let repeatableJobsRegistered = false;
@@ -230,11 +233,21 @@ registerScheduledJob({
   handler: async (app) => pruneOldActivity(app.prisma)
 });
 
+registerScheduledJob({
+  name: SECRET_INVENTORY_JOB,
+  pattern: '50 4 * * *',
+  repeatJobId: 'trust.secret-inventory.daily',
+  description: 'Records which registered secrets are set, detects rotations by fingerprint and reports overdue rotations (never reads values out).',
+  handler: async (app) => runSecretInventory(app)
+});
+
 export async function registerScheduledJobs() {
   if (repeatableJobsRegistered) return;
   for (const job of listScheduledJobs()) {
     await scheduledJobsQueue.add(job.name, {}, { jobId: job.repeatJobId, repeat: { pattern: job.pattern, tz: 'UTC' } });
   }
+  // trust.secrets runs at boot too, so a deploy that rotates a secret is seen at once (one boot run per process start).
+  await scheduledJobsQueue.add(SECRET_INVENTORY_JOB, {}, { jobId: `${SECRET_INVENTORY_JOB}.boot.${Date.now()}`, removeOnComplete: 50, removeOnFail: 50 });
   repeatableJobsRegistered = true;
 }
 

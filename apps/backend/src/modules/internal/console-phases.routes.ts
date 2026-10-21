@@ -118,7 +118,6 @@ async function updateAndAudit(
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerDunning(app);
   registerSuccess(app);
-  registerSecrets(app);
   registerSecurity(app);
   registerKyc(app);
   registerIntegrations(app);
@@ -315,27 +314,6 @@ function registerSuccess(app: FastifyInstance) {
     );
     await writeInternalAudit(request, 'success.health_score.enqueue', 'job', 'customer.health-scoring', null, { jobId: String(job.id ?? '') }, 'Manual health scoring run queued');
     reply.status(202).send({ queued: true, jobId: job.id, name: job.name });
-  });
-}
-
-function registerSecrets(app: FastifyInstance) {
-  app.get('/api/internal/secrets', { preHandler: readPre('trust.secrets.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'secretCredential'), { orderBy: { expiresAt: 'asc' } })), vendor: vendorStatus('doppler') });
-  });
-
-  app.get('/api/internal/secrets/expiring', { preHandler: readPre('trust.secrets.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'secretCredential'), { where: { expiresAt: { lte: inDays(30) } }, orderBy: { expiresAt: 'asc' } }));
-  });
-
-  app.get('/api/internal/secrets/audit', { preHandler: readPre('trust.secrets.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'secretAccessLog'), { orderBy: { accessedAt: 'desc' }, take: 100 }));
-  });
-
-  app.patch('/api/internal/secrets/:id', { preHandler: writePre('trust.secrets.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const after = await updateAndAudit(request, delegate(app, 'secretCredential'), id, { expiresAt: body.expiresAt ? dateValue(body.expiresAt) : undefined, rotationNotes: body.rotationNotes }, 'secrets.metadata.update', 'secret_credential', stringValue(body.reason, 'Secret metadata update'));
-    reply.send(after);
   });
 }
 

@@ -2797,16 +2797,29 @@ model FeatureFlagOverrideAudit {
   @@map("feature_flag_override_audits")
 }
 
+/// trust.secrets (WP-4.12, 0064): one row per `config/secret-registry.ts` entry, written by the `trust.secret-inventory`
+/// job. Only a fingerprint (first 12 hex of sha256) is ever stored — never the value. A fingerprint change is a detected
+/// rotation (`lastRotatedAt`); "expiring" = (lastRotatedAt ?? firstSeenAt) + rotateEveryDays within 14 days.
 model SecretCredential {
-  id            String   @id @default(uuid())
-  name          String
-  dopplerId     String?  @unique
-  provider      String   @default("doppler")
-  ownerId       String?
-  expiresAt     DateTime?
-  rotationNotes String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String    @id @default(uuid())
+  name            String
+  dopplerId       String?   @unique
+  provider        String    @default("doppler")
+  /// PlatformUser who owns rotation.
+  ownerId         String?
+  expiresAt       DateTime?
+  rotationNotes   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  envName         String?   @unique
+  /// ENV | DOPPLER | MANUAL
+  source          String    @default("ENV")
+  configured      Boolean   @default(false)
+  fingerprint     String?
+  firstSeenAt     DateTime?
+  lastSeenAt      DateTime?
+  lastRotatedAt   DateTime?
+  rotateEveryDays Int?
 
   accessLogs SecretAccessLog[]
 
