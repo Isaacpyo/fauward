@@ -163,6 +163,8 @@ export async function updateConversation(app: RelayApp, request: FastifyRequest,
     ...(body.unassign ? { assigned_admin_id: null } : {})
   });
   await audit(app, request, 'RELAY_CONVERSATION_UPDATED', conversation, { from: conversation.status, to: updated.status, assignedTo: updated.assigned_admin_id });
+  const change = body.assignToMe ? 'assigned' : body.unassign ? 'unassigned' : updated.status;
+  await recordAndPublishActivity(app, { ...activityBase(request, conversation), type: 'relay.conversation.updated', summary: `Relay conversation ${change}${conversation.subject ? `: ${conversation.subject}` : ''}` });
   const tenants = await tenantLabels(app, [updated.tenant_id]);
   return presentConversation(updated, tenants);
 }

@@ -151,6 +151,8 @@ describe.runIf(HAS_TEST_DB)('Relay in the console (WP-4.R, L2/L20)', () => {
 
     const assigned = (await app.inject({ method: 'PATCH', url: `/api/internal/relay/conversations/${CONVERSATION}`, payload: { assignToMe: true } })).json();
     expect(assigned).toMatchObject({ status: 'assigned', assignedTo: session.userId });
+    expect(await prisma.platformActivity.count({ where: { tenantId, type: 'relay.conversation.updated', subjectId: CONVERSATION } })).toBe(1);
+    expect(await prisma.platformAuditLog.count({ where: { action: 'RELAY_CONVERSATION_UPDATED', targetTenantId: tenantId } })).toBeGreaterThanOrEqual(1);
 
     session.permissions = ['customer.support.read'];
     expect((await app.inject({ method: 'POST', url: `/api/internal/relay/conversations/${CONVERSATION}/messages`, payload: { body: 'No permission' } })).statusCode).toBe(403);
