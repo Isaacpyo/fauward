@@ -55,6 +55,7 @@ import { registerConsoleRoutes } from './modules/internal/register.js';
 import { vendorErrorHandler } from './services/vendors/vendor-error.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import { consoleAuditSafetyNet } from './middleware/console-audit-safety-net.js';
+import { legalHoldDeleteGuard } from './middleware/legal-hold-guard.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerShipmentPermissionRoutes } from './modules/shipment-permission-requests/routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
@@ -156,18 +157,7 @@ export async function buildApp() {
     })().catch(done);
   });
   app.addHook('preHandler', enforceTenantStatus);
-  app.addHook('preHandler', async (request, reply) => {
-    if (request.method !== 'DELETE' || !request.tenant?.id) return;
-    const hold = await app.prisma.legalHold.findFirst({
-      where: {
-        status: 'ACTIVE',
-        OR: [{ tenantId: request.tenant.id }, { tenantId: null }]
-      }
-    });
-    if (hold) {
-      return reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId: request.tenant.id });
-    }
-  });
+  app.addHook('preHandler', legalHoldDeleteGuard(app));
 
   // ── Health / readiness / version endpoints ─────────────────────────────
   app.get('/live', async () => ({ status: 'ok' }));

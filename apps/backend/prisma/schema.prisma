@@ -2577,9 +2577,12 @@ model DSARTransition {
   @@map("dsar_transitions")
 }
 
+/// trust.compliance (WP-2.5, WP-5.2): a hold names one tenant, or none with appliesToAllTenants (a global hold, which
+/// needs an approved JIT ROOT session to place or release). A null tenant without the flag is invalid (CHECK in 0081).
 model LegalHold {
   id         String   @id @default(uuid())
   tenantId   String?
+  appliesToAllTenants Boolean @default(false)
   scope      Json
   reason     String
   status     String   @default("ACTIVE")

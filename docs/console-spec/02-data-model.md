@@ -38,7 +38,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0061_gtm_producers | P4 | `MarketingAttribution` touch fields; `DemoEnvironment.adminUserId`; `TrialExtensionRequest.decidedAt`; `QBRDeck.sections/jobId` |
 | 0062_drop_dead_models ⚠ | P4 | Drop 11 tables (D10), `TicketMessage.isInternal/fromSA`, `TenantSettings.paymentGatewayKey` |
 | 0063_audit_chain (real: `0080_audit_chain`, C113) | P5 | `PlatformAuditLog.seq` (Int), `hashVersion`; `AuditChainMeta` (cut-over seq) |
-| 0064_legal_hold_global | P5 | `LegalHold.appliesToAllTenants` |
+| 0064_legal_hold_global (real: `0081_legal_hold_global`, C115) | P5 | `LegalHold.appliesToAllTenants` (+ CHECK; tenantless holds kept global) |
 | 0065_ip_block_scope | P4 / WP-4.11 (enforced WP-5.4) | `IpBlock.scope/hitCount/lastHitAt` |
 
 ---
@@ -571,7 +571,7 @@ model PlatformAuditLog {
 ```
 Writes take a Postgres advisory lock (`pg_advisory_xact_lock(<const>)`) inside the transaction, read the latest row by `seq`, compute the hash with the single scheme (`packages/internal-audit` `computeEntryHash`, `hashVersion 2`), insert. Verification walks by `seq` and accepts `hashVersion 1` rows only up to a recorded cut-over `seq`. The advisory lock is raw SQL (`$executeRaw`) because Prisma cannot express it.
 
-### 0064_legal_hold_release
+### 0064_legal_hold_release (real: `0081_legal_hold_global`, C115)
 ```prisma
 model LegalHold { /* existing … */ appliesToAllTenants Boolean @default(false) }
 ```
