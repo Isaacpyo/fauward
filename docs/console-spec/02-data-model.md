@@ -37,7 +37,7 @@ Conventions: `String` status fields stay strings where they already are (no enum
 | 0060_kyc_manual | P4 | `KYCReview` / `SanctionsScreening` decision fields |
 | 0061_gtm_producers | P4 | `MarketingAttribution` touch fields; `DemoEnvironment.adminUserId`; `TrialExtensionRequest.decidedAt`; `QBRDeck.sections/jobId` |
 | 0062_drop_dead_models ⚠ | P4 | Drop 11 tables (D10), `TicketMessage.isInternal/fromSA`, `TenantSettings.paymentGatewayKey` |
-| 0063_audit_chain | P5 | `PlatformAuditLog.seq`, `hashVersion` |
+| 0063_audit_chain (real: `0080_audit_chain`, C113) | P5 | `PlatformAuditLog.seq` (Int), `hashVersion`; `AuditChainMeta` (cut-over seq) |
 | 0064_legal_hold_global | P5 | `LegalHold.appliesToAllTenants` |
 | 0065_ip_block_scope | P4 / WP-4.11 (enforced WP-5.4) | `IpBlock.scope/hitCount/lastHitAt` |
 
@@ -561,7 +561,7 @@ Drops: `SupportVendorTicket`, `SecretAccessLog`, `TaxReturn`, `QBRTemplate`, `Pr
 
 ## Phase 5
 
-### 0063_audit_chain
+### 0063_audit_chain (real: `0080_audit_chain`, C113: `seq` is `Int`, plus `audit_chain_meta`)
 ```prisma
 model PlatformAuditLog {
   // existing …

@@ -21,6 +21,7 @@ import { monthlyRescreen } from '../services/kyc.service.js';
 import { runHubspotImport } from '../services/pipeline.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
+import { auditChainVerifyJob } from '../services/audit-chain.service.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 import { findScheduledJob, listScheduledJobs, registerScheduledJob, runScheduledJob } from './scheduled-job-runner.js';
 
@@ -273,6 +274,8 @@ registerScheduledJob({
   description: 'Records which registered secrets are set, detects rotations by fingerprint and reports overdue rotations (never reads values out).',
   handler: async (app) => runSecretInventory(app)
 });
+
+registerScheduledJob(auditChainVerifyJob);
 
 export async function registerScheduledJobs() {
   if (repeatableJobsRegistered) return;

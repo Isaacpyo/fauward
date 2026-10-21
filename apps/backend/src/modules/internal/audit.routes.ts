@@ -5,14 +5,31 @@ import { authenticatePlatformSession } from '../../middleware/authenticate-platf
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
-import { verifyPlatformAuditChain } from '../../services/platform-audit.service.js';
+import { AUDIT_CHAIN_VERIFY_JOB, auditChainVerifyJob } from '../../services/audit-chain.service.js';
+import { runScheduledJob } from '../../queues/scheduled-job-runner.js';
 import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
 import { writeInternalAudit } from './internal-audit.js';
 
 // trust.audit (WP-1.9): server-filtered, cursor-paginated platform audit log; export is a dangerous action and is itself
-// audited. The hash chain has two schemes until WP-5.1, so /verify reports what the current verifier finds.
+// audited. Chain verification (WP-5.1) runs as the trust.audit-chain-verify job: nightly, or on demand from the integrity
+// page; every run is a ScheduledJobRun.
 
 export const AUDIT_EXPORT_MAX_ROWS = 10_000;
+
+type VerificationRunRow = { id: string; status: string; triggeredBy: string; startedAt: Date; finishedAt: Date | null; durationMs: number | null; error: string | null; result: Prisma.JsonValue | null };
+
+function presentVerificationRun(run: VerificationRunRow) {
+  return {
+    id: run.id,
+    status: run.status,
+    triggeredBy: run.triggeredBy,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+    durationMs: run.durationMs,
+    error: run.error,
+    result: run.result ?? null
+  };
+}
 
 const filterShape = {
   actor: z.string().trim().min(1).optional(),
@@ -86,7 +103,7 @@ function pickFilters(input: AuditFilters): AuditFilters {
   return Object.fromEntries(Object.keys(filterShape).flatMap((key) => (input[key as keyof AuditFilters] ? [[key, input[key as keyof AuditFilters]]] : [])));
 }
 
-const CSV_HEADERS = ['id', 'createdAt', 'actorType', 'actorId', 'actorEmail', 'actorRole', 'action', 'targetType', 'targetId', 'targetTenantId', 'targetUserId', 'reason', 'previousHash', 'hash'] as const;
+const CSV_HEADERS = ['id', 'seq', 'hashVersion', 'createdAt', 'actorType', 'actorId', 'actorEmail', 'actorRole', 'action', 'targetType', 'targetId', 'targetTenantId', 'targetUserId', 'reason', 'previousHash', 'hash'] as const;
 
 export function auditRowsToCsv(rows: PlatformAuditLog[]) {
   const escape = (value: unknown) => `"${(value instanceof Date ? value.toISOString() : String(value ?? '')).replaceAll('"', '""')}"`;
@@ -195,8 +212,15 @@ export async function registerInternalAuditRoutes(app: FastifyInstance) {
     return reply.send({ url: `data:${mime};base64,${Buffer.from(content).toString('base64')}`, format: body.format, rows: exported.length, truncated, maxRows: AUDIT_EXPORT_MAX_ROWS });
   });
 
-  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('trust.audit.export')] }, async (_request, reply) => {
-    const result = await verifyPlatformAuditChain(app.prisma);
-    return reply.send({ ...result, verifiedAt: new Date().toISOString() });
+  app.get('/api/internal/audit/verification', { preHandler: [authenticatePlatformSession, requireConsolePermission('trust.audit.read')] }, async (_request, reply) => {
+    const last = await app.prisma.scheduledJobRun.findFirst({ where: { jobName: AUDIT_CHAIN_VERIFY_JOB }, orderBy: [{ startedAt: 'desc' }, { id: 'desc' }] });
+    return reply.send({ data: last ? presentVerificationRun(last) : null, schedule: auditChainVerifyJob.pattern });
+  });
+
+  app.post('/api/internal/audit/verify', { preHandler: [authenticatePlatformSession, requirePlatformCsrf, requireConsolePermission('trust.audit.export')] }, async (request, reply) => {
+    const { runId } = await runScheduledJob(app, auditChainVerifyJob, { triggeredBy: request.platform!.user.id, reason: 'Verified from the audit integrity page' });
+    const run = runId ? await app.prisma.scheduledJobRun.findUnique({ where: { id: runId } }) : null;
+    if (!run) return reply.status(503).send({ error: 'VERIFICATION_NOT_RECORDED', message: 'The verification ran but its run record could not be written.' });
+    return reply.send({ data: presentVerificationRun(run) });
   });
 }

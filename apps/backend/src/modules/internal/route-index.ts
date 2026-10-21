@@ -29,6 +29,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'GET /api/internal/audit/entries',
   'GET /api/internal/audit/entries/:id',
   'GET /api/internal/audit/tenant-events',
+  'GET /api/internal/audit/verification',
   'GET /api/internal/auth/me',
   'GET /api/internal/badges',
   'GET /api/internal/billing/credit-notes',

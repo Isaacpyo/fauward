@@ -1,51 +1,76 @@
 import { describe, expect, it } from 'vitest';
-import { computeEntryHash } from './hash.js';
-import type { AuditEntry } from './types.js';
-import { verifyChain } from './verify.js';
+import { computeAuditRowHash, type AuditRowData, type StoredAuditRow } from './row.js';
+import { initialAuditChainCursor, verifyAuditChainBatch } from './verify.js';
 
-function entry(index: number): Omit<AuditEntry, 'hash' | 'prev_hash'> {
+function data(index: number): AuditRowData {
   return {
     id: `audit_${index}`,
-    timestamp: new Date(`2026-05-10T10:0${index}:00.000Z`),
-    actor_id: 'staff_001',
-    actor_role: index === 1 ? 'FINANCE_ADMIN' : 'TRUST_ANALYST',
-    action: index === 1 ? 'invoice.refund' : 'staff.user.update',
-    target_type: index === 1 ? 'refund' : 'staff_user',
-    target_id: `target_${index}`,
+    createdAt: new Date(Date.UTC(2026, 9, 21, 10, index)),
+    actorType: 'PLATFORM_USER',
+    actorId: 'staff_001',
+    actorEmail: 'staff@fauward.com',
+    actorRole: 'TRUST_ANALYST',
+    action: 'staff.user.update',
+    targetType: 'staff_user',
+    targetId: `target_${index}`,
+    targetTenantId: null,
+    targetUserId: null,
+    impersonationSessionId: null,
+    sessionId: 'session_001',
+    jitSessionId: null,
     before: { status: 'before', index },
-    after: { status: 'after', index },
+    after: null,
     reason: `Reason ${index}`,
-    ip_address: '127.0.0.1',
-    session_id: 'session_001',
-    jit_session_id: null
+    metadata: { nested: { b: 2, a: 1 } },
+    ipAddress: '127.0.0.1',
+    userAgent: null
   };
 }
 
-function chain(entries: Array<Omit<AuditEntry, 'hash' | 'prev_hash'>>): AuditEntry[] {
-  let prevHash: string | null = null;
-  return entries.map((item) => {
-    const hash = computeEntryHash(prevHash, item);
-    const chained = { ...item, hash, prev_hash: prevHash };
-    prevHash = hash;
-    return chained;
+function chain(count: number, legacy = 0): StoredAuditRow[] {
+  let previousHash: string | null = null;
+  return Array.from({ length: count }, (_unused, index) => {
+    const row = data(index + 1);
+    const isLegacy = index < legacy;
+    const hash = isLegacy ? `legacy_${index}` : computeAuditRowHash(previousHash, row);
+    const stored: StoredAuditRow = { ...row, seq: index + 1, hashVersion: isLegacy ? 1 : 2, previousHash: isLegacy ? null : previousHash, hash };
+    previousHash = hash;
+    return stored;
   });
 }
 
-describe('audit hash-chain verification', () => {
-  it('accepts an intact chain', () => {
-    expect(verifyChain(chain([entry(1), entry(2), entry(3)]))).toEqual({ ok: true, checked: 3 });
+describe('verifyAuditChainBatch', () => {
+  it('accepts a valid v2 chain across batches', () => {
+    const rows = chain(5);
+    const first = verifyAuditChainBatch(rows.slice(0, 2), initialAuditChainCursor(), 0);
+    const second = verifyAuditChainBatch(rows.slice(2), first.cursor, 0);
+    expect(second.broken).toBeUndefined();
+    expect(second.cursor.checked).toBe(5);
   });
 
-  it('detects tampering at the correct index', () => {
-    const entries = chain([entry(1), entry(2), entry(3)]);
-    entries[1] = { ...entries[1], after: { status: 'tampered', index: 2 } };
-
-    expect(verifyChain(entries)).toEqual({ ok: false, brokenIndex: 1 });
+  it('accepts legacy rows up to the cut-over and links the first v2 row to the last legacy hash', () => {
+    const result = verifyAuditChainBatch(chain(4, 2), initialAuditChainCursor(), 2);
+    expect(result.broken).toBeUndefined();
+    expect(result.cursor).toMatchObject({ checked: 4, legacy: 2 });
   });
 
-  it('detects reordered entries', () => {
-    const entries = chain([entry(1), entry(2), entry(3)]);
+  it('rejects a legacy row after the cut-over', () => {
+    expect(verifyAuditChainBatch(chain(3, 2), initialAuditChainCursor(), 1).broken).toEqual({ seq: 2, id: 'audit_2', reason: 'LEGACY_AFTER_CUTOVER' });
+  });
 
-    expect(verifyChain([entries[1], entries[0], entries[2]])).toEqual({ ok: false, brokenIndex: 0 });
+  it('finds a tampered metadata value at its seq', () => {
+    const rows = chain(4);
+    rows[2] = { ...rows[2], metadata: { nested: { a: 1, b: 3 } } };
+    expect(verifyAuditChainBatch(rows, initialAuditChainCursor(), 0).broken).toEqual({ seq: 3, id: 'audit_3', reason: 'HASH_MISMATCH' });
+  });
+
+  it('finds a deleted row as a previous-hash mismatch', () => {
+    const rows = chain(4);
+    expect(verifyAuditChainBatch([rows[0], rows[2], rows[3]], initialAuditChainCursor(), 0).broken).toMatchObject({ seq: 3, reason: 'PREVIOUS_HASH_MISMATCH' });
+  });
+
+  it('hashes key-order independently (jsonb reorders keys)', () => {
+    const row = data(1);
+    expect(computeAuditRowHash(null, row)).toBe(computeAuditRowHash(null, { ...row, metadata: { nested: { a: 1, b: 2 } } }));
   });
 });

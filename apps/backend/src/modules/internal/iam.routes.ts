@@ -8,7 +8,7 @@ import { requireConsolePermission } from '../../middleware/require-console-permi
 import { dangerous } from '../../middleware/dangerous.js';
 import { hashPassword } from '../../shared/utils/hash.js';
 import { checkRootHardwareAssertion } from '../../services/root-grant.service.js';
-import { platformAuditClient } from '../../services/platform-audit-client.js';
+import { platformAuditSink } from '../../services/platform-audit.service.js';
 import { seedStaffRoles, STAFF_ROLE_DEFINITIONS, staffPermissionContextForPlatformUser } from '../../services/staff-iam.service.js';
 import { publishActivity, recordActivity, recordAndPublishActivity, staffActor, type ActivityInput } from '../../services/platform-activity.service.js';
 
@@ -63,7 +63,7 @@ async function callerStaffId(app: FastifyInstance, request: FastifyRequest) {
 async function auditIam(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
   const platform = request.platform;
   if (!platform) return;
-  await writeAudit(platformAuditClient(request.server.prisma), {
+  await writeAudit(platformAuditSink(request.server.prisma), {
     actor_id: platform.user.id,
     actor_email: platform.user.email,
     actor_role: platform.user.role,
