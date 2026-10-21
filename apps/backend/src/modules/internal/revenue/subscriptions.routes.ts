@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { KycError, assertKycForEnterprise } from '../../../services/kyc.service.js';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import type { Permission } from '@fauward/internal-rbac';
@@ -163,6 +164,16 @@ export async function registerConsoleSubscriptionRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const contract = await app.prisma.customContract.findUnique({ where: { id } });
     if (!contract) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Contract not found' });
+    // trust.kyc (WP-4.10): a contract for the ENTERPRISE plan needs an approved KYC review.
+    const contractTerms = contract.terms && typeof contract.terms === 'object' && !Array.isArray(contract.terms) ? (contract.terms as Record<string, unknown>) : {};
+    if (contractTerms.plan === 'ENTERPRISE') {
+      try {
+        await assertKycForEnterprise(app.prisma, contract.tenantId);
+      } catch (error) {
+        if (error instanceof KycError) return reply.status(error.statusCode).send({ error: error.code, message: error.message, ...error.extra });
+        throw error;
+      }
+    }
     const claimed = await app.prisma.customContract.updateMany({ where: { id: contract.id, tenantId: contract.tenantId, status: 'DRAFT' }, data: { status: 'ACTIVE', signedAt: new Date() } });
     if (claimed.count !== 1) return reply.status(409).send({ error: 'NOT_DRAFT', message: `This contract is ${contract.status.toLowerCase()}.` });
     const after = await app.prisma.customContract.findFirstOrThrow({ where: { id: contract.id, tenantId: contract.tenantId } });

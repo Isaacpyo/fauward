@@ -42,7 +42,8 @@ function createRedis() {
 
 function createDb(plan: string) {
   let seq = 0;
-  const tenant = { id: 't_1', name: 'Northwind', plan, status: 'ACTIVE', maxStaff: 3, maxShipmentsPm: 300, maxOrganisations: 10 };
+  // kycStatus APPROVED: an ENTERPRISE override needs approved KYC (WP-4.10, ACC-KYC-2 covers the refusal).
+  const tenant = { id: 't_1', name: 'Northwind', plan, status: 'ACTIVE', maxStaff: 3, maxShipmentsPm: 300, maxOrganisations: 10, kycStatus: 'APPROVED' };
   const planOverrides: Row[] = [];
   const featureOverrides: Row[] = [];
   const active = (rows: Row[], where: { tenantId: string; featureKey?: string }) =>

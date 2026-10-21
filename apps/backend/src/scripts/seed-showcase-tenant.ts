@@ -271,7 +271,7 @@ async function main() {
       slug: SHOWCASE_SLUG,
       plan: 'ENTERPRISE',
       status: 'ACTIVE',
-      kycStatus: 'VERIFIED',
+      kycStatus: 'APPROVED',
       region: 'uk_europe',
       logoUrl: LOGO_DATA_URI,
       primaryColor: '#0F3D91',

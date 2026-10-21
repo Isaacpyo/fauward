@@ -2961,34 +2961,47 @@ model IpBlock {
   @@map("ip_blocks")
 }
 
+/// trust.kyc (WP-4.10, 0070): a review staff open for one tenant (provider manual, or persona when configured).
+/// Status OPEN | APPROVED | REJECTED; `evidence` = [{ id, source STAFF|TENANT, fileName, contentType, byteSize,
+/// storageKey, note, by, at }] (files in the export storage adapter). The decision sets Tenant.kycStatus.
 model KYCReview {
-  id            String   @id @default(uuid())
-  tenantId      String
-  provider      String   @default("persona")
-  inquiryId     String?  @unique
-  status        String   @default("PENDING")
-  decision      String?
-  documentS3Key String?
-  payload       Json?
-  reviewedBy    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(uuid())
+  tenantId       String
+  provider       String    @default("manual")
+  inquiryId      String?   @unique
+  status         String    @default("PENDING")
+  decision       String?
+  documentS3Key  String?
+  payload        Json?
+  reviewedBy     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  evidence       Json?
+  decisionReason String?
+  decidedAt      DateTime?
+  openedBy       String?
+  requestNote    String?
 
   @@index([tenantId, status])
   @@map("kyc_reviews")
 }
 
+/// Status PENDING | CLEAR | MATCH. A MATCH creates a LEGAL safety signal for a suspension decision (never automatic).
 model SanctionsScreening {
-  id         String   @id @default(uuid())
-  tenantId   String
-  provider   String   @default("complyadvantage")
-  status     String   @default("PENDING")
-  matchType  String?
-  riskLevel  String?
-  payload    Json?
-  reviewedBy String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id             String    @id @default(uuid())
+  tenantId       String
+  provider       String    @default("manual")
+  status         String    @default("PENDING")
+  matchType      String?
+  riskLevel      String?
+  payload        Json?
+  reviewedBy     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  decisionReason String?
+  decidedAt      DateTime?
+  /// MONTHLY_RESCREEN | MANUAL | WEBHOOK
+  source         String?
 
   @@index([tenantId, status])
   @@map("sanctions_screenings")

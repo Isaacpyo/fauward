@@ -81,7 +81,10 @@ async function buildApp(prisma: Record<string, unknown>) {
   const app = Fastify();
   app.decorate('prisma', prisma as never);
   const { registerInternalConsolePhaseRoutes } = await import('../../modules/internal/console-phases.routes.js');
+  const { registerConsoleKycRoutes } = await import('../../modules/internal/trust/kyc.routes.js');
   await registerInternalConsolePhaseRoutes(app);
+  // The Persona and ComplyAdvantage webhooks moved to trust/kyc.routes.ts (WP-4.10); their signature checks stay here.
+  await registerConsoleKycRoutes(app);
   return app;
 }
 
@@ -142,69 +145,6 @@ describe('internal console phase routes', () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.json()).toEqual({ error: 'CFO approval required', required: 'revenue.subscriptions.override' });
-  });
-
-  it('requires senior compliance approval for PEP KYC approvals', async () => {
-    currentPermissions = ['trust.kyc.approve'];
-    currentRoles = ['FINANCE_ADMIN'];
-    const prisma = {
-      kYCReview: delegate({ findUnique: vi.fn(async () => ({ id: 'kyc_001', tenantId: 'tenant_001' })) }),
-      sanctionsScreening: delegate({ findFirst: vi.fn(async () => ({ id: 'pep_001', matchType: 'PEP', status: 'MATCH' })) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/kyc/inquiries/kyc_001/decision', payload: { decision: 'approve' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'PEP match requires senior compliance approval', requiredRole: 'COMPLIANCE_ADMIN' });
-  });
-
-  it('persists signed Persona webhook events with verification metadata', async () => {
-    process.env.PERSONA_WEBHOOK_SECRET = 'persona_secret';
-    const kYCReview = delegate();
-    const prisma = { kYCReview };
-    const app = await buildApp(prisma);
-    const payload = { data: { id: 'inq_001', attributes: { 'reference-id': 'tenant_001', status: 'completed' } } };
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/kyc/webhooks/persona',
-      headers: personaWebhookHeaders('persona_secret', payload),
-      payload
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(kYCReview.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        tenantId: 'tenant_001',
-        inquiryId: 'inq_001',
-        payload: expect.objectContaining({ _webhookVerification: expect.any(Object) })
-      })
-    }));
-  });
-
-  it('persists signed ComplyAdvantage webhook events with verification metadata', async () => {
-    process.env.COMPLYADVANTAGE_WEBHOOK_SECRET = Buffer.from('comply_secret').toString('base64');
-    const sanctionsScreening = delegate();
-    const prisma = { sanctionsScreening, tenant: { update: vi.fn(async () => undefined) } };
-    const app = await buildApp(prisma);
-    const payload = { client_ref: 'tenant_001', status: 'CLEAR', matchType: '' };
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/kyc/webhooks/complyadvantage',
-      headers: complyAdvantageWebhookHeaders('comply_secret', payload),
-      payload
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(sanctionsScreening.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({
-        tenantId: 'tenant_001',
-        provider: 'complyadvantage',
-        payload: expect.objectContaining({ _webhookVerification: expect.any(Object) })
-      })
-    }));
   });
 
   it('persists DocuSign completion webhooks and creates the signed contract', async () => {

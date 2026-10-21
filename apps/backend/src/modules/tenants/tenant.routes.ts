@@ -13,6 +13,7 @@ import { registerStaffAccessRoutes } from './staff-access.routes.js';
 import { registerTenantPlatformInvoiceRoutes } from './platform-invoices.routes.js';
 import { registerTenantTaxExemptionRoutes } from './tax-exemption.routes.js';
 import { registerTenantQbrRoutes } from './qbr.routes.js';
+import { registerTenantVerificationRoutes } from './verification.routes.js';
 import { registerPlanChangeRoutes } from './plan-change.routes.js';
 import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
@@ -59,6 +60,7 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   await registerTenantPlatformInvoiceRoutes(app);
   await registerTenantTaxExemptionRoutes(app);
   await registerTenantQbrRoutes(app);
+  await registerTenantVerificationRoutes(app);
   await registerPlanChangeRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);

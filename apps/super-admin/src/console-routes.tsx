@@ -62,6 +62,7 @@ import { AuditLogPage } from "@/pillars/trust/audit/AuditLogPage";
 import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
 import { TenantAuditEventsPage } from "@/pillars/trust/audit/TenantAuditEventsPage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
+import { KycQueuePage, KycReviewPage, ScreeningsPage } from "@/pillars/trust/kyc/KycPages";
 import { ExpiringPage, SecretDetailPage, SecretsInventoryPage } from "@/pillars/trust/secrets/SecretsPages";
 import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
 import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
@@ -347,11 +348,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/security/logins", element: <OpsRoute permission="trust.security.read" title="Login Monitoring" description="Staff login successes, failures and lockout signals." endpoint="/security/logins" /> },
   { path: "/trust/security/ip-blocks", element: <OpsRoute permission="trust.security.read" title="IP Blocks" description="Blocked IP addresses from security monitoring." endpoint="/security/ip-blocks" /> },
   { path: "/trust/security/sessions", element: <OpsRoute permission="trust.security.read" title="Staff Sessions" description="Active staff sessions with revocation support." endpoint="/security/sessions" /> },
-  { path: "/trust/kyc", element: <Navigate to="/trust/kyc/pending" replace /> },
-  { path: "/trust/kyc/pending", element: <OpsRoute permission="trust.kyc.read" title="KYC Queue" description="Persona verification reviews and decision workflow." endpoint="/kyc/pending" /> },
-  { path: "/trust/kyc/:id", element: <OpsRoute permission="trust.kyc.read" title="KYC Detail" description="Verification detail and review decision context." endpoint="/kyc/pending" /> },
-  { path: "/trust/kyc/sanctions", element: <OpsRoute permission="trust.kyc.read" title="Sanctions Screening" description="ComplyAdvantage screening results and review queue." endpoint="/kyc/sanctions" /> },
-  { path: "/trust/kyc/pep", element: <OpsRoute permission="trust.kyc.read" title="PEP Screening" description="Politically exposed person matches requiring senior approval." endpoint="/kyc/pep" /> },
+  { path: "/trust/kyc", element: <PermissionRoute permission="trust.kyc.read"><KycQueuePage /></PermissionRoute> },
+  { path: "/trust/kyc/:id", element: <PermissionRoute permission="trust.kyc.read"><KycReviewPage /></PermissionRoute> },
+  { path: "/trust/kyc/sanctions", element: <PermissionRoute permission="trust.kyc.read"><ScreeningsPage /></PermissionRoute> },
   { path: "/gtm", element: <GtmOverview /> },
   { path: "/gtm/pipeline", element: <OpsRoute permission="gtm.pipeline.read" title="Sales Pipeline" description="HubSpot deal sync with Fauward tenant linking." endpoint="/pipeline" related={[{ label: "Forecasting", to: "/gtm/pipeline/forecasting" }]} /> },
   { path: "/gtm/pipeline/forecasting", element: <OpsRoute permission="gtm.pipeline.read" title="Forecasting" description="Quarterly forecast from synced HubSpot deal amount and probability." endpoint="/pipeline/forecasting" /> },

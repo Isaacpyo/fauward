@@ -16,6 +16,7 @@ import { runDunningAdvance } from '../services/dunning.service.js';
 import { sweepDisputeDeadlines } from '../services/dispute.service.js';
 import { runPlaybookExecutor } from '../services/customer-success.service.js';
 import { QBR_GENERATE_JOB, generateDeck } from '../services/qbr.service.js';
+import { monthlyRescreen } from '../services/kyc.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -137,17 +138,11 @@ registerScheduledJob({
 });
 
 registerScheduledJob({
-  name: 'trust.sanctions-quarterly-rescreen',
+  name: 'trust.kyc-rescreen-monthly',
   pattern: '0 3 1 * *',
   repeatJobId: 'trust.sanctions-quarterly-rescreen.monthly',
-  description: 'Queues a sanctions re-screen for every active tenant.',
-  handler: async (app) => {
-    const tenants = await app.prisma.tenant.findMany({ where: { status: 'ACTIVE' }, select: { id: true } });
-    await app.prisma.sanctionsScreening.createMany({
-      data: tenants.map((tenant) => ({ tenantId: tenant.id, status: 'PENDING', provider: 'complyadvantage', payload: { source: 'quarterly_rescreen' } }))
-    });
-    return { queued: tenants.length };
-  }
+  description: 'Creates one PENDING sanctions screening per active tenant per month (ComplyAdvantage when configured) for staff to decide.',
+  handler: async (app) => monthlyRescreen(app)
 });
 
 registerScheduledJob({

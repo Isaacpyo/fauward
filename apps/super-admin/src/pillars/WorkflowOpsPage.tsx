@@ -39,7 +39,6 @@ const WORKFLOW_PREFIXES = [
   "/announcements",
   "/flags",
   "/security",
-  "/kyc",
   "/contracts",
   "/trials",
   "/demos"
@@ -158,49 +157,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Session revoked" }
         ],
         payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/kyc")) {
-    return [
-      {
-        id: "inquiry",
-        label: "Create Persona Inquiry",
-        description: "Start Persona verification for a tenant.",
-        method: "post",
-        path: () => "/kyc/inquiries",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "KYC inquiry" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, reason: values.reason })
-      },
-      {
-        id: "decision",
-        label: "KYC Decision",
-        description: "Approve or reject a KYC review; PEP approvals require senior compliance approval.",
-        method: "post",
-        path: (values) => `/kyc/inquiries/${encodeURIComponent(values.reviewId)}/decision`,
-        fields: [
-          { name: "reviewId", label: "Review ID", required: true },
-          { name: "decision", label: "Decision", type: "select", options: ["approve", "reject"], defaultValue: "approve" },
-          { name: "reason", label: "Reason", type: "textarea" }
-        ],
-        payload: (values) => ({ decision: values.decision, reason: values.reason })
-      },
-      {
-        id: "screen",
-        label: "Run Sanctions Screen",
-        description: "Run a ComplyAdvantage manual screen.",
-        method: "post",
-        path: () => "/kyc/screen",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "searchTerm", label: "Search Term" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Manual sanctions screen" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, searchTerm: values.searchTerm, reason: values.reason })
       }
     ];
   }

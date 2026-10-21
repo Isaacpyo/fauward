@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { KycError, assertKycForEnterprise } from '../../../services/kyc.service.js';
 import { z } from 'zod';
 import { TenantPlan } from '@prisma/client';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
@@ -310,6 +311,14 @@ export async function registerConsoleTenantRoutes(app: FastifyInstance) {
     if (expiresAt && (Number.isNaN(expiresAt.getTime()) || expiresAt <= new Date())) return reply.status(400).send({ error: 'INVALID_EXPIRY', message: 'expiresAt must be a future ISO date' });
     const tenant = await app.prisma.tenant.findUnique({ where: { id } });
     if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
+    if (payload.plan === 'ENTERPRISE') {
+      try {
+        await assertKycForEnterprise(app.prisma, tenant.id);
+      } catch (error) {
+        if (error instanceof KycError) return reply.status(error.statusCode).send({ error: error.code, message: error.message, ...error.extra });
+        throw error;
+      }
+    }
     const previous = await resolveEffectiveTenantPlan(app.prisma, tenant);
     const reason = payload.reason.trim();
 
