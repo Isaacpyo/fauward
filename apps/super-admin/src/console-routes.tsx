@@ -73,6 +73,7 @@ import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
 import { AttributionPage } from "@/pillars/gtm/attribution/AttributionPage";
 import { CreateDemoPage, DemoDetailPage, DemoTemplatesPage, DemosPage } from "@/pillars/gtm/demos/DemosPages";
+import { HandoffDetailPage, HandoffQueuePage, HandoffTemplatePage, WonPage } from "@/pillars/gtm/handoff/HandoffPages";
 import { ExtensionsPage, TrialDetailPage, TrialsExpiringPage, TrialsPage } from "@/pillars/gtm/trials/TrialsPages";
 import { RolesPage } from "@/pillars/trust/iam/RolesPage";
 import { UserDetailPage } from "@/pillars/trust/iam/UserDetailPage";
@@ -371,10 +372,11 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/trials/expiring", element: <PermissionRoute permission="gtm.trials.read"><TrialsExpiringPage /></PermissionRoute> },
   { path: "/gtm/trials/extensions", element: <PermissionRoute permission="gtm.trials.read"><ExtensionsPage /></PermissionRoute> },
   { path: "/gtm/trials/:tenantId", element: <PermissionRoute permission="gtm.trials.read"><TrialDetailPage /></PermissionRoute> },
-  { path: "/gtm/handoff/won", element: <OpsRoute permission="gtm.handoff.read" title="Won Deals" description="Deals awaiting structured sales-to-CS handoff." endpoint="/handoff/won" /> },
-  { path: "/gtm/handoff", element: <Navigate to="/gtm/handoff/won" replace /> },
-  { path: "/gtm/handoff/onboarding-queue", element: <OpsRoute permission="gtm.handoff.read" title="Onboarding Queue" description="Handed-off accounts waiting for CSM acceptance." endpoint="/handoff/onboarding-queue" /> },
-  { path: "/gtm/handoff/templates", element: <OpsRoute permission="gtm.handoff.read" title="Handoff Templates" description="Structured handoff document templates." endpoint="/handoff/templates" /> },
+  { path: "/gtm/handoff", element: <PermissionRoute permission="gtm.handoff.read"><HandoffQueuePage /></PermissionRoute> },
+  { path: "/gtm/handoff/won", element: <PermissionRoute permission="gtm.handoff.read"><WonPage /></PermissionRoute> },
+  { path: "/gtm/handoff/onboarding-queue", element: <Navigate to="/gtm/handoff?stage=CS" replace /> },
+  { path: "/gtm/handoff/templates", element: <PermissionRoute permission="gtm.handoff.read"><HandoffTemplatePage /></PermissionRoute> },
+  { path: "/gtm/handoff/:id", element: <PermissionRoute permission="gtm.handoff.read"><HandoffDetailPage /></PermissionRoute> },
   { path: "/gtm/pricing", element: <ComingSoonRoute serviceKey="gtm.pricing" /> },
   { path: "/gtm/contracts/quotes", element: <OpsRoute permission="gtm.contracts.read" title="Quote Builder" description="CPQ quotes, discount approvals and DocuSign handoff." endpoint="/contracts/quotes" related={[{ label: "Discounts", to: "/gtm/contracts/discounts" }, { label: "MSAs", to: "/gtm/contracts/msas" }]} /> },
   { path: "/gtm/contracts", element: <Navigate to="/gtm/contracts/quotes" replace /> },

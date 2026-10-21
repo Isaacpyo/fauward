@@ -3312,14 +3312,23 @@ model SalesHandoff {
   id            String   @id @default(uuid())
   dealId        String?
   tenantId      String
+  /// PENDING_SALES → PENDING_CS → ACCEPTED → COMPLETED
   status        String   @default("PENDING_SALES")
+  /// { template, fields: { key: text }, checklist: [{ key, label, done, doneAt, doneBy }] } from config/handoff-template.ts
   document      Json
+  /// The conversion that created it (trial → paid); unique so a redelivered event cannot create a second handoff.
+  subscriptionEventId String? @unique
   assignedCsmId String?
+  assignedAt    DateTime?
+  assignedBy    String?
   acceptedAt    DateTime?
+  completedAt   DateTime?
+  completedBy   String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([tenantId, status])
+  @@index([status, createdAt])
   @@map("sales_handoffs")
 }
 

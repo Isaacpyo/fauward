@@ -8,6 +8,7 @@ import { mrrForSubscription } from './revenue/mrr.service.js';
 import { invalidateTenantEntitlements } from './tenant-entitlements.service.js';
 import { SYSTEM_ACTOR, recordAndPublishActivity, type ActivityInput } from './platform-activity.service.js';
 import { notifyTenantAdmins } from './platform-notifier.service.js';
+import { createHandoffForConversion, isConversion } from './handoff.service.js';
 
 // revenue.subscriptions (WP-2.7, L6): the one place a tenant's plan changes after signup. Tenant.plan and
 // Subscription.plan move together, a SubscriptionEvent records the MRR before and after, and every API instance drops
@@ -96,6 +97,9 @@ export async function applyPlanChange(app: SubApp, input: ApplyPlanChangeInput) 
   });
 
   publishPlanChanged(app, tenant.id, input.toPlan);
+  // gtm.handoff (WP-4.17): a trial (or no subscription) becoming a paid ACTIVE one opens the sales → CS handoff.
+  const statusAfter = typeof input.subscription?.status === 'string' ? input.subscription.status : tenant.subscription?.status ?? 'ACTIVE';
+  if (isConversion(tenant.subscription?.status ?? null, statusAfter)) await createHandoffForConversion(app, { tenantId: tenant.id, subscriptionEventId: event.id });
   await recordAndPublishActivity(
     { prisma: app.prisma, redis: app.redis, log: app.log },
     {
@@ -216,18 +220,18 @@ export async function handleStripeSubscriptionEvent(app: SubApp, event: Stripe.E
     }
 
     const fromStatus = tenant.subscription?.status ?? null;
-    await app.prisma.$transaction(async (tx) => {
+    const statusEvent = await app.prisma.$transaction(async (tx) => {
       await tx.subscription.upsert({
         where: { tenantId },
         update: columns,
         create: { tenantId, plan: currentPlan, billingCycle: mapped?.cycle ?? 'MONTHLY', status, stripeSubscriptionId: subscription.id, stripeCustomerId: customerId }
       });
-      if (fromStatus !== status) {
-        await tx.subscriptionEvent.create({
-          data: { tenantId, type: status === 'CANCELLED' ? 'CANCELLED' : 'STATUS_CHANGED', fromStatus, toStatus: status, fromPlan: currentPlan, toPlan: currentPlan, source: 'STRIPE_WEBHOOK', stripeEventId: event.id }
-        });
-      }
+      if (fromStatus === status) return null;
+      return tx.subscriptionEvent.create({
+        data: { tenantId, type: status === 'CANCELLED' ? 'CANCELLED' : 'STATUS_CHANGED', fromStatus, toStatus: status, fromPlan: currentPlan, toPlan: currentPlan, source: 'STRIPE_WEBHOOK', stripeEventId: event.id }
+      });
     });
+    if (statusEvent && isConversion(fromStatus, status)) await createHandoffForConversion(app, { tenantId, subscriptionEventId: statusEvent.id });
     if (fromStatus !== status) {
       await recordAndPublishActivity(
         { prisma: app.prisma, redis: app.redis, log: app.log },

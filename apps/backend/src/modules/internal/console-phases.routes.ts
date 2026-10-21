@@ -225,16 +225,4 @@ function registerGtm(app: FastifyInstance) {
     if (!deal) return reply.status(404).send({ error: 'Deal not found' });
     reply.send(deal);
   });
-
-  app.get('/api/internal/handoff/won', { preHandler: readPre('gtm.handoff.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'salesDeal'), { where: { stage: 'WON' }, orderBy: { updatedAt: 'desc' } }));
-  });
-
-  app.get('/api/internal/handoff/onboarding-queue', { preHandler: readPre('gtm.handoff.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'salesHandoff'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/handoff/templates', { preHandler: readPre('gtm.handoff.read') }, async (_request, reply) => {
-    reply.send({ data: [{ id: 'default', name: 'Default handoff', fields: ['stakeholders', 'successCriteria', 'risks'] }] });
-  });
 }
