@@ -69,12 +69,8 @@ const envSchema = z.object({
   PLATFORM_ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
   PLATFORM_ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
   ADMIN_HOSTNAME: z.string().min(1).default('admin.fauward.com'),
+  // Console routes only on ADMIN_HOSTNAME (vendor webhooks and monitoring excepted, WP-5.5).
   ADMIN_HARDENING_PHASE_1: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_2: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_3: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_4: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_5: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
   TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
   // Marketing site (password reset page) and console origin, used in email links.
@@ -93,7 +89,9 @@ const envSchema = z.object({
   // Days a closed tenant's data is kept before it becomes eligible for purge (purgeAfter = closedAt + this).
   TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   // gtm.contracts (WP-4.19): quotes with a discount above this percent (or a term over 24 months) need gtm.contracts.discount.large.
-  CPQ_DISCOUNT_APPROVAL_PERCENT: z.coerce.number().min(0).max(100).default(20)
+  CPQ_DISCOUNT_APPROVAL_PERCENT: z.coerce.number().min(0).max(100).default(20),
+  // trust.security (WP-5.4): comma-separated addresses/CIDRs (office, VPN) that IP blocks never apply to.
+  IP_BLOCK_BYPASS_CIDRS: z.string().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -223,12 +221,7 @@ export const config = {
     hostname: parsed.data.ADMIN_HOSTNAME.trim().toLowerCase()
   },
   adminHardening: {
-    phase1: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_1),
-    phase2: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_2),
-    phase3: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_3),
-    phase4: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_4),
-    phase5: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_5),
-    phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
+    phase1: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_1)
   },
   billing: {
     largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD,
@@ -236,6 +229,9 @@ export const config = {
   },
   tenants: {
     closeRetentionDays: parsed.data.TENANT_CLOSE_RETENTION_DAYS
+  },
+  security: {
+    ipBlockBypassCidrs: parsed.data.IP_BLOCK_BYPASS_CIDRS
   },
   cpq: {
     discountApprovalPercent: parsed.data.CPQ_DISCOUNT_APPROVAL_PERCENT,

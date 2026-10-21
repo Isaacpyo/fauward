@@ -8,6 +8,7 @@ import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantChip } from "@/components/service-kit/TenantChip";
 import { consoleApi } from "@/lib/console-api";
 import { apiErrorMessage } from "@/lib/console-api-error";
+import { consoleApiUrl } from "@/lib/console-api-origin";
 
 // customer.qbr (WP-4.9): QbrListPage (decks + tenants due), QbrTenantPage (decks, generate), QbrDeckPage (sections,
 // notes, ready, share, HTML download). Decks are built by the customer.qbr-generate job from real data.
@@ -204,7 +205,7 @@ export function QbrDeckPage() {
           </h1>
         </div>
         {data?.hasHtml ? (
-          <a href={`/api/internal/qbr/decks/${encodeURIComponent(id)}/download`} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold">
+          <a href={consoleApiUrl(`/qbr/decks/${encodeURIComponent(id)}/download`)} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold">
             Download HTML
           </a>
         ) : null}

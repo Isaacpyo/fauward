@@ -54,7 +54,7 @@ test("staff logins list attempts and say tenant sign-ins are not recorded", asyn
   await expect(page.getByTestId("degraded-not-wired")).toContainText("not recorded");
 });
 
-test("ACC-SECM-2 blocking an IP sends address, scope, expiry and reason; enforcement is named as WP-5.4", async ({ page }) => {
+test("ACC-SECM-2 blocking an IP sends address, scope, expiry and reason; the page says blocks are enforced (WP-5.4)", async ({ page }) => {
   const posts: unknown[] = [];
   let rows: unknown[] = [];
   await page.route("**/api/internal/**", async (route) => {
@@ -66,11 +66,12 @@ test("ACC-SECM-2 blocking an IP sends address, scope, expiry and reason; enforce
       rows = [{ id: "ip_1", ipAddress: "203.0.113.9", scope: "CONSOLE", reason: "Credential stuffing source", expiresAt: "2026-12-31T23:59:59.000Z", active: true, hitCount: 0, createdAt: "2026-10-21T09:00:00.000Z" }];
       return json(route, 201, rows[0]);
     }
-    if (path === "/security/ip-blocks") return json(route, 200, { data: rows, nextCursor: null, enforcement: { enforced: false, reason: "Blocks are recorded now; the request middleware that enforces them ships in WP-5.4." } });
+    if (path === "/security/ip-blocks") return json(route, 200, { data: rows, nextCursor: null, enforcement: { enforced: true, bypassCidrs: 1, cacheTtlSeconds: 60 } });
     return json(route, 200, { data: [], nextCursor: null });
   });
   await page.goto("/trust/security/ip-blocks");
-  await expect(page.getByTestId("degraded-not-wired")).toContainText("WP-5.4");
+  await expect(page.getByTestId("degraded-not-wired")).toHaveCount(0);
+  await expect(page.getByTestId("ip-block-enforcement")).toContainText("1 bypass range");
   await page.getByRole("button", { name: "Block an IP" }).click();
   await page.getByRole("dialog").getByLabel("IP address").fill("203.0.113.9");
   await page.getByRole("dialog").getByLabel("Scope").selectOption("CONSOLE");

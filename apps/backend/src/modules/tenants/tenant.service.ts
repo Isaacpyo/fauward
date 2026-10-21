@@ -7,7 +7,7 @@ import { usageService } from './usage.service.js';
 import { markOnboardingStep, onboardingChecklist } from '../../services/onboarding.service.js';
 
 /** Settings as the tenant sees them: gateway keys live in TenantPaymentGateway (WP-2.12) and secrets never leave the API. */
-function publicSettings(settings: TenantSettings | null) {
+export function publicSettings(settings: TenantSettings | null) {
   if (!settings) return null;
   const { webhookSecret, ...rest } = settings;
   return { ...rest, webhookSecretSet: Boolean(webhookSecret) };

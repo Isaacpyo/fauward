@@ -19,6 +19,7 @@ import {
 import { consolePermissionContext } from '../../../services/staff-iam.service.js';
 import { writePlatformAuditLog } from '../../../services/platform-audit.service.js';
 import { FieldEncryptionError, decryptField, encryptField, isEncryptedField } from '../../../services/crypto/field-encryption.js';
+import { clientIp } from '../../../shared/client-ip.js';
 
 // Console auth lives only under /api/internal/auth (D2; the Phase 0 /api/v1/platform/auth mount was dropped in WP-1.1).
 export const CONSOLE_AUTH_PREFIXES = ['/api/internal/auth'] as const;
@@ -28,9 +29,7 @@ const MFA_FAILURE_WINDOW_SECONDS = 15 * 60;
 const MFA_FAILURE_REVOKE_THRESHOLD = 10;
 
 function ipAddress(request: FastifyRequest) {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
-  return request.ip;
+  return clientIp(request);
 }
 
 function userAgent(request: FastifyRequest) {

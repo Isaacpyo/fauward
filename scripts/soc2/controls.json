@@ -1,0 +1,61 @@
+{
+  "$comment": "SOC 2 controls in scope and the tests that produce their evidence (WP-5.6, P1-7). Each `tests` entry must match at least one passing test case (file name for `file:` entries, otherwise the test title; ACC ids match whole ids). The soc2-evidence CI job fails if any is missing, failed or skipped. docs/SOC2_EVIDENCE_INDEX.md lists the same rows.",
+  "controls": [
+    {
+      "id": "CC6.1",
+      "name": "Logical access",
+      "tests": ["file:rbac-matrix.test.ts", "ACC-RBAC-1", "ACC-RBAC-2", "ACC-RBAC-3", "ACC-RBAC-4", "ACC-IAM-1", "ACC-IAM-2", "ACC-IAM-3", "ACC-IAM-4", "ACC-IAM-5", "ACC-JIT-1", "ACC-JIT-2", "ACC-JIT-3", "ACC-JIT-4", "ACC-JIT-5", "ACC-JIT-6"]
+    },
+    {
+      "id": "CC6.6",
+      "name": "Encryption and secret protection",
+      "tests": ["ACC-ENC-1", "ACC-ENC-2", "ACC-SEC-1"]
+    },
+    {
+      "id": "CC7.2",
+      "name": "Anomaly detection",
+      "tests": ["scheduled security anomaly scan", "ACC-IP-1", "ACC-IP-2", "ACC-IP-3"]
+    },
+    {
+      "id": "CC7.3",
+      "name": "Incident response",
+      "tests": ["ACC-INC-1", "ACC-INC-2", "ACC-INC-3", "ACC-INC-4", "ACC-INC-5", "ACC-L15-1", "ACC-L15-2"]
+    },
+    {
+      "id": "CC8.1",
+      "name": "Change management and audit trail",
+      "tests": ["ACC-AUD-5", "ACC-AUD-6", "ACC-AUD-7", "ACC-AUD-8"]
+    },
+    {
+      "id": "P4.2",
+      "name": "Data retention and legal hold",
+      "tests": ["ACC-LH-1", "ACC-LH-2", "ACC-LH-3", "purgeAfter"]
+    },
+    {
+      "id": "P5.1",
+      "name": "Data subject access",
+      "tests": ["ACC-L4-1", "ACC-L4-2"]
+    }
+  ],
+  "backendFiles": [
+    "src/routes/internal/rbac-matrix.test.ts",
+    "src/middleware/require-console-permission.test.ts",
+    "src/routes/internal/iam.test.ts",
+    "src/modules/internal/auth/console-auth.test.ts",
+    "src/services/staff-iam.service.test.ts",
+    "src/modules/internal/trust/jit.test.ts",
+    "src/services/crypto/field-encryption.test.ts",
+    "src/services/crypto/encrypted-columns.test.ts",
+    "src/modules/internal/monitoring.test.ts",
+    "src/queues/scheduled.worker.test.ts",
+    "src/middleware/enforce-ip-blocks.test.ts",
+    "src/modules/internal/platform/incidents.test.ts",
+    "src/modules/exceptions/escalation-loop.test.ts",
+    "src/modules/internal/platform/escalations.auth.test.ts",
+    "src/modules/internal/audit-chain.test.ts",
+    "src/modules/internal/trust/legal-hold.test.ts",
+    "src/services/tenant-close.service.test.ts",
+    "src/modules/internal/trust/compliance.test.ts"
+  ],
+  "e2eSpecs": ["console-rbac", "trust-jit", "trust-audit", "trust-compliance", "trust-security"]
+}

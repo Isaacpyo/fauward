@@ -1,19 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { writePlatformAuditLog } from './platform-audit.service.js';
+import { HAS_TEST_DB, createTestPrisma } from '../test-support/test-db.js';
 
 // Real Postgres (CI sets TEST_DATABASE_URL). Concurrent appends used to read the same latest row and fork the chain,
 // which audit:chain:verify then reported as tampering. The check is on linkage (previousHash = the hash of the row
 // before it, in createdAt order), so it holds while other suites append at the same time. writeAudit takes the same
 // lock (audit-chain-lock.test.ts); its rows are not written here because they hash differently.
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
-
-describe.runIf(Boolean(TEST_DATABASE_URL))('platform audit chain under concurrent writers', () => {
+describe.runIf(HAS_TEST_DB)('platform audit chain under concurrent writers', () => {
   let prisma: PrismaClient;
 
   beforeAll(() => {
-    prisma = new PrismaClient({ datasources: { db: { url: TEST_DATABASE_URL } } });
+    // Tunnel-tolerant transaction waits: half the writers hold a caller transaction while they queue on the lock.
+    prisma = createTestPrisma();
   });
 
   afterAll(async () => {

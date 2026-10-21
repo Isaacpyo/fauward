@@ -73,3 +73,73 @@ jobs:
             apps/backend/coverage
             apps/fauward-Go/coverage
             packages/*/coverage
+
+  soc2-evidence:
+    # WP-5.6 (P1-7): the SOC 2 control tests listed in scripts/soc2/controls.json, against real Postgres and Redis, with
+    # JUnit output. Uploads soc2-evidence-<date> (JUnit files, per-control summary, audit chain verification) and fails
+    # when any control lacks a passing test. docs/SOC2_EVIDENCE_INDEX.md maps controls to tests.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fauward_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fauward_test
+      TEST_REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema=apps/backend/prisma/schema.prisma
+      - run: npx prisma db push --schema=apps/backend/prisma/schema.prisma
+      - run: npx turbo run build --filter=@fauward/backend^... --filter=@fauward/super-admin^...
+      - id: date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - run: mkdir -p soc2-evidence
+      - name: Backend control tests
+        working-directory: apps/backend
+        run: npx vitest run --reporter=default --reporter=junit --outputFile.junit=../../soc2-evidence/backend-junit.xml $(node -e "console.log(require('../../scripts/soc2/controls.json').backendFiles.join(' '))")
+      - run: npx playwright install --with-deps chromium
+        if: always()
+      - name: Console control tests
+        if: always()
+        run: npx playwright test $(node -e "console.log(require('./scripts/soc2/controls.json').e2eSpecs.join(' '))") --reporter=junit,line
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: soc2-evidence/e2e-junit.xml
+      - name: Audit chain verification
+        if: always()
+        run: npm run audit:chain:verify --workspace=apps/backend 2>&1 | tee soc2-evidence/audit-chain-verify.txt
+      - name: Per-control summary
+        if: always()
+        run: node scripts/soc2/evidence-report.mjs soc2-evidence soc2-evidence/backend-junit.xml soc2-evidence/e2e-junit.xml | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: soc2-evidence-${{ steps.date.outputs.date }}
+          path: soc2-evidence/
+          retention-days: 90

@@ -7,11 +7,11 @@ async function main() {
   const result = await verifyPlatformAuditChain(prisma);
 
   if (result.ok) {
-    console.log(`Chain valid across ${result.checked} entries`);
+    console.log(`Chain valid across ${result.checked} entries (${result.legacy} pre-0080 entries up to the cut-over)`);
     return;
   }
 
-  console.error(`Chain broken at entry ${result.failedAt}`);
+  console.error(`Chain broken at seq ${result.firstBrokenSeq} (${result.reason}, entry ${result.firstBrokenId})`);
   process.exitCode = 1;
 }
 

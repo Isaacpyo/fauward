@@ -2166,12 +2166,25 @@ model PlatformAuditLog {
   previousHash           String?
   hash                   String
   createdAt              DateTime @default(now())
+  /// WP-5.1 (0080): chain order. Writers take pg_advisory_xact_lock, read the latest row by seq, hash, insert.
+  seq                    Int      @unique @default(autoincrement())
+  /// 1 = written before 0080 (two schemes, unverifiable); 2 = @fauward/internal-audit computeAuditRowHash.
+  hashVersion            Int      @default(1)
 
   @@index([createdAt])
   @@index([targetTenantId, createdAt])
   @@index([targetType, targetId, createdAt])
   @@index([sessionId, createdAt])
   @@map("platform_audit_logs")
+}
+
+/// WP-5.1 (0080): the last seq written before the single hash scheme; verification accepts hashVersion 1 rows only up to it.
+model AuditChainMeta {
+  id         String   @id
+  cutoverSeq Int
+  createdAt  DateTime @default(now())
+
+  @@map("audit_chain_meta")
 }
 
 model PlatformAnnouncement {
@@ -2564,9 +2577,12 @@ model DSARTransition {
   @@map("dsar_transitions")
 }
 
+/// trust.compliance (WP-2.5, WP-5.2): a hold names one tenant, or none with appliesToAllTenants (a global hold, which
+/// needs an approved JIT ROOT session to place or release). A null tenant without the flag is invalid (CHECK in 0081).
 model LegalHold {
   id         String   @id @default(uuid())
   tenantId   String?
+  appliesToAllTenants Boolean @default(false)
   scope      Json
   reason     String
   status     String   @default("ACTIVE")

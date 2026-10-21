@@ -1,5 +1,3 @@
-import type { Prisma } from '@prisma/client';
-
 export type AuditAction = string;
 export type AuditTarget = {
   type: string;
@@ -30,45 +28,6 @@ export type AuditWriteInput = Omit<AuditEntry, 'id' | 'timestamp' | 'hash' | 'pr
   /** Tenant a non-tenant target belongs to (e.g. a support ticket), so tenant filters and Customer 360 find the row. */
   target_tenant_id?: string | null;
 };
-
-export type PlatformAuditRow = {
-  id: string;
-  actorType?: string;
-  actorId: string;
-  actorEmail?: string | null;
-  actorRole?: string | null;
-  action: string;
-  targetType?: string | null;
-  targetId?: string | null;
-  targetTenantId?: string | null;
-  targetUserId?: string | null;
-  impersonationSessionId?: string | null;
-  sessionId?: string | null;
-  jitSessionId?: string | null;
-  before?: Prisma.JsonValue | null;
-  after?: Prisma.JsonValue | null;
-  reason?: string | null;
-  metadata?: Prisma.JsonValue;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  previousHash?: string | null;
-  hash: string;
-  createdAt: Date;
-};
-
-export type PlatformAuditClient = {
-  platformAuditLog: {
-    findFirst: (args: unknown) => Promise<{ hash: string; createdAt?: Date } | null>;
-    create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
-    findMany?: (args: unknown) => Promise<PlatformAuditRow[]>;
-  };
-  /** Present on a Prisma client: writeAudit appends inside a transaction holding the audit chain lock. */
-  $transaction?: <T>(fn: (tx: PlatformAuditClient) => Promise<T>, options?: AuditTransactionOptions) => Promise<T>;
-  /** Present on a Prisma (transaction) client: used to take the audit chain lock. */
-  $executeRawUnsafe?: (query: string) => Promise<number>;
-};
-
-export type AuditTransactionOptions = { maxWait?: number; timeout?: number };
 
 export type AuditMetadata = {
   before?: unknown;

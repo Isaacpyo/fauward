@@ -1,6 +1,24 @@
-import crypto from 'crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
-import { nextAuditTimestamp, withAuditChainLock } from '@fauward/internal-audit';
+import { randomUUID } from 'crypto';
+import { Prisma, type PrismaClient } from '@prisma/client';
+import {
+  AUDIT_HASH_VERSION,
+  computeAuditRowHash,
+  initialAuditChainCursor,
+  nextAuditTimestamp,
+  normalizeAuditJson,
+  verifyAuditChainBatch,
+  withAuditChainLock,
+  type AuditChainBreakReason,
+  type AuditJson,
+  type AuditRowData,
+  type AuditSink
+} from '@fauward/internal-audit';
+import { currentRequestActor } from '../context/request-actor.context.js';
+
+// trust.audit (WP-5.1, S14): every PlatformAuditLog row is written here. One scheme (@fauward/internal-audit
+// computeAuditRowHash, hashVersion 2); the writer holds the audit chain lock (@fauward/internal-audit chain-lock.ts, a
+// transaction-scoped advisory lock), reads the latest row by `seq`, hashes and inserts, so concurrent writers cannot
+// fork the chain. createdAt stays strictly increasing, so createdAt order is chain order too.
 
 type PlatformAuditInput = {
   actorType: 'PLATFORM_USER' | 'TENANT_USER' | 'SYSTEM';
@@ -16,91 +34,109 @@ type PlatformAuditInput = {
   userAgent?: string | null;
 };
 
-function stableSerialize(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
-    .join(',')}}`;
+export type AuditDb = PrismaClient | Prisma.TransactionClient;
+
+export const AUDIT_CHAIN_META_ID = 'platform_audit_logs';
+export const AUDIT_VERIFY_BATCH_SIZE = 1_000;
+
+function jsonColumn(value: AuditJson): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return value === null ? Prisma.DbNull : value;
 }
 
-export function computePlatformAuditHash(fields: Record<string, unknown>, previousHash: string | null) {
-  return crypto
-    .createHash('sha256')
-    .update(stableSerialize({ ...fields, previousHash }))
-    .digest('hex');
+/** Tells the global audit safety net (app.ts) that this request already has its audit row (one row per mutation). */
+function markAuditWritten() {
+  const holder = currentRequestActor();
+  if (holder) holder.auditWritten = true;
 }
 
-type AuditDb = Pick<PrismaClient, 'platformAuditLog'>;
+/** Runs with the chain lock held; `tx` is the lock's transaction (or the caller's). */
+async function appendLocked(tx: Prisma.TransactionClient, input: AuditRowData) {
+  const latest = await tx.platformAuditLog.findFirst({ orderBy: { seq: 'desc' }, select: { hash: true, createdAt: true } });
+  const previousHash = latest?.hash ?? null;
+  const row = { ...input, createdAt: nextAuditTimestamp(latest, input.createdAt) };
+  return tx.platformAuditLog.create({
+    data: {
+      ...row,
+      before: jsonColumn(row.before),
+      after: jsonColumn(row.after),
+      metadata: row.metadata ?? {},
+      previousHash,
+      hash: computeAuditRowHash(previousHash, row),
+      hashVersion: AUDIT_HASH_VERSION
+    }
+  });
+}
+
+/** Appends one row. A root client gets its own locked transaction; a transaction client takes the lock in the caller's. */
+export async function appendPlatformAuditRow(db: AuditDb, row: AuditRowData) {
+  const created = await withAuditChainLock<AuditDb, Awaited<ReturnType<typeof appendLocked>>>(db, (tx) => appendLocked(tx, row));
+  markAuditWritten();
+  return created;
+}
+
+/** The sink @fauward/internal-audit `writeAudit` / `auditMiddleware` write through. */
+export function platformAuditSink(db: AuditDb): AuditSink {
+  return (row) => appendPlatformAuditRow(db, row);
+}
 
 // Accepts a transaction client too, so callers can write the audit row in the same transaction as the change.
-// Appends are serialised by the audit chain lock (see @fauward/internal-audit chain-lock.ts).
-export async function writePlatformAuditLog(prisma: AuditDb, input: PlatformAuditInput) {
-  return withAuditChainLock(prisma, (db) => appendPlatformAuditLog(db, input));
-}
-
-async function appendPlatformAuditLog(prisma: AuditDb, input: PlatformAuditInput) {
-  const previous = await prisma.platformAuditLog.findFirst({
-    orderBy: { createdAt: 'desc' },
-    select: { hash: true, createdAt: true }
-  });
-
-  const fields = {
+export async function writePlatformAuditLog(db: AuditDb, input: PlatformAuditInput) {
+  return appendPlatformAuditRow(db, {
+    id: randomUUID(),
+    createdAt: new Date(),
     actorType: input.actorType,
     actorId: input.actorId,
     actorEmail: input.actorEmail ?? null,
+    actorRole: null,
     action: input.action,
+    targetType: null,
+    targetId: null,
     targetTenantId: input.targetTenantId ?? null,
     targetUserId: input.targetUserId ?? null,
     impersonationSessionId: input.impersonationSessionId ?? null,
+    sessionId: null,
+    jitSessionId: null,
+    before: null,
+    after: null,
     reason: input.reason ?? null,
-    metadata: input.metadata ?? {},
+    metadata: normalizeAuditJson(input.metadata ?? {}),
     ipAddress: input.ipAddress ?? null,
     userAgent: input.userAgent ?? null
-  };
-  const previousHash = previous?.hash ?? null;
-  const hash = computePlatformAuditHash(fields, previousHash);
-
-  return prisma.platformAuditLog.create({
-    data: {
-      ...fields,
-      metadata: fields.metadata,
-      previousHash,
-      hash,
-      createdAt: nextAuditTimestamp(previous)
-    }
   });
 }
 
-export async function verifyPlatformAuditChain(prisma: PrismaClient) {
-  const rows = await prisma.platformAuditLog.findMany({ orderBy: { createdAt: 'asc' } });
-  let previousHash: string | null = null;
+export type AuditChainVerification = {
+  ok: boolean;
+  checked: number;
+  legacy: number;
+  lastSeq: number | null;
+  cutoverSeq: number | null;
+  firstBrokenSeq?: number;
+  firstBrokenId?: string;
+  reason?: AuditChainBreakReason;
+};
 
-  for (const row of rows) {
-    const hash = computePlatformAuditHash(
-      {
-        actorType: row.actorType,
-        actorId: row.actorId,
-        actorEmail: row.actorEmail,
-        action: row.action,
-        targetTenantId: row.targetTenantId,
-        targetUserId: row.targetUserId,
-        impersonationSessionId: row.impersonationSessionId,
-        reason: row.reason,
-        metadata: row.metadata,
-        ipAddress: row.ipAddress,
-        userAgent: row.userAgent
-      },
-      previousHash
-    );
+type VerifyDb = Pick<PrismaClient, 'platformAuditLog' | 'auditChainMeta'>;
 
-    if (row.previousHash !== previousHash || row.hash !== hash) {
-      return { ok: false, failedAt: row.id };
+/** Walks the chain by `seq` in batches (never the whole table in memory). */
+export async function verifyPlatformAuditChain(db: VerifyDb, options: { batchSize?: number } = {}): Promise<AuditChainVerification> {
+  const batchSize = options.batchSize ?? AUDIT_VERIFY_BATCH_SIZE;
+  const meta = await db.auditChainMeta.findUnique({ where: { id: AUDIT_CHAIN_META_ID }, select: { cutoverSeq: true } });
+  const cutoverSeq = meta?.cutoverSeq ?? null;
+  let cursor = initialAuditChainCursor();
+  for (;;) {
+    const rows = await db.platformAuditLog.findMany({
+      where: cursor.lastSeq === null ? {} : { seq: { gt: cursor.lastSeq } },
+      orderBy: { seq: 'asc' },
+      take: batchSize
+    });
+    if (rows.length === 0) break;
+    const step = verifyAuditChainBatch(rows, cursor, cutoverSeq);
+    cursor = step.cursor;
+    if (step.broken) {
+      return { ok: false, checked: cursor.checked, legacy: cursor.legacy, lastSeq: cursor.lastSeq, cutoverSeq, firstBrokenSeq: step.broken.seq, firstBrokenId: step.broken.id, reason: step.broken.reason };
     }
-    previousHash = row.hash;
+    if (rows.length < batchSize) break;
   }
-
-  return { ok: true, checked: rows.length };
+  return { ok: true, checked: cursor.checked, legacy: cursor.legacy, lastSeq: cursor.lastSeq, cutoverSeq };
 }

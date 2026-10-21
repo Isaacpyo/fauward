@@ -21,6 +21,9 @@ import { monthlyRescreen } from '../services/kyc.service.js';
 import { runHubspotImport } from '../services/pipeline.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
+import { auditChainVerifyJob } from '../services/audit-chain.service.js';
+import { autoBlockIps, parseBypassCidrs } from '../services/ip-block-enforcement.service.js';
+import { config } from '../config/index.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
 import { findScheduledJob, listScheduledJobs, registerScheduledJob, runScheduledJob } from './scheduled-job-runner.js';
 
@@ -127,15 +130,10 @@ registerScheduledJob({
       where: { success: false, createdAt: { gte: cutoff }, ipAddress: { not: null } },
       _count: { id: true }
     });
-    const blocked = failedIpAttempts.filter((row) => row.ipAddress && row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerIp);
-    for (const attempt of blocked) {
-      await app.prisma.ipBlock.upsert({
-        where: { ipAddress: attempt.ipAddress! },
-        create: { ipAddress: attempt.ipAddress!, reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000), createdBy: 'trust.security-anomaly-scan' },
-        update: { reason: 'Failed login spike', expiresAt: new Date(Date.now() + FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60 * 1000) }
-      });
-    }
-    return { accountsChecked: failedAttempts.length, anomalies: spikes.length, ipsBlocked: blocked.length };
+    const noisy = failedIpAttempts.filter((row) => row.ipAddress && row._count.id > FAILED_LOGIN_SPIKE_RULE.maxFailuresPerIp).map((row) => row.ipAddress!);
+    // WP-5.4: scope ALL, 24 h expiry, never an IP_BLOCK_BYPASS_CIDRS address, never shortening a block staff placed.
+    const auto = await autoBlockIps(app, noisy, { reason: 'Failed login spike', createdBy: 'trust.security-anomaly-scan', bypass: parseBypassCidrs(config.security.ipBlockBypassCidrs).list, ttlMs: FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes * 60_000 });
+    return { accountsChecked: failedAttempts.length, anomalies: spikes.length, ipsBlocked: auto.blocked, ipsBypassed: auto.skippedBypass };
   }
 });
 
@@ -273,6 +271,8 @@ registerScheduledJob({
   description: 'Records which registered secrets are set, detects rotations by fingerprint and reports overdue rotations (never reads values out).',
   handler: async (app) => runSecretInventory(app)
 });
+
+registerScheduledJob(auditChainVerifyJob);
 
 export async function registerScheduledJobs() {
   if (repeatableJobsRegistered) return;

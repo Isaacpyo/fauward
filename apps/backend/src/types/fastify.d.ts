@@ -30,6 +30,8 @@ declare module 'fastify' {
     /** Effective console permissions, computed once per request by requireConsolePermission (D2). */
     console?: ConsoleRequestContext;
     jitSessionId?: string;
+    /** Set by writeInternalAudit; the global audit safety net then writes nothing (WP-5.1). */
+    auditWritten?: boolean;
     internalAudit?: Partial<Pick<AuditWriteInput, 'action' | 'target_type' | 'target_id' | 'before' | 'after' | 'reason' | 'jit_session_id'>>;
   }
 }

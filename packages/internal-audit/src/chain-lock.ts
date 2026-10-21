@@ -8,8 +8,9 @@ type RawExecutor = { $executeRawUnsafe: (query: string) => Promise<number> };
 type TransactionRunner<C> = {
   $transaction: <T>(fn: (tx: C) => Promise<T>, options?: { maxWait?: number; timeout?: number }) => Promise<T>;
 };
-// Writers queue on the lock inside the transaction, so allow more than Prisma's 2 s / 5 s defaults.
-const LOCK_TRANSACTION_OPTIONS = { maxWait: 10_000, timeout: 20_000 };
+// Writers queue on the lock inside the transaction, so allow more than Prisma's 2 s / 5 s defaults (100 concurrent
+// writers through the VM tunnel need ~20 s to drain, ACC-AUD-5).
+const LOCK_TRANSACTION_OPTIONS = { maxWait: 20_000, timeout: 20_000 };
 
 /**
  * Runs `fn` while holding the audit chain lock.

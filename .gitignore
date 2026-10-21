@@ -42,3 +42,6 @@ __pycache__/
 # Local dev artefacts: request/response logs and the Supabase CLI cache (it names the linked project).
 dev-logs/
 supabase/.temp/
+
+# SOC 2 evidence run output (WP-5.6; CI uploads it as an artifact)
+soc2-evidence/

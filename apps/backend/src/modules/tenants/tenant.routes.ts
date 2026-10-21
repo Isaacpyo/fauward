@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { tenantController } from './tenant.controller.js';
+import { publicSettings } from './tenant.service.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
 import { config } from '../../config/index.js';
@@ -180,7 +181,8 @@ export async function registerTenantRoutes(app: FastifyInstance) {
           opsEmailRecipients: recipients
         }
       });
-      reply.send(settings);
+      // Never echo the stored webhook secret (CC6.6, WP-5.3).
+      reply.send(publicSettings(settings));
     }
   );
 

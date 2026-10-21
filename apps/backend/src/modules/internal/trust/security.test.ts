@@ -74,7 +74,7 @@ describe.runIf(HAS_TEST_DB)('trust.security (WP-4.11, real Postgres)', () => {
     expect((await app.inject({ method: 'POST', url: '/api/internal/security/ip-blocks', payload: { ipAddress: ip, reason: 'Credential stuffing source' } })).json()).toMatchObject({ error: 'ALREADY_BLOCKED' });
     const list = (await app.inject({ method: 'GET', url: '/api/internal/security/ip-blocks?limit=200' })).json();
     expect(list.data.find((row: { ipAddress: string }) => row.ipAddress === ip)).toMatchObject({ scope: 'CONSOLE', active: true });
-    expect(list.enforcement).toMatchObject({ enforced: false });
+    expect(list.enforcement).toMatchObject({ enforced: true, cacheTtlSeconds: 60 });
     const removed = await app.inject({ method: 'DELETE', url: `/api/internal/security/ip-blocks/${created.json().id}`, payload: { reason: 'Source was a partner’s NAT' } });
     expect(removed.json()).toMatchObject({ removed: true });
     expect(await prisma.ipBlock.count({ where: { ipAddress: ip } })).toBe(0);

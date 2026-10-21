@@ -5,6 +5,7 @@ import type { ActivityFilters, ActivityPage, ActivityRow } from "@/lib/activity"
 import { BADGES_KEY } from "@/lib/badges";
 import { refreshSession } from "@/lib/console-api";
 import { ACTIVITY_SUMMARY_KEY, OVERVIEW_KEY } from "@/lib/overview";
+import { consoleApiUrl } from "./console-api-origin";
 
 // Live console activity (D7 read side, WP-3.5): one EventSource per tab on GET /activity/stream (cookie session; the
 // server filters rows by the caller's permissions). New rows are prepended to every cached feed whose filters they
@@ -66,7 +67,7 @@ export function ActivityStreamProvider({ children }: { children: ReactNode }) {
 
     const open = () => {
       if (stopped) return;
-      source = new EventSource("/api/internal/activity/stream", { withCredentials: true });
+      source = new EventSource(consoleApiUrl("/activity/stream"), { withCredentials: true });
       source.addEventListener("ready", () => setStatus("live"));
       source.addEventListener("activity", (event) => {
         try {

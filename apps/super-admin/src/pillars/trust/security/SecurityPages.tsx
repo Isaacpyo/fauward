@@ -8,12 +8,12 @@ import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { consoleApi } from "@/lib/console-api";
 
-// trust.security (WP-4.11): AnomaliesPage, LoginsPage, IpBlocksPage, SessionsPage. IP blocks are enforced from WP-5.4.
+// trust.security (WP-4.11): AnomaliesPage, LoginsPage, IpBlocksPage, SessionsPage. IP blocks are enforced (WP-5.4).
 
 type Page<T> = { data: T[]; nextCursor: string | null };
 type Anomaly = { id: string; type: string; severity: string; status: string; details: Record<string, unknown> | null; acknowledgedAt: string | null; resolvedAt: string | null; resolutionNote: string | null; createdAt: string };
 type Login = { id: string; email: string; success: boolean; ipAddress: string | null; country: string | null; userAgent: string | null; failureReason: string | null; createdAt: string };
-type IpBlock = { id: string; ipAddress: string; scope: string; reason: string; expiresAt: string | null; active: boolean; hitCount: number; createdAt: string };
+type IpBlock = { id: string; ipAddress: string; scope: string; reason: string; expiresAt: string | null; active: boolean; hitCount: number; lastHitAt?: string | null; createdAt: string };
 type Session = { id: string; user: { id: string; email: string; name: string | null }; ipAddress: string | null; userAgent: string | null; mfaVerified: boolean; startedAt: string; expiresAt: string; current: boolean };
 
 const KEY = ["trust.security"] as const;
@@ -196,7 +196,7 @@ export function LoginsPage() {
 
 export function IpBlocksPage() {
   const queryClient = useQueryClient();
-  const blocks = usePaged<IpBlock, { enforcement: { enforced: boolean; reason: string } }>(["ip-blocks"], "/security/ip-blocks", {});
+  const blocks = usePaged<IpBlock, { enforcement: { enforced: boolean; bypassCidrs: number; cacheTtlSeconds: number } }>(["ip-blocks"], "/security/ip-blocks", {});
   const create = useMutation({ mutationFn: async (body: { ipAddress: string; scope: string; expiresAt: string | null; reason: string }) => (await consoleApi.post("/security/ip-blocks", body, { idempotent: true })).data, onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }) });
   const remove = useMutation({ mutationFn: async ({ id, reason }: { id: string; reason: string }) => (await consoleApi.delete(`/security/ip-blocks/${encodeURIComponent(id)}`, { data: { reason }, idempotent: true })).data, onSuccess: () => queryClient.invalidateQueries({ queryKey: KEY }) });
   const [adding, setAdding] = useState(false);
@@ -221,10 +221,11 @@ export function IpBlocksPage() {
           </PermissionButton>
         </div>
       </header>
-      {enforcement && !enforcement.enforced ? (
-        <DegradedBanner variant="not-wired" fixedBy="WP-5.4">
-          {enforcement.reason}
-        </DegradedBanner>
+      {enforcement?.enforced ? (
+        <p className="text-xs text-[var(--color-text-muted)]" data-testid="ip-block-enforcement">
+          Enforced: a blocked address gets 403 on its scope within {enforcement.cacheTtlSeconds} s of a change (at once on every server when Redis is up). Health checks and signed vendor webhooks are never blocked.{" "}
+          {enforcement.bypassCidrs > 0 ? `${enforcement.bypassCidrs} bypass range${enforcement.bypassCidrs === 1 ? "" : "s"} (IP_BLOCK_BYPASS_CIDRS) are never blocked.` : "No bypass range is configured (IP_BLOCK_BYPASS_CIDRS)."}
+        </p>
       ) : null}
       <Notice message={message} />
       {blocks.isError ? <ConsoleApiErrorPanel error={blocks.error} onRetry={() => void blocks.refetch()} title="Unable to load IP blocks" /> : null}
@@ -235,6 +236,7 @@ export function IpBlocksPage() {
             <span>
               <span className="font-mono">{row.ipAddress}</span> <span className="text-xs text-[var(--color-text-muted)]">· {row.scope.toLowerCase().replace("_", " ")} · {row.active ? (row.expiresAt ? `until ${when(row.expiresAt)}` : "no expiry") : "expired"}</span>
               <span className="block text-xs">{row.reason}</span>
+              <span className="block text-xs text-[var(--color-text-muted)]">{row.hitCount === 0 ? "No blocked requests yet" : `${row.hitCount} blocked request${row.hitCount === 1 ? "" : "s"}${row.lastHitAt ? `, last ${when(row.lastHitAt)}` : ""}`}</span>
             </span>
             <PermissionButton permission="trust.security.write" onClick={() => setRemoving(row)} className={secondary}>
               Remove

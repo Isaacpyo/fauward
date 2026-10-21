@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 
 import { getCsrfToken } from "./auth";
+import { CONSOLE_API_BASE } from "./console-api-origin";
 import { ConsoleApiError, toConsoleApiError } from "./console-api-error";
 import { requestStepUp } from "./mfa-step-up";
 
@@ -59,7 +60,7 @@ function withCsrf(config: InternalAxiosRequestConfig) {
 }
 
 // Refresh goes through a bare instance so it never recurses into the interceptors.
-export const refreshClient = axios.create({ baseURL: "/api/internal", withCredentials: true });
+export const refreshClient = axios.create({ baseURL: CONSOLE_API_BASE, withCredentials: true });
 refreshClient.interceptors.request.use(withCsrf);
 
 let refreshInFlight: Promise<void> | null = null;
@@ -120,6 +121,6 @@ function installInterceptors(instance: AxiosInstance) {
   return instance;
 }
 
-export const consoleApi = installInterceptors(axios.create({ baseURL: "/api/internal", withCredentials: true }));
+export const consoleApi = installInterceptors(axios.create({ baseURL: CONSOLE_API_BASE, withCredentials: true }));
 
 export { ConsoleApiError };

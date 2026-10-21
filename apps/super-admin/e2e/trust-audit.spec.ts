@@ -34,6 +34,23 @@ function entry(index: number) {
 
 const ALL = Array.from({ length: 120 }, (_, index) => entry(index));
 
+const LAST_RUN = {
+  id: "run_nightly",
+  status: "SUCCEEDED",
+  triggeredBy: "SCHEDULE",
+  startedAt: "2026-10-21T03:45:00.000Z",
+  finishedAt: "2026-10-21T03:45:02.000Z",
+  durationMs: 2000,
+  error: null,
+  result: { ok: true, checked: 1840, legacy: 1200, lastSeq: 1840, cutoverSeq: 1200, firstBrokenSeq: null, firstBrokenId: null, reason: null }
+};
+const BROKEN_RUN = {
+  ...LAST_RUN,
+  id: "run_manual",
+  triggeredBy: "pu_auditor",
+  result: { ok: false, checked: 1306, legacy: 1200, lastSeq: 1306, cutoverSeq: 1200, firstBrokenSeq: 1307, firstBrokenId: "aud_007", reason: "HASH_MISMATCH" }
+};
+
 type Seen = { lists: URLSearchParams[]; posts: Array<{ path: string; body: unknown }> };
 
 async function mockAudit(page: Page, permissions: string[]) {
@@ -56,7 +73,11 @@ async function mockAudit(page: Page, permissions: string[]) {
       seen.posts.push({ path, body: request.postDataJSON() });
       return json(route, 200, { url: "data:text/csv;base64,aWQ=", format: "csv", rows: 120, truncated: false, maxRows: 10000 });
     }
-    if (path === "/audit/verify") return json(route, 200, { ok: false, failedAt: "aud_007", verifiedAt: "2026-10-18T09:00:00.000Z" });
+    if (path === "/audit/verification") return json(route, 200, { data: LAST_RUN, schedule: "45 3 * * *" });
+    if (path === "/audit/verify" && request.method() === "POST") {
+      seen.posts.push({ path, body: request.postDataJSON() });
+      return json(route, 200, { data: BROKEN_RUN });
+    }
     return json(route, 200, { data: [] });
   });
   return seen;
@@ -137,11 +158,16 @@ test("ACC-AUD-4 without trust.audit.export the export button is disabled with th
   await expect(button).toHaveAttribute("title", "Requires trust.audit.export");
 });
 
-test("integrity page shows the two-scheme banner and the verifier result", async ({ page }) => {
-  await mockAudit(page, AUDITOR);
+test("ACC-AUD-8 integrity page shows the last nightly run; Verify now records a run and shows where the chain breaks", async ({ page }) => {
+  const seen = await mockAudit(page, AUDITOR);
   await page.goto("/trust/audit/integrity");
-  await expect(page.getByTestId("degraded-not-wired")).toContainText("WP-5.1");
+  await expect(page.getByTestId("degraded-not-wired")).toHaveCount(0);
+  await expect(page.getByTestId("audit-verify-result")).toContainText("Chain verified");
+  await expect(page.getByTestId("audit-verify-result")).toContainText("nightly schedule");
+  await expect(page.getByTestId("audit-verify-result")).toContainText("1840 entries checked");
   await page.getByRole("button", { name: "Verify now" }).click();
   await expect(page.getByTestId("audit-verify-result")).toContainText("Chain broken");
+  await expect(page.getByTestId("audit-verify-result")).toContainText("seq 1307");
   await expect(page.getByTestId("audit-verify-result")).toContainText("aud_007");
+  expect(seen.posts.filter((post) => post.path === "/audit/verify")).toHaveLength(1);
 });

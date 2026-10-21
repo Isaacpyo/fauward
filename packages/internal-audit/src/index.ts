@@ -1,5 +1,6 @@
 export * from './types.js';
 export * from './hash.js';
+export * from './row.js';
 export * from './redact.js';
 export * from './writer.js';
 export * from './chain-lock.js';

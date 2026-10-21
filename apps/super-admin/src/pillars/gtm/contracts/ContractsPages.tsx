@@ -12,6 +12,7 @@ import { TenantChip } from "@/components/service-kit/TenantChip";
 import { TenantPicker } from "@/components/service-kit/TenantPicker";
 import { consoleApi } from "@/lib/console-api";
 import { apiErrorMessage } from "@/lib/console-api-error";
+import { consoleApiUrl } from "@/lib/console-api-origin";
 
 // gtm.contracts (WP-4.19): QuotesPage, QuoteEditorPage, ApprovalsPage, MsasPage, DiscountsPage. A quote is priced from
 // the plan list price less its discount; submitting routes it to a large-discount approver when it is above the limit
@@ -430,7 +431,7 @@ export function QuoteEditorPage() {
               Upload signed PDF
             </PermissionButton>
           ) : null}
-          <a href={`/api/internal${data.pdfUrl}`} className={secondary} target="_blank" rel="noreferrer">
+          <a href={consoleApiUrl(data.pdfUrl)} className={secondary} target="_blank" rel="noreferrer">
             Download quote PDF
           </a>
           {!data.docusign.configured && data.status === "APPROVED" ? <span className="text-xs text-[var(--color-text-muted)]">DocuSign is not connected: Send marks the quote as sent.</span> : null}
@@ -458,7 +459,7 @@ export function QuoteEditorPage() {
             {data.msa.documentUrl ? (
               <>
                 {" · "}
-                <a href={`/api/internal${data.msa.documentUrl}`} className="underline" target="_blank" rel="noreferrer">
+                <a href={consoleApiUrl(data.msa.documentUrl)} className="underline" target="_blank" rel="noreferrer">
                   Signed PDF
                 </a>
               </>
@@ -611,7 +612,7 @@ export function MsasPage() {
                   {row.daysToRenewal === null ? "No end date" : row.daysToRenewal < 0 ? `Ended ${day(row.expiryDate)}` : `Renews ${day(row.expiryDate)} (${row.daysToRenewal} days)`}
                 </span>
                 {row.documentUrl ? (
-                  <a href={`/api/internal${row.documentUrl}`} className="underline" target="_blank" rel="noreferrer">
+                  <a href={consoleApiUrl(row.documentUrl)} className="underline" target="_blank" rel="noreferrer">
                     PDF
                   </a>
                 ) : null}

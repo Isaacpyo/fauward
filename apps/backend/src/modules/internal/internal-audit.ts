@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { writeAudit } from '@fauward/internal-audit';
-import type { PlatformAuditClient } from '@fauward/internal-audit';
+import { platformAuditSink } from '../../services/platform-audit.service.js';
 
 export async function writeInternalAudit(
   request: FastifyRequest,
@@ -12,7 +12,7 @@ export async function writeInternalAudit(
   reason?: string | null,
   options: { targetTenantId?: string | null } = {}
 ) {
-  await writeAudit(request.server.prisma as unknown as PlatformAuditClient, {
+  await writeAudit(platformAuditSink(request.server.prisma), {
     actor_id: request.platform!.user.id,
     actor_email: request.platform!.user.email,
     actor_role: request.platform!.user.role,
@@ -28,6 +28,7 @@ export async function writeInternalAudit(
     user_agent: typeof request.headers['user-agent'] === 'string' ? request.headers['user-agent'] : null,
     target_tenant_id: options.targetTenantId ?? null
   });
+  request.auditWritten = true;
 }
 
 export function setRequestAudit(
