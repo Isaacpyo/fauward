@@ -317,8 +317,8 @@ async function recentlyStarted(app: ExecApp, playbookId: string, tenantId: strin
 }
 
 /** Latest score per tenant (one query; tenants scored at least once). */
-async function latestScores(app: Pick<FastifyInstance, 'prisma'>, since = new Date(Date.now() - 45 * DAY_MS)) {
-  const rows = await app.prisma.tenantHealthScore.findMany({ where: { computedAt: { gte: since } }, orderBy: [{ tenantId: 'asc' }, { computedAt: 'desc' }] });
+async function latestScores(app: Pick<FastifyInstance, 'prisma'>, since = new Date(Date.now() - 45 * DAY_MS), tenantIds?: string[]) {
+  const rows = await app.prisma.tenantHealthScore.findMany({ where: { computedAt: { gte: since }, ...(tenantIds ? { tenantId: { in: tenantIds } } : {}) }, orderBy: [{ tenantId: 'asc' }, { computedAt: 'desc' }] });
   const byTenant = new Map<string, TenantHealthScore[]>();
   for (const row of rows) {
     const list = byTenant.get(row.tenantId) ?? [];
@@ -398,8 +398,9 @@ export async function successOverview(app: Pick<FastifyInstance, 'prisma'>) {
   };
 }
 
-export async function atRisk(app: Pick<FastifyInstance, 'prisma'>, now = new Date()) {
-  const scores = await latestScores(app);
+/** `tenantIds` narrows the scan (a QBR asks about one tenant). */
+export async function atRisk(app: Pick<FastifyInstance, 'prisma'>, now = new Date(), tenantIds?: string[]) {
+  const scores = await latestScores(app, new Date(now.getTime() - 45 * DAY_MS), tenantIds);
   const flagged = [...scores.entries()]
     .map(([tenantId, list]) => {
       const latest = list[0];
@@ -432,9 +433,9 @@ export async function atRisk(app: Pick<FastifyInstance, 'prisma'>, now = new Dat
   return { data: data.sort((a, b) => Number(b.arr) - Number(a.arr) || a.score - b.score), threshold: AT_RISK_SCORE };
 }
 
-export async function expansionCandidates(app: Pick<FastifyInstance, 'prisma'>, now = new Date()) {
+export async function expansionCandidates(app: Pick<FastifyInstance, 'prisma'>, now = new Date(), tenantIds?: string[]) {
   const month = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-  const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] } }, select: { id: true, name: true, slug: true, plan: true, maxStaff: true, maxShipmentsPm: true, maxOrganisations: true, limitsOverriddenAt: true } });
+  const tenants = await app.prisma.tenant.findMany({ where: { status: { in: ['ACTIVE', 'TRIALING'] }, ...(tenantIds ? { id: { in: tenantIds } } : {}) }, select: { id: true, name: true, slug: true, plan: true, maxStaff: true, maxShipmentsPm: true, maxOrganisations: true, limitsOverriddenAt: true } });
   const usage = tenants.length ? await app.prisma.usageRecord.findMany({ where: { month, tenantId: { in: tenants.map((tenant) => tenant.id) } }, select: { tenantId: true, shipments: true } }) : [];
   const shipments = new Map(usage.map((row) => [row.tenantId, row.shipments]));
   const staff = tenants.length ? await app.prisma.user.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenants.map((tenant) => tenant.id) }, isActive: true, role: { notIn: ['CUSTOMER_ADMIN', 'CUSTOMER_USER'] } }, _count: { _all: true } }) : [];

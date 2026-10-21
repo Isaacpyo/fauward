@@ -40,6 +40,7 @@ import { FlagAuditPage, FlagDetailPage, FlagsListPage, ReleasesPage } from "@/pi
 import { QueueDetailPage } from "@/pillars/platform/queues/QueueDetailPage";
 import { QueuesListPage } from "@/pillars/platform/queues/QueuesListPage";
 import { TenantDetailPage } from "@/pillars/platform/tenants/TenantDetailPage";
+import { QbrDeckPage, QbrListPage, QbrTenantPage } from "@/pillars/customer/qbr/QbrPages";
 import { AtRiskPage, CsOverviewPage, ExpansionPage, PlaybookEditorPage, PlaybookRunsPage, PlaybooksPage, ScoringModelPage } from "@/pillars/customer/success/SuccessPages";
 import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
@@ -256,9 +257,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/onboarding/stuck", element: <PermissionRoute permission="customer.onboarding.read">
                 <StuckTenantsPage />
               </PermissionRoute> },
-  { path: "/customer/qbr", element: <OpsRoute permission="customer.qbr.read" title="QBR Center" description="Quarterly business review calendar and generated decks." endpoint="/qbr" related={[{ label: "Templates", to: "/customer/qbr/templates" }]} /> },
-  { path: "/customer/qbr/templates", element: <OpsRoute permission="customer.qbr.read" title="QBR Templates" description="HTML/CSS deck templates by customer segment." endpoint="/qbr/templates" /> },
-  { path: "/customer/qbr/:tenantId", element: <OpsRoute permission="customer.qbr.read" title="Tenant QBR" description="Generated QBR decks and export status for one tenant." endpoint="/qbr/:tenantId" /> },
+  { path: "/customer/qbr", element: <PermissionRoute permission="customer.qbr.read"><QbrListPage /></PermissionRoute> },
+  { path: "/customer/qbr/decks/:id", element: <PermissionRoute permission="customer.qbr.read"><QbrDeckPage /></PermissionRoute> },
+  { path: "/customer/qbr/tenants/:tenantId", element: <PermissionRoute permission="customer.qbr.read"><QbrTenantPage /></PermissionRoute> },
   { path: "/trust", element: <TrustOverview /> },
   { path: "/trust/iam", element: <Navigate to="/trust/iam/users" replace /> },
   { path: "/trust/iam/users", element: <PermissionRoute permission="trust.iam.read">

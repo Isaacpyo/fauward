@@ -41,7 +41,6 @@ const WORKFLOW_PREFIXES = [
   "/security",
   "/kyc",
   "/contracts",
-  "/qbr",
   "/trials",
   "/demos"
 ];
@@ -246,25 +245,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Send to DocuSign" }
         ],
         payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/qbr")) {
-    return [
-      {
-        id: "generate",
-        label: "Generate Deck",
-        description: "Queue a QBR deck generation for a tenant.",
-        method: "post",
-        path: (values) => `/qbr/${encodeURIComponent(values.tenantId)}/generate`,
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "periodStart", label: "Period Start", type: "date" },
-          { name: "periodEnd", label: "Period End", type: "date" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Generate QBR deck" }
-        ],
-        payload: (values) => ({ periodStart: values.periodStart || undefined, periodEnd: values.periodEnd || undefined, reason: values.reason })
       }
     ];
   }

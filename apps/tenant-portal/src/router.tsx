@@ -34,6 +34,7 @@ import { HelpTicketDetailPage } from "@/pages/help/HelpTicketDetailPage";
 import { ActivityTimelinePage } from "@/pages/activity/ActivityTimelinePage";
 import { AnalyticsPage } from "@/pages/analytics/AnalyticsPage";
 import { ReportsPage } from "@/pages/reports/ReportsPage";
+import { QbrPage } from "@/pages/reports/QbrPage";
 import { LiveMapPage } from "@/pages/operations/LiveMapPage";
 import { FleetPage } from "@/pages/fleet/FleetPage";
 import { PricingOverviewPage } from "@/pages/pricing/PricingOverviewPage";
@@ -169,6 +170,8 @@ function WorkspaceRoutes() {
       <Route path="agent/tasks" element={<PlanFeatureRoute feature="agent"><AgentTasksPage /></PlanFeatureRoute>} />
       <Route path="agent/usage" element={<PlanFeatureRoute feature="agent"><AgentUsagePage /></PlanFeatureRoute>} />
       <Route path="reports" element={<PlanFeatureRoute feature="reports"><ReportsPage /></PlanFeatureRoute>} />
+      {/* customer.qbr (WP-4.9): a review Fauward shared; not plan-gated (Fauward prepares it). */}
+      <Route path="reports/qbr/:id" element={<QbrPage />} />
       <Route path="operations" element={<OperationsOverviewPage />} />
       <Route path="operations/live-map" element={<LiveMapPage />} />
       <Route path="operations/permission-requests" element={<PermissionRequestsPage />} />

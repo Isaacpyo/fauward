@@ -3156,20 +3156,32 @@ model MsaAgreement {
   @@map("msa_agreements")
 }
 
+/// customer.qbr (WP-4.9, 0069): one deck per tenant and quarter (`periodKey` "2026-Q3"), built by the
+/// customer.qbr-generate job from real data (`sections`, rendered to `html`). Status GENERATING | DRAFT | READY | SHARED
+/// | FAILED.
 model QBRDeck {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   tenantId    String
   periodStart DateTime
   periodEnd   DateTime
-  status      String   @default("DRAFT")
+  status      String    @default("DRAFT")
   html        String?
   notes       String?
   pdfUrl      String?
   pptxUrl     String?
   nextQbrAt   DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  periodKey   String?
+  sections    Json?
+  jobId       String?
+  generatedAt DateTime?
+  generatedBy String?
+  error       String?
+  sharedAt    DateTime?
+  sharedBy    String?
 
+  @@unique([tenantId, periodKey])
   @@index([tenantId, periodEnd])
   @@map("qbr_decks")
 }

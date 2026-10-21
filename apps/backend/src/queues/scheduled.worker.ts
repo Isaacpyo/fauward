@@ -15,6 +15,7 @@ import { pollIntegrations } from '../services/integration-health.service.js';
 import { runDunningAdvance } from '../services/dunning.service.js';
 import { sweepDisputeDeadlines } from '../services/dispute.service.js';
 import { runPlaybookExecutor } from '../services/customer-success.service.js';
+import { QBR_GENERATE_JOB, generateDeck } from '../services/qbr.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -299,6 +300,12 @@ export async function processScheduledJob(app: FastifyInstance, job: { id?: stri
   if (job.name === DSAR_ERASE_JOB) {
     const result = await eraseDsar(app, { dsarId: String(data.dsarId ?? ''), tenantId: String(data.tenantId ?? '') });
     app.log.info({ status: result.status, dsarId: data.dsarId }, 'DSAR erasure finished');
+    return;
+  }
+  if (job.name === QBR_GENERATE_JOB) {
+    // customer.qbr (WP-4.9): one-off, deduped by job id per deck request; runs in system context like the DSAR jobs.
+    const result = await generateDeck(app, String(data.deckId ?? ''));
+    app.log.info({ ...result, deckId: data.deckId }, 'QBR generation finished');
     return;
   }
   const definition = findScheduledJob(job.name);

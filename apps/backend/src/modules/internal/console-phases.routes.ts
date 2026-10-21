@@ -119,7 +119,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerSecurity(app);
   registerKyc(app);
   registerContracts(app);
-  registerQbr(app);
   registerGtm(app);
 }
 
@@ -378,29 +377,6 @@ function registerContracts(app: FastifyInstance) {
 
   app.get('/api/internal/contracts/msas', { preHandler: readPre('gtm.contracts.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'msaAgreement'), { orderBy: { createdAt: 'desc' } }));
-  });
-}
-
-function registerQbr(app: FastifyInstance) {
-  app.get('/api/internal/qbr', { preHandler: readPre('customer.qbr.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'qBRDeck'), { orderBy: { periodEnd: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/qbr/templates', { preHandler: readPre('customer.qbr.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'qBRTemplate'), { orderBy: { segment: 'asc' } }));
-  });
-
-  app.get('/api/internal/qbr/:tenantId', { preHandler: readPre('customer.qbr.read') }, async (request, reply) => {
-    const { tenantId } = request.params as RequestWithTenant;
-    const data = await delegate(app, 'qBRDeck').findMany({ where: { tenantId }, orderBy: { periodEnd: 'desc' }, take: 10 });
-    reply.send({ data });
-  });
-
-  app.post('/api/internal/qbr/:tenantId/generate', { preHandler: writePre('customer.qbr.write') }, async (request, reply) => {
-    const { tenantId } = request.params as RequestWithTenant;
-    const now = new Date();
-    const deck = await createAndAudit(request, delegate(app, 'qBRDeck'), { tenantId, periodStart: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000), periodEnd: now, status: 'DRAFT', html: '<h1>QBR</h1>', nextQbrAt: inDays(90) }, 'qbr.deck.generate', 'qbr_deck', stringValue(bodyObject(request).reason, 'Generate QBR deck'));
-    reply.status(201).send(deck);
   });
 }
 
