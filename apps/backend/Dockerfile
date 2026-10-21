@@ -6,7 +6,7 @@
 # pull a package someone else published under that name.
 
 # ── Stage 1: workspace manifests only, so `npm ci` stays cached until a package.json changes ──
-FROM node:20-alpine AS manifests
+FROM node:24-alpine AS manifests
 WORKDIR /src
 COPY . .
 RUN mkdir -p /out && for f in package.json package-lock.json apps/*/package.json packages/*/package.json; do \
@@ -14,7 +14,7 @@ RUN mkdir -p /out && for f in package.json package-lock.json apps/*/package.json
     done
 
 # ── Stage 2: install, generate, build ──
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 # Prisma picks its query engine from the OpenSSL it finds; match the runtime stage (openssl 3).
 RUN apk add --no-cache openssl
 WORKDIR /app
@@ -34,7 +34,7 @@ RUN npm run build --workspace=@fauward/internal-rbac --workspace=@fauward/intern
 RUN npm run build --workspace=@fauward/backend
 
 # ── Stage 3: runtime ──
-FROM node:20-alpine
+FROM node:24-alpine
 RUN apk add --no-cache openssl wget
 ENV NODE_ENV=production
 WORKDIR /app

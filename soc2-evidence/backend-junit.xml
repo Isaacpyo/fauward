@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="102" failures="0" errors="0" time="66.72">
+    <testsuite name="src/middleware/enforce-ip-blocks.test.ts" timestamp="2026-10-21T16:06:17.042Z" hostname="AGBOLA" tests="6" failures="0" errors="0" skipped="0" time="1.0306124">
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="enforceIpBlocks (WP-5.4) &gt; ACC-IP-1 a blocked IP gets 403 IP_BLOCKED on its scope only; health probes and vendor webhooks stay open" time="0.0381929">
+        </testcase>
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="enforceIpBlocks (WP-5.4) &gt; ACC-IP-2 an expired block stops applying without a restart or reload; a change reloads at once" time="0.0080765">
+        </testcase>
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="enforceIpBlocks (WP-5.4) &gt; ACC-IP-3 an address inside IP_BLOCK_BYPASS_CIDRS is never blocked; invalid entries fail at boot" time="0.0093263">
+        </testcase>
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="enforceIpBlocks (WP-5.4) &gt; a block list that cannot be read lets the request through (an unreachable database must not lock staff out)" time="0.0024912">
+        </testcase>
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="IP block enforcement (WP-5.4, real Postgres) &gt; ACC-IP-1 blocks from Postgres apply, an expired row does not, and hits are counted asynchronously in one write" time="0.1727953">
+        </testcase>
+        <testcase classname="src/middleware/enforce-ip-blocks.test.ts" name="IP block change announcements (WP-5.4, real Redis) &gt; ACC-IP-2 a published change invalidates every subscribed cache" time="0.493624">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/middleware/require-console-permission.test.ts" timestamp="2026-10-21T16:06:17.045Z" hostname="AGBOLA" tests="5" failures="0" errors="0" skipped="0" time="0.4947766">
+        <testcase classname="src/middleware/require-console-permission.test.ts" name="requireConsolePermission (D2) &gt; ACC-RBAC-1 a role without platform.health.read / platform.queues.read gets 403 naming the permission" time="0.4579584">
+        </testcase>
+        <testcase classname="src/middleware/require-console-permission.test.ts" name="requireConsolePermission (D2) &gt; ACC-RBAC-1 the same routes return 200 for a role that holds the permission" time="0.0097884">
+        </testcase>
+        <testcase classname="src/middleware/require-console-permission.test.ts" name="requireConsolePermission (D2) &gt; ACC-RBAC-2 an approved JIT grant for platform.tenants.suspend works until expiresAt, is listed by /auth/me, then 403" time="0.0163651">
+        </testcase>
+        <testcase classname="src/middleware/require-console-permission.test.ts" name="requireConsolePermission (D2) &gt; computes the permission context once per request" time="0.0084906">
+        </testcase>
+        <testcase classname="src/middleware/require-console-permission.test.ts" name="requireConsolePermission (D2) &gt; ACC-JIT-1 every staff role holds trust.jit.request" time="0.0010508">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/queues/scheduled.worker.test.ts" timestamp="2026-10-21T16:06:17.046Z" hostname="AGBOLA" tests="1" failures="0" errors="0" skipped="0" time="0.0088941">
+        <testcase classname="src/queues/scheduled.worker.test.ts" name="scheduled security anomaly scan &gt; registers the hourly job and creates anomaly evidence for failed login spikes" time="0.0080315">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/services/staff-iam.service.test.ts" timestamp="2026-10-21T16:06:17.046Z" hostname="AGBOLA" tests="3" failures="0" errors="0" skipped="0" time="0.0058976">
+        <testcase classname="src/services/staff-iam.service.test.ts" name="staff IAM service (S5) &gt; ACC-IAM-4 a revoked legacy-mapped role is not re-added for an existing staff user" time="0.003158">
+        </testcase>
+        <testcase classname="src/services/staff-iam.service.test.ts" name="staff IAM service (S5) &gt; ACC-IAM-5 ACC-IAM-8 resolving permissions never upserts staff roles" time="0.0005563">
+        </testcase>
+        <testcase classname="src/services/staff-iam.service.test.ts" name="staff IAM service (S5) &gt; never assigns roles when it creates the staff user; legacy mapping lives only in the 0039a backfill (D2)" time="0.0013294">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/services/tenant-close.service.test.ts" timestamp="2026-10-21T16:06:17.047Z" hostname="AGBOLA" tests="5" failures="0" errors="0" skipped="0" time="0.011779">
+        <testcase classname="src/services/tenant-close.service.test.ts" name="closeTenant (WP-1.2) &gt; ACC-TEN-7 requires the typed slug" time="0.0032227">
+        </testcase>
+        <testcase classname="src/services/tenant-close.service.test.ts" name="closeTenant (WP-1.2) &gt; ACC-TEN-7 is blocked by an active legal hold (409 LEGAL_HOLD_ACTIVE)" time="0.0008379">
+        </testcase>
+        <testcase classname="src/services/tenant-close.service.test.ts" name="closeTenant (WP-1.2) &gt; closes: CANCELLED, closedAt, purgeAfter = +90 days, a PLATFORM/OTHER suspension cause, admins notified; works without Stripe" time="0.004209">
+        </testcase>
+        <testcase classname="src/services/tenant-close.service.test.ts" name="closeTenant (WP-1.2) &gt; cancels the Stripe subscription at period end when configured; a Stripe failure is reported, not fatal" time="0.0021165">
+        </testcase>
+        <testcase classname="src/services/tenant-close.service.test.ts" name="closeTenant (WP-1.2) &gt; a second close is a 409" time="0.0004828">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/exceptions/escalation-loop.test.ts" timestamp="2026-10-21T16:06:17.048Z" hostname="AGBOLA" tests="3" failures="0" errors="0" skipped="0" time="0.7760101">
+        <testcase classname="src/modules/exceptions/escalation-loop.test.ts" name="L15 exception escalation loop (WP-2.11) &gt; ACC-L15-1 escalate → CRITICAL activity + staff bell → assign, reply, resolve → tenant sees the reply and status and is notified" time="0.7637052">
+        </testcase>
+        <testcase classname="src/modules/exceptions/escalation-loop.test.ts" name="L15 exception escalation loop (WP-2.11) &gt; tenants only reach their own exceptions; customers of the tenant cannot see or escalate them" time="0.006186">
+        </testcase>
+        <testcase classname="src/modules/exceptions/escalation-loop.test.ts" name="L15 exception escalation loop (WP-2.11) &gt; console escalation routes need platform.incidents.read / .write" time="0.0050658">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/audit-chain.test.ts" timestamp="2026-10-21T16:06:17.050Z" hostname="AGBOLA" tests="4" failures="0" errors="0" skipped="0" time="23.570453">
+        <testcase classname="src/modules/internal/audit-chain.test.ts" name="trust.audit chain (WP-5.1, real Postgres) &gt; ACC-AUD-5 100 concurrent audit writes produce 100 rows with a contiguous valid chain" time="12.1371828">
+        </testcase>
+        <testcase classname="src/modules/internal/audit-chain.test.ts" name="trust.audit chain (WP-5.1, real Postgres) &gt; ACC-AUD-6 tampering with one row&apos;s metadata makes verification fail at that seq" time="2.3973752">
+        </testcase>
+        <testcase classname="src/modules/internal/audit-chain.test.ts" name="trust.audit chain (WP-5.1, real Postgres) &gt; ACC-AUD-7 one console mutation writes exactly one audit row (5 routes, all three writer paths)" time="4.9700642">
+        </testcase>
+        <testcase classname="src/modules/internal/audit-chain.test.ts" name="trust.audit chain (WP-5.1, real Postgres) &gt; ACC-AUD-8 the nightly job records its result; a forced failure creates the CRITICAL activity and notifies audit readers" time="2.1053471">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/monitoring.test.ts" timestamp="2026-10-21T16:06:17.051Z" hostname="AGBOLA" tests="5" failures="0" errors="0" skipped="0" time="0.0332824">
+        <testcase classname="src/modules/internal/monitoring.test.ts" name="monitoring key (S8) &gt; ACC-SEC-1 without MONITORING_API_KEY in production the endpoints return 503" time="0.0231232">
+        </testcase>
+        <testcase classname="src/modules/internal/monitoring.test.ts" name="monitoring key (S8) &gt; ACC-SEC-1 an unset NODE_ENV also fails closed" time="0.0022065">
+        </testcase>
+        <testcase classname="src/modules/internal/monitoring.test.ts" name="monitoring key (S8) &gt; ACC-SEC-1 with the key, a wrong bearer gets 401 and the right one passes" time="0.0025276">
+        </testcase>
+        <testcase classname="src/modules/internal/monitoring.test.ts" name="monitoring key (S8) &gt; development without a key stays open (with a warning)" time="0.0014919">
+        </testcase>
+        <testcase classname="src/modules/internal/monitoring.test.ts" name="monitoring key (S8) &gt; every monitoring route is registered behind the key guard" time="0.0030146">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/routes/internal/iam.test.ts" timestamp="2026-10-21T16:06:17.052Z" hostname="AGBOLA" tests="19" failures="0" errors="0" skipped="0" time="0.2909831">
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; ACC-IAM-1 with DEV_HARDWARE_KEY_ASSERTION unset, granting ROOT returns 503 and the old literal does not work" time="0.1904872">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; ACC-IAM-1 ROOT JIT and the shared check never fall back to a literal assertion" time="0.004064">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; rejects ROOT role assignments without a hardware assertion" time="0.0079691">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; records a hardware-key fingerprint when granting persistent ROOT" time="0.013483">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; rejects ROOT user creation without a hardware assertion before creating records" time="0.0060848">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM ROOT grants (S2) &gt; the deprecated ROOT-equivalent SUPER_ADMIN role cannot be assigned" time="0.0052012">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM self-grant (S3) &gt; ACC-IAM-2 granting a role to the caller&apos;s own StaffUser id returns 403" time="0.0055262">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM self-grant (S3) &gt; ACC-IAM-2 revoking a role from the caller returns 403" time="0.0069079">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM staff lifecycle (S4) &gt; ACC-IAM-3 suspending a staff user disables the platform user and revokes every session in one transaction" time="0.0065821">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM staff lifecycle (S4) &gt; WP-1.0 every IAM mutation records exactly one PlatformActivity row (suspend in the same transaction)" time="0.0051865">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM staff lifecycle (S4) &gt; offboarding is final: reactivating an offboarded user returns 409" time="0.0040019">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM staff lifecycle (S4) &gt; PATCH cannot change status or MFA directly" time="0.0053683">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM dangerous actions (architecture §9.2) &gt; ACC-IAM-6 role assignment without a reason returns 400 REASON_REQUIRED" time="0.0035278">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM dangerous actions (architecture §9.2) &gt; ACC-IAM-6 role assignment with stale MFA returns 403 MFA_REQUIRED" time="0.0032097">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM dangerous actions (architecture §9.2) &gt; ACC-IAM-6 role assignment without trust.iam.write returns 403 with the permission" time="0.0022258">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM dangerous actions (architecture §9.2) &gt; every route in DANGEROUS_ROUTES is registered with fresh MFA and a reason guard" time="0.0108492">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM removed routes &gt; ACC-IAM-7 the Google SSO &quot;callback&quot; upsert route is gone (404)" time="0.002965">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM removed routes &gt; ACC-IAM-9 admin TOTP enrolment is gone (404) and MFA reset never returns a secret" time="0.0032634">
+        </testcase>
+        <testcase classname="src/routes/internal/iam.test.ts" name="IAM removed routes &gt; MFA reset cannot target the caller" time="0.0023988">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/routes/internal/rbac-matrix.test.ts" timestamp="2026-10-21T16:06:17.056Z" hostname="AGBOLA" tests="7" failures="0" errors="0" skipped="0" time="3.5863741">
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; ACC-RBAC-4 every console route has a permission guard or is in an explicit allowlist" time="0.0021497">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; ACC-RBAC-4 permission-guarded and session-only routes authenticate the console session first" time="0.0005341">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; ACC-RBAC-4 every dangerous route has CSRF, a permission, fresh MFA and a reason guard" time="0.0126769">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; mutating console routes are never guarded only by a read permission and always check CSRF" time="0.0006113">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; no console route uses a deferred permission (D1)" time="0.0002845">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="console RBAC matrix (architecture §4) &gt; route-index.ts lists exactly the registered console routes" time="0.0110439">
+        </testcase>
+        <testcase classname="src/routes/internal/rbac-matrix.test.ts" name="one console namespace (D2) &gt; ACC-RBAC-3 ACC-L15-2 no /api/v1/platform route remains (tracking and control-tower moved to /api/internal/operations in WP-2.11)" time="0.2480419">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/services/crypto/encrypted-columns.test.ts" timestamp="2026-10-21T16:06:17.058Z" hostname="AGBOLA" tests="2" failures="0" errors="0" skipped="0" time="3.0909105">
+        <testcase classname="src/services/crypto/encrypted-columns.test.ts" name="secrets at rest (WP-5.3, real Postgres) &gt; ACC-ENC-1 the at-rest scan finds no secret column without the v1: prefix on seeded data, and names a plaintext one by id" time="0.9470358">
+        </testcase>
+        <testcase classname="src/services/crypto/encrypted-columns.test.ts" name="secrets at rest (WP-5.3, real Postgres) &gt; ACC-ENC-2 after rotation every encrypted value carries the new key id and decrypts; removing the old key breaks nothing" time="1.2874204">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/services/crypto/field-encryption.test.ts" timestamp="2026-10-21T16:06:17.059Z" hostname="AGBOLA" tests="5" failures="0" errors="0" skipped="0" time="0.0057402">
+        <testcase classname="src/services/crypto/field-encryption.test.ts" name="field encryption (architecture §9.1) &gt; ACC-ENC-1 round-trips and produces v1 ciphertext that hides the plaintext" time="0.0026245">
+        </testcase>
+        <testcase classname="src/services/crypto/field-encryption.test.ts" name="field encryption (architecture §9.1) &gt; decrypts values written with a non-active key (rotation)" time="0.0003693">
+        </testcase>
+        <testcase classname="src/services/crypto/field-encryption.test.ts" name="field encryption (architecture §9.1) &gt; throws on a tampered ciphertext" time="0.000893">
+        </testcase>
+        <testcase classname="src/services/crypto/field-encryption.test.ts" name="field encryption (architecture §9.1) &gt; throws on an unknown key id" time="0.0002984">
+        </testcase>
+        <testcase classname="src/services/crypto/field-encryption.test.ts" name="field encryption (architecture §9.1) &gt; fails production boot without keys and passes with them" time="0.0005533">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/auth/console-auth.test.ts" timestamp="2026-10-21T16:06:17.060Z" hostname="AGBOLA" tests="11" failures="0" errors="0" skipped="0" time="2.3057329">
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-1 login returns ENROLL for an unenrolled user and every non-allowlisted call is MFA_PENDING" time="0.4064641">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-1 login returns VERIFY for an enrolled user" time="0.2747331">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-2 enrol start → confirm stores v1 ciphertext, sets mfaVerifiedAt and re-issues a token with permissions" time="0.2948537">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-2 verify decrypts the stored secret and re-issues the token with permissions (C3)" time="0.2628698">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-3 five wrong codes hit the rate limit" time="0.2659848">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="console auth — WP-0.1 &gt; ACC-AUTH-3 the tenth failure within 15 minutes revokes the session" time="0.259622">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="suspended staff — WP-0.4 &gt; ACC-IAM-3 after suspension the next request returns 401 and refresh returns 401" time="0.2607333">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="fresh MFA guard — WP-0.1 &gt; ACC-AUTH-4 a session verified 11 minutes ago gets 403 MFA_REQUIRED with stepUp" time="0.0042553">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="fresh MFA guard — WP-0.1 &gt; ACC-AUTH-4 an unenrolled user gets 403 MFA_ENROLLMENT_REQUIRED" time="0.0007178">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="fresh MFA guard — WP-0.1 &gt; ACC-AUTH-4 a session verified 2 minutes ago passes" time="0.0005131">
+        </testcase>
+        <testcase classname="src/modules/internal/auth/console-auth.test.ts" name="TOTP backfill — WP-0.1 &gt; ACC-AUTH-5 encrypts plaintext secrets and a second run changes nothing" time="0.0080921">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/platform/escalations.auth.test.ts" timestamp="2026-10-21T16:06:17.062Z" hostname="AGBOLA" tests="1" failures="0" errors="0" skipped="0" time="1.4877461">
+        <testcase classname="src/modules/internal/platform/escalations.auth.test.ts" name="operations routes on console auth (WP-2.11) &gt; ACC-L15-2 a legacy SUPER_ADMIN tenant JWT is 401 on every moved route and nothing is queried" time="1.4869186">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/platform/incidents.test.ts" timestamp="2026-10-21T16:06:17.063Z" hostname="AGBOLA" tests="6" failures="0" errors="0" skipped="0" time="13.6264152">
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; ACC-INC-1 create → tag tenant → public update: the impacted tenant’s banner shows it, another tenant’s does not" time="4.3629935">
+        </testcase>
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; ACC-INC-2 resolve expires the announcement and records the postmortem" time="1.7799157">
+        </testcase>
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; ACC-INC-3 a signed PagerDuty webhook upserts by vendorId; unsigned or forged ones are refused" time="1.1814019">
+        </testcase>
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; ACC-INC-4 runbook CRUD, slug uniqueness and linking to an incident" time="2.308309">
+        </testcase>
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; ACC-INC-5 a SEV1 notifies every holder of platform.incidents.read (bell + email); others get nothing" time="1.6833721">
+        </testcase>
+        <testcase classname="src/modules/internal/platform/incidents.test.ts" name="platform.incidents (WP-4.2, real Postgres) &gt; guards and validation: read-only staff cannot write, invalid severity → 400, unknown incident → 404" time="0.0243892">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/trust/compliance.test.ts" timestamp="2026-10-21T16:06:17.064Z" hostname="AGBOLA" tests="7" failures="0" errors="0" skipped="0" time="0.3686033">
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-1 a tenant admin can request ERASURE; staff are told and the request is queued with a due date" time="0.3017575">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-2 ACC-L4-1 ACCESS round trip: the bundle holds exactly the subject’s rows and the tenant downloads it once" time="0.0182888">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-3 the download needs a tenant admin session and the token; an expired token is refused" time="0.0100108">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-4 ACC-DSAR-6 ACC-L4-2 erasure is blocked by a hold, unblocked by its release, then anonymises only the subject" time="0.0128728">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-4 a hold placed after the erase was queued stops the job before anything changes" time="0.0091161">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; ACC-DSAR-5 an overdue request raises one ATTENTION activity and one staff notification" time="0.0103158">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/compliance.test.ts" name="trust.compliance (WP-2.5) &gt; delivery and erasure are dangerous: stale MFA → 403, no reason → 400; ERASURE is never delivered" time="0.0051198">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/trust/jit.test.ts" timestamp="2026-10-21T16:06:17.066Z" hostname="AGBOLA" tests="9" failures="0" errors="0" skipped="0" time="0.1808164">
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-1 every role holds trust.jit.request and a support-level user can request; approvers other than the requester are notified" time="0.1260358">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-1 enforces the catalogue request rules: reason ≥ 20, duration ≤ 240, ROOT ≤ 60 with a hardware assertion" time="0.0111692">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-2 the requester cannot approve their own request, by PlatformUser id or by StaffUser id" time="0.004371">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-3 an approval is in the effective permissions (/auth/me) on the next call and unlocks the matching route" time="0.0061378">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-3 a ROOT request needs two distinct approvers before it is granted" time="0.0045338">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-4 expiry revokes: after expiresAt the grant is gone from the permissions and the route locks again" time="0.0062617">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-4 revoking ends the grant immediately; the requester may end their own, others need trust.jit.approve" time="0.0087811">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; ACC-JIT-5 a deny needs a reason and that reason reaches the requester (notification and /jit/sessions/my)" time="0.0051389">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/jit.test.ts" name="trust.jit routes (WP-1.7) &gt; the queue and history need trust.jit.approve; /jit/sessions/my only needs trust.jit.request" time="0.0071062">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/modules/internal/trust/legal-hold.test.ts" timestamp="2026-10-21T16:06:17.068Z" hostname="AGBOLA" tests="3" failures="0" errors="0" skipped="0" time="5.8256371">
+        <testcase classname="src/modules/internal/trust/legal-hold.test.ts" name="legal holds (WP-5.2, real Postgres) &gt; ACC-LH-1 a tenant-specific hold blocks that tenant&apos;s DELETEs, erasure and close, and no other tenant&apos;s" time="2.4199721">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/legal-hold.test.ts" name="legal holds (WP-5.2, real Postgres) &gt; ACC-LH-2 a hold on every tenant requires an approved JIT ROOT session; a tenantless hold without the flag is rejected and never blocks" time="0.8134916">
+        </testcase>
+        <testcase classname="src/modules/internal/trust/legal-hold.test.ts" name="legal holds (WP-5.2, real Postgres) &gt; ACC-LH-3 releasing a hold records who, when and why, and unblocks deletes and erasure" time="1.0889719">
+        </testcase>
+    </testsuite>
+</testsuites>

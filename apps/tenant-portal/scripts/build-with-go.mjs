@@ -11,11 +11,14 @@ const goDist = resolve(goDir, "dist");
 const tenantGoDist = resolve(tenantDir, "dist/go");
 const npm = "npm";
 
+// Windows needs a shell to resolve npm.cmd. Node 24 deprecates args + shell (DEP0190),
+// so on Windows pass one command string; the args here are fixed literals.
 function run(command, args, options = {}) {
-  execFileSync(command, args, {
+  const useShell = process.platform === "win32";
+  execFileSync(useShell ? [command, ...args].join(" ") : command, useShell ? [] : args, {
     cwd: options.cwd ?? repoRoot,
     env: options.env ?? process.env,
-    shell: process.platform === "win32",
+    shell: useShell,
     stdio: "inherit",
   });
 }

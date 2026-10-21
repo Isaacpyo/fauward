@@ -1,0 +1,68 @@
+<testsuites id="" name="" tests="27" failures="0" skipped="0" errors="0" time="37.011070999999994">
+<testsuite name="console-rbac.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="3" failures="0" skipped="0" time="30.926" errors="0">
+<testcase name="ACC-RBAC-1 /platform/health without platform.health.read shows access denied with &quot;Request access&quot;, not an empty table" classname="console-rbac.spec.ts" time="10.251">
+</testcase>
+<testcase name="ACC-RBAC-1 /platform/queues without platform.queues.read shows access denied with &quot;Request access&quot;, not an empty table" classname="console-rbac.spec.ts" time="10.411">
+</testcase>
+<testcase name="ACC-JIT-6 a failed access request shows the API error in the dialog" classname="console-rbac.spec.ts" time="10.264">
+</testcase>
+</testsuite>
+<testsuite name="trust-audit-tenant-events.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="1" failures="0" skipped="0" time="10.207" errors="0">
+<testcase name="ACC-L17-1 tenant audit events: pick a tenant, filter by action, load more" classname="trust-audit-tenant-events.spec.ts" time="10.207">
+</testcase>
+</testsuite>
+<testsuite name="trust-audit.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="6" failures="0" skipped="0" time="41.886" errors="0">
+<testcase name="ACC-AUD-1 typing in the search sends at most one request per 300 ms, with the final text" classname="trust-audit.spec.ts" time="11.246">
+</testcase>
+<testcase name="ACC-AUD-2 Load more pages past the first 50 entries with the server cursor" classname="trust-audit.spec.ts" time="10.204">
+</testcase>
+<testcase name="ACC-AUD-3 actor, action, tenant and date filters are sent together and survive reload" classname="trust-audit.spec.ts" time="11.129">
+</testcase>
+<testcase name="ACC-AUD-4 export sends the current filters with a reason and offers the download" classname="trust-audit.spec.ts" time="3.304">
+</testcase>
+<testcase name="ACC-AUD-4 without trust.audit.export the export button is disabled with the permission named" classname="trust-audit.spec.ts" time="2.927">
+</testcase>
+<testcase name="ACC-AUD-8 integrity page shows the last nightly run; Verify now records a run and shows where the chain breaks" classname="trust-audit.spec.ts" time="3.076">
+</testcase>
+</testsuite>
+<testsuite name="trust-compliance.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="5" failures="0" skipped="0" time="26.095" errors="0">
+<testcase name="ACC-DSAR-5 the queue shows overdue requests; ACC-L4-1 an approved ACCESS request is delivered with a reason" classname="trust-compliance.spec.ts" time="3.66">
+</testcase>
+<testcase name="ACC-DSAR-4 erasure under an active hold shows the banner and the API&apos;s 409 in the dialog" classname="trust-compliance.spec.ts" time="2.894">
+</testcase>
+<testcase name="ACC-DSAR-6 a legal hold is released with a reason" classname="trust-compliance.spec.ts" time="5.413">
+</testcase>
+<testcase name="ACC-LH-2 a hold on every tenant is sent as appliesToAllTenants and the API&apos;s JIT ROOT refusal shows in the dialog" classname="trust-compliance.spec.ts" time="5.613">
+</testcase>
+<testcase name="WP-2.5 read-only staff cannot act; a failing queue shows the API error" classname="trust-compliance.spec.ts" time="8.515">
+</testcase>
+</testsuite>
+<testsuite name="trust-jit.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="8" failures="0" skipped="0" time="25.818" errors="0">
+<testcase name="ACC-JIT-1 a requester picks a permission, gives a reason and sends the request" classname="trust-jit.spec.ts" time="3.951">
+</testcase>
+<testcase name="ACC-JIT-6 a rejected request shows the API error on the request page" classname="trust-jit.spec.ts" time="3.744">
+</testcase>
+<testcase name="ACC-JIT-5 the requester sees the deny reason in their requests" classname="trust-jit.spec.ts" time="3.39">
+</testcase>
+<testcase name="ACC-JIT-2 an approver cannot approve or deny their own request" classname="trust-jit.spec.ts" time="3.265">
+</testcase>
+<testcase name="ACC-JIT-3 approving sends the reason and refreshes the session; the grant shows in the elevated-access banner" classname="trust-jit.spec.ts" time="2.656">
+</testcase>
+<testcase name="ACC-JIT-5 denying requires a reason that is sent to the requester" classname="trust-jit.spec.ts" time="2.65">
+</testcase>
+<testcase name="ACC-JIT-4 an approver ends an active grant with a reason" classname="trust-jit.spec.ts" time="3.07">
+</testcase>
+<testcase name="ACC-JIT-1 a requester without approve sees access denied on the queue, with Request access" classname="trust-jit.spec.ts" time="3.092">
+</testcase>
+</testsuite>
+<testsuite name="trust-security.spec.ts" timestamp="2026-10-21T16:06:33.027Z" hostname="chromium" tests="4" failures="0" skipped="0" time="12.716" errors="0">
+<testcase name="ACC-SECM-1 an anomaly is acknowledged and resolved with a note" classname="trust-security.spec.ts" time="3.223">
+</testcase>
+<testcase name="staff logins list attempts and say tenant sign-ins are not recorded" classname="trust-security.spec.ts" time="2.802">
+</testcase>
+<testcase name="ACC-SECM-2 blocking an IP sends address, scope, expiry and reason; the page says blocks are enforced (WP-5.4)" classname="trust-security.spec.ts" time="3.399">
+</testcase>
+<testcase name="ACC-SECM-3 revoking another staff member&apos;s session sends the reason; your own session cannot be revoked here" classname="trust-security.spec.ts" time="3.292">
+</testcase>
+</testsuite>
+</testsuites>

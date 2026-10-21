@@ -21,7 +21,7 @@ The backend is the engine behind everything in Fauward. It handles:
 
 | Concern | Technology |
 |---|---|
-| Runtime | Node 20, TypeScript |
+| Runtime | Node 24, TypeScript |
 | Framework | Fastify |
 | Database | PostgreSQL 15 (Supabase) via Prisma ORM |
 | Cache / Streams | Redis (Upstash) — rate limiting, tracking streams, SMS quotas |
