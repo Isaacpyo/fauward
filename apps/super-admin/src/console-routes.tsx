@@ -63,6 +63,7 @@ import { AuditTimelinePage } from "@/pillars/trust/audit/AuditTimelinePage";
 import { TenantAuditEventsPage } from "@/pillars/trust/audit/TenantAuditEventsPage";
 import { GroupsPage } from "@/pillars/trust/iam/GroupsPage";
 import { KycQueuePage, KycReviewPage, ScreeningsPage } from "@/pillars/trust/kyc/KycPages";
+import { AnomaliesPage, IpBlocksPage, LoginsPage, SessionsPage } from "@/pillars/trust/security/SecurityPages";
 import { ExpiringPage, SecretDetailPage, SecretsInventoryPage } from "@/pillars/trust/secrets/SecretsPages";
 import { JitActivePage } from "@/pillars/trust/jit/JitActivePage";
 import { JitHistoryPage } from "@/pillars/trust/jit/JitHistoryPage";
@@ -343,11 +344,11 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/secrets", element: <PermissionRoute permission="trust.secrets.read"><SecretsInventoryPage /></PermissionRoute> },
   { path: "/trust/secrets/expiring", element: <PermissionRoute permission="trust.secrets.read"><ExpiringPage /></PermissionRoute> },
   { path: "/trust/secrets/:id", element: <PermissionRoute permission="trust.secrets.read"><SecretDetailPage /></PermissionRoute> },
-  { path: "/trust/security", element: <Navigate to="/trust/security/anomalies" replace /> },
-  { path: "/trust/security/anomalies", element: <OpsRoute permission="trust.security.read" title="Security Anomalies" description="Anomaly detection queue built on platform audit and login telemetry." endpoint="/security/anomalies" /> },
-  { path: "/trust/security/logins", element: <OpsRoute permission="trust.security.read" title="Login Monitoring" description="Staff login successes, failures and lockout signals." endpoint="/security/logins" /> },
-  { path: "/trust/security/ip-blocks", element: <OpsRoute permission="trust.security.read" title="IP Blocks" description="Blocked IP addresses from security monitoring." endpoint="/security/ip-blocks" /> },
-  { path: "/trust/security/sessions", element: <OpsRoute permission="trust.security.read" title="Staff Sessions" description="Active staff sessions with revocation support." endpoint="/security/sessions" /> },
+  { path: "/trust/security", element: <PermissionRoute permission="trust.security.read"><AnomaliesPage /></PermissionRoute> },
+  { path: "/trust/security/anomalies", element: <PermissionRoute permission="trust.security.read"><AnomaliesPage /></PermissionRoute> },
+  { path: "/trust/security/logins", element: <PermissionRoute permission="trust.security.read"><LoginsPage /></PermissionRoute> },
+  { path: "/trust/security/ip-blocks", element: <PermissionRoute permission="trust.security.read"><IpBlocksPage /></PermissionRoute> },
+  { path: "/trust/security/sessions", element: <PermissionRoute permission="trust.security.read"><SessionsPage /></PermissionRoute> },
   { path: "/trust/kyc", element: <PermissionRoute permission="trust.kyc.read"><KycQueuePage /></PermissionRoute> },
   { path: "/trust/kyc/:id", element: <PermissionRoute permission="trust.kyc.read"><KycReviewPage /></PermissionRoute> },
   { path: "/trust/kyc/sanctions", element: <PermissionRoute permission="trust.kyc.read"><ScreeningsPage /></PermissionRoute> },

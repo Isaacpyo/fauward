@@ -101,13 +101,13 @@ test("ACC-MAN-4 deferred services show ComingSoonPage and are absent from the si
 });
 
 test("ACC-MAN-4 a preview service keeps a Preview sidebar entry", async ({ page }) => {
-  await page.goto("/trust/security");
-  const entry = page.locator('aside nav a[href="/trust/security"]');
+  await page.goto("/gtm/pipeline");
+  const entry = page.locator('aside nav a[href="/gtm/pipeline"]');
   await expect(entry).toContainText("Preview");
 });
 
 test("preview service pages carry the PreviewBanner; the live IAM service does not", async ({ page }) => {
-  await page.goto("/trust/security");
+  await page.goto("/gtm/pipeline");
   await expect(page.getByTestId("preview-banner")).toBeVisible();
   await page.goto("/trust/iam/users");
   await expect(page.getByTestId("preview-banner")).toHaveCount(0);

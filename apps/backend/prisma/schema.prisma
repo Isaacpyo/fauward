@@ -2931,31 +2931,39 @@ model StaffLoginAttempt {
   @@map("staff_login_attempts")
 }
 
+/// trust.security (WP-4.11): status OPEN → ACKNOWLEDGED → RESOLVED (resolution note required).
 model SecurityAnomaly {
-  id          String   @id @default(uuid())
-  anomalyType String
-  severity    String   @default("MEDIUM")
-  actorId     String?
-  tenantId    String?
-  status      String   @default("OPEN")
-  payload     Json?
-  resolvedBy  String?
-  resolvedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             String    @id @default(uuid())
+  anomalyType    String
+  severity       String    @default("MEDIUM")
+  actorId        String?
+  tenantId       String?
+  status         String    @default("OPEN")
+  payload        Json?
+  resolvedBy     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolutionNote String?
 
   @@index([status, createdAt])
   @@index([actorId, createdAt])
   @@map("security_anomalies")
 }
 
+/// trust.security (WP-4.11, 0071): scope ALL | CONSOLE | TENANT_API; enforcement (and hitCount/lastHitAt) lands in WP-5.4.
 model IpBlock {
-  id        String   @id @default(uuid())
-  ipAddress String   @unique
+  id        String    @id @default(uuid())
+  ipAddress String    @unique
   reason    String
   expiresAt DateTime?
   createdBy String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  scope     String    @default("ALL")
+  hitCount  Int       @default(0)
+  lastHitAt DateTime?
 
   @@index([expiresAt])
   @@map("ip_blocks")

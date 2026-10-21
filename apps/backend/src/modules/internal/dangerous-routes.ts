@@ -62,6 +62,10 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/compliance/legal-holds/:id/release' },
   // customer.comms (WP-2.14): delete only before any receipt
   { method: 'DELETE', url: '/api/internal/announcements/:id' },
+  // trust.security (WP-4.11)
+  { method: 'POST', url: '/api/internal/security/ip-blocks' },
+  { method: 'DELETE', url: '/api/internal/security/ip-blocks/:id' },
+  { method: 'POST', url: '/api/internal/security/sessions/:id/revoke' },
   // trust.kyc (WP-4.10)
   { method: 'POST', url: '/api/internal/kyc/reviews/:id/decision' },
   { method: 'POST', url: '/api/internal/kyc/screenings/:id/decision' },

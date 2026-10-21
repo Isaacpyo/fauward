@@ -28,6 +28,7 @@ import { registerConsoleTaxRoutes } from './revenue/tax.routes.js';
 import { registerConsoleSuccessRoutes } from './customer/success.routes.js';
 import { registerConsoleQbrRoutes } from './customer/qbr.routes.js';
 import { registerConsoleKycRoutes } from './trust/kyc.routes.js';
+import { registerConsoleSecurityRoutes } from './trust/security.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
@@ -62,6 +63,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleSuccessRoutes(app);
   await registerConsoleQbrRoutes(app);
   await registerConsoleKycRoutes(app);
+  await registerConsoleSecurityRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);

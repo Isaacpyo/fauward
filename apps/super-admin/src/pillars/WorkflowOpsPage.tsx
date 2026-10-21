@@ -38,7 +38,6 @@ type WorkflowAction = {
 const WORKFLOW_PREFIXES = [
   "/announcements",
   "/flags",
-  "/security",
   "/contracts",
   "/trials",
   "/demos"
@@ -127,36 +126,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           expiresAt: values.expiresAt || undefined,
           dismissible: true
         })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/security")) {
-    return [
-      {
-        id: "block",
-        label: "Block IP",
-        description: "Add an IP block from the security console.",
-        method: "post",
-        path: () => "/security/ip-blocks",
-        fields: [
-          { name: "ipAddress", label: "IP Address", required: true },
-          { name: "expiresAt", label: "Expires At", type: "date" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Manual block" }
-        ],
-        payload: (values) => ({ ipAddress: values.ipAddress, expiresAt: values.expiresAt || undefined, reason: values.reason })
-      },
-      {
-        id: "revoke",
-        label: "Revoke Staff Session",
-        description: "Force an active staff session to re-authenticate.",
-        method: "post",
-        path: (values) => `/security/sessions/${encodeURIComponent(values.sessionId)}/revoke`,
-        fields: [
-          { name: "sessionId", label: "Session ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Session revoked" }
-        ],
-        payload: (values) => ({ reason: values.reason })
       }
     ];
   }

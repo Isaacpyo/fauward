@@ -116,48 +116,8 @@ async function updateAndAudit(
 }
 
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
-  registerSecurity(app);
   registerContracts(app);
   registerGtm(app);
-}
-
-function registerSecurity(app: FastifyInstance) {
-  app.get('/api/internal/security/anomalies', { preHandler: readPre('trust.security.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'securityAnomaly'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/security/logins', { preHandler: readPre('trust.security.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'staffLoginAttempt'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/security/ip-blocks', { preHandler: readPre('trust.security.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'ipBlock'), { orderBy: { createdAt: 'desc' } }));
-  });
-
-  app.post('/api/internal/security/ip-blocks', { preHandler: writePre('trust.security.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const ipAddress = stringValue(body.ipAddress);
-    if (!ipAddress) return reply.status(400).send({ error: 'ipAddress is required' });
-    const block = await createAndAudit(request, delegate(app, 'ipBlock'), { ipAddress, reason: stringValue(body.reason, 'Manual block'), expiresAt: body.expiresAt ? dateValue(body.expiresAt) : null, createdBy: actorId(request) }, 'security.ip_block.create', 'ip_block', stringValue(body.reason, 'Manual block'));
-    reply.status(201).send(block);
-  });
-
-  app.get('/api/internal/security/sessions', { preHandler: readPre('trust.security.read') }, async (_request, reply) => {
-    const data = await app.prisma.staffSession.findMany({ where: { revokedAt: null, expiresAt: { gt: new Date() } }, include: { staff: true }, orderBy: { startedAt: 'desc' }, take: 100 });
-    reply.send({ data });
-  });
-
-  app.post('/api/internal/security/sessions/:id/revoke', { preHandler: writePre('trust.security.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const before = await app.prisma.staffSession.findUnique({ where: { id } });
-    if (!before) return reply.status(404).send({ error: 'Staff session not found' });
-    const after = await app.prisma.staffSession.update({ where: { id }, data: { revokedAt: new Date() } });
-    if (before.platformSessionId) {
-      await app.prisma.platformSession.updateMany({ where: { id: before.platformSessionId, revokedAt: null }, data: { revokedAt: new Date() } });
-    }
-    await writeInternalAudit(request, 'security.session.revoke', 'staff_session', id, before, after, stringValue(bodyObject(request).reason, 'Session revoked'));
-    reply.send(after);
-  });
 }
 
 function registerContracts(app: FastifyInstance) {
