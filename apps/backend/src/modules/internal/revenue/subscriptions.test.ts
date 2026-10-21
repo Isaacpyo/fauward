@@ -180,13 +180,11 @@ beforeEach(async () => {
   const { registerConsoleSubscriptionRoutes } = await import('./subscriptions.routes.js');
   const { registerPlanChangeRoutes } = await import('../../tenants/plan-change.routes.js');
   const { registerPaymentsRoutes } = await import('../../payments/payments.routes.js');
-  const { registerInternalConsolePhaseRoutes } = await import('../console-phases.routes.js');
   const { registerConsoleDunningRoutes } = await import('./dunning.routes.js');
   await registerConsoleSubscriptionRoutes(app);
   await registerConsoleDunningRoutes(app);
   await registerPlanChangeRoutes(app);
   await registerPaymentsRoutes(app);
-  await registerInternalConsolePhaseRoutes(app);
   await app.ready();
 });
 

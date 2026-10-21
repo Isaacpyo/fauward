@@ -88,7 +88,10 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/billing/credit-notes' },
   { method: 'POST', url: '/api/internal/billing/refunds' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },
-  { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' }
+  { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' },
+  // gtm.contracts (WP-4.19)
+  { method: 'POST', url: '/api/internal/contracts/approvals/:id/decision' },
+  { method: 'POST', url: '/api/internal/contracts/quotes/:id/accept' }
 ] as const;
 
 export type DangerousRoute = (typeof DANGEROUS_ROUTES)[number];

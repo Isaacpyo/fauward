@@ -73,6 +73,7 @@ import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
 import { AttributionPage } from "@/pillars/gtm/attribution/AttributionPage";
 import { CreateDemoPage, DemoDetailPage, DemoTemplatesPage, DemosPage } from "@/pillars/gtm/demos/DemosPages";
+import { ApprovalsPage, DiscountsPage, MsasPage, QuoteEditorPage, QuotesPage } from "@/pillars/gtm/contracts/ContractsPages";
 import { DealDetailPage, ForecastPage, PipelineBoardPage } from "@/pillars/gtm/pipeline/PipelinePages";
 import { HandoffDetailPage, HandoffQueuePage, HandoffTemplatePage, WonPage } from "@/pillars/gtm/handoff/HandoffPages";
 import { ExtensionsPage, TrialDetailPage, TrialsExpiringPage, TrialsPage } from "@/pillars/gtm/trials/TrialsPages";
@@ -379,10 +380,12 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/handoff/templates", element: <PermissionRoute permission="gtm.handoff.read"><HandoffTemplatePage /></PermissionRoute> },
   { path: "/gtm/handoff/:id", element: <PermissionRoute permission="gtm.handoff.read"><HandoffDetailPage /></PermissionRoute> },
   { path: "/gtm/pricing", element: <ComingSoonRoute serviceKey="gtm.pricing" /> },
-  { path: "/gtm/contracts/quotes", element: <OpsRoute permission="gtm.contracts.read" title="Quote Builder" description="CPQ quotes, discount approvals and DocuSign handoff." endpoint="/contracts/quotes" related={[{ label: "Discounts", to: "/gtm/contracts/discounts" }, { label: "MSAs", to: "/gtm/contracts/msas" }]} /> },
+  { path: "/gtm/contracts/quotes", element: <PermissionRoute permission="gtm.contracts.read"><QuotesPage /></PermissionRoute> },
+  { path: "/gtm/contracts/quotes/new", element: <PermissionRoute permission="gtm.contracts.write"><QuoteEditorPage /></PermissionRoute> },
   { path: "/gtm/contracts", element: <Navigate to="/gtm/contracts/quotes" replace /> },
-  { path: "/gtm/contracts/quotes/:id", element: <OpsRoute permission="gtm.contracts.read" title="Quote Detail" description="Quote approval and signature state." endpoint="/contracts/quotes/:id" /> },
-  { path: "/gtm/contracts/discounts", element: <OpsRoute permission="gtm.contracts.read" title="Discount Approvals" description="Quotes waiting for manager or CFO discount approval." endpoint="/contracts/discounts" /> },
-  { path: "/gtm/contracts/msas", element: <OpsRoute permission="gtm.contracts.read" title="MSA Repository" description="Signed master service agreements and renewal metadata." endpoint="/contracts/msas" /> },
+  { path: "/gtm/contracts/quotes/:id", element: <PermissionRoute permission="gtm.contracts.read"><QuoteEditorPage /></PermissionRoute> },
+  { path: "/gtm/contracts/approvals", element: <PermissionRoute permission="gtm.contracts.read"><ApprovalsPage /></PermissionRoute> },
+  { path: "/gtm/contracts/discounts", element: <PermissionRoute permission="gtm.contracts.read"><DiscountsPage /></PermissionRoute> },
+  { path: "/gtm/contracts/msas", element: <PermissionRoute permission="gtm.contracts.read"><MsasPage /></PermissionRoute> },
   { path: "/gtm/partners", element: <ComingSoonRoute serviceKey="gtm.partners" /> },
 ];

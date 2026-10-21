@@ -312,8 +312,11 @@ export async function advanceRun(app: ExecApp, runId: string, now = new Date()) 
   }
 }
 
-async function recentlyStarted(app: ExecApp, playbookId: string, tenantId: string, since: Date) {
-  return Boolean(await app.prisma.cSPlaybookRun.findFirst({ where: { playbookId, tenantId, createdAt: { gte: since } }, select: { id: true } }));
+/** Tenants (of `tenantIds`) where this playbook already started since `since`; one query for the whole match list. */
+async function recentlyStarted(app: ExecApp, playbookId: string, tenantIds: string[], since: Date) {
+  if (tenantIds.length === 0) return new Set<string>();
+  const rows = await app.prisma.cSPlaybookRun.findMany({ where: { playbookId, tenantId: { in: tenantIds }, createdAt: { gte: since } }, select: { tenantId: true }, distinct: ['tenantId'] });
+  return new Set(rows.map((row) => row.tenantId));
 }
 
 /** Latest score per tenant (one query; tenants scored at least once). */
@@ -351,8 +354,10 @@ export async function runPlaybookExecutor(app: ExecApp, now = new Date()) {
   let started = 0;
   for (const playbook of playbooks) {
     const cooldown = new Date(now.getTime() - TRIGGER_COOLDOWN_DAYS * DAY_MS);
-    for (const tenantId of await triggerMatches(app, playbook, now)) {
-      if (await recentlyStarted(app, playbook.id, tenantId, cooldown)) continue;
+    const matches = await triggerMatches(app, playbook, now);
+    const already = await recentlyStarted(app, playbook.id, matches, cooldown);
+    for (const tenantId of matches) {
+      if (already.has(tenantId)) continue;
       try {
         await startRun(app, playbook, tenantId, { trigger: playbook.trigger, startedBy: null });
         started += 1;
@@ -386,7 +391,7 @@ export async function successOverview(app: Pick<FastifyInstance, 'prisma'>) {
     .filter(([, list]) => list.length >= 2)
     .map(([tenantId, list]) => ({ tenantId, score: list[0].score, previous: list[1].score, change: list[0].score - list[1].score, computedAt: list[0].computedAt.toISOString() }))
     .filter((row) => row.change !== 0)
-    .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+    .sort((a, b) => Math.abs(b.change) - Math.abs(a.change) || b.computedAt.localeCompare(a.computedAt))
     .slice(0, 10);
   const refs = await tenantRefs(app, movers.map((row) => row.tenantId));
   const lastRun = await app.prisma.scheduledJobRun.findFirst({ where: { jobName: 'customer.health-scoring' }, orderBy: { startedAt: 'desc' }, select: { status: true, startedAt: true } });
@@ -440,15 +445,21 @@ export async function expansionCandidates(app: Pick<FastifyInstance, 'prisma'>, 
   const shipments = new Map(usage.map((row) => [row.tenantId, row.shipments]));
   const staff = tenants.length ? await app.prisma.user.groupBy({ by: ['tenantId'], where: { tenantId: { in: tenants.map((tenant) => tenant.id) }, isActive: true, role: { notIn: ['CUSTOMER_ADMIN', 'CUSTOMER_USER'] } }, _count: { _all: true } }) : [];
   const seats = new Map(staff.map((row) => [row.tenantId, row._count._all]));
-  const data = [];
-  for (const tenant of tenants) {
-    const limits = (await resolveTenantEntitlements(app.prisma, tenant, now)).limits;
-    const signals: Array<{ limit: string; used: number; of: number; ratio: number }> = [];
-    const used = shipments.get(tenant.id) ?? 0;
-    if (limits.maxShipmentsPm > 0 && used / limits.maxShipmentsPm > EXPANSION_RATIO) signals.push({ limit: 'shipments this month', used, of: limits.maxShipmentsPm, ratio: used / limits.maxShipmentsPm });
-    const seatCount = seats.get(tenant.id) ?? 0;
-    if (limits.maxStaff > 0 && seatCount / limits.maxStaff > EXPANSION_RATIO) signals.push({ limit: 'staff seats', used: seatCount, of: limits.maxStaff, ratio: seatCount / limits.maxStaff });
-    if (signals.length) data.push({ tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, plan: tenant.plan }, signals });
+  // A tenant with no shipments this month and no active staff cannot be over any limit, so its entitlements are not
+  // resolved; the rest resolve ten at a time instead of one query round-trip per tenant in sequence.
+  const candidates = tenants.filter((tenant) => (shipments.get(tenant.id) ?? 0) > 0 || (seats.get(tenant.id) ?? 0) > 0);
+  const data: Array<{ tenant: { id: string; name: string; slug: string; plan: string }; signals: Array<{ limit: string; used: number; of: number; ratio: number }> }> = [];
+  for (let index = 0; index < candidates.length; index += 10) {
+    const batch = candidates.slice(index, index + 10);
+    const resolved = await Promise.all(batch.map(async (tenant) => ({ tenant, limits: (await resolveTenantEntitlements(app.prisma, tenant, now)).limits })));
+    for (const { tenant, limits } of resolved) {
+      const signals: Array<{ limit: string; used: number; of: number; ratio: number }> = [];
+      const used = shipments.get(tenant.id) ?? 0;
+      if (limits.maxShipmentsPm > 0 && used / limits.maxShipmentsPm > EXPANSION_RATIO) signals.push({ limit: 'shipments this month', used, of: limits.maxShipmentsPm, ratio: used / limits.maxShipmentsPm });
+      const seatCount = seats.get(tenant.id) ?? 0;
+      if (limits.maxStaff > 0 && seatCount / limits.maxStaff > EXPANSION_RATIO) signals.push({ limit: 'staff seats', used: seatCount, of: limits.maxStaff, ratio: seatCount / limits.maxStaff });
+      if (signals.length) data.push({ tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, plan: tenant.plan }, signals });
+    }
   }
   return { data: data.sort((a, b) => Math.max(...b.signals.map((s) => s.ratio)) - Math.max(...a.signals.map((s) => s.ratio))), month, threshold: EXPANSION_RATIO };
 }

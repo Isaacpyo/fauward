@@ -64,26 +64,13 @@ vi.mock('../../services/staff-iam.service.js', () => ({
   })
 }));
 
-function delegate(overrides: Record<string, unknown> = {}) {
-  return {
-    findMany: vi.fn(async () => []),
-    findFirst: vi.fn(async () => null),
-    findUnique: vi.fn(async () => null),
-    create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'created_001', ...data })),
-    update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'updated_001', ...data })),
-    upsert: vi.fn(async (args: unknown) => ({ id: 'upserted_001', args })),
-    count: vi.fn(async () => 0),
-    ...overrides
-  };
-}
-
 async function buildApp(prisma: Record<string, unknown>) {
   const app = Fastify();
   app.decorate('prisma', prisma as never);
-  const { registerInternalConsolePhaseRoutes } = await import('../../modules/internal/console-phases.routes.js');
+  const { registerConsoleContractsRoutes } = await import('../../modules/internal/gtm/contracts.routes.js');
   const { registerConsoleKycRoutes } = await import('../../modules/internal/trust/kyc.routes.js');
-  await registerInternalConsolePhaseRoutes(app);
-  // The Persona and ComplyAdvantage webhooks moved to trust/kyc.routes.ts (WP-4.10); their signature checks stay here.
+  // The vendor webhooks live in their service modules (KYC WP-4.10, contracts WP-4.19); their signature checks stay here.
+  await registerConsoleContractsRoutes(app);
   await registerConsoleKycRoutes(app);
   return app;
 }
@@ -117,7 +104,7 @@ function complyAdvantageWebhookHeaders(secret: string, payload: unknown, timesta
   };
 }
 
-describe('internal console phase routes', () => {
+describe('vendor webhook signatures (Persona, ComplyAdvantage, DocuSign)', () => {
   beforeEach(() => {
     currentPermissions = [];
     currentRoles = ['FINANCE_ADMIN'];
@@ -132,43 +119,6 @@ describe('internal console phase routes', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
-  });
-
-  it('requires CFO-level permission for quote discounts over 25 percent', async () => {
-    currentPermissions = ['gtm.contracts.write', 'gtm.contracts.discount.large'];
-    const prisma = {
-      salesQuote: delegate({ findUnique: vi.fn(async () => ({ id: 'quote_001', discountPercent: '30' })) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/contracts/quotes/quote_001/approve', payload: { reason: 'large discount' } });
-
-    expect(response.statusCode).toBe(403);
-    expect(response.json()).toEqual({ error: 'CFO approval required', required: 'revenue.subscriptions.override' });
-  });
-
-  it('persists DocuSign completion webhooks and creates the signed contract', async () => {
-    process.env.DOCUSIGN_WEBHOOK_SECRET = 'ds_secret';
-    const salesQuote = delegate({
-      findFirst: vi.fn(async () => ({ id: 'quote_001', tenantId: 'tenant_001', plan: 'ENTERPRISE', termMonths: 12, customFeatures: ['sso'] })),
-      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'quote_001', ...data }))
-    });
-    const customContract = delegate();
-    const prisma = { salesQuote, customContract };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/contracts/webhooks/docusign',
-      headers: docusignWebhookHeaders('ds_secret', { envelopeId: 'env_001', status: 'completed', signedPdfS3Key: 'contracts/quote_001.pdf' }),
-      payload: { envelopeId: 'env_001', status: 'completed', signedPdfS3Key: 'contracts/quote_001.pdf' }
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(salesQuote.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SIGNED' }) }));
-    expect(customContract.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ tenantId: 'tenant_001', status: 'ACTIVE', msaUrl: 'contracts/quote_001.pdf' })
-    }));
   });
 
   it.each([

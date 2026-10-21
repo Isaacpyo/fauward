@@ -3125,14 +3125,20 @@ model PricingOverride {
   @@map("pricing_overrides")
 }
 
+/// gtm.contracts (WP-4.19, 0077): created PENDING when a submitted quote needs a large-discount approver; `approverId`
+/// is the staff member who decided (never the quote's author). `reasons` lists why approval was needed.
 model ContractApproval {
-  id         String   @id @default(uuid())
-  contractId String
-  approverId String
-  status     String   @default("PENDING")
-  conditions String?
-  approvedAt DateTime?
-  createdAt  DateTime @default(now())
+  id          String   @id @default(uuid())
+  contractId  String
+  quoteId     String?
+  approverId  String?
+  requestedBy String?
+  reasons     Json?
+  status      String   @default("PENDING")
+  conditions  String?
+  approvedAt  DateTime?
+  decidedAt   DateTime?
+  createdAt   DateTime @default(now())
 
   contract CustomContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
@@ -3140,38 +3146,64 @@ model ContractApproval {
   @@map("contract_approvals")
 }
 
+/// gtm.contracts (WP-4.19, 0077): DRAFT → (submit) PENDING_APPROVAL | APPROVED → SENT → ACCEPTED; REJECTED goes back to
+/// DRAFT on edit. Prices are major-unit Decimal(12,2): `listMonthly` (plan list price or entered for ENTERPRISE),
+/// `netMonthly` = list × (100 − discount) / 100. The signed PDF lives in the export storage adapter.
 model SalesQuote {
   id                 String   @id @default(uuid())
   tenantId           String?
   dealId             String?
   quoteNumber        String   @unique
   plan               String
+  billingCycle       String   @default("MONTHLY")
   termMonths         Int
   discountPercent    Decimal  @default(0) @db.Decimal(6, 2)
+  listMonthly        Decimal? @db.Decimal(12, 2)
+  netMonthly         Decimal? @db.Decimal(12, 2)
+  currency           String?
+  startDate          DateTime?
   customFeatures     Json?
+  notes              String?
+  signerName         String?
+  signerEmail        String?
   status             String   @default("DRAFT")
-  docusignEnvelopeId String?
+  contractId         String?
+  docusignEnvelopeId String?  @unique
   signedPdfS3Key     String?
+  signedPdfProvider  String?
+  signedPdfFileName  String?
   createdBy          String
   approvedBy         String?
+  submittedAt        DateTime?
+  sentAt             DateTime?
+  acceptedAt         DateTime?
+  acceptedBy         String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@index([tenantId, status])
   @@index([dealId])
+  @@index([status, createdAt])
   @@map("sales_quotes")
 }
 
+/// gtm.contracts (WP-4.19, 0077): written when a quote is accepted (manual signed-PDF upload or DocuSign completed).
 model MsaAgreement {
-  id            String   @id @default(uuid())
-  tenantId      String
-  signatureDate DateTime?
-  expiryDate    DateTime?
-  governingLaw  String?
-  renewalTerms  Json?
-  documentUrl   String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(uuid())
+  tenantId        String
+  quoteId         String?  @unique
+  contractId      String?
+  signedVia       String?
+  signatureDate   DateTime?
+  expiryDate      DateTime?
+  governingLaw    String?
+  renewalTerms    Json?
+  documentUrl     String?
+  storageProvider String?
+  storageKey      String?
+  fileName        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([tenantId])
   @@map("msa_agreements")

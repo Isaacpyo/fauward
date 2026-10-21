@@ -100,15 +100,18 @@ test("ACC-MAN-4 deferred services show ComingSoonPage and are absent from the si
   await expect(page.getByText("Nothing matches.")).toBeVisible();
 });
 
-test("ACC-MAN-4 a preview service keeps a Preview sidebar entry", async ({ page }) => {
-  await page.goto("/gtm/contracts");
-  const entry = page.locator('aside nav a[href="/gtm/contracts"]');
-  await expect(entry).toContainText("Preview");
+test("ACC-MAN-4 no service is left in preview: no sidebar entry is marked Preview (Phase 4 exit)", async ({ page }) => {
+  for (const pillarRoute of PILLAR_ROUTES) {
+    await page.goto(pillarRoute);
+    await expect(page.locator("aside nav a").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("aside nav")).not.toContainText("Preview");
+  }
 });
 
-test("preview service pages carry the PreviewBanner; the live IAM service does not", async ({ page }) => {
-  await page.goto("/gtm/contracts/quotes");
-  await expect(page.getByTestId("preview-banner")).toBeVisible();
-  await page.goto("/trust/iam/users");
-  await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+test("live service pages carry no PreviewBanner (the last preview services went live in Phase 4)", async ({ page }) => {
+  for (const route of ["/gtm/contracts/quotes", "/gtm/pipeline", "/trust/iam/users"]) {
+    await page.goto(route);
+    await expect(page.locator("main")).not.toBeEmpty();
+    await expect(page.getByTestId("preview-banner")).toHaveCount(0);
+  }
 });

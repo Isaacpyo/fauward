@@ -144,7 +144,9 @@ describe.runIf(HAS_TEST_DB)('customer.success (WP-4.8, real Postgres)', () => {
 
     const missingValue = await app.inject({ method: 'POST', url: '/api/internal/success/playbooks', payload: { name: 'No threshold', trigger: 'HEALTH_BELOW', steps: [{ type: 'WAIT', days: 1 }] } });
     expect(missingValue.statusCode).toBe(400);
-  });
+    // The executor also advances every due run on the shared slot database (earlier suite runs leave some), so this
+    // can take longer than the default under the parallel suite.
+  }, 60_000);
 
   it('at-risk lists low scores and two-week declines with the reason; expansion lists usage over 80% of a limit', async () => {
     const { resolveTenantEntitlements } = await import('../../../services/tenant-entitlements.service.js');
