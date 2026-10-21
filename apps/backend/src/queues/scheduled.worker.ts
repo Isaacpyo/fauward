@@ -18,6 +18,7 @@ import { sweepDisputeDeadlines } from '../services/dispute.service.js';
 import { runPlaybookExecutor } from '../services/customer-success.service.js';
 import { QBR_GENERATE_JOB, generateDeck } from '../services/qbr.service.js';
 import { monthlyRescreen } from '../services/kyc.service.js';
+import { runHubspotImport } from '../services/pipeline.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -255,6 +256,14 @@ registerScheduledJob({
   description: 'One cheap authenticated call per configured provider (Stripe, SendGrid, Twilio, vendors); unconfigured providers are skipped.',
   timeoutMs: 4 * 60_000,
   handler: async (app) => pollIntegrations(app)
+});
+
+registerScheduledJob({
+  name: 'gtm.hubspot-import',
+  pattern: '15 2 * * *',
+  repeatJobId: 'gtm.hubspot-import.nightly',
+  description: 'Imports HubSpot deals into the pipeline (skipped when HubSpot is not configured); deals linked to a tenant are never overwritten.',
+  handler: async (app) => runHubspotImport(app)
 });
 
 registerScheduledJob({

@@ -73,6 +73,7 @@ import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
 import { AttributionPage } from "@/pillars/gtm/attribution/AttributionPage";
 import { CreateDemoPage, DemoDetailPage, DemoTemplatesPage, DemosPage } from "@/pillars/gtm/demos/DemosPages";
+import { DealDetailPage, ForecastPage, PipelineBoardPage } from "@/pillars/gtm/pipeline/PipelinePages";
 import { HandoffDetailPage, HandoffQueuePage, HandoffTemplatePage, WonPage } from "@/pillars/gtm/handoff/HandoffPages";
 import { ExtensionsPage, TrialDetailPage, TrialsExpiringPage, TrialsPage } from "@/pillars/gtm/trials/TrialsPages";
 import { RolesPage } from "@/pillars/trust/iam/RolesPage";
@@ -357,9 +358,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/trust/kyc/:id", element: <PermissionRoute permission="trust.kyc.read"><KycReviewPage /></PermissionRoute> },
   { path: "/trust/kyc/sanctions", element: <PermissionRoute permission="trust.kyc.read"><ScreeningsPage /></PermissionRoute> },
   { path: "/gtm", element: <GtmOverview /> },
-  { path: "/gtm/pipeline", element: <OpsRoute permission="gtm.pipeline.read" title="Sales Pipeline" description="HubSpot deal sync with Fauward tenant linking." endpoint="/pipeline" related={[{ label: "Forecasting", to: "/gtm/pipeline/forecasting" }]} /> },
-  { path: "/gtm/pipeline/forecasting", element: <OpsRoute permission="gtm.pipeline.read" title="Forecasting" description="Quarterly forecast from synced HubSpot deal amount and probability." endpoint="/pipeline/forecasting" /> },
-  { path: "/gtm/pipeline/:dealId", element: <OpsRoute permission="gtm.pipeline.read" title="Deal Detail" description="Deal detail and linked tenant context." endpoint="/pipeline/:dealId" /> },
+  { path: "/gtm/pipeline", element: <PermissionRoute permission="gtm.pipeline.read"><PipelineBoardPage /></PermissionRoute> },
+  { path: "/gtm/pipeline/forecasting", element: <PermissionRoute permission="gtm.pipeline.read"><ForecastPage /></PermissionRoute> },
+  { path: "/gtm/pipeline/:dealId", element: <PermissionRoute permission="gtm.pipeline.read"><DealDetailPage /></PermissionRoute> },
   { path: "/gtm/attribution", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="sources" /></PermissionRoute> },
   { path: "/gtm/attribution/campaigns", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="campaigns" /></PermissionRoute> },
   { path: "/gtm/attribution/funnel", element: <PermissionRoute permission="gtm.attribution.read"><AttributionPage tab="funnel" /></PermissionRoute> },

@@ -33,6 +33,7 @@ import { registerConsoleTrialRoutes } from './gtm/trials.routes.js';
 import { registerConsoleDemoRoutes } from './gtm/demos.routes.js';
 import { registerConsoleAttributionRoutes } from './gtm/attribution.routes.js';
 import { registerConsoleHandoffRoutes } from './gtm/handoff.routes.js';
+import { registerConsolePipelineRoutes } from './gtm/pipeline.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
@@ -72,6 +73,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleDemoRoutes(app);
   await registerConsoleAttributionRoutes(app);
   await registerConsoleHandoffRoutes(app);
+  await registerConsolePipelineRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);

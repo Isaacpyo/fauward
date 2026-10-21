@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { usePermission } from "@fauward/internal-rbac";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { MoneyCell } from "@/components/service-kit/MoneyCell";
@@ -72,9 +72,47 @@ export function OverviewTab({ tenantId }: { tenantId: string }) {
               Manage on the tenant page
             </Link>
           </section>
+          <DealsPanel tenantId={tenantId} />
         </div>
       )}
     </TabQuery>
+  );
+}
+
+type TenantDeal = { id: string; name: string; stage: string; amount: string; probability: number; closeDate: string | null; wonAt: string | null; ownerEmail: string | null };
+
+/** gtm.pipeline (WP-4.18, ACC-PIPE-4): deals linked to this tenant; only for staff who can read the pipeline. */
+function DealsPanel({ tenantId }: { tenantId: string }) {
+  const allowed = usePermission("gtm.pipeline.read") === true;
+  const deals = useQuery({
+    queryKey: [...C360_KEY, "deals", tenantId],
+    queryFn: async () => (await consoleApi.get<{ data: TenantDeal[] }>(`/customer360/${encodeURIComponent(tenantId)}/deals`)).data.data,
+    enabled: allowed && tenantId.length > 0
+  });
+  if (!allowed) return null;
+  return (
+    <section className={card} aria-label="Deals">
+      <h2 className="text-sm font-semibold">Deals</h2>
+      <TabQuery query={deals} label="deals">
+        {(rows) =>
+          rows.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">No deal is linked to this tenant.</p>
+          ) : (
+            <ul className="mt-2 space-y-1 text-sm">
+              {rows.map((deal) => (
+                <li key={deal.id} data-testid="c360-deal">
+                  <Link to={`/gtm/pipeline/${encodeURIComponent(deal.id)}`} className="font-semibold text-[var(--fauward-navy)] hover:underline">
+                    {deal.name}
+                  </Link>{" "}
+                  · {deal.stage === "WON" ? `won ${when(deal.wonAt)}` : `${deal.stage.toLowerCase()} (${deal.probability}%)`} · <span className="tabular-nums">{deal.amount}</span>
+                  {deal.ownerEmail ? ` · ${deal.ownerEmail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </TabQuery>
+    </section>
   );
 }
 

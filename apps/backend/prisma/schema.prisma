@@ -3223,17 +3223,26 @@ model SalesDeal {
   tenantId      String?
   hubspotDealId String?  @unique
   name          String
+  /// PROSPECTING · QUALIFIED · PROPOSAL · NEGOTIATION · WON · LOST (config/pipeline.ts)
   stage         String
   amount        Decimal  @default(0) @db.Decimal(12, 2)
+  /// Percent, 0–100.
   probability   Decimal  @default(0) @db.Decimal(5, 2)
   closeDate     DateTime?
   ownerEmail    String?
   payload       Json?
+  /// CONSOLE (created by staff) or HUBSPOT (imported).
+  source        String   @default("CONSOLE")
+  notes         String?
+  createdBy     String?
+  wonAt         DateTime?
+  hubspotSyncedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([tenantId])
   @@index([stage, closeDate])
+  @@index([ownerEmail])
   @@map("sales_deals")
 }
 

@@ -117,7 +117,6 @@ async function updateAndAudit(
 
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerContracts(app);
-  registerGtm(app);
 }
 
 function registerContracts(app: FastifyInstance) {
@@ -210,19 +209,3 @@ function registerContracts(app: FastifyInstance) {
   });
 }
 
-function registerGtm(app: FastifyInstance) {
-  app.get('/api/internal/pipeline', { preHandler: readPre('gtm.pipeline.read') }, async (_request, reply) => {
-    reply.send({ ...(await listWithMeta(delegate(app, 'salesDeal'), { orderBy: { closeDate: 'asc' }, take: 100 })), vendor: vendorStatus('hubspot') });
-  });
-
-  app.get('/api/internal/pipeline/forecasting', { preHandler: readPre('gtm.pipeline.read') }, async (_request, reply) => {
-    const deals = await delegate(app, 'salesDeal').findMany({ where: { stage: { notIn: ['WON', 'LOST'] } }, orderBy: { closeDate: 'asc' }, take: 100 });
-    reply.send({ data: deals });
-  });
-
-  app.get('/api/internal/pipeline/:dealId', { preHandler: readPre('gtm.pipeline.read') }, async (request, reply) => {
-    const deal = await delegate(app, 'salesDeal').findUnique({ where: { id: (request.params as { dealId: string }).dealId } });
-    if (!deal) return reply.status(404).send({ error: 'Deal not found' });
-    reply.send(deal);
-  });
-}
