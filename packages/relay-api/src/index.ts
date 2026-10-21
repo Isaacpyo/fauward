@@ -108,15 +108,14 @@ function readRelayAccessToken(request: Request, body?: Record<string, unknown>) 
   );
 }
 
-function decodeJwtPayload(token: string): Record<string, unknown> {
-  const [, payload] = token.split(".");
-  if (!payload) return {};
-  const padded = payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "=");
-  try {
-    return JSON.parse(Buffer.from(padded, "base64url").toString("utf8")) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
+/**
+ * S13 (WP-4.R): Relay trusts a JWT only after verifying it with JWT_ACCESS_SECRET. Outside development a missing secret
+ * is a startup error (the backend calls this when it registers the Relay routes); in development a missing secret
+ * means every request is unauthenticated, never that a token is decoded unverified.
+ */
+export function assertRelayAuthConfigured(environment: Record<string, string | undefined> = process.env) {
+  if (environment.NODE_ENV === "development") return;
+  if (!environment.JWT_ACCESS_SECRET) throw new Error("Relay needs JWT_ACCESS_SECRET outside development");
 }
 
 export async function getAuthContext(request: Request): Promise<AuthContext> {
@@ -124,16 +123,13 @@ export async function getAuthContext(request: Request): Promise<AuthContext> {
   if (!token) return {};
 
   const secret = env("JWT_ACCESS_SECRET");
+  if (!secret) return {};
   let payload: Record<string, unknown>;
-  if (secret) {
-    try {
-      const verified = await jwtVerify(token, new TextEncoder().encode(secret));
-      payload = verified.payload;
-    } catch {
-      return {};
-    }
-  } else {
-    payload = decodeJwtPayload(token);
+  try {
+    const verified = await jwtVerify(token, new TextEncoder().encode(secret));
+    payload = verified.payload;
+  } catch {
+    return {};
   }
 
   return {
@@ -273,7 +269,8 @@ export async function listRelayConversations(input: ListRelayConversationsInput)
   return data ?? [];
 }
 
-export async function listRelayMessages(conversationId: string) {
+/** Messages oldest first. Unapproved drafts are for Fauward staff only (L20): pass `includeDrafts` for the console. */
+export async function listRelayMessages(conversationId: string, options: { includeDrafts?: boolean } = {}) {
   const supabase = getRelayAdminClient();
   const { data, error } = await supabase
     .from("relay_messages")
@@ -283,7 +280,8 @@ export async function listRelayMessages(conversationId: string) {
     .returns<RelayMessage[]>();
 
   if (error) throw error;
-  return data ?? [];
+  const rows = data ?? [];
+  return options.includeDrafts ? rows : rows.filter((message) => message.is_draft !== true);
 }
 
 export async function updateRelayConversation(conversationId: string, input: UpdateRelayConversationInput) {
@@ -407,7 +405,8 @@ export async function handleCreateMessage(request: Request, conversationId: stri
   }
 
   // System status notifications generated from deterministic TrackingEvents may be delivered immediately.
-  // Human and AI-authored admin replies are drafts until the tenant approves them through approve-and-send.
+  // Admin replies through this handler are drafts until Fauward staff approve them in the console
+  // (POST /api/internal/relay/messages/:id/approve-and-send, L20); staff replies written in the console send at once.
   return json(
     await createRelayMessage(conversationId, {
       sender_type,
@@ -473,7 +472,7 @@ export async function handleListMessages(request: Request, conversationId: strin
     return forbidden();
   }
 
-  return json(await listRelayMessages(conversationId));
+  return json(await listRelayMessages(conversationId, { includeDrafts: isSuperAdmin(auth) }));
 }
 
 export async function handleGetConversation(request: Request, conversationId: string) {

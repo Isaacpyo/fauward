@@ -91,7 +91,9 @@ const envSchema = z.object({
   // Currency Fauward reports platform revenue (MRR) in; other currencies convert through CurrencyRate.
   PLATFORM_BASE_CURRENCY: z.string().regex(/^[A-Z]{3}$/).default('GBP'),
   // Days a closed tenant's data is kept before it becomes eligible for purge (purgeAfter = closedAt + this).
-  TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90)
+  TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
+  // gtm.contracts (WP-4.19): quotes with a discount above this percent (or a term over 24 months) need gtm.contracts.discount.large.
+  CPQ_DISCOUNT_APPROVAL_PERCENT: z.coerce.number().min(0).max(100).default(20)
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -234,6 +236,10 @@ export const config = {
   },
   tenants: {
     closeRetentionDays: parsed.data.TENANT_CLOSE_RETENTION_DAYS
+  },
+  cpq: {
+    discountApprovalPercent: parsed.data.CPQ_DISCOUNT_APPROVAL_PERCENT,
+    maxTermMonthsWithoutApproval: 24
   },
   routeOptimizerUrl: parsed.data.ROUTE_OPTIMIZER_URL,
   tenantPortalUrl: parsed.data.TENANT_PORTAL_URL,

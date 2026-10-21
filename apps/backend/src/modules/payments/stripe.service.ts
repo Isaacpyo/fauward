@@ -42,6 +42,15 @@ export function toMinorUnits(amountMajor: string, currency: string): number {
   return minor;
 }
 
+/** 1234 GBP → "12.34"; 1500 JPY → "1500"; 1234 KWD → "1.234". Exact integer arithmetic. */
+export function fromMinorUnits(minor: number, currency: string): string {
+  if (!Number.isSafeInteger(minor)) throw new MoneyFormatError(`Invalid minor amount ${minor}`);
+  const decimals = currencyDecimals(currency);
+  const sign = minor < 0 ? '-' : '';
+  const digits = String(Math.abs(minor)).padStart(decimals + 1, '0');
+  return decimals === 0 ? `${sign}${digits}` : `${sign}${digits.slice(0, -decimals)}.${digits.slice(-decimals)}`;
+}
+
 let stripeClient: Stripe | null = null;
 
 function getStripeClient() {
@@ -220,5 +229,81 @@ export const stripeService = {
     );
     await stripe.subscriptions.update(params.subscriptionId, { discounts: [{ coupon: coupon.id }] }, { idempotencyKey: `${params.idempotencyKey}:apply` });
     return { couponId: coupon.id };
+  },
+
+  /** Dunning retry (WP-4.5): asks Stripe to collect an open invoice now. */
+  async payInvoice(params: { stripeInvoiceId: string; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const invoice = await stripe.invoices.pay(params.stripeInvoiceId, {}, { idempotencyKey: params.idempotencyKey });
+    return { id: invoice.id ?? params.stripeInvoiceId, status: invoice.status ?? 'unknown' };
+  },
+
+  /** Dispute evidence (WP-4.6): updates the dispute's evidence and submits it. */
+  async submitDisputeEvidence(params: { stripeDisputeId: string; evidence: Record<string, string>; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const dispute = await stripe.disputes.update(params.stripeDisputeId, { evidence: params.evidence, submit: true }, { idempotencyKey: params.idempotencyKey });
+    return { id: dispute.id, status: dispute.status };
+  },
+
+  /** Tax exemption (WP-4.7): mirrors Tenant.taxExempt onto the Stripe customer. */
+  async setCustomerTaxExempt(params: { customerId: string; exempt: boolean; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const customer = await stripe.customers.update(params.customerId, { tax_exempt: params.exempt ? 'exempt' : 'none' }, { idempotencyKey: params.idempotencyKey });
+    return { id: customer.id, taxExempt: customer.tax_exempt ?? null };
+  },
+
+  /** Trial extension (WP-4.14): moves the subscription's trial end. */
+  async setTrialEnd(params: { subscriptionId: string; trialEnd: Date; idempotencyKey: string }) {
+    const stripe = getStripeClient();
+    const updated = await stripe.subscriptions.update(
+      params.subscriptionId,
+      { trial_end: Math.floor(params.trialEnd.getTime() / 1000), proration_behavior: 'none' },
+      { idempotencyKey: params.idempotencyKey }
+    );
+    return { id: updated.id, status: updated.status };
+  },
+
+  /**
+   * revenue.disputes (WP-4.6): a `charge.dispute.*` object in Fauward's terms. The amount leaves here in major units
+   * (Decimal string); Stripe's minor units never leave this file.
+   */
+  parseDispute(object: Record<string, unknown>) {
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+    const currency = (text(object.currency) ?? 'gbp').toUpperCase();
+    const amountMinor = typeof object.amount === 'number' && Number.isSafeInteger(object.amount) ? object.amount : 0;
+    const details = object.evidence_details && typeof object.evidence_details === 'object' ? (object.evidence_details as Record<string, unknown>) : {};
+    const dueBy = typeof details.due_by === 'number' ? new Date(details.due_by * 1000) : null;
+    const charge = typeof object.charge === 'string' ? object.charge : object.charge && typeof object.charge === 'object' ? text((object.charge as Record<string, unknown>).id) : null;
+    const paymentIntent = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent && typeof object.payment_intent === 'object' ? text((object.payment_intent as Record<string, unknown>).id) : null;
+    const metadata = object.metadata && typeof object.metadata === 'object' ? (object.metadata as Record<string, unknown>) : {};
+    return {
+      stripeDisputeId: text(object.id),
+      chargeId: charge,
+      paymentIntentId: paymentIntent,
+      amount: fromMinorUnits(amountMinor, currency),
+      currency,
+      reason: text(object.reason) ?? 'general',
+      status: text(object.status) ?? 'needs_response',
+      evidenceDueBy: dueBy,
+      tenantId: text(metadata.tenantId)
+    };
+  },
+
+  /** Integration health poll (WP-4.3): the cheapest authenticated call. */
+  async retrieveBalance() {
+    const stripe = getStripeClient();
+    const balance = await stripe.balance.retrieve();
+    return { livemode: balance.livemode };
+  },
+
+  /** Stripe Tax rate lookup (WP-4.7, optional): tax on one line for an address. Amount in major units. */
+  async calculateTax(params: { amountMajor: string; currency: string; country: string; postalCode?: string }) {
+    const stripe = getStripeClient();
+    const calculation = await stripe.tax.calculations.create({
+      currency: params.currency.toLowerCase(),
+      line_items: [{ amount: toMinorUnits(params.amountMajor, params.currency), reference: 'rate-lookup' }],
+      customer_details: { address: { country: params.country, ...(params.postalCode ? { postal_code: params.postalCode } : {}) }, address_source: 'billing' }
+    });
+    return { taxAmount: fromMinorUnits(calculation.tax_amount_exclusive, params.currency), currency: params.currency.toUpperCase() };
   }
 };

@@ -43,6 +43,7 @@ const PUBLIC_PATHS = new Set([
   '/api/v1/auth/forgot-password',
   '/api/v1/auth/reset-password',
   '/api/v1/auth/impersonation/exchange',
+  '/api/v1/auth/demo/exchange',
   '/api/v1/tenant/region-change-requests/dev',
   '/api/v1/payments/webhook/stripe'
 ]);

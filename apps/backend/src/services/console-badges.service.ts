@@ -20,13 +20,16 @@ export const BADGE_KEYS = [
   'dsar-due-7d',
   'failed-jobs-24h',
   'integrations-degraded',
+  'disputes-due',
+  'trial-extensions-pending',
   'p95-latency',
   'error-rate'
 ] as const;
 export type BadgeKey = (typeof BADGE_KEYS)[number];
 
 /** Provider statuses that read as healthy or not yet known; anything else counts as degraded. */
-const HEALTHY_PROVIDER_STATUSES = ['OPERATIONAL', 'OK', 'UP', 'UNKNOWN'];
+// Statuses written by the integration-health poll (WP-4.3) that need attention.
+const UNHEALTHY_PROVIDER_STATUSES = ['DEGRADED', 'DOWN'];
 export const HEALTH_BADGE_WINDOW_MINUTES = 15;
 
 const countTone = (value: number, whenPositive: BadgeTone): BadgeTone => (value > 0 ? whenPositive : 'green');
@@ -82,11 +85,29 @@ export const BADGES: Record<BadgeKey, BadgeDefinition> = {
     permissions: ['platform.integrations.read'],
     compute: async (deps) => {
       const [providers, gateways] = await Promise.all([
-        deps.app.prisma.integrationProviderStatus.count({ where: { status: { notIn: HEALTHY_PROVIDER_STATUSES } } }),
+        deps.app.prisma.integrationProviderStatus.count({ where: { status: { in: UNHEALTHY_PROVIDER_STATUSES } } }),
         deps.app.prisma.tenantPaymentGateway.count({ where: { status: 'FAILED' } })
       ]);
       const value = providers + gateways;
       return { value, tone: countTone(value, 'red') };
+    }
+  },
+  // revenue.disputes (WP-4.6): open disputes whose evidence is due within 72 h and not yet submitted.
+  'disputes-due': {
+    permissions: ['revenue.disputes.read'],
+    compute: async (deps) => {
+      const value = await deps.app.prisma.paymentDispute.count({
+        where: { status: { in: ['warning_needs_response', 'needs_response'] }, submittedAt: null, evidenceDueBy: { gt: deps.now, lte: new Date(deps.now.getTime() + 72 * 3_600_000) } }
+      });
+      return { value, tone: countTone(value, 'red') };
+    }
+  },
+  // gtm.trials (WP-4.14): tenant requests for more trial time waiting for a decision.
+  'trial-extensions-pending': {
+    permissions: ['gtm.trials.read'],
+    compute: async (deps) => {
+      const value = await deps.app.prisma.trialExtensionRequest.count({ where: { status: 'PENDING' } });
+      return { value, tone: countTone(value, 'amber') };
     }
   },
   'p95-latency': {

@@ -9,7 +9,7 @@ import { ShellLayout } from "@/shell/ShellLayout";
 
 /**
  * Bookmarks into the deleted legacy admin console (WP-1.6) land on the service that replaced each page
- * (e2e/legacy-redirects.spec.ts). Relay and support audit stay unrouted until WP-4.R, so they land on the support desk.
+ * (e2e/legacy-redirects.spec.ts). Relay and its feedback (the old support audit) live under the support desk since WP-4.R.
  */
 export const LEGACY_ADMIN_REDIRECTS: ReadonlyArray<{ from: string; to: string }> = [
   { from: "/admin", to: "/" },
@@ -18,8 +18,8 @@ export const LEGACY_ADMIN_REDIRECTS: ReadonlyArray<{ from: string; to: string }>
   { from: "/admin/revenue", to: "/revenue/analytics" },
   { from: "/admin/system", to: "/platform/health" },
   { from: "/admin/queues", to: "/platform/queues" },
-  { from: "/admin/relay", to: "/customer/support" },
-  { from: "/admin/support-audit", to: "/customer/support" },
+  { from: "/admin/relay", to: "/customer/support/relay" },
+  { from: "/admin/support-audit", to: "/customer/support/relay/feedback" },
   { from: "/admin/logs", to: "/trust/audit" },
   { from: "/admin/impersonation", to: "/platform/impersonation" }
 ];

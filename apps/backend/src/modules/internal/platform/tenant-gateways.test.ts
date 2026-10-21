@@ -17,7 +17,7 @@ vi.mock('../../../queues/outbox.worker.js', () => ({ dlqOutboxQueue: {} }));
 vi.mock('../../../queues/webhook.worker.js', () => ({ dlqWebhookQueue: {} }));
 
 describe('console tenant gateway list (WP-2.12)', () => {
-  it('ACC-L11-2 GET /api/internal/integrations/tenant-gateways returns state only, filtered by status', async () => {
+  it('ACC-INT-4 ACC-L11-2 GET /api/internal/integrations/tenant-gateways returns state only, filtered by status', async () => {
     const findMany = vi.fn(async (_args: { where: Record<string, unknown> }) => [
       { id: 'gw_1', tenantId: 't_1', tenant: { id: 't_1', name: 'Northwind', slug: 'northwind' }, provider: 'PAYSTACK', mode: 'TEST', enabled: true, publicKey: 'pk_test_visible', secretKeyEncrypted: 'v1:k:iv:cipher', webhookSecretEncrypted: null, encryptionKeyEncrypted: null, config: { merchantEmail: 'pay@northwind.test' }, status: 'FAILED', lastVerifiedAt: null, lastError: 'PAYSTACK returned 401', updatedByUserId: 'u_1', createdAt: new Date(), updatedAt: new Date() }
     ]);

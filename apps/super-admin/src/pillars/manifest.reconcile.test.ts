@@ -4,7 +4,7 @@ import { matchRoutes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { SERVICE_READ_PERMISSIONS } from "@fauward/internal-rbac";
 
-import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
+import { ComingSoonRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
 
 // D1 reconciliation gate. Check (d) reads the backend's registered console routes from route-index.ts (kept equal to
@@ -54,7 +54,23 @@ describe("manifest reconciliation (D1)", () => {
     expect(duplicates).toEqual([]);
   });
 
-  it("every live service has its own folder and no generic Ops page", () => {
+  it("WP-4.Z the generic Ops pages are gone: no file, no usage anywhere in src", () => {
+    const srcDir = path.resolve(__dirname, "..");
+    for (const file of ["pillars/InternalOpsPage.tsx", "pillars/WorkflowOpsPage.tsx", "pillars/_preview-routes.tsx"]) expect(fs.existsSync(path.join(srcDir, file)), file).toBe(false);
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && full !== __filename && /(OpsRoute|InternalOpsPage|WorkflowOpsPage)/.test(fs.readFileSync(full, "utf8"))) offenders.push(path.relative(srcDir, full));
+      }
+    };
+    walk(srcDir);
+    expect(offenders).toEqual([]);
+    expect(fs.existsSync(path.resolve(__dirname, "../../../backend/src/modules/internal/console-phases.routes.ts"))).toBe(false);
+  });
+
+  it("every live service has its own folder", () => {
     const pillarsDir = path.resolve(__dirname);
     // Folder names follow 20-service-catalogue.md; only customer.360 differs from its id (an id cannot start a word).
     const FOLDER: Record<string, string> = { "customer.360": "customer360" };
@@ -63,7 +79,6 @@ describe("manifest reconciliation (D1)", () => {
       for (const pattern of service.routes) {
         const route = routeByPath.get(pattern);
         expect(route, `${service.key} ${pattern} registered`).toBeDefined();
-        expect(route!.element.type, `${service.key} ${pattern} uses OpsRoute`).not.toBe(OpsRoute);
       }
     }
   });
@@ -71,9 +86,9 @@ describe("manifest reconciliation (D1)", () => {
   it("manifest statuses match the services that met the definition of done (Phases 1–3)", () => {
     expect(SERVICES).toHaveLength(41);
     expect(SERVICES.filter((service) => service.status === "live").map((service) => service.key).sort()).toEqual(
-      ["customer.360", "customer.comms", "customer.feedback", "customer.onboarding", "customer.support", "platform.health", "platform.impersonation", "platform.jobs", "platform.queues", "platform.tenants", "revenue.analytics", "revenue.billing", "revenue.subscriptions", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.safety"]
+      ["customer.360", "customer.comms", "customer.feedback", "customer.onboarding", "customer.qbr", "customer.success", "customer.support", "gtm.attribution", "gtm.contracts", "gtm.demos", "gtm.handoff", "gtm.pipeline", "gtm.trials", "platform.database", "platform.flags", "platform.health", "platform.impersonation", "platform.incidents", "platform.integrations", "platform.jobs", "platform.queues", "platform.tenants", "revenue.analytics", "revenue.billing", "revenue.disputes", "revenue.dunning", "revenue.subscriptions", "revenue.tax", "trust.audit", "trust.compliance", "trust.iam", "trust.jit", "trust.kyc", "trust.safety", "trust.secrets", "trust.security"]
     );
-    expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "revenue.recognition"]);
+    expect(SERVICES.filter((service) => service.status === "deferred").map((service) => service.key).sort()).toEqual(["customer.kb", "gtm.partners", "gtm.pricing", "revenue.commissions", "revenue.recognition"]);
     for (const service of SERVICES.filter((item) => item.status === "preview")) {
       expect(service.note, `${service.key} names what is not wired`).toBeTruthy();
     }
@@ -97,14 +112,10 @@ describe("manifest reconciliation (D1)", () => {
     }
   });
 
-  it("ACC-MAN-4 planned services without a page show ComingSoonPage with their phase and keep a preview entry", () => {
-    const planned = ["platform.database", "revenue.disputes"];
-    for (const key of planned) {
-      const service = SERVICES.find((item) => item.key === key)!;
-      expect(service.status).toBe("preview");
-      expect(service.livePhase).not.toBeNull();
-      expect(routeByPath.get(service.route)?.element.type).toBe(ComingSoonRoute);
-      expect(navigableServices(service.pillar).map((item) => item.id)).toContain(service.id);
+  it("ACC-MAN-4 only deferred services use ComingSoonPage (every planned service has its page since WP-4.6)", () => {
+    for (const route of consoleRoutes.filter((item) => item.element.type === ComingSoonRoute)) {
+      const service = findServiceForPath(route.path);
+      expect(service?.status, route.path).toBe("deferred");
     }
   });
 
@@ -117,6 +128,6 @@ describe("manifest reconciliation (D1)", () => {
     expect(findServiceForPath("/customer/360/tenant_123")?.key).toBe("customer.360");
     expect(findServiceForPath("/revenue/billing/invoices/inv_1")?.key).toBe("revenue.billing");
     expect(findServiceForPath("/platform/releases")?.key).toBe("platform.flags");
-    expect(PILLARS.map((pillar) => navigableServices(pillar).length).reduce((a, b) => a + b, 0)).toBe(39);
+    expect(PILLARS.map((pillar) => navigableServices(pillar).length).reduce((a, b) => a + b, 0)).toBe(36);
   });
 });
