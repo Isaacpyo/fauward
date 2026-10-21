@@ -5,6 +5,7 @@ import { publishActivity, recordActivity, type ActivityInput } from './platform-
 import { notifyTenantAdmins } from './platform-notifier.service.js';
 import { liftDunningSuspensionForInvoice, type SuspensionActor } from './tenant-suspension.service.js';
 import { recoverEnrollment } from './dunning.service.js';
+import { exemptionInvoiceNote } from './tax.service.js';
 import { currencyDecimals, toMinorUnits } from '../modules/payments/stripe.service.js';
 
 // Fauward → tenant billing (revenue.billing, D4): every row here is kind PLATFORM. Money stays Decimal(12,2) major units
@@ -82,7 +83,9 @@ export async function createPlatformInvoice(app: FastifyInstance, body: CreateIn
   for (const item of body.lineItems) assertCurrencyPrecision(item.unitAmount, currency);
 
   const subtotal = body.lineItems.reduce((sum, item) => sum.add(decimal(item.unitAmount).mul(item.quantity)), decimal(0));
+  // revenue.tax (WP-4.7): an approved exemption means no tax and a note saying why.
   const taxRate = tenant.taxExempt ? decimal(0) : decimal(body.taxRate ?? '0');
+  const notes = tenant.taxExempt ? [body.notes, await exemptionInvoiceNote(app, tenant.id)].filter(Boolean).join('\n') : body.notes;
   const taxAmount = subtotal.mul(taxRate).div(100).toDecimalPlaces(decimals);
   const total = subtotal.add(taxAmount);
   const now = new Date();
@@ -102,7 +105,7 @@ export async function createPlatformInvoice(app: FastifyInstance, body: CreateIn
         status: body.send ? 'SENT' : 'DRAFT',
         sentAt: body.send ? now : null,
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        notes: body.notes,
+        notes,
         createdBy: actor.platformUserId
       }
     });

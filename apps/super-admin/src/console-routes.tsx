@@ -45,6 +45,7 @@ import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPag
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
 import { DisputeDetailPage, DisputesListPage } from "@/pillars/revenue/disputes/DisputesPages";
+import { ExemptionsPage, RegistrationsPage, TaxOverviewPage } from "@/pillars/revenue/tax/TaxPages";
 import { DunningOverviewPage, SaveOffersPage, SequenceEditorPage, SequencesPage, TenantDunningPage } from "@/pillars/revenue/dunning/DunningPages";
 import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
 import { InvoiceCreatePage } from "@/pillars/revenue/billing/InvoiceCreatePage";
@@ -187,10 +188,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/disputes", element: <PermissionRoute permission="revenue.disputes.read"><DisputesListPage /></PermissionRoute> },
   { path: "/revenue/disputes/:id", element: <PermissionRoute permission="revenue.disputes.read"><DisputeDetailPage /></PermissionRoute> },
   { path: "/revenue/recognition", element: <ComingSoonRoute serviceKey="revenue.recognition" /> },
-  { path: "/revenue/tax", element: <OpsRoute permission="revenue.tax.read" title="Tax & Compliance" description="Regional VAT/GST registrations, returns and exemption workflow." endpoint="/tax" related={[{ label: "Returns", to: "/revenue/tax/returns" }, { label: "Registrations", to: "/revenue/tax/registrations" }, { label: "Exemptions", to: "/revenue/tax/exemptions" }]} /> },
-  { path: "/revenue/tax/returns", element: <OpsRoute permission="revenue.tax.read" title="Tax Returns" description="Per-region return periods and filing status." endpoint="/tax/returns" /> },
-  { path: "/revenue/tax/registrations", element: <OpsRoute permission="revenue.tax.read" title="Tax Registrations" description="VAT and GST registrations across Fauward operating regions." endpoint="/tax/registrations" /> },
-  { path: "/revenue/tax/exemptions", element: <OpsRoute permission="revenue.tax.read" title="Tax Exemptions" description="Tenant exemption certificates and approval state." endpoint="/tax/exemptions" /> },
+  { path: "/revenue/tax", element: <PermissionRoute permission="revenue.tax.read"><TaxOverviewPage /></PermissionRoute> },
+  { path: "/revenue/tax/registrations", element: <PermissionRoute permission="revenue.tax.read"><RegistrationsPage /></PermissionRoute> },
+  { path: "/revenue/tax/exemptions", element: <PermissionRoute permission="revenue.tax.read"><ExemptionsPage /></PermissionRoute> },
   { path: "/revenue/subscriptions", element: <PermissionRoute permission="revenue.subscriptions.read">
                 <SubscriptionsListPage />
               </PermissionRoute> },

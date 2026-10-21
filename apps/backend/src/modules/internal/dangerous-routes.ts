@@ -62,6 +62,8 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/compliance/legal-holds/:id/release' },
   // customer.comms (WP-2.14): delete only before any receipt
   { method: 'DELETE', url: '/api/internal/announcements/:id' },
+  // revenue.tax (WP-4.7)
+  { method: 'POST', url: '/api/internal/tax/exemptions/:id/decision' },
   // revenue.disputes (WP-4.6)
   { method: 'POST', url: '/api/internal/disputes/:id/evidence' },
   // trust.secrets (WP-4.12)

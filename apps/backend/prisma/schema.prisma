@@ -3022,15 +3022,30 @@ model TaxReturn {
   @@map("tax_returns")
 }
 
+/// revenue.tax (WP-4.7, 0067): a tenant uploads its certificate (bytes in the export storage adapter); staff approve,
+/// reject or later revoke it. APPROVED sets Tenant.taxExempt, which PLATFORM invoice creation reads.
+/// Status PENDING | APPROVED | REJECTED | REVOKED.
 model TaxExemption {
-  id             String   @id @default(uuid())
-  tenantId       String
-  certificateUrl String
-  status         String   @default("PENDING")
-  approvedBy     String?
-  approvedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String    @id @default(uuid())
+  tenantId          String
+  /// Console download path of the certificate.
+  certificateUrl    String
+  status            String    @default("PENDING")
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  fileName          String?
+  contentType       String?
+  byteSize          Int?
+  storageProvider   String?
+  storageKey        String?
+  submittedByUserId String?
+  decidedBy         String?
+  decidedAt         DateTime?
+  decisionReason    String?
+  revokedBy         String?
+  revokedAt         DateTime?
 
   @@index([tenantId, status])
   @@map("tax_exemptions")

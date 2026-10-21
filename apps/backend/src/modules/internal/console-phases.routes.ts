@@ -119,7 +119,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerSuccess(app);
   registerSecurity(app);
   registerKyc(app);
-  registerTax(app);
   registerContracts(app);
   registerQbr(app);
   registerGtm(app);
@@ -364,37 +363,6 @@ function registerKyc(app: FastifyInstance) {
       await app.prisma.tenant.update({ where: { id: tenantId }, data: { kycStatus: 'PENDING_REVIEW' } });
     }
     reply.send({ received: true, screening });
-  });
-}
-
-function registerTax(app: FastifyInstance) {
-  app.get('/api/internal/tax', { preHandler: readPre('revenue.tax.read') }, async (_request, reply) => {
-    const [registrations, returns] = await Promise.all([
-      delegate(app, 'taxRegistration').findMany({ orderBy: { region: 'asc' } }),
-      delegate(app, 'taxReturn').findMany({ orderBy: { periodStart: 'desc' }, take: 20 })
-    ]);
-    reply.send({ registrations, returns, vendors: { stripeTax: Boolean(process.env.STRIPE_SECRET_KEY ?? process.env.STRIPE_API_KEY), anrok: !vendorStatus('anrok') } });
-  });
-
-  app.get('/api/internal/tax/returns', { preHandler: readPre('revenue.tax.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'taxReturn'), { orderBy: { periodStart: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/tax/registrations', { preHandler: readPre('revenue.tax.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'taxRegistration'), { orderBy: { region: 'asc' } }));
-  });
-
-  app.get('/api/internal/tax/exemptions', { preHandler: readPre('revenue.tax.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'taxExemption'), { orderBy: { createdAt: 'desc' } }));
-  });
-
-  app.post('/api/internal/tax/exemptions/:id/approve', { preHandler: writePre('revenue.tax.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const exemption = await delegate(app, 'taxExemption').findUnique({ where: { id } }) as { tenantId?: string } | null;
-    if (!exemption) return reply.status(404).send({ error: 'Tax exemption not found' });
-    const after = await updateAndAudit(request, delegate(app, 'taxExemption'), id, { status: 'APPROVED', approvedBy: actorId(request), approvedAt: new Date() }, 'tax.exemption.approve', 'tax_exemption', stringValue(bodyObject(request).reason, 'Tax exemption approved'));
-    if (exemption.tenantId) await app.prisma.tenant.update({ where: { id: exemption.tenantId }, data: { taxExempt: true } });
-    reply.send(after);
   });
 }
 
