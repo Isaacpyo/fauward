@@ -11,6 +11,7 @@ import { sweepSupportSla } from '../jobs/support-sla-sweep.js';
 import { dispatchNpsSurveys } from '../services/feedback.service.js';
 import { computeAndStoreHealthScore, healthBand } from '../services/health-score.service.js';
 import { runSecretInventory } from '../services/secret-inventory.service.js';
+import { pollIntegrations } from '../services/integration-health.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -231,6 +232,15 @@ registerScheduledJob({
   repeatJobId: 'platform.activity-prune',
   description: 'Deletes console activity older than 180 days.',
   handler: async (app) => pruneOldActivity(app.prisma)
+});
+
+registerScheduledJob({
+  name: 'platform.integration-health-poll',
+  pattern: '*/5 * * * *',
+  repeatJobId: 'platform.integration-health-poll',
+  description: 'One cheap authenticated call per configured provider (Stripe, SendGrid, Twilio, vendors); unconfigured providers are skipped.',
+  timeoutMs: 4 * 60_000,
+  handler: async (app) => pollIntegrations(app)
 });
 
 registerScheduledJob({

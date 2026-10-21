@@ -23,6 +23,7 @@ import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/custom
 import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
 import { IncidentDetailPage, IncidentsListPage, RunbookEditorPage, RunbooksPage } from "@/pillars/platform/incidents/IncidentsPages";
 import { WebhookFailuresPage } from "@/pillars/platform/integrations/WebhookFailuresPage";
+import { CredentialsPage, IntegrationsListPage, ProviderDetailPage, TenantGatewaysPage } from "@/pillars/platform/integrations/IntegrationsPages";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
@@ -130,12 +131,13 @@ export const consoleRoutes: ConsoleRoute[] = [
                 <JobRunsPage />
               </PermissionRoute> },
   { path: "/platform/database", element: <ComingSoonRoute serviceKey="platform.database" /> },
-  { path: "/platform/integrations", element: <OpsRoute permission="platform.integrations.read" title="Integration Health" description="Third-party provider status, credentials and webhook delivery health." endpoint="/integrations" related={[{ label: "Credentials", to: "/platform/integrations/credentials" }, { label: "Webhooks", to: "/platform/integrations/webhooks" }]} /> },
-  { path: "/platform/integrations/credentials", element: <OpsRoute permission="platform.integrations.read" title="Integration Credentials" description="Credential metadata shared with the secret rotation tracker." endpoint="/integrations/credentials" /> },
+  { path: "/platform/integrations", element: <PermissionRoute permission="platform.integrations.read"><IntegrationsListPage /></PermissionRoute> },
+  { path: "/platform/integrations/tenant-gateways", element: <PermissionRoute permission="platform.integrations.read"><TenantGatewaysPage /></PermissionRoute> },
+  { path: "/platform/integrations/credentials", element: <PermissionRoute permission="platform.integrations.read"><CredentialsPage /></PermissionRoute> },
   { path: "/platform/integrations/webhooks", element: <PermissionRoute permission="platform.integrations.read">
                 <WebhookFailuresPage />
               </PermissionRoute> },
-  { path: "/platform/integrations/:provider", element: <OpsRoute permission="platform.integrations.read" title="Provider Detail" description="Provider health detail and recent status." endpoint="/integrations/:provider" /> },
+  { path: "/platform/integrations/:provider", element: <PermissionRoute permission="platform.integrations.read"><ProviderDetailPage /></PermissionRoute> },
   { path: "/platform/impersonation", element: <PermissionRoute permission="platform.impersonation.start">
                 <ImpersonationCenterPage />
               </PermissionRoute> },

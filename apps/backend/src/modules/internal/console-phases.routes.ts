@@ -120,7 +120,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerSuccess(app);
   registerSecurity(app);
   registerKyc(app);
-  registerIntegrations(app);
   registerTax(app);
   registerContracts(app);
   registerQbr(app);
@@ -482,27 +481,6 @@ function registerKyc(app: FastifyInstance) {
       await app.prisma.tenant.update({ where: { id: tenantId }, data: { kycStatus: 'PENDING_REVIEW' } });
     }
     reply.send({ received: true, screening });
-  });
-}
-
-function registerIntegrations(app: FastifyInstance) {
-  app.get('/api/internal/integrations', { preHandler: readPre('platform.integrations.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'integrationProviderStatus'), { orderBy: { provider: 'asc' } }));
-  });
-
-  app.get('/api/internal/integrations/:provider', { preHandler: readPre('platform.integrations.read') }, async (request, reply) => {
-    const { provider } = request.params as { provider: string };
-    const status = await delegate(app, 'integrationProviderStatus').findUnique({ where: { provider } });
-    reply.send({ provider, status });
-  });
-
-  app.get('/api/internal/integrations/credentials', { preHandler: readPre('platform.integrations.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'secretCredential'), { orderBy: { expiresAt: 'asc' } }));
-  });
-
-  app.get('/api/internal/integrations/webhooks', { preHandler: readPre('platform.integrations.read') }, async (_request, reply) => {
-    const data = await app.prisma.webhookDelivery.findMany({ include: { endpoint: true, tenant: { select: { id: true, name: true, slug: true } } }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ data });
   });
 }
 

@@ -221,11 +221,13 @@ export const webhooksService = {
     );
     return { replayQueued: true, deliveryId: delivery.id, replayDeliveryId: replayDelivery.id };
   },
-  async platformFailures(prisma: PrismaClient) {
+  async platformFailures(prisma: PrismaClient, page: { limit?: number; cursor?: string } = {}) {
+    const limit = page.limit ?? 100;
     return prisma.webhookDelivery.findMany({
       where: {
         deadLetteredAt: { not: null }
       },
+      ...(page.cursor ? { cursor: { id: page.cursor }, skip: 1 } : {}),
       // State only: payloads and response bodies stay in the tenant's own delivery log.
       select: {
         id: true,
@@ -238,8 +240,8 @@ export const webhooksService = {
         endpoint: { select: { id: true, url: true, tenantId: true } },
         tenant: { select: { id: true, name: true, slug: true } }
       },
-      orderBy: { deadLetteredAt: 'desc' },
-      take: 100
+      orderBy: [{ deadLetteredAt: 'desc' }, { id: 'desc' }],
+      take: limit
     });
   }
 };

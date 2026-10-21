@@ -84,7 +84,7 @@ afterEach(() => {
 });
 
 describe('L10 webhook replay (WP-2.13)', () => {
-  it('ACC-L10-1 console replay re-sends the stored payload with a fresh signature and fills in the replay row', async () => {
+  it('ACC-INT-3 ACC-L10-1 console replay re-sends the stored payload with a fresh signature and fills in the replay row', async () => {
     const store = createStore();
     const app = Fastify();
     app.decorate('prisma', store as never);

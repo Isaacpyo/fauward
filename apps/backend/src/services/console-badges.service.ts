@@ -26,7 +26,8 @@ export const BADGE_KEYS = [
 export type BadgeKey = (typeof BADGE_KEYS)[number];
 
 /** Provider statuses that read as healthy or not yet known; anything else counts as degraded. */
-const HEALTHY_PROVIDER_STATUSES = ['OPERATIONAL', 'OK', 'UP', 'UNKNOWN'];
+// Statuses written by the integration-health poll (WP-4.3) that need attention.
+const UNHEALTHY_PROVIDER_STATUSES = ['DEGRADED', 'DOWN'];
 export const HEALTH_BADGE_WINDOW_MINUTES = 15;
 
 const countTone = (value: number, whenPositive: BadgeTone): BadgeTone => (value > 0 ? whenPositive : 'green');
@@ -82,7 +83,7 @@ export const BADGES: Record<BadgeKey, BadgeDefinition> = {
     permissions: ['platform.integrations.read'],
     compute: async (deps) => {
       const [providers, gateways] = await Promise.all([
-        deps.app.prisma.integrationProviderStatus.count({ where: { status: { notIn: HEALTHY_PROVIDER_STATUSES } } }),
+        deps.app.prisma.integrationProviderStatus.count({ where: { status: { in: UNHEALTHY_PROVIDER_STATUSES } } }),
         deps.app.prisma.tenantPaymentGateway.count({ where: { status: 'FAILED' } })
       ]);
       const value = providers + gateways;

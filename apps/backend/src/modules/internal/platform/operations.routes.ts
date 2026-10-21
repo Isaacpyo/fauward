@@ -18,6 +18,8 @@ const gatewayListQuery = z.object({
 // Tenant payment gateways and dead-lettered webhook deliveries (platform.integrations). Queues moved to queues.routes.ts
 // (WP-3.6) and health to health.routes.ts (WP-3.7).
 
+const failuresQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), cursor: z.string().min(1).optional() });
+
 export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
   // L11 (WP-2.12): tenant payment gateways across tenants — provider, mode, status, last error; never secrets.
   app.get('/api/internal/integrations/tenant-gateways', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
@@ -33,8 +35,12 @@ export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
   });
 
   // Dead-lettered tenant webhook deliveries across tenants (was GET /api/v1/platform/webhooks/failures, tenant SUPER_ADMIN).
-  app.get('/api/internal/integrations/webhooks/failures', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (_request, reply) => {
-    return reply.send({ failures: await webhooksService.platformFailures(app.prisma) });
+  app.get('/api/internal/integrations/webhooks/failures', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
+    const parsed = failuresQuery.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const rows = await webhooksService.platformFailures(app.prisma, { limit: parsed.data.limit + 1, cursor: parsed.data.cursor });
+    const failures = rows.slice(0, parsed.data.limit);
+    return reply.send({ failures, nextCursor: rows.length > parsed.data.limit ? failures[failures.length - 1]?.id ?? null : null });
   });
 
   // L10 (WP-2.13): staff replay a tenant's failed delivery; the worker re-sends the stored payload signed with the

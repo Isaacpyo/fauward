@@ -147,16 +147,21 @@ export function webhookPayload(body: Record<string, unknown>, verification: Webh
   return { ...body, _webhookVerification: verification };
 }
 
-type ProviderStatusDb = { integrationProviderStatus?: Pick<Prisma.TransactionClient['integrationProviderStatus'], 'upsert'> };
+type ProviderStatusDb = { integrationProviderStatus?: Pick<Prisma.TransactionClient['integrationProviderStatus'], 'findUnique' | 'upsert'> };
 
-/** Marks the vendor's webhook as verified on its integration status row (skipped when the model is not available). */
+/**
+ * Records the vendor's last verified webhook on its integration status row. The status itself belongs to the
+ * integration-health poll (WP-4.3); a provider seen only through webhooks starts as OK.
+ */
 export async function recordWebhookVerification(app: Pick<FastifyInstance, 'prisma'>, vendor: string, verification: WebhookVerification) {
   const model = (app.prisma as ProviderStatusDb).integrationProviderStatus;
   if (!model || typeof model.upsert !== 'function') return;
-  const payload = { lastWebhookVerification: verification };
+  const existing = typeof model.findUnique === 'function' ? await model.findUnique({ where: { provider: vendor } }) : null;
+  const previous = existing?.payload && typeof existing.payload === 'object' && !Array.isArray(existing.payload) ? (existing.payload as Prisma.JsonObject) : {};
+  const payload = { ...previous, lastWebhookVerification: verification } as Prisma.InputJsonObject;
   await model.upsert({
     where: { provider: vendor },
-    create: { provider: vendor, status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), payload },
-    update: { status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), checkedAt: new Date(), payload }
+    create: { provider: vendor, status: 'OK', lastSuccessfulAt: new Date(), payload },
+    update: { lastSuccessfulAt: new Date(), payload }
   });
 }
