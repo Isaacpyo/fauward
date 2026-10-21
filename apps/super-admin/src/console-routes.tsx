@@ -30,8 +30,6 @@ import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage }
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
 import { ExportsPage, LegalHoldsPage } from "@/pillars/trust/compliance/LegalHoldsPage";
 import { GtmOverview } from "@/pillars/gtm/GtmOverview";
-import { InternalOpsPage } from "@/pillars/InternalOpsPage";
-import { WorkflowOpsPage, hasWorkflowSurface } from "@/pillars/WorkflowOpsPage";
 import { SystemHealthPage } from "@/pillars/platform/health/SystemHealthPage";
 import { ImpersonationCenterPage } from "@/pillars/platform/impersonation/ImpersonationCenterPage";
 import { SessionDetailPage } from "@/pillars/platform/impersonation/SessionDetailPage";
@@ -96,17 +94,6 @@ export function PermissionRoute({ permission, children }: { permission: Permissi
     <JITGate permission={permission} fallback={<AccessDenied permission={permission} />}>
       {children}
     </JITGate>
-  );
-}
-
-/** Generic Phase-0 page for preview services; deleted in Phase 4 (D1). */
-export function OpsRoute({ permission, title, description, endpoint, related, notice }: { permission: Permission; title: string; description: string; endpoint: string; related?: Array<{ label: string; to: string }>; notice?: ReactNode }) {
-  const Page = hasWorkflowSurface(endpoint) ? WorkflowOpsPage : InternalOpsPage;
-  return (
-    <PermissionRoute permission={permission}>
-      {notice ? <div className="mb-4">{notice}</div> : null}
-      <Page title={title} description={description} endpoint={endpoint} related={related} />
-    </PermissionRoute>
   );
 }
 

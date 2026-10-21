@@ -4,7 +4,7 @@ import { matchRoutes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { SERVICE_READ_PERMISSIONS } from "@fauward/internal-rbac";
 
-import { ComingSoonRoute, OpsRoute, consoleRoutes } from "@/console-routes";
+import { ComingSoonRoute, consoleRoutes } from "@/console-routes";
 import { PILLARS, SERVICES, findServiceForPath, navigableServices } from "./_manifests";
 
 // D1 reconciliation gate. Check (d) reads the backend's registered console routes from route-index.ts (kept equal to
@@ -54,7 +54,23 @@ describe("manifest reconciliation (D1)", () => {
     expect(duplicates).toEqual([]);
   });
 
-  it("every live service has its own folder and no generic Ops page", () => {
+  it("WP-4.Z the generic Ops pages are gone: no file, no usage anywhere in src", () => {
+    const srcDir = path.resolve(__dirname, "..");
+    for (const file of ["pillars/InternalOpsPage.tsx", "pillars/WorkflowOpsPage.tsx", "pillars/_preview-routes.tsx"]) expect(fs.existsSync(path.join(srcDir, file)), file).toBe(false);
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(entry.name) && full !== __filename && /(OpsRoute|InternalOpsPage|WorkflowOpsPage)/.test(fs.readFileSync(full, "utf8"))) offenders.push(path.relative(srcDir, full));
+      }
+    };
+    walk(srcDir);
+    expect(offenders).toEqual([]);
+    expect(fs.existsSync(path.resolve(__dirname, "../../../backend/src/modules/internal/console-phases.routes.ts"))).toBe(false);
+  });
+
+  it("every live service has its own folder", () => {
     const pillarsDir = path.resolve(__dirname);
     // Folder names follow 20-service-catalogue.md; only customer.360 differs from its id (an id cannot start a word).
     const FOLDER: Record<string, string> = { "customer.360": "customer360" };
@@ -63,7 +79,6 @@ describe("manifest reconciliation (D1)", () => {
       for (const pattern of service.routes) {
         const route = routeByPath.get(pattern);
         expect(route, `${service.key} ${pattern} registered`).toBeDefined();
-        expect(route!.element.type, `${service.key} ${pattern} uses OpsRoute`).not.toBe(OpsRoute);
       }
     }
   });
