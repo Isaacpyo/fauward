@@ -9,6 +9,7 @@ import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantChip } from "@/components/service-kit/TenantChip";
 import { TenantPicker, type TenantOption } from "@/components/service-kit/TenantPicker";
 import { consoleApi } from "@/lib/console-api";
+import { consoleApiUrl } from "@/lib/console-api-origin";
 
 // trust.kyc (WP-4.10): KycQueuePage (reviews), KycReviewPage (evidence, decision), ScreeningsPage (sanctions/PEP,
 // CLEAR/MATCH). Manual by default; Persona and ComplyAdvantage are optional.
@@ -222,7 +223,7 @@ export function KycReviewPage() {
             <ul className="space-y-1 text-sm">
               {data.evidence.map((item) => (
                 <li key={item.id} data-testid="kyc-evidence">
-                  <a href={`/api/internal/kyc/reviews/${encodeURIComponent(data.id)}/evidence/${encodeURIComponent(item.id)}`} className="underline" target="_blank" rel="noreferrer">
+                  <a href={consoleApiUrl(`/kyc/reviews/${encodeURIComponent(data.id)}/evidence/${encodeURIComponent(item.id)}`)} className="underline" target="_blank" rel="noreferrer">
                     {item.fileName}
                   </a>{" "}
                   <span className="text-xs text-[var(--color-text-muted)]">

@@ -133,6 +133,11 @@ export async function registerConsoleActivityRoutes(app: FastifyInstance) {
     const closesAt = Math.min(tokenExpiresAt, platform.session.expiresAt.getTime());
 
     reply.hijack();
+    // The headers Fastify already set (CORS, helmet) go out with the raw head: the console on admin.fauward.com opens
+    // this stream cross-origin on api.fauward.com, and EventSource needs Access-Control-Allow-Origin/-Credentials.
+    for (const [name, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) reply.raw.setHeader(name, value);
+    }
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',

@@ -8,6 +8,7 @@ import { DegradedBanner } from "@/components/service-kit/DegradedBanner";
 import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { TenantChip } from "@/components/service-kit/TenantChip";
 import { consoleApi } from "@/lib/console-api";
+import { consoleApiUrl } from "@/lib/console-api-origin";
 
 // revenue.tax (WP-4.7): TaxOverviewPage, RegistrationsPage, ExemptionsPage. Approving an exemption sets the tenant's
 // taxExempt flag, which Fauward invoices read (0 tax plus a note) and which is mirrored to Stripe when configured.
@@ -262,7 +263,7 @@ export function ExemptionsPage() {
               <span>
                 <TenantChip tenantId={row.tenant.id} name={row.tenant.name} slug={row.tenant.slug} />{" "}
                 {row.certificateUrl ? (
-                  <a href={`/api/internal${row.certificateUrl}`} className="text-xs underline" target="_blank" rel="noreferrer">
+                  <a href={consoleApiUrl(row.certificateUrl)} className="text-xs underline" target="_blank" rel="noreferrer">
                     {row.fileName ?? "certificate"}
                   </a>
                 ) : (

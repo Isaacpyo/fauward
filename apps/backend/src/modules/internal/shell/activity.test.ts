@@ -1,3 +1,4 @@
+import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { request as httpRequest, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -134,6 +135,8 @@ async function seed(input: Partial<Row> & Pick<Row, 'service' | 'type'>) {
 
 async function buildApp() {
   const instance = Fastify();
+  // As in app.ts: the console on admin.fauward.com calls the API host cross-origin with credentials.
+  await instance.register(cors, { origin: (origin, callback) => callback(null, !origin || origin === 'https://admin.fauward.com'), credentials: true });
   instance.decorate('prisma', store.prisma as never);
   instance.decorate('redis', redis as never);
   const { registerConsoleActivityRoutes } = await import('./activity.routes.js');
@@ -264,9 +267,9 @@ describe('console activity (WP-2.1, D7)', () => {
 
 type SseEvent = { event: string; data: string };
 
-function openStream(port: number, user: string): Promise<{ events: SseEvent[]; response: IncomingMessage; close: () => void }> {
+function openStream(port: number, user: string, headers: Record<string, string> = {}): Promise<{ events: SseEvent[]; response: IncomingMessage; close: () => void }> {
   return new Promise((resolve, reject) => {
-    const req = httpRequest({ host: '127.0.0.1', port, path: '/api/internal/activity/stream', headers: { 'x-test-user': user } }, (response) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path: '/api/internal/activity/stream', headers: { 'x-test-user': user, ...headers } }, (response) => {
       const events: SseEvent[] = [];
       let buffer = '';
       response.setEncoding('utf8');
@@ -347,6 +350,17 @@ describe('activity SSE stream (WP-2.1)', () => {
     cs.close();
     support.close();
     await until(() => hub.size === 0);
+  });
+
+  it('a cross-origin console (admin.fauward.com → api host) gets the CORS headers EventSource needs', async () => {
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    const stream = await openStream(port, 'pu_support', { origin: 'https://admin.fauward.com' });
+    expect(stream.response.headers['content-type']).toContain('text/event-stream');
+    expect(stream.response.headers['access-control-allow-origin']).toBe('https://admin.fauward.com');
+    expect(stream.response.headers['access-control-allow-credentials']).toBe('true');
+    await until(() => stream.events.some((event) => event.event === 'ready'));
+    stream.close();
   });
 
   it('the stream sends a heartbeat comment every 25 s', async () => {
