@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { nextAuditTimestamp, withAuditChainLock } from './chain-lock.js';
 import { computeEntryHash } from './hash.js';
 import { redactAuditValue } from './redact.js';
 import type { AuditEntry, AuditMetadata, AuditWriteInput, PlatformAuditClient } from './types.js';
@@ -14,14 +15,19 @@ function targetColumns(input: AuditWriteInput) {
 }
 
 export async function writeAudit(client: PlatformAuditClient, input: AuditWriteInput) {
+  return withAuditChainLock(client, (db) => appendAudit(db, input));
+}
+
+async function appendAudit(client: PlatformAuditClient, input: AuditWriteInput) {
   const previous = await client.platformAuditLog.findFirst({
     orderBy: { createdAt: 'desc' },
-    select: { hash: true }
+    select: { hash: true, createdAt: true }
   });
   const prevHash = previous?.hash ?? null;
+  const timestamp = nextAuditTimestamp(previous);
   const entryWithoutHash: Omit<AuditEntry, 'hash' | 'prev_hash'> = {
     id: 'pending',
-    timestamp: new Date(),
+    timestamp,
     actor_id: input.actor_id,
     actor_role: input.actor_role,
     action: input.action,
@@ -67,7 +73,8 @@ export async function writeAudit(client: PlatformAuditClient, input: AuditWriteI
       ipAddress: input.ip_address,
       userAgent: input.user_agent ?? null,
       previousHash: prevHash,
-      hash
+      hash,
+      createdAt: timestamp
     }
   });
 }

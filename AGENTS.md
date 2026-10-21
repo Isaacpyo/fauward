@@ -30,7 +30,7 @@ Owner: Temitope Agbola / Treny Limited. Active development.
 | Widgets | Vanilla JS + esbuild (IIFE bundles with Shadow DOM) |
 | Testing | Vitest 2 (Node), Playwright 1.60 (E2E), pytest 8 (Python) |
 | CI | GitHub Actions |
-| Containers | Docker (node:20-alpine for Node apps, python:3.12-slim for Python) |
+| Containers | Docker (node:24-alpine for Node apps, python:3.12-slim for Python) |
 
 ---
 
