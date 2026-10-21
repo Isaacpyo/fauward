@@ -21,6 +21,7 @@ export const BADGE_KEYS = [
   'failed-jobs-24h',
   'integrations-degraded',
   'disputes-due',
+  'trial-extensions-pending',
   'p95-latency',
   'error-rate'
 ] as const;
@@ -99,6 +100,14 @@ export const BADGES: Record<BadgeKey, BadgeDefinition> = {
         where: { status: { in: ['warning_needs_response', 'needs_response'] }, submittedAt: null, evidenceDueBy: { gt: deps.now, lte: new Date(deps.now.getTime() + 72 * 3_600_000) } }
       });
       return { value, tone: countTone(value, 'red') };
+    }
+  },
+  // gtm.trials (WP-4.14): tenant requests for more trial time waiting for a decision.
+  'trial-extensions-pending': {
+    permissions: ['gtm.trials.read'],
+    compute: async (deps) => {
+      const value = await deps.app.prisma.trialExtensionRequest.count({ where: { status: 'PENDING' } });
+      return { value, tone: countTone(value, 'amber') };
     }
   },
   'p95-latency': {

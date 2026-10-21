@@ -226,36 +226,6 @@ function registerGtm(app: FastifyInstance) {
     reply.send(deal);
   });
 
-  app.get('/api/internal/trials', { preHandler: readPre('gtm.trials.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'trialActivation'), { orderBy: { updatedAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/trials/expiring', { preHandler: readPre('gtm.trials.read') }, async (_request, reply) => {
-    const data = await app.prisma.subscription.findMany({ where: { status: 'TRIALING', trialEnd: { lte: inDays(7), gte: new Date() } }, include: { tenant: true } });
-    reply.send({ data });
-  });
-
-  app.get('/api/internal/trials/extensions', { preHandler: readPre('gtm.trials.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'trialExtensionRequest'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.post('/api/internal/trials/extensions/:id/approve', { preHandler: writePre('gtm.trials.extend') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const row = await delegate(app, 'trialExtensionRequest').findUnique({ where: { id } }) as { requestedDays?: number } | null;
-    if (!row) return reply.status(404).send({ error: 'Extension request not found' });
-    const days = Number(row.requestedDays ?? 0);
-    const context = await staffPermissionContextForPlatformUser(app.prisma, request.platform!.user);
-    if (days > 30 && !context.roles.includes('SALES_DIRECTOR') && !context.roles.includes('ROOT')) return reply.status(403).send({ error: 'SALES_DIRECTOR approval required' });
-    if (days > 7 && !context.roles.includes('SALES_MANAGER') && !context.roles.includes('SALES_DIRECTOR') && !context.roles.includes('ROOT')) return reply.status(403).send({ error: 'SALES_MANAGER approval required' });
-    const after = await updateAndAudit(request, delegate(app, 'trialExtensionRequest'), id, { status: 'APPROVED', approvedBy: actorId(request) }, 'trials.extension.approve', 'trial_extension', stringValue(bodyObject(request).reason, 'Trial extension approved'));
-    reply.send(after);
-  });
-
-  app.get('/api/internal/trials/:tenantId', { preHandler: readPre('gtm.trials.read') }, async (request, reply) => {
-    const data = await delegate(app, 'trialActivation').findUnique({ where: { tenantId: (request.params as RequestWithTenant).tenantId } });
-    reply.send(data ?? { tenantId: (request.params as RequestWithTenant).tenantId, score: 0 });
-  });
-
   app.get('/api/internal/demos', { preHandler: readPre('gtm.demos.read') }, async (_request, reply) => {
     reply.send(await listWithMeta(delegate(app, 'demoEnvironment'), { orderBy: { createdAt: 'desc' }, take: 100 }));
   });

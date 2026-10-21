@@ -3257,14 +3257,28 @@ model TrialExtensionRequest {
   id            String   @id @default(uuid())
   tenantId      String
   requestedDays Int
+  /// PENDING | APPROVED | DENIED
   status        String   @default("PENDING")
+  /// TENANT (banner request) | CONSOLE (proactive extension by staff)
+  source        String   @default("TENANT")
+  /// Tenant user id (TENANT) or platform user id (CONSOLE).
   requestedBy   String?
   approvedBy    String?
   reason        String?
+  /// Equals tenantId while PENDING and null once decided: the unique index allows one pending request per tenant.
+  pendingTenantId  String?   @unique
+  decidedBy        String?
+  decidedAt        DateTime?
+  decisionReason   String?
+  previousTrialEnd DateTime?
+  newTrialEnd      DateTime?
+  /// MIRRORED | NOT_CONFIGURED | NO_STRIPE_SUBSCRIPTION | FAILED (approved rows only)
+  stripeSync       String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([tenantId, status])
+  @@index([status, createdAt])
   @@map("trial_extension_requests")
 }
 

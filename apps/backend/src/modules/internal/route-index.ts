@@ -303,6 +303,7 @@ export const CONSOLE_ROUTE_INDEX: readonly string[] = [
   'POST /api/internal/tenants/:id/users/:userId/lock',
   'POST /api/internal/tenants/:id/users/:userId/unlock',
   'POST /api/internal/tenants/region-requests/:id/decision',
-  'POST /api/internal/trials/extensions/:id/approve',
+  'POST /api/internal/trials/:tenantId/extend',
+  'POST /api/internal/trials/extensions/:id/decision',
   'PUT /api/internal/tenants/:id/ai-limit'
 ];

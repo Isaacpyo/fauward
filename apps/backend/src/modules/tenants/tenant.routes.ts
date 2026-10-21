@@ -12,6 +12,7 @@ import { registerPaymentGatewayRoutes } from './payment-gateways.routes.js';
 import { registerStaffAccessRoutes } from './staff-access.routes.js';
 import { registerTenantPlatformInvoiceRoutes } from './platform-invoices.routes.js';
 import { registerTenantTaxExemptionRoutes } from './tax-exemption.routes.js';
+import { registerTenantTrialExtensionRoutes } from './trial-extension.routes.js';
 import { registerTenantQbrRoutes } from './qbr.routes.js';
 import { registerTenantVerificationRoutes } from './verification.routes.js';
 import { registerPlanChangeRoutes } from './plan-change.routes.js';
@@ -59,6 +60,7 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   await registerPaymentGatewayRoutes(app);
   await registerTenantPlatformInvoiceRoutes(app);
   await registerTenantTaxExemptionRoutes(app);
+  await registerTenantTrialExtensionRoutes(app);
   await registerTenantQbrRoutes(app);
   await registerTenantVerificationRoutes(app);
   await registerPlanChangeRoutes(app);

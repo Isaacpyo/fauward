@@ -51,6 +51,7 @@ export type BadgeKey =
   | "failed-jobs-24h"
   | "integrations-degraded"
   | "disputes-due"
+  | "trial-extensions-pending"
   | "p95-latency"
   | "error-rate";
 
@@ -175,7 +176,7 @@ export const PILLARS: PillarManifest[] = [
     icon: BriefcaseBusiness,
     services: [
       { id: "pipeline", name: "Sales Pipeline", route: "/gtm/pipeline", owner: "Sales", description: "Deals, stages and conversion.", requiredPermission: "gtm.pipeline.read", icon: BriefcaseBusiness, status: "preview", livePhase: 4, routes: ["/gtm/pipeline", "/gtm/pipeline/forecasting", "/gtm/pipeline/:dealId"], note: "Deals have no producer (native CRUD and optional HubSpot import are planned)." },
-      { id: "trials", name: "Trial Management", route: "/gtm/trials", owner: "Sales", description: "Active trials and conversion tracking.", requiredPermission: "gtm.trials.read", icon: Sparkles, status: "preview", livePhase: 4, routes: ["/gtm/trials", "/gtm/trials/expiring", "/gtm/trials/extensions", "/gtm/trials/:tenantId"], note: "Activation scores are real; extension approval does not change the trial end and requests have no producer." },
+      { id: "trials", name: "Trial Management", route: "/gtm/trials", owner: "Sales", description: "Trials, activation and extension requests.", requiredPermission: "gtm.trials.read", badgeKey: "trial-extensions-pending", icon: Sparkles, status: "live", livePhase: 4, routes: ["/gtm/trials", "/gtm/trials/expiring", "/gtm/trials/extensions", "/gtm/trials/:tenantId"] },
       { id: "demos", name: "Demo Environment Mgr", route: "/gtm/demos", owner: "Sales", description: "Provision and teardown demo tenants.", requiredPermission: "gtm.demos.read", icon: PackageCheck, status: "preview", livePhase: 4, routes: ["/gtm/demos", "/gtm/demos/create", "/gtm/demos/templates", "/gtm/demos/:id"], note: "Created demo tenants have no users and templates are hardcoded." },
       { id: "contracts", name: "CPQ & Contracts", route: "/gtm/contracts", owner: "Sales", description: "Quotes, approvals and MSAs.", requiredPermission: "gtm.contracts.read", icon: FileText, status: "preview", livePhase: 4, routes: ["/gtm/contracts", "/gtm/contracts/quotes", "/gtm/contracts/quotes/:id", "/gtm/contracts/discounts", "/gtm/contracts/msas"], note: "DocuSign envelopes are sent without a document; MSAs and approvals have no writer." },
       { id: "partners", name: "Partner Portal Mgmt", route: "/gtm/partners", owner: "Partnerships", description: "Resellers and deal registration.", requiredPermission: "gtm.partners.read", icon: Handshake, status: "deferred", livePhase: null, routes: ["/gtm/partners"], note: "No partner programme." },

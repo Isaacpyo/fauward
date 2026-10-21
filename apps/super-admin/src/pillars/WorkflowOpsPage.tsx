@@ -39,7 +39,6 @@ const WORKFLOW_PREFIXES = [
   "/announcements",
   "/flags",
   "/contracts",
-  "/trials",
   "/demos"
 ];
 
@@ -168,23 +167,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
         fields: [
           { name: "quoteId", label: "Quote ID", required: true },
           { name: "reason", label: "Reason", type: "textarea", defaultValue: "Send to DocuSign" }
-        ],
-        payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/trials")) {
-    return [
-      {
-        id: "approve",
-        label: "Approve Extension",
-        description: "Approve a trial extension using the configured threshold rules.",
-        method: "post",
-        path: (values) => `/trials/extensions/${encodeURIComponent(values.requestId)}/approve`,
-        fields: [
-          { name: "requestId", label: "Request ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Trial extension approved" }
         ],
         payload: (values) => ({ reason: values.reason })
       }

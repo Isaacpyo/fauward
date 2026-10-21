@@ -71,6 +71,7 @@ import { JitPendingPage } from "@/pillars/trust/jit/JitPendingPage";
 import { JitRequestPage } from "@/pillars/trust/jit/JitRequestPage";
 import { PermissionsPage } from "@/pillars/trust/iam/PermissionsPage";
 import { RoleDetailPage } from "@/pillars/trust/iam/RoleDetailPage";
+import { ExtensionsPage, TrialDetailPage, TrialsExpiringPage, TrialsPage } from "@/pillars/gtm/trials/TrialsPages";
 import { RolesPage } from "@/pillars/trust/iam/RolesPage";
 import { UserDetailPage } from "@/pillars/trust/iam/UserDetailPage";
 import { UsersListPage } from "@/pillars/trust/iam/UsersListPage";
@@ -356,10 +357,10 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/gtm/pipeline", element: <OpsRoute permission="gtm.pipeline.read" title="Sales Pipeline" description="HubSpot deal sync with Fauward tenant linking." endpoint="/pipeline" related={[{ label: "Forecasting", to: "/gtm/pipeline/forecasting" }]} /> },
   { path: "/gtm/pipeline/forecasting", element: <OpsRoute permission="gtm.pipeline.read" title="Forecasting" description="Quarterly forecast from synced HubSpot deal amount and probability." endpoint="/pipeline/forecasting" /> },
   { path: "/gtm/pipeline/:dealId", element: <OpsRoute permission="gtm.pipeline.read" title="Deal Detail" description="Deal detail and linked tenant context." endpoint="/pipeline/:dealId" /> },
-  { path: "/gtm/trials", element: <OpsRoute permission="gtm.trials.read" title="Trial Management" description="Trial activation scoring and intervention queues." endpoint="/trials" related={[{ label: "Expiring", to: "/gtm/trials/expiring" }, { label: "Extensions", to: "/gtm/trials/extensions" }]} /> },
-  { path: "/gtm/trials/expiring", element: <OpsRoute permission="gtm.trials.read" title="Expiring Trials" description="Trials expiring in the next seven days." endpoint="/trials/expiring" /> },
-  { path: "/gtm/trials/extensions", element: <OpsRoute permission="gtm.trials.read" title="Trial Extensions" description="Extension requests and approval thresholds." endpoint="/trials/extensions" /> },
-  { path: "/gtm/trials/:tenantId", element: <OpsRoute permission="gtm.trials.read" title="Trial Detail" description="Activation score and tenant-level intervention context." endpoint="/trials/:tenantId" /> },
+  { path: "/gtm/trials", element: <PermissionRoute permission="gtm.trials.read"><TrialsPage /></PermissionRoute> },
+  { path: "/gtm/trials/expiring", element: <PermissionRoute permission="gtm.trials.read"><TrialsExpiringPage /></PermissionRoute> },
+  { path: "/gtm/trials/extensions", element: <PermissionRoute permission="gtm.trials.read"><ExtensionsPage /></PermissionRoute> },
+  { path: "/gtm/trials/:tenantId", element: <PermissionRoute permission="gtm.trials.read"><TrialDetailPage /></PermissionRoute> },
   { path: "/gtm/demos", element: <OpsRoute permission="gtm.demos.read" title="Demo Environments" description="Demo tenant inventory and expiry lifecycle." endpoint="/demos" related={[{ label: "Templates", to: "/gtm/demos/templates" }]} /> },
   { path: "/gtm/demos/create", element: <OpsRoute permission="gtm.demos.write" title="Create Demo" description="Provision templated demo tenants for sales." endpoint="/demos/templates" /> },
   { path: "/gtm/demos/templates", element: <OpsRoute permission="gtm.demos.read" title="Demo Templates" description="Template catalogue for demo tenant seeding." endpoint="/demos/templates" /> },
