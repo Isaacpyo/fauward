@@ -31,8 +31,14 @@ function fixture() {
   return {
     settings,
     gateways,
+    // The legacy key column is read and cleared with SQL (dropped from the Prisma schema in 0079).
+    $queryRaw: vi.fn(async () => settings.filter((row) => row.paymentGatewayKey !== null || row.webhookSecret !== null).map((row) => ({ ...row }))),
+    $executeRaw: vi.fn(async (_sql: TemplateStringsArray, tenantId: string) => {
+      const row = settings.find((item) => item.tenantId === tenantId);
+      if (row) row.paymentGatewayKey = null;
+      return row ? 1 : 0;
+    }),
     tenantSettings: {
-      findMany: vi.fn(async () => settings.filter((row) => row.paymentGatewayKey !== null || row.webhookSecret !== null).map((row) => ({ ...row }))),
       update: vi.fn(async ({ where, data }: { where: { tenantId: string }; data: Record<string, unknown> }) => Object.assign(settings.find((row) => row.tenantId === where.tenantId)!, data))
     },
     tenantPaymentGateway: {

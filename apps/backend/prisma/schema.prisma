@@ -691,7 +691,6 @@ model TenantSettings {
   notificationEmail            String?
   smsEnabled                   Boolean  @default(false)
   paymentGateway               String   @default("STRIPE")
-  paymentGatewayKey            String?
   customEmailDomain            String?
   webhookUrl                   String?
   webhookSecret                String?
@@ -1388,9 +1387,6 @@ model TicketMessage {
   authorType MessageAuthorType @default(TENANT_USER)
   visibility MessageVisibility @default(PUBLIC)
   body       String
-  // Kept until 0062 (D5): isInternal → TENANT_INTERNAL, fromSA → authorType STAFF (backfill 0047-ticket-messages.ts).
-  isInternal Boolean  @default(false)
-  fromSA     Boolean  @default(false)
   platformAuthorId String?
   createdAt  DateTime @default(now())
 
@@ -2423,26 +2419,6 @@ model IncidentRunbook {
   @@map("incident_runbooks")
 }
 
-model SupportVendorTicket {
-  id             String   @id @default(uuid())
-  tenantId       String
-  vendor         String   @default("zendesk")
-  vendorId       String
-  subject        String
-  status         String
-  priority       String?
-  url            String?
-  requesterEmail String?
-  latestMessage  String?
-  sentiment      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@unique([vendor, vendorId])
-  @@index([tenantId, updatedAt])
-  @@map("support_vendor_tickets")
-}
-
 model TenantHealthScore {
   id         String   @id @default(uuid())
   tenantId   String
@@ -2897,24 +2873,8 @@ model SecretCredential {
   lastRotatedAt   DateTime?
   rotateEveryDays Int?
 
-  accessLogs SecretAccessLog[]
-
   @@index([expiresAt])
   @@map("secret_credentials")
-}
-
-model SecretAccessLog {
-  id            String   @id @default(uuid())
-  secretId      String
-  accessedBy    String
-  source        String
-  justification String?
-  accessedAt    DateTime @default(now())
-
-  secret SecretCredential @relation(fields: [secretId], references: [id], onDelete: Cascade)
-
-  @@index([secretId, accessedAt])
-  @@map("secret_access_logs")
 }
 
 model StaffLoginAttempt {
@@ -3041,23 +3001,6 @@ model TaxRegistration {
 
   @@unique([region, taxId])
   @@map("tax_registrations")
-}
-
-model TaxReturn {
-  id           String   @id @default(uuid())
-  region       String
-  periodStart  DateTime
-  periodEnd    DateTime
-  taxCollected Decimal  @default(0) @db.Decimal(12, 2)
-  taxPaidOut   Decimal  @default(0) @db.Decimal(12, 2)
-  netDue       Decimal  @default(0) @db.Decimal(12, 2)
-  status       String   @default("PENDING")
-  exportUrl    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([region, periodStart])
-  @@map("tax_returns")
 }
 
 /// revenue.tax (WP-4.7, 0067): a tenant uploads its certificate (bytes in the export storage adapter); staff approve,
@@ -3241,17 +3184,6 @@ model QBRDeck {
   @@map("qbr_decks")
 }
 
-model QBRTemplate {
-  id        String   @id @default(uuid())
-  segment   String   @unique
-  html      String
-  css       String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("qbr_templates")
-}
-
 model SalesDeal {
   id            String   @id @default(uuid())
   tenantId      String?
@@ -3400,128 +3332,6 @@ model MarketingAttribution {
   @@index([tenantId])
   @@index([source, periodStart])
   @@map("marketing_attributions")
-}
-
-model PricingExperiment {
-  id                 String   @id @default(uuid())
-  vendorExperimentId String?  @unique
-  name               String
-  status             String   @default("ACTIVE")
-  variants           Json
-  metrics            Json?
-  startedAt          DateTime?
-  endedAt            DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-
-  @@index([status])
-  @@map("pricing_experiments")
-}
-
-model Partner {
-  id               String   @id @default(uuid())
-  name             String
-  type             String
-  tier             String   @default("BRONZE")
-  status           String   @default("ACTIVE")
-  commissionConfig Json?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  applications  PartnerApplication[]
-  registrations PartnerDealRegistration[]
-  commissions   CommissionLedger[]
-  payouts       CommissionPayout[]
-
-  @@index([status])
-  @@map("partners")
-}
-
-model PartnerApplication {
-  id             String   @id @default(uuid())
-  partnerId      String?
-  applicantEmail String
-  companyName    String
-  type           String
-  status         String   @default("PENDING")
-  payload        Json?
-  decidedBy      String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  partner Partner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-
-  @@index([status, createdAt])
-  @@map("partner_applications")
-}
-
-model PartnerDealRegistration {
-  id          String   @id @default(uuid())
-  partnerId   String
-  leadEmail   String
-  companyName String
-  status      String   @default("REGISTERED")
-  lockedUntil DateTime
-  dealId      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@unique([leadEmail])
-  @@index([partnerId, status])
-  @@map("partner_deal_registrations")
-}
-
-model CommissionLedger {
-  id        String   @id @default(uuid())
-  partnerId String
-  tenantId  String?
-  dealId    String?
-  amount    Decimal  @db.Decimal(12, 2)
-  currency  String   @default("GBP")
-  status    String   @default("EARNED")
-  period    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId, period])
-  @@index([status])
-  @@map("commission_ledger")
-}
-
-model CommissionPayout {
-  id                String   @id @default(uuid())
-  partnerId         String
-  amount            Decimal  @db.Decimal(12, 2)
-  currency          String   @default("GBP")
-  status            String   @default("PENDING")
-  approvedByFinance String?
-  approvedByCfo     String?
-  stripeTransferId  String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId, status])
-  @@map("commission_payouts")
-}
-
-model CommissionDispute {
-  id         String   @id @default(uuid())
-  partnerId  String
-  payoutId   String?
-  message    String
-  status     String   @default("OPEN")
-  resolvedBy String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@index([partnerId, status])
-  @@map("commission_disputes")
 }
 
 model SsoProvider {

@@ -10,7 +10,7 @@ import { markOnboardingStep, onboardingChecklist } from '../../services/onboardi
 function publicSettings(settings: TenantSettings | null) {
   if (!settings) return null;
   const { webhookSecret, ...rest } = settings;
-  return { ...rest, paymentGatewayKey: undefined, webhookSecretSet: Boolean(webhookSecret) };
+  return { ...rest, webhookSecretSet: Boolean(webhookSecret) };
 }
 
 export const tenantService = {
