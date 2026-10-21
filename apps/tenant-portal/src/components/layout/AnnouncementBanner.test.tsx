@@ -51,4 +51,14 @@ describe("announcement banner receipts (L8, WP-2.14)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Dismiss announcement" }));
     expect(await screen.findByText("Maintenance")).toBeInTheDocument();
   });
+
+  it("ACC-INC-1 (tenant side) a Fauward incident update shows as a non-dismissible alert", async () => {
+    get.mockResolvedValue({ data: { announcements: [{ id: "ann_inc", type: "INCIDENT", title: "Service incident: Label printing down", body: "We are investigating failed label generation.", cta: null, dismissible: false }] } });
+    renderBanner();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Service incident: Label printing down");
+    expect(alert).toHaveTextContent("We are investigating failed label generation.");
+    expect(alert.getAttribute("data-announcement-type")).toBe("INCIDENT");
+    expect(screen.queryByRole("button", { name: "Dismiss announcement" })).toBeNull();
+  });
 });

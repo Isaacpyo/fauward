@@ -21,6 +21,7 @@ import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPag
 import { DsarDetailPage, DsarQueuePage } from "@/pillars/trust/compliance/DsarPages";
 import { FeedbackBoardPage, FeedbackDetailPage, NpsPage } from "@/pillars/customer/feedback/FeedbackPages";
 import { EscalationsPage } from "@/pillars/platform/incidents/EscalationsPage";
+import { IncidentDetailPage, IncidentsListPage, RunbookEditorPage, RunbooksPage } from "@/pillars/platform/incidents/IncidentsPages";
 import { WebhookFailuresPage } from "@/pillars/platform/integrations/WebhookFailuresPage";
 import { PlanChangeRequestsPage, SubscriptionDetailPage, SubscriptionsListPage } from "@/pillars/revenue/subscriptions/SubscriptionsPages";
 import { ContractsPage, OverridesPage } from "@/pillars/revenue/subscriptions/PricingPages";
@@ -114,13 +115,13 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/platform/flags/:key", element: <PermissionRoute permission="platform.flags.read"><FlagDetailPage /></PermissionRoute> },
   { path: "/platform/flags/:key/audit", element: <PermissionRoute permission="platform.flags.read"><FlagAuditPage /></PermissionRoute> },
   { path: "/platform/releases", element: <PermissionRoute permission="platform.flags.read"><ReleasesPage /></PermissionRoute> },
-  { path: "/platform/incidents", element: <OpsRoute permission="platform.incidents.read" title="Incidents" description="PagerDuty incidents enriched with affected Fauward tenants." endpoint="/incidents" related={[{ label: "Runbooks", to: "/platform/incidents/runbooks" }, { label: "Tenant escalations", to: "/platform/incidents/escalations" }]} /> },
+  { path: "/platform/incidents", element: <PermissionRoute permission="platform.incidents.read"><IncidentsListPage /></PermissionRoute> },
   { path: "/platform/incidents/escalations", element: <PermissionRoute permission="platform.incidents.read">
                 <EscalationsPage />
               </PermissionRoute> },
-  { path: "/platform/incidents/runbooks", element: <OpsRoute permission="platform.incidents.read" title="Incident Runbooks" description="Markdown runbook library for incident responders." endpoint="/incidents/runbooks" /> },
-  { path: "/platform/incidents/:id", element: <OpsRoute permission="platform.incidents.read" title="Incident Detail" description="Incident timeline and tenant impact mapping." endpoint="/incidents/:id" /> },
-  { path: "/platform/incidents/:id/postmortem", element: <OpsRoute permission="platform.incidents.read" title="Postmortem" description="Postmortem link and incident closure context." endpoint="/incidents/:id" /> },
+  { path: "/platform/incidents/runbooks", element: <PermissionRoute permission="platform.incidents.read"><RunbooksPage /></PermissionRoute> },
+  { path: "/platform/incidents/runbooks/:id", element: <PermissionRoute permission="platform.incidents.read"><RunbookEditorPage /></PermissionRoute> },
+  { path: "/platform/incidents/:id", element: <PermissionRoute permission="platform.incidents.read"><IncidentDetailPage /></PermissionRoute> },
   { path: "/platform/jobs", element: <PermissionRoute permission="platform.jobs.read">
                 <JobsListPage />
               </PermissionRoute> },

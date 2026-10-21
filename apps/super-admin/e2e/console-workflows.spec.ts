@@ -3,8 +3,6 @@ import { expect, test } from "@playwright/test";
 import { mockConsoleSession } from "./support/console-session";
 
 const permissions = [
-  "platform.incidents.read",
-  "platform.incidents.write",
   "customer.success.read",
   "customer.success.write",
   "gtm.contracts.read",
@@ -30,9 +28,7 @@ test.beforeEach(async ({ context, page }) => {
 
     if (request.method() === "GET") {
       const data =
-        path === "/incidents"
-          ? { data: [{ id: "inc_001", title: "Carrier API outage", status: "triggered" }] }
-          : path === "/success/health-scoring"
+        path === "/success/health-scoring"
             ? { weights: { login: 20, shipmentTrend: 25, featureBreadth: 15, paymentHealth: 15, ticketSentimentVolume: 15, nps: 10 } }
             : path === "/contracts/quotes"
               ? { data: [{ id: "quote_001", quoteNumber: "Q-001", status: "DRAFT" }] }
@@ -56,7 +52,6 @@ test.beforeEach(async ({ context, page }) => {
 
 test("navigates critical Phase 2-6 workflow pages", async ({ page }) => {
   const pages = [
-    ["/platform/incidents", "Incidents"],
     ["/customer/success/health-scoring", "Health Scoring"],
     ["/gtm/contracts/quotes", "Quote Builder"],
     ["/revenue/dunning", "Dunning Manager"]
@@ -78,11 +73,6 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
     }
   });
 
-  await page.goto("/platform/incidents");
-  await page.getByLabel("Incident ID").fill("inc_001");
-  await page.getByLabel("Tenant ID").fill("tenant_001");
-  await page.getByRole("button", { name: "Tag Tenant Impact" }).click();
-
   await page.goto("/customer/success/health-scoring");
   await page.getByRole("button", { name: "Queue Health Scoring" }).click();
 
@@ -93,8 +83,7 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
   await page.getByLabel("Invoice ID").fill("inv_001");
   await page.getByRole("button", { name: "Queue Manual Retry" }).click();
 
-  await expect.poll(() => calls).toContain("POST /api/internal/incidents/inc_001/impacts");
-  expect(calls).toContain("POST /api/internal/success/health-scoring/run");
+  await expect.poll(() => calls).toContain("POST /api/internal/success/health-scoring/run");
   expect(calls).toContain("POST /api/internal/contracts/quotes");
   expect(calls).toContain("POST /api/internal/dunning/retry/inv_001");
 });

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 type Announcement = {
   id: string;
-  type: "INFO" | "WARNING" | "MAINTENANCE";
+  type: "INFO" | "WARNING" | "MAINTENANCE" | "INCIDENT";
   title: string;
   body: string;
   cta?: { label?: string; url?: string } | null;
@@ -25,7 +25,9 @@ type ReceiptAction = "VIEWED" | "DISMISSED" | "CTA_CLICKED";
 const tone = {
   INFO: "border-blue-200 bg-blue-50 text-blue-900",
   WARNING: "border-amber-200 bg-amber-50 text-amber-950",
-  MAINTENANCE: "border-orange-200 bg-orange-50 text-orange-950"
+  MAINTENANCE: "border-orange-200 bg-orange-50 text-orange-950",
+  // Public updates of a Fauward incident (platform.incidents, WP-4.2); the announcement expires when it is resolved.
+  INCIDENT: "border-red-200 bg-red-50 text-red-950"
 };
 
 const ANNOUNCEMENTS_KEY = ["tenant-announcements"];
@@ -66,7 +68,7 @@ export function AnnouncementBanner() {
   return (
     <div className="space-y-1 border-b border-gray-200 bg-white" data-testid="announcement-banner">
       {announcements.map((item) => (
-        <div key={item.id} className={cn("flex items-start justify-between gap-3 border-t px-4 py-2 text-sm", tone[item.type])}>
+        <div key={item.id} data-announcement-type={item.type} role={item.type === "INCIDENT" ? "alert" : undefined} className={cn("flex items-start justify-between gap-3 border-t px-4 py-2 text-sm", tone[item.type] ?? tone.INFO)}>
           <div>
             <p className="font-semibold">{item.title}</p>
             <p className="mt-0.5">{item.body}</p>

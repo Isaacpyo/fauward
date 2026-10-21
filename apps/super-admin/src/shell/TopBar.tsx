@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { PlatformSessionUser } from "@/lib/platform-session";
+import { ActiveIncidentPill } from "@/pillars/platform/incidents/IncidentsPages";
 import { CommandPalette } from "@/shell/CommandPalette";
 import { NotificationBell } from "@/shell/NotificationBell";
 import { PillarSwitcher } from "@/shell/PillarSwitcher";
@@ -36,6 +37,7 @@ export function TopBar({ user }: TopBarProps) {
       </button>
 
       <div className="flex shrink-0 items-center gap-2">
+        <ActiveIncidentPill />
         <PillarSwitcher />
         <NotificationBell />
         <UserMenu user={user} />

@@ -37,7 +37,6 @@ type WorkflowAction = {
 
 const WORKFLOW_PREFIXES = [
   "/dunning",
-  "/incidents",
   "/announcements",
   "/success",
   "/flags",
@@ -145,25 +144,6 @@ function actionPresets(endpoint: string, title: string): WorkflowAction[] {
           { name: "reason", label: "Reason", type: "textarea", required: true }
         ],
         payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
-  if (endpoint.startsWith("/incidents")) {
-    return [
-      {
-        id: "impact",
-        label: "Tag Tenant Impact",
-        description: "Map a PagerDuty incident to affected Fauward tenants.",
-        method: "post",
-        path: (values, resolved) => `/incidents/${encodeURIComponent(values.incidentId || resolved.split("/")[2] || "")}/impacts`,
-        fields: [
-          { name: "incidentId", label: "Incident ID", required: true },
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "impactLevel", label: "Impact", type: "select", options: ["AFFECTED", "DEGRADED", "OUTAGE"], defaultValue: "AFFECTED" },
-          { name: "notes", label: "Notes", type: "textarea" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, impactLevel: values.impactLevel, notes: values.notes })
       }
     ];
   }

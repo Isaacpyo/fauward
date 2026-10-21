@@ -1,5 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Prisma } from '@prisma/client';
 import type { Permission } from '@fauward/internal-rbac';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
@@ -14,6 +13,7 @@ import { docusignAdapter } from '../../services/vendors/docusign.adapter.js';
 import { scheduledJobsQueue } from '../../queues/queues.js';
 import { approveSaveOffer, SaveOfferError } from '../../services/save-offer.service.js';
 import { writeInternalAudit } from './internal-audit.js';
+import { recordWebhookVerification, verifyWebhookHmac, webhookPayload } from './webhook-hmac.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { staffSuspensionActor, suspendTenant } from '../../services/tenant-suspension.service.js';
 import { FeatureOverrideError, consoleOverrideActor, createFeatureOverride, revokeFeatureOverride } from '../../services/feature-override.service.js';
@@ -32,20 +32,6 @@ type Delegate = {
 
 type RequestWithId = { id: string };
 type RequestWithTenant = { tenantId: string };
-type WebhookVerification = {
-  signature: string;
-  timestamp: string;
-  verifiedAt: string;
-};
-
-type WebhookHmacOptions = {
-  envName: string;
-  signatureHeaderNames: string[];
-  timestampHeaderNames: string[];
-  scheme: 'pagerduty' | 'persona' | 'docusign' | 'complyadvantage';
-  webhookIdHeaderNames?: string[];
-};
-
 function readPre(permission: Permission) {
   return [authenticatePlatformSession, requireConsolePermission(permission)];
 }
@@ -62,11 +48,6 @@ function bodyObject(request: FastifyRequest): Record<string, unknown> {
 
 function delegate(app: FastifyInstance, name: string): Delegate {
   return (app.prisma as unknown as Record<string, Delegate>)[name];
-}
-
-function optionalDelegate(app: FastifyInstance, name: string): Delegate | null {
-  const value = (app.prisma as unknown as Record<string, Delegate | undefined>)[name];
-  return value && typeof value.upsert === 'function' ? value : null;
 }
 
 function stringValue(value: unknown, fallback = '') {
@@ -90,176 +71,6 @@ function inDays(days: number) {
 
 function actorId(request: FastifyRequest) {
   return request.platform!.user.id;
-}
-
-function headerValue(request: FastifyRequest, name: string) {
-  const value = request.headers[name.toLowerCase()];
-  return typeof value === 'string' ? value : Array.isArray(value) ? value[0] : undefined;
-}
-
-function rawBodyString(request: FastifyRequest) {
-  if (request.rawBody) return request.rawBody.toString('utf8');
-  if (Buffer.isBuffer(request.body)) return request.body.toString('utf8');
-  if (typeof request.body === 'string') return request.body;
-  return JSON.stringify(request.body ?? {});
-}
-
-function timestampFromHeaders(request: FastifyRequest, signatureHeader: string | undefined, timestampHeaderNames: string[]) {
-  const explicit = timestampHeaderNames.map((name) => headerValue(request, name)).find(Boolean);
-  if (explicit) return explicit;
-  const embedded = signatureHeader?.split(',').map((part) => part.trim()).find((part) => part.toLowerCase().startsWith('t='));
-  return embedded?.slice(2).trim();
-}
-
-function timestampToMs(timestamp: string) {
-  if (/^\d+$/.test(timestamp)) {
-    const numeric = Number(timestamp);
-    return timestamp.length <= 10 ? numeric * 1000 : numeric;
-  }
-  const parsed = Date.parse(timestamp);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-function secureStringEquals(left: string, right: string) {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
-}
-
-function hmacDigest(secret: string | Buffer, payload: string | Buffer) {
-  return createHmac('sha256', secret).update(payload).digest();
-}
-
-function signatureList(header: string | undefined, marker?: string) {
-  if (!header) return [];
-  if (!marker) return header.split(/\s+/).map((part) => part.trim()).filter(Boolean);
-
-  const normalizedMarker = marker.toLowerCase();
-  const extractMarked = (part: string) => {
-    const lowerPart = part.toLowerCase();
-    if (lowerPart.startsWith(`${normalizedMarker}=`)) return part.slice(marker.length + 1);
-    if (lowerPart.startsWith(`${normalizedMarker},`)) return part.slice(marker.length + 1);
-    return null;
-  };
-
-  return header
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .flatMap((part) => {
-      if (!part) return [];
-      const direct = extractMarked(part);
-      if (direct) return [direct];
-      const commaPart = part.split(',').map((piece) => piece.trim()).map(extractMarked).find(Boolean);
-      if (commaPart) return [commaPart];
-      return [];
-    })
-    .filter(Boolean);
-}
-
-function base64Secret(secret: string) {
-  return Buffer.from(secret, 'base64');
-}
-
-function expectedWebhookSignatures(options: WebhookHmacOptions, secret: string, timestamp: string, rawBody: string, webhookId: string | undefined) {
-  if (options.scheme === 'pagerduty') {
-    return {
-      signatures: [hmacDigest(secret, rawBody).toString('hex')],
-      marker: 'v1'
-    };
-  }
-
-  if (options.scheme === 'persona') {
-    return {
-      signatures: [hmacDigest(secret, `${timestamp}.${rawBody}`).toString('hex')],
-      marker: 'v1'
-    };
-  }
-
-  if (options.scheme === 'docusign') {
-    const digest = hmacDigest(secret, rawBody);
-    return {
-      signatures: [digest.toString('base64'), digest.toString('hex')],
-      marker: undefined
-    };
-  }
-
-  if (!webhookId) {
-    return {
-      signatures: [],
-      marker: 'v1'
-    };
-  }
-
-  const digest = hmacDigest(base64Secret(secret), `${webhookId}.${timestamp}.${rawBody}`);
-  return {
-    signatures: [digest.toString('base64')],
-    marker: 'v1'
-  };
-}
-
-function verifyWebhookHmac(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: WebhookHmacOptions
-): WebhookVerification | null {
-  const secret = process.env[options.envName];
-  if (!secret) {
-    reply.status(503).send({ error: `${options.envName}_NOT_CONFIGURED` });
-    return null;
-  }
-
-  const signatureHeader = options.signatureHeaderNames.map((name) => headerValue(request, name)).find(Boolean);
-  if (!signatureHeader) {
-    reply.status(403).send({ error: 'Invalid webhook signature' });
-    return null;
-  }
-
-  const timestamp = timestampFromHeaders(request, signatureHeader, options.timestampHeaderNames);
-  const signedAtMs = timestamp ? timestampToMs(timestamp) : null;
-  if (!timestamp || signedAtMs === null) {
-    reply.status(403).send({ error: 'Invalid webhook signature' });
-    return null;
-  }
-
-  if (Math.abs(Date.now() - signedAtMs) > 5 * 60 * 1000) {
-    reply.status(400).send({ error: 'Webhook timestamp too old' });
-    return null;
-  }
-
-  const webhookId = options.webhookIdHeaderNames?.map((name) => headerValue(request, name)).find(Boolean);
-  if (options.scheme === 'complyadvantage' && !webhookId) {
-    reply.status(403).send({ error: 'Invalid webhook signature' });
-    return null;
-  }
-
-  const { signatures: expectedCandidates, marker } = expectedWebhookSignatures(options, secret, timestamp, rawBodyString(request), webhookId);
-  const actualCandidates = signatureList(signatureHeader, marker);
-  const valid = actualCandidates.some((actual) => expectedCandidates.some((expected) => secureStringEquals(actual, expected)));
-  if (!valid) {
-    reply.status(403).send({ error: 'Invalid webhook signature' });
-    return null;
-  }
-
-  return {
-    signature: actualCandidates[0],
-    timestamp,
-    verifiedAt: new Date().toISOString()
-  };
-}
-
-function webhookPayload(body: Record<string, unknown>, verification: WebhookVerification) {
-  return { ...body, _webhookVerification: verification };
-}
-
-async function recordWebhookVerification(app: FastifyInstance, vendor: string, verification: WebhookVerification) {
-  const model = optionalDelegate(app, 'integrationProviderStatus');
-  if (!model) return;
-  const payload = { lastWebhookVerification: verification };
-  await model.upsert({
-    where: { provider: vendor },
-    create: { provider: vendor, status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), payload },
-    update: { status: 'WEBHOOK_VERIFIED', lastSuccessfulAt: new Date(), checkedAt: new Date(), payload }
-  });
 }
 
 function nestedRecord(value: unknown): Record<string, unknown> {
@@ -306,7 +117,6 @@ async function updateAndAudit(
 
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerDunning(app);
-  registerIncidents(app);
   registerSuccess(app);
   registerSecrets(app);
   registerSecurity(app);
@@ -431,87 +241,6 @@ function registerDunning(app: FastifyInstance) {
       stringValue(body.reason, 'Sequence change')
     );
     reply.send(after);
-  });
-}
-
-function registerIncidents(app: FastifyInstance) {
-  app.get('/api/internal/incidents', { preHandler: readPre('platform.incidents.read') }, async (_request, reply) => {
-    const vendor = vendorStatus('pagerduty');
-    const data = await delegate(app, 'incidentRecord').findMany({ include: { impacts: true }, orderBy: { createdAt: 'desc' }, take: 100 });
-    reply.send({ data, vendor });
-  });
-
-  app.get('/api/internal/incidents/:id', { preHandler: readPre('platform.incidents.read') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const incident = await delegate(app, 'incidentRecord').findUnique({ where: { id }, include: { impacts: true } });
-    if (!incident) return reply.status(404).send({ error: 'Incident not found' });
-    reply.send(incident);
-  });
-
-  app.post('/api/internal/incidents/:id/impacts', { preHandler: writePre('platform.incidents.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    if (!tenantId) return reply.status(400).send({ error: 'tenantId is required' });
-    const impact = await delegate(app, 'incidentTenantImpact').upsert({
-      where: { incidentId_tenantId: { incidentId: id, tenantId } },
-      create: { incidentId: id, tenantId, impactLevel: stringValue(body.impactLevel, 'AFFECTED'), notes: stringValue(body.notes) || null },
-      update: { impactLevel: stringValue(body.impactLevel, 'AFFECTED'), notes: stringValue(body.notes) || null }
-    });
-    const incident = await delegate(app, 'incidentRecord').findUnique({ where: { id } }) as { title?: string; resolvedAt?: Date | null } | null;
-    await app.prisma.platformAnnouncement.create({
-      data: {
-        type: 'WARNING',
-        title: incident?.title ? `Service notice: ${incident.title}` : 'Service notice',
-        body: stringValue(body.portalMessage, stringValue(body.notes, 'A Fauward service incident may be affecting your workspace.')),
-        targetAll: false,
-        tenantIds: [tenantId],
-        planTiers: [],
-        dismissible: false,
-        expiresAt: incident?.resolvedAt ?? null,
-        createdBy: actorId(request)
-      }
-    });
-    await writeInternalAudit(request, 'incident.impact.annotate', 'incident', id, null, impact, stringValue(body.reason, 'Incident impact annotation'));
-    reply.send(impact);
-  });
-
-  app.post('/api/internal/incidents/webhooks/pagerduty', async (request, reply) => {
-    const verification = verifyWebhookHmac(request, reply, {
-      envName: 'PAGERDUTY_WEBHOOK_SECRET',
-      signatureHeaderNames: ['x-pagerduty-signature'],
-      timestampHeaderNames: ['x-pagerduty-request-timestamp', 'x-pagerduty-webhook-timestamp'],
-      scheme: 'pagerduty'
-    });
-    if (!verification) return;
-    await recordWebhookVerification(app, 'pagerduty', verification);
-    const body = bodyObject(request);
-    const event = (body.event && typeof body.event === 'object' ? body.event : body) as Record<string, unknown>;
-    const incident = (event.incident && typeof event.incident === 'object' ? event.incident : event) as Record<string, unknown>;
-    const payload = webhookPayload(body, verification);
-    const vendorId = stringValue(incident.id, `pd_${Date.now()}`);
-    const record = await delegate(app, 'incidentRecord').upsert({
-      where: { vendorId },
-      create: {
-        vendor: 'pagerduty',
-        vendorId,
-        title: stringValue(incident.title, stringValue(incident.summary, 'PagerDuty incident')),
-        status: stringValue(incident.status, 'triggered'),
-        severity: stringValue(incident.urgency, 'medium'),
-        payload
-      },
-      update: {
-        title: stringValue(incident.title, stringValue(incident.summary, 'PagerDuty incident')),
-        status: stringValue(incident.status, 'triggered'),
-        severity: stringValue(incident.urgency, 'medium'),
-        payload
-      }
-    });
-    reply.send({ received: true, incident: record });
-  });
-
-  app.get('/api/internal/incidents/runbooks', { preHandler: readPre('platform.incidents.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'incidentRunbook'), { orderBy: { title: 'asc' } }));
   });
 }
 

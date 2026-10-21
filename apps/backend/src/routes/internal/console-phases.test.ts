@@ -90,14 +90,6 @@ function rawPayload(payload: unknown) {
   return rawBody;
 }
 
-function pagerDutyWebhookHeaders(secret: string, payload: unknown, timestamp = String(Date.now())) {
-  const signature = createHmac('sha256', secret).update(rawPayload(payload)).digest('hex');
-  return {
-    'x-pagerduty-signature': `v1=${signature}`,
-    'x-pagerduty-request-timestamp': timestamp
-  };
-}
-
 function personaWebhookHeaders(secret: string, payload: unknown, timestamp = String(Date.now())) {
   const signature = createHmac('sha256', secret).update(`${timestamp}.${rawPayload(payload)}`).digest('hex');
   return {
@@ -127,7 +119,6 @@ describe('internal console phase routes', () => {
     currentPermissions = [];
     currentRoles = ['FINANCE_ADMIN'];
     vi.unstubAllGlobals();
-    delete process.env.PAGERDUTY_WEBHOOK_SECRET;
     delete process.env.PERSONA_WEBHOOK_SECRET;
     delete process.env.COMPLYADVANTAGE_WEBHOOK_SECRET;
     delete process.env.DOCUSIGN_WEBHOOK_SECRET;
@@ -186,75 +177,6 @@ describe('internal console phase routes', () => {
       expect.objectContaining({ jobId: expect.stringContaining('customer.health-scoring.manual.') })
     );
     expect(writeAuditMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ action: 'success.health_score.enqueue' }));
-  });
-
-  it('fails closed for production PagerDuty webhooks when the secret is missing', async () => {
-    const prisma = { incidentRecord: delegate() };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/incidents/webhooks/pagerduty', payload: { incident: { id: 'pd_001' } } });
-
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toEqual({ error: 'PAGERDUTY_WEBHOOK_SECRET_NOT_CONFIGURED' });
-  });
-
-  it('persists signed PagerDuty webhook events', async () => {
-    process.env.PAGERDUTY_WEBHOOK_SECRET = 'pd_secret';
-    const incidentRecord = delegate();
-    const prisma = { incidentRecord };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/incidents/webhooks/pagerduty',
-      headers: pagerDutyWebhookHeaders('pd_secret', { incident: { id: 'pd_001', title: 'Carrier API outage', status: 'triggered', urgency: 'high' } }),
-      payload: { incident: { id: 'pd_001', title: 'Carrier API outage', status: 'triggered', urgency: 'high' } }
-    });
-
-    expect(response.statusCode).toBe(200);
-    expect(incidentRecord.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { vendorId: 'pd_001' },
-      create: expect.objectContaining({ vendor: 'pagerduty', vendorId: 'pd_001', title: 'Carrier API outage', payload: expect.objectContaining({ _webhookVerification: expect.any(Object) }) }),
-      update: expect.objectContaining({ title: 'Carrier API outage', status: 'triggered', payload: expect.objectContaining({ _webhookVerification: expect.any(Object) }) })
-    }));
-  });
-
-  it('rejects forged PagerDuty webhook signatures', async () => {
-    process.env.PAGERDUTY_WEBHOOK_SECRET = 'pd_secret';
-    const incidentRecord = delegate();
-    const prisma = { incidentRecord };
-    const app = await buildApp(prisma);
-    const payload = { incident: { id: 'pd_001', title: 'Carrier API outage' } };
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/incidents/webhooks/pagerduty',
-      headers: pagerDutyWebhookHeaders('wrong_secret', payload),
-      payload
-    });
-
-    expect(response.statusCode).toBe(403);
-    expect(incidentRecord.upsert).not.toHaveBeenCalled();
-  });
-
-  it('rejects replayed PagerDuty webhook signatures older than five minutes', async () => {
-    process.env.PAGERDUTY_WEBHOOK_SECRET = 'pd_secret';
-    const incidentRecord = delegate();
-    const prisma = { incidentRecord };
-    const app = await buildApp(prisma);
-    const payload = { incident: { id: 'pd_001', title: 'Carrier API outage' } };
-    const oldTimestamp = String(Date.now() - 6 * 60 * 1000);
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/internal/incidents/webhooks/pagerduty',
-      headers: pagerDutyWebhookHeaders('pd_secret', payload, oldTimestamp),
-      payload
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: 'Webhook timestamp too old' });
-    expect(incidentRecord.upsert).not.toHaveBeenCalled();
   });
 
   it('requires senior compliance approval for PEP KYC approvals', async () => {
@@ -388,16 +310,6 @@ describe('internal console phase routes', () => {
   });
 
   it.each([
-    {
-      vendor: 'PagerDuty',
-      envName: 'PAGERDUTY_WEBHOOK_SECRET',
-      envSecret: 'pd_secret',
-      signingSecret: 'pd_secret',
-      url: '/api/internal/incidents/webhooks/pagerduty',
-      payload: { incident: { id: 'pd_001', title: 'Carrier API outage' } },
-      staleTimestamp: () => String(Date.now() - 6 * 60 * 1000),
-      headers: pagerDutyWebhookHeaders
-    },
     {
       vendor: 'Persona',
       envName: 'PERSONA_WEBHOOK_SECRET',

@@ -2286,25 +2286,52 @@ model SaveOffer {
   @@map("save_offers")
 }
 
+/// platform.incidents (WP-4.2, 0063): native incidents (`vendor` "native", no vendorId) and PagerDuty-produced ones
+/// (upserted by vendorId). Status INVESTIGATING → IDENTIFIED → MONITORING → RESOLVED, severity SEV1–SEV4.
 model IncidentRecord {
-  id            String   @id @default(uuid())
-  vendor        String   @default("pagerduty")
-  vendorId      String   @unique
-  title         String
-  status        String
-  severity      String?
-  serviceTags   String[] @default([])
-  postmortemUrl String?
-  payload       Json?
-  startedAt     DateTime?
-  resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                      String    @id @default(uuid())
+  vendor                  String    @default("native")
+  vendorId                String?   @unique
+  title                   String
+  status                  String
+  severity                String?
+  serviceTags             String[]  @default([])
+  postmortemUrl           String?
+  payload                 Json?
+  startedAt               DateTime?
+  resolvedAt              DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  commanderPlatformUserId String?
+  publicSummary           String?
+  /// PlatformAnnouncement (type INCIDENT) shown to the impacted tenants (or all); expires on resolve.
+  announcementId          String?
+  createdByPlatformUserId String?
+  /// IncidentRunbook ids linked by a responder.
+  runbookIds              String[]  @default([])
 
   impacts IncidentTenantImpact[]
+  updates IncidentUpdate[]
 
   @@index([status, createdAt])
+  @@index([resolvedAt])
   @@map("incident_records")
+}
+
+model IncidentUpdate {
+  id         String   @id @default(uuid())
+  incidentId String
+  status     String
+  body       String
+  isPublic   Boolean  @default(false)
+  /// Platform user id, or "pagerduty" for updates produced by the PagerDuty webhook.
+  authorId   String
+  createdAt  DateTime @default(now())
+
+  incident IncidentRecord @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, createdAt])
+  @@map("incident_updates")
 }
 
 model IncidentTenantImpact {
