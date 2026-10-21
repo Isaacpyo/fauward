@@ -5,6 +5,10 @@
 #   plan (changes nothing):  curl -fsSL <raw url> | ssh oracle-vm 'bash -s'
 #   apply and redeploy:      curl -fsSL <raw url> | ssh oracle-vm 'bash -s -- --yes'
 #
+# If env/vercel-admin.token exists (a token made in Vercel → Account Settings → Tokens, scoped to the team), it is
+# used instead of backend.env's VERCEL_API_TOKEN. Delete it afterwards. On a 403 the script prints which account and
+# teams the token can see, so a wrong VERCEL_TEAM_ID or a token from another account shows up.
+#
 # Projects are matched by their Vercel root directory, not by name:
 #   apps/frontend          BACKEND_URL
 #   apps/tenant-portal     VITE_API_BASE_URL (Fauward Go is built into it under /go)
@@ -21,7 +25,10 @@ command -v python3 >/dev/null || { echo "python3 is not installed on the VM" >&2
 env_value() { # last duplicate wins, CRs and surrounding quotes stripped
   grep -E "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '\r' | sed -E 's/^"(.*)"$/\1/; s/^'"'"'(.*)'"'"'$/\1/'
 }
-VERCEL_API_TOKEN=$(env_value VERCEL_API_TOKEN) VERCEL_TEAM_ID=$(env_value VERCEL_TEAM_ID) \
+ADMIN_TOKEN_FILE=$(dirname "$ENV_FILE")/vercel-admin.token
+if [ -s "$ADMIN_TOKEN_FILE" ]; then TOKEN=$(tr -d '\r\n ' < "$ADMIN_TOKEN_FILE"); TOKEN_SRC=vercel-admin.token
+else TOKEN=$(env_value VERCEL_API_TOKEN); TOKEN_SRC="backend.env VERCEL_API_TOKEN"; fi
+TOKEN_SRC=$TOKEN_SRC VERCEL_API_TOKEN=$TOKEN VERCEL_TEAM_ID=$(env_value VERCEL_TEAM_ID) \
 MONITORING_API_KEY=$(env_value MONITORING_API_KEY) APPLY=$([ "${1:-}" = --yes ] && echo 1 || echo 0) \
 python3 - <<'PY'
 import json, os, sys, time, urllib.error, urllib.parse, urllib.request
@@ -55,7 +62,20 @@ def call(method, path, body=None, **query):
 try:
     projects = call("GET", "/v9/projects", limit=100)["projects"]
 except RuntimeError as err:
-    sys.exit(f"cannot list the team's projects with backend.env's VERCEL_API_TOKEN: {err}")
+    print(f"cannot list the team's projects with {os.environ['TOKEN_SRC']}: {err}")
+    print(f"configured VERCEL_TEAM_ID: {TEAM[:9]}... ({len(TEAM)} chars)")
+    def who(path):
+        req = urllib.request.Request(f"https://api.vercel.com{path}", headers={"Authorization": f"Bearer {TOKEN}"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r: return json.load(r)
+        except urllib.error.HTTPError as e: return {"error": f"HTTP {e.code}"}
+    u = who("/v2/user")
+    print("token belongs to:", u.get("user", {}).get("username") or u.get("error"))
+    t = who("/v2/teams")
+    for team in t.get("teams", []):
+        print(f"  team it can see: {team.get('slug')}  id {team.get('id')}  {'<- matches VERCEL_TEAM_ID' if team.get('id') == TEAM else ''}")
+    if "error" in t: print("  teams:", t["error"])
+    sys.exit(1)
 print(f"{'APPLY' if APPLY else 'PLAN (nothing changes; add --yes to apply)'}: {len(projects)} projects in team")
 redeploy = []
 for p in sorted(projects, key=lambda p: p["name"]):
