@@ -7,14 +7,14 @@ Owner: Temitope Agbola · Treny Limited · Active development.
 
 | Layer | Tech |
 |---|---|
-| API | Node 20 · Fastify · TypeScript · Prisma ORM |
+| API | Node 24 · Fastify · TypeScript · Prisma ORM |
 | Database | PostgreSQL 15 (Supabase) + Redis 7 |
 | Auth | JWT (access + refresh) · `@fastify/jwt` · `@fastify/cookie` |
 | Frontend | Next.js 14 App Router (marketing site — fauward.com) |
 | Tenant Portal | React 18 · Vite |
 | Agents App | React 18 · Vite · PWA |
 | Super Admin | React 18 · Vite |
-| Build | Turborepo · npm workspaces (Node 20) |
+| Build | Turborepo · npm workspaces (Node 24) |
 | Queue | BullMQ on Redis |
 | Email | SendGrid |
 | Deploy | Oracle VM via Cloudflare Tunnel (backend + Python services, `scripts/prod-vm.sh`, docs/deploy-oracle-prod.md) · Vercel (frontends) |

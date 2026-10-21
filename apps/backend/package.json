@@ -5,7 +5,7 @@
     "type": "module",
     "main": "dist/server.js",
     "engines": {
-        "node": "20.x"
+        "node": "24.x"
     },
     "scripts": {
         "dev": "tsx watch src/server.ts",
@@ -62,7 +62,7 @@
     "devDependencies": {
         "@types/bcryptjs": "^2.4.6",
         "@types/jsonwebtoken": "^9.0.6",
-        "@types/node": "^20.19.39",
+        "@types/node": "^24.19.2",
         "@types/nodemailer": "^6.4.24",
         "@types/qrcode": "^1.5.5",
         "@typescript-eslint/eslint-plugin": "^7.17.0",
