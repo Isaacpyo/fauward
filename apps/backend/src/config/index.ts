@@ -69,12 +69,8 @@ const envSchema = z.object({
   PLATFORM_ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
   PLATFORM_ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
   ADMIN_HOSTNAME: z.string().min(1).default('admin.fauward.com'),
+  // Console routes only on ADMIN_HOSTNAME (vendor webhooks and monitoring excepted, WP-5.5).
   ADMIN_HARDENING_PHASE_1: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_2: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_3: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_4: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_5: z.string().default('false'),
-  ADMIN_HARDENING_PHASE_6: z.string().default('false'),
   ROUTE_OPTIMIZER_URL: z.string().url().default('http://localhost:8001'),
   TENANT_PORTAL_URL: z.string().url().default('https://app.fauward.com'),
   // Marketing site (password reset page) and console origin, used in email links.
@@ -225,12 +221,7 @@ export const config = {
     hostname: parsed.data.ADMIN_HOSTNAME.trim().toLowerCase()
   },
   adminHardening: {
-    phase1: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_1),
-    phase2: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_2),
-    phase3: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_3),
-    phase4: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_4),
-    phase5: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_5),
-    phase6: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_6)
+    phase1: parseFeatureFlag(parsed.data.ADMIN_HARDENING_PHASE_1)
   },
   billing: {
     largeRefundThreshold: parsed.data.BILLING_LARGE_REFUND_THRESHOLD,

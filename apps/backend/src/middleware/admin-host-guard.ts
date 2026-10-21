@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { isVendorWebhookPath, requestPath } from '../config/vendor-webhooks.js';
 
 const DEFAULT_ADMIN_ROUTE_PREFIXES = [
   '/admin',
@@ -11,6 +12,18 @@ type AdminHostGuardOptions = {
   adminHostname: string;
   adminRoutePrefixes?: string[];
 };
+
+/** Monitoring endpoints (MONITORING_API_KEY bearer, S8) called by the status dashboard and the Python services. */
+const MONITORING_PREFIX = '/api/internal/metrics';
+
+/**
+ * Paths under the admin prefixes that must keep working on the API host (S15, WP-5.5): vendor webhooks (each verifies
+ * its own signature and posts to api.fauward.com) and the monitoring endpoints.
+ */
+export function isHostAgnosticPath(url: string | undefined) {
+  const path = requestPath(url);
+  return isVendorWebhookPath(path) || pathMatchesPrefix(path, MONITORING_PREFIX);
+}
 
 export function normalizeRequestHost(host: string | undefined) {
   if (!host) return '';
@@ -36,7 +49,7 @@ export function createAdminHostGuard(options: AdminHostGuardOptions) {
   const prefixes = options.adminRoutePrefixes ?? DEFAULT_ADMIN_ROUTE_PREFIXES;
 
   return async function adminHostGuard(request: FastifyRequest, reply: FastifyReply) {
-    if (!options.enabled || !isAdminRoutePath(request.url, prefixes)) return;
+    if (!options.enabled || !isAdminRoutePath(request.url, prefixes) || isHostAgnosticPath(request.url)) return;
 
     const requestHost = normalizeRequestHost(request.headers.host);
     if (requestHost === adminHostname) return;
