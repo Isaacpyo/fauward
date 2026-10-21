@@ -23,7 +23,7 @@
     "platform:admin:create": "npm run platform:admin:create --workspace=apps/backend"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "serve": "^14.2.6"
