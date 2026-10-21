@@ -220,7 +220,7 @@ describe('trust.safety (WP-2.4)', () => {
     expect(aup.data).toEqual([expect.objectContaining({ category: 'AUP', source: 'aup_report', summary: 'Bulk unsolicited SMS reported by a carrier', tenant: expect.objectContaining({ name: 'Northwind' }) })]);
     const rules = (await app.inject({ method: 'GET', url: '/api/internal/safety/rules' })).json();
     expect(rules.data.map((rule: { id: string }) => rule.id)).toEqual(['stripe-radar-warning', 'staff-failed-login-spike', 'dunning-suspend']);
-    expect(rules.data[2].parameters).toEqual({ suspendOnAttempt: 2, cancelAfterDays: 30 });
+    expect(rules.data[2].parameters).toEqual({ sequence: 'revenue.dunning default sequence' });
   });
 
   it('decisions are dangerous: stale MFA → 403 MFA_REQUIRED, no reason → 400 REASON_REQUIRED', async () => {

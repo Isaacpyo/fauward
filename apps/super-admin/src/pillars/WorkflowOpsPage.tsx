@@ -36,7 +36,6 @@ type WorkflowAction = {
 };
 
 const WORKFLOW_PREFIXES = [
-  "/dunning",
   "/announcements",
   "/success",
   "/flags",
@@ -105,49 +104,6 @@ function numeric(value: string) {
 }
 
 function actionPresets(endpoint: string, title: string): WorkflowAction[] {
-  if (endpoint.startsWith("/dunning")) {
-    return [
-      {
-        id: "retry",
-        label: "Queue Manual Retry",
-        description: "Retry a failed invoice. The backend suspends the tenant after the retry ceiling.",
-        method: "post",
-        path: (values) => `/dunning/retry/${encodeURIComponent(values.invoiceId)}`,
-        fields: [
-          { name: "invoiceId", label: "Invoice ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Manual dunning retry" }
-        ],
-        payload: (values) => ({ reason: values.reason })
-      },
-      {
-        id: "save-offer",
-        label: "Issue Save Offer",
-        description: "Create a save-the-customer offer for a tenant. It stays pending until approved.",
-        method: "post",
-        path: () => "/dunning/save-offers",
-        fields: [
-          { name: "tenantId", label: "Tenant ID", required: true },
-          { name: "discount", label: "Discount %", type: "number", required: true },
-          { name: "expiresAt", label: "Expires At", type: "date" },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: "Save offer" }
-        ],
-        payload: (values) => ({ tenantId: values.tenantId, discount: numeric(values.discount), expiresAt: values.expiresAt || undefined, reason: values.reason })
-      },
-      {
-        id: "approve-save-offer",
-        label: "Approve Save Offer",
-        description: "Approve a pending offer: generates the code the tenant redeems in Billing (fresh MFA and a reason).",
-        method: "post",
-        path: (values) => `/dunning/save-offers/${encodeURIComponent(values.offerId)}/approve`,
-        fields: [
-          { name: "offerId", label: "Save offer ID", required: true },
-          { name: "reason", label: "Reason", type: "textarea", required: true }
-        ],
-        payload: (values) => ({ reason: values.reason })
-      }
-    ];
-  }
-
   if (endpoint.startsWith("/announcements")) {
     return [
       {

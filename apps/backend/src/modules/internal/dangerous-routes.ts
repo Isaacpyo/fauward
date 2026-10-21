@@ -50,6 +50,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/subscriptions/:tenantId/cancel' },
   { method: 'POST', url: '/api/internal/subscriptions/overrides' },
   { method: 'POST', url: '/api/internal/dunning/save-offers/:id/approve' },
+  // revenue.dunning enrolments (WP-4.5)
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/retry' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/pause' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/resume' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/cancel' },
   // trust.compliance (WP-2.5)
   { method: 'POST', url: '/api/internal/compliance/dsar/:id/deliver' },
   { method: 'POST', url: '/api/internal/compliance/dsar/:id/erase' },

@@ -44,6 +44,7 @@ import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
+import { DunningOverviewPage, SaveOffersPage, SequenceEditorPage, SequencesPage, TenantDunningPage } from "@/pillars/revenue/dunning/DunningPages";
 import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
 import { InvoiceCreatePage } from "@/pillars/revenue/billing/InvoiceCreatePage";
 import { InvoiceDetailPage } from "@/pillars/revenue/billing/InvoiceDetailPage";
@@ -177,10 +178,11 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/analytics", element: <PermissionRoute permission="revenue.analytics.read">
                 <RevenueAnalyticsPage />
               </PermissionRoute> },
-  { path: "/revenue/dunning", element: <OpsRoute permission="revenue.dunning.read" title="Dunning Manager" description="Failed payment recovery, retry limits and save-the-customer offers." endpoint="/dunning/failed-payments" related={[{ label: "Sequences", to: "/revenue/dunning/sequences" }, { label: "Save Offers", to: "/revenue/dunning/save-offers" }]} /> },
-  { path: "/revenue/dunning/:tenantId", element: <OpsRoute permission="revenue.dunning.read" title="Dunning Timeline" description="Tenant-level failed payment and recovery timeline." endpoint="/dunning/timeline/:tenantId" /> },
-  { path: "/revenue/dunning/sequences", element: <OpsRoute permission="revenue.dunning.read" title="Dunning Sequences" description="Email and action sequences for failed payment recovery." endpoint="/dunning/sequences" /> },
-  { path: "/revenue/dunning/save-offers", element: <OpsRoute permission="revenue.dunning.read" title="Save Offers" description="Approved discounts and credits for save-the-customer workflows." endpoint="/dunning/save-offers" /> },
+  { path: "/revenue/dunning", element: <PermissionRoute permission="revenue.dunning.read"><DunningOverviewPage /></PermissionRoute> },
+  { path: "/revenue/dunning/tenants/:tenantId", element: <PermissionRoute permission="revenue.dunning.read"><TenantDunningPage /></PermissionRoute> },
+  { path: "/revenue/dunning/sequences", element: <PermissionRoute permission="revenue.dunning.read"><SequencesPage /></PermissionRoute> },
+  { path: "/revenue/dunning/sequences/:id", element: <PermissionRoute permission="revenue.dunning.read"><SequenceEditorPage /></PermissionRoute> },
+  { path: "/revenue/dunning/save-offers", element: <PermissionRoute permission="revenue.dunning.read"><SaveOffersPage /></PermissionRoute> },
   { path: "/revenue/disputes", element: <ComingSoonRoute serviceKey="revenue.disputes" /> },
   { path: "/revenue/recognition", element: <ComingSoonRoute serviceKey="revenue.recognition" /> },
   { path: "/revenue/tax", element: <OpsRoute permission="revenue.tax.read" title="Tax & Compliance" description="Regional VAT/GST registrations, returns and exemption workflow." endpoint="/tax" related={[{ label: "Returns", to: "/revenue/tax/returns" }, { label: "Registrations", to: "/revenue/tax/registrations" }, { label: "Exemptions", to: "/revenue/tax/exemptions" }]} /> },

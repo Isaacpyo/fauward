@@ -22,6 +22,7 @@ import { registerConsoleIncidentRoutes } from './platform/incidents.routes.js';
 import { registerConsoleSecretRoutes } from './trust/secrets.routes.js';
 import { registerConsoleIntegrationRoutes } from './platform/integrations.routes.js';
 import { registerConsoleDatabaseRoutes } from './platform/database.routes.js';
+import { registerConsoleDunningRoutes } from './revenue/dunning.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
@@ -50,6 +51,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleSecretRoutes(app);
   await registerConsoleIntegrationRoutes(app);
   await registerConsoleDatabaseRoutes(app);
+  await registerConsoleDunningRoutes(app);
   await registerConsoleMetricsRoutes(app);
   await registerConsoleBadgeRoutes(app);
   await registerConsoleSearchRoutes(app);

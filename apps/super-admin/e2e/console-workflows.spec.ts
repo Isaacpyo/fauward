@@ -7,8 +7,6 @@ const permissions = [
   "customer.success.write",
   "gtm.contracts.read",
   "gtm.contracts.write",
-  "revenue.dunning.read",
-  "revenue.dunning.write"
 ];
 
 test.beforeEach(async ({ context, page }) => {
@@ -32,9 +30,7 @@ test.beforeEach(async ({ context, page }) => {
             ? { weights: { login: 20, shipmentTrend: 25, featureBreadth: 15, paymentHealth: 15, ticketSentimentVolume: 15, nps: 10 } }
             : path === "/contracts/quotes"
               ? { data: [{ id: "quote_001", quoteNumber: "Q-001", status: "DRAFT" }] }
-              : path === "/dunning/failed-payments"
-                ? { data: [{ id: "pay_001", status: "FAILED", invoiceId: "inv_001" }] }
-                : { data: [] };
+              : { data: [] };
 
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(data) });
       return;
@@ -54,7 +50,6 @@ test("navigates critical Phase 2-6 workflow pages", async ({ page }) => {
   const pages = [
     ["/customer/success/health-scoring", "Health Scoring"],
     ["/gtm/contracts/quotes", "Quote Builder"],
-    ["/revenue/dunning", "Dunning Manager"]
   ] as const;
 
   for (const [path, heading] of pages) {
@@ -79,11 +74,6 @@ test("executes one mocked workflow per console pillar", async ({ page }) => {
   await page.goto("/gtm/contracts/quotes");
   await page.getByRole("button", { name: "Create Quote" }).click();
 
-  await page.goto("/revenue/dunning");
-  await page.getByLabel("Invoice ID").fill("inv_001");
-  await page.getByRole("button", { name: "Queue Manual Retry" }).click();
-
   await expect.poll(() => calls).toContain("POST /api/internal/success/health-scoring/run");
   expect(calls).toContain("POST /api/internal/contracts/quotes");
-  expect(calls).toContain("POST /api/internal/dunning/retry/inv_001");
 });

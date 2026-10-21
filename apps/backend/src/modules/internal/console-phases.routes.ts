@@ -116,7 +116,6 @@ async function updateAndAudit(
 }
 
 export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
-  registerDunning(app);
   registerSuccess(app);
   registerSecurity(app);
   registerKyc(app);
@@ -124,122 +123,6 @@ export async function registerInternalConsolePhaseRoutes(app: FastifyInstance) {
   registerContracts(app);
   registerQbr(app);
   registerGtm(app);
-}
-
-// Dunning is about Fauward billing tenants: every ledger query here is kind PLATFORM (D4).
-function registerDunning(app: FastifyInstance) {
-  app.get('/api/internal/dunning/failed-payments', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
-    const [payments, overdueInvoices] = await Promise.all([
-      app.prisma.payment.findMany({
-        where: { kind: 'PLATFORM', status: 'FAILED' },
-        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, invoice: true },
-        orderBy: { updatedAt: 'desc' },
-        take: 100
-      }),
-      app.prisma.invoice.findMany({
-        where: { kind: 'PLATFORM', status: 'OVERDUE' },
-        include: { tenant: { select: { id: true, name: true, slug: true, status: true } }, payments: { where: { kind: 'PLATFORM' } } },
-        orderBy: { dueDate: 'asc' },
-        take: 100
-      })
-    ]);
-    reply.send({ data: payments, overdueInvoices });
-  });
-
-  app.get('/api/internal/dunning/timeline/:tenantId', { preHandler: readPre('revenue.dunning.read') }, async (request, reply) => {
-    const { tenantId } = request.params as RequestWithTenant;
-    const [events, saveOffers, invoices] = await Promise.all([
-      delegate(app, 'dunningEvent').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 100 }),
-      delegate(app, 'saveOffer').findMany({ where: { tenantId }, orderBy: { createdAt: 'desc' }, take: 50 }),
-      app.prisma.invoice.findMany({ where: { kind: 'PLATFORM', tenantId }, include: { payments: { where: { kind: 'PLATFORM' } } }, orderBy: { createdAt: 'desc' }, take: 30 })
-    ]);
-    reply.send({ events, saveOffers, invoices });
-  });
-
-  app.post('/api/internal/dunning/retry/:invoiceId', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
-    const { invoiceId } = request.params as { invoiceId: string };
-    const invoice = await app.prisma.invoice.findUnique({ where: { kind: 'PLATFORM', id: invoiceId }, include: { tenant: true } });
-    if (!invoice) return reply.status(404).send({ error: 'Invoice not found' });
-
-    const attempt = await delegate(app, 'dunningEvent').count({ where: { invoiceId, eventType: 'manual_retry' } });
-    if (attempt >= 3) {
-      // D3 caller 2: the retry limit suspends through the one suspension path.
-      const result = await suspendTenant(app, {
-        tenantId: invoice.tenantId,
-        source: 'DUNNING',
-        category: 'BILLING',
-        reason: `Dunning retry limit exceeded for invoice ${invoice.invoiceNumber ?? invoiceId}`,
-        actor: staffSuspensionActor(request),
-        sourceRef: invoiceId
-      });
-      await delegate(app, 'dunningEvent').create({
-        data: { tenantId: invoice.tenantId, invoiceId, eventType: 'suspended_after_max_retries', attempt: attempt + 1, actorId: actorId(request) }
-      });
-      return reply.send({ suspended: true, attempt: attempt + 1, suspension: result.record, tenant: result.tenant });
-    }
-
-    const event = await createAndAudit(
-      request,
-      delegate(app, 'dunningEvent'),
-      { tenantId: invoice.tenantId, invoiceId, eventType: 'manual_retry', attempt: attempt + 1, actorId: actorId(request) },
-      'dunning.retry',
-      'invoice',
-      stringValue(bodyObject(request).reason, 'Manual dunning retry')
-    );
-    reply.status(201).send({ retryQueued: true, attempt: attempt + 1, event });
-  });
-
-  app.post('/api/internal/dunning/save-offers', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
-    const body = bodyObject(request);
-    const tenantId = stringValue(body.tenantId);
-    const discount = numberValue(body.discount);
-    if (!tenantId || discount <= 0) return reply.status(400).send({ error: 'tenantId and positive discount are required' });
-    const offer = await createAndAudit(
-      request,
-      delegate(app, 'saveOffer'),
-      // WP-2.7: created PENDING; a second, dangerous step approves it and generates the code the tenant redeems.
-      { tenantId, discount, expiresAt: dateValue(body.expiresAt, inDays(14)), status: 'PENDING', reason: stringValue(body.reason, 'Save offer') },
-      'dunning.save_offer.issue',
-      'save_offer',
-      stringValue(body.reason, 'Save offer')
-    );
-    reply.status(201).send(offer);
-  });
-
-  app.post('/api/internal/dunning/save-offers/:id/approve', { preHandler: dangerous('revenue.dunning.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    try {
-      const offer = await approveSaveOffer(app, request, { id, reason: stringValue(bodyObject(request).reason) });
-      await writeInternalAudit(request, 'dunning.save_offer.approve', 'save_offer', id, { status: 'PENDING' }, { status: offer.status, code: offer.code }, stringValue(bodyObject(request).reason), { targetTenantId: offer.tenantId });
-      return reply.send({ offer });
-    } catch (error) {
-      if (error instanceof SaveOfferError) return reply.status(error.statusCode).send({ error: error.code, message: error.message });
-      throw error;
-    }
-  });
-
-  app.get('/api/internal/dunning/save-offers', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'saveOffer'), { orderBy: { createdAt: 'desc' }, take: 100 }));
-  });
-
-  app.get('/api/internal/dunning/sequences', { preHandler: readPre('revenue.dunning.read') }, async (_request, reply) => {
-    reply.send(await listWithMeta(delegate(app, 'dunningSequence'), { include: { dunningSteps: true }, orderBy: { createdAt: 'desc' } }));
-  });
-
-  app.patch('/api/internal/dunning/sequences/:id', { preHandler: writePre('revenue.dunning.write') }, async (request, reply) => {
-    const { id } = request.params as RequestWithId;
-    const body = bodyObject(request);
-    const after = await updateAndAudit(
-      request,
-      delegate(app, 'dunningSequence'),
-      id,
-      { name: body.name, steps: body.steps, active: body.active },
-      'dunning.sequence.update',
-      'dunning_sequence',
-      stringValue(body.reason, 'Sequence change')
-    );
-    reply.send(after);
-  });
 }
 
 function registerSuccess(app: FastifyInstance) {

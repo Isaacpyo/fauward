@@ -2221,15 +2221,18 @@ model AnnouncementReceipt {
 
 // Fauward Console phases 2-6 internal operations.
 
+/// revenue.dunning (WP-4.5, 0065): exactly one `isDefault` sequence; `steps Json` is superseded by DunningStep rows.
 model DunningSequence {
   id        String   @id @default(uuid())
   name      String
   steps     Json
   active    Boolean  @default(true)
+  isDefault Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   dunningSteps DunningStep[]
+  enrollments  DunningEnrollment[]
 
   @@index([active])
   @@map("dunning_sequences")
@@ -2248,6 +2251,33 @@ model DunningStep {
 
   @@index([sequenceId])
   @@map("dunning_steps")
+}
+
+/// One per failed Fauward invoice (Stripe invoice id, or the PLATFORM invoice id when Stripe is not used). The
+/// `revenue.dunning-advance` job claims step `currentStep` when `createdAt + dayOffset` is due (exactly once).
+/// Status ACTIVE | PAUSED | RECOVERED | EXHAUSTED | CANCELLED.
+model DunningEnrollment {
+  id           String    @id @default(uuid())
+  tenantId     String
+  invoiceId    String
+  /// STRIPE | PLATFORM
+  source       String    @default("STRIPE")
+  sequenceId   String
+  currentStep  Int       @default(0)
+  nextActionAt DateTime
+  status       String    @default("ACTIVE")
+  pausedAt     DateTime?
+  endedAt      DateTime?
+  endedReason  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sequence DunningSequence @relation(fields: [sequenceId], references: [id], onDelete: Restrict)
+
+  @@unique([invoiceId])
+  @@index([status, nextActionAt])
+  @@index([tenantId, createdAt])
+  @@map("dunning_enrollments")
 }
 
 model DunningEvent {

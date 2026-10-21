@@ -12,6 +12,7 @@ import { dispatchNpsSurveys } from '../services/feedback.service.js';
 import { computeAndStoreHealthScore, healthBand } from '../services/health-score.service.js';
 import { runSecretInventory } from '../services/secret-inventory.service.js';
 import { pollIntegrations } from '../services/integration-health.service.js';
+import { runDunningAdvance } from '../services/dunning.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -232,6 +233,14 @@ registerScheduledJob({
   repeatJobId: 'platform.activity-prune',
   description: 'Deletes console activity older than 180 days.',
   handler: async (app) => pruneOldActivity(app.prisma)
+});
+
+registerScheduledJob({
+  name: 'revenue.dunning-advance',
+  pattern: '5 * * * *',
+  repeatJobId: 'revenue.dunning-advance.hourly',
+  description: 'Enrols overdue Fauward invoices, recovers paid ones and runs each due dunning step once (email, retry, suspend).',
+  handler: async (app) => runDunningAdvance(app)
 });
 
 registerScheduledJob({

@@ -131,24 +131,6 @@ describe('internal console phase routes', () => {
     vi.clearAllMocks();
   });
 
-  it('ACC-SUS-1 (caller 2) the dunning retry limit suspends through the suspension service with DUNNING/BILLING and the invoice', async () => {
-    currentPermissions = ['revenue.dunning.write'];
-    const tenant = { id: 'tenant_001', name: 'Acme', status: 'ACTIVE' };
-    const prisma = {
-      invoice: { findUnique: vi.fn(async () => ({ id: 'inv_001', invoiceNumber: 'INV-001', tenantId: tenant.id, tenant })) },
-      tenant: { update: vi.fn() },
-      dunningEvent: delegate({ count: vi.fn(async () => 3) })
-    };
-    const app = await buildApp(prisma);
-
-    const response = await app.inject({ method: 'POST', url: '/api/internal/dunning/retry/inv_001', payload: { reason: 'Retry ceiling' } });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ suspended: true, suspension: { id: 'susp_001' } });
-    expect(suspendTenantMock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: tenant.id, source: 'DUNNING', category: 'BILLING', sourceRef: 'inv_001' }));
-    expect(prisma.tenant.update).not.toHaveBeenCalled();
-  });
-
   it('requires CFO-level permission for quote discounts over 25 percent', async () => {
     currentPermissions = ['gtm.contracts.write', 'gtm.contracts.discount.large'];
     const prisma = {

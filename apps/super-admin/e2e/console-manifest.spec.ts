@@ -108,8 +108,8 @@ test("ACC-MAN-4 planned services without a page show their target phase and keep
 });
 
 test("preview service pages carry the PreviewBanner; the live IAM service does not", async ({ page }) => {
-  await page.goto("/revenue/dunning");
-  await expect(page.getByTestId("preview-banner")).toContainText("retry only records an event");
+  await page.goto("/trust/kyc");
+  await expect(page.getByTestId("preview-banner")).toContainText("manual review queue is not wired");
   await page.goto("/trust/iam/users");
   await expect(page.getByTestId("preview-banner")).toHaveCount(0);
 });

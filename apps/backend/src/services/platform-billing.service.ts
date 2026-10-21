@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { publishActivity, recordActivity, type ActivityInput } from './platform-activity.service.js';
 import { notifyTenantAdmins } from './platform-notifier.service.js';
 import { liftDunningSuspensionForInvoice, type SuspensionActor } from './tenant-suspension.service.js';
+import { recoverEnrollment } from './dunning.service.js';
 import { currencyDecimals, toMinorUnits } from '../modules/payments/stripe.service.js';
 
 // Fauward → tenant billing (revenue.billing, D4): every row here is kind PLATFORM. Money stays Decimal(12,2) major units
@@ -200,7 +201,10 @@ export async function recordManualPayment(app: FastifyInstance, body: z.infer<ty
   publishActivity(app.redis, row, app.log);
   let liftedSuspension = false;
   if (settled) {
-    for (const ref of [invoice.id, invoice.stripeInvoiceId].filter((value): value is string => Boolean(value))) {
+    const refs = [invoice.id, invoice.stripeInvoiceId].filter((value): value is string => Boolean(value));
+    // The payment is committed; a failed recovery is retried by the hourly dunning sweep (it recovers PAID invoices).
+    await recoverEnrollment(app, { tenantId: invoice.tenantId, invoiceRefs: refs, via: 'payment recorded' }).catch((err: unknown) => app.log.error({ err, invoiceId: invoice.id }, 'Failed to recover the dunning enrolment'));
+    for (const ref of refs) {
       const lifted = await liftDunningSuspensionForInvoice(app, { tenantId: invoice.tenantId, invoiceRef: ref, actor });
       liftedSuspension = liftedSuspension || Boolean(lifted);
     }
