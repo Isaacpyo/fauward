@@ -13,6 +13,7 @@ import { computeAndStoreHealthScore, healthBand } from '../services/health-score
 import { runSecretInventory } from '../services/secret-inventory.service.js';
 import { pollIntegrations } from '../services/integration-health.service.js';
 import { runDunningAdvance } from '../services/dunning.service.js';
+import { sweepDisputeDeadlines } from '../services/dispute.service.js';
 import { DSAR_ERASE_JOB, DSAR_GATHER_JOB, eraseDsar, gatherDsar, sweepOverdueDsars } from '../services/dsar.service.js';
 import { FAILED_LOGIN_SPIKE_RULE } from '../config/safety-rules.js';
 import { bullmqConnection, scheduledJobsQueue } from './queues.js';
@@ -233,6 +234,14 @@ registerScheduledJob({
   repeatJobId: 'platform.activity-prune',
   description: 'Deletes console activity older than 180 days.',
   handler: async (app) => pruneOldActivity(app.prisma)
+});
+
+registerScheduledJob({
+  name: 'revenue.dispute-deadline-sweep',
+  pattern: '20 * * * *',
+  repeatJobId: 'revenue.dispute-deadline-sweep.hourly',
+  description: 'Warns once (activity + bell) when a dispute needs evidence within 72 hours.',
+  handler: async (app) => sweepDisputeDeadlines(app)
 });
 
 registerScheduledJob({

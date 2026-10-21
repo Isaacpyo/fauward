@@ -44,6 +44,7 @@ import { TenantsListPage } from "@/pillars/platform/tenants/TenantsListPage";
 import { RegionRequestsPage } from "@/pillars/platform/tenants/RegionRequestsPage";
 import { RevenueOverview } from "@/pillars/revenue/RevenueOverview";
 import { RevenueAnalyticsPage } from "@/pillars/revenue/analytics/RevenueAnalyticsPage";
+import { DisputeDetailPage, DisputesListPage } from "@/pillars/revenue/disputes/DisputesPages";
 import { DunningOverviewPage, SaveOffersPage, SequenceEditorPage, SequencesPage, TenantDunningPage } from "@/pillars/revenue/dunning/DunningPages";
 import { CreditNotesPage } from "@/pillars/revenue/billing/CreditNotesPage";
 import { InvoiceCreatePage } from "@/pillars/revenue/billing/InvoiceCreatePage";
@@ -183,7 +184,8 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/revenue/dunning/sequences", element: <PermissionRoute permission="revenue.dunning.read"><SequencesPage /></PermissionRoute> },
   { path: "/revenue/dunning/sequences/:id", element: <PermissionRoute permission="revenue.dunning.read"><SequenceEditorPage /></PermissionRoute> },
   { path: "/revenue/dunning/save-offers", element: <PermissionRoute permission="revenue.dunning.read"><SaveOffersPage /></PermissionRoute> },
-  { path: "/revenue/disputes", element: <ComingSoonRoute serviceKey="revenue.disputes" /> },
+  { path: "/revenue/disputes", element: <PermissionRoute permission="revenue.disputes.read"><DisputesListPage /></PermissionRoute> },
+  { path: "/revenue/disputes/:id", element: <PermissionRoute permission="revenue.disputes.read"><DisputeDetailPage /></PermissionRoute> },
   { path: "/revenue/recognition", element: <ComingSoonRoute serviceKey="revenue.recognition" /> },
   { path: "/revenue/tax", element: <OpsRoute permission="revenue.tax.read" title="Tax & Compliance" description="Regional VAT/GST registrations, returns and exemption workflow." endpoint="/tax" related={[{ label: "Returns", to: "/revenue/tax/returns" }, { label: "Registrations", to: "/revenue/tax/registrations" }, { label: "Exemptions", to: "/revenue/tax/exemptions" }]} /> },
   { path: "/revenue/tax/returns", element: <OpsRoute permission="revenue.tax.read" title="Tax Returns" description="Per-region return periods and filing status." endpoint="/tax/returns" /> },

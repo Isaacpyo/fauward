@@ -20,6 +20,7 @@ export const BADGE_KEYS = [
   'dsar-due-7d',
   'failed-jobs-24h',
   'integrations-degraded',
+  'disputes-due',
   'p95-latency',
   'error-rate'
 ] as const;
@@ -87,6 +88,16 @@ export const BADGES: Record<BadgeKey, BadgeDefinition> = {
         deps.app.prisma.tenantPaymentGateway.count({ where: { status: 'FAILED' } })
       ]);
       const value = providers + gateways;
+      return { value, tone: countTone(value, 'red') };
+    }
+  },
+  // revenue.disputes (WP-4.6): open disputes whose evidence is due within 72 h and not yet submitted.
+  'disputes-due': {
+    permissions: ['revenue.disputes.read'],
+    compute: async (deps) => {
+      const value = await deps.app.prisma.paymentDispute.count({
+        where: { status: { in: ['warning_needs_response', 'needs_response'] }, submittedAt: null, evidenceDueBy: { gt: deps.now, lte: new Date(deps.now.getTime() + 72 * 3_600_000) } }
+      });
       return { value, tone: countTone(value, 'red') };
     }
   },

@@ -263,6 +263,32 @@ export const stripeService = {
     return { id: updated.id, status: updated.status };
   },
 
+  /**
+   * revenue.disputes (WP-4.6): a `charge.dispute.*` object in Fauward's terms. The amount leaves here in major units
+   * (Decimal string); Stripe's minor units never leave this file.
+   */
+  parseDispute(object: Record<string, unknown>) {
+    const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
+    const currency = (text(object.currency) ?? 'gbp').toUpperCase();
+    const amountMinor = typeof object.amount === 'number' && Number.isSafeInteger(object.amount) ? object.amount : 0;
+    const details = object.evidence_details && typeof object.evidence_details === 'object' ? (object.evidence_details as Record<string, unknown>) : {};
+    const dueBy = typeof details.due_by === 'number' ? new Date(details.due_by * 1000) : null;
+    const charge = typeof object.charge === 'string' ? object.charge : object.charge && typeof object.charge === 'object' ? text((object.charge as Record<string, unknown>).id) : null;
+    const paymentIntent = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent && typeof object.payment_intent === 'object' ? text((object.payment_intent as Record<string, unknown>).id) : null;
+    const metadata = object.metadata && typeof object.metadata === 'object' ? (object.metadata as Record<string, unknown>) : {};
+    return {
+      stripeDisputeId: text(object.id),
+      chargeId: charge,
+      paymentIntentId: paymentIntent,
+      amount: fromMinorUnits(amountMinor, currency),
+      currency,
+      reason: text(object.reason) ?? 'general',
+      status: text(object.status) ?? 'needs_response',
+      evidenceDueBy: dueBy,
+      tenantId: text(metadata.tenantId)
+    };
+  },
+
   /** Integration health poll (WP-4.3): the cheapest authenticated call. */
   async retrieveBalance() {
     const stripe = getStripeClient();

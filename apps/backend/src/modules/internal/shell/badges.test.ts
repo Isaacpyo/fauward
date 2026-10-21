@@ -42,6 +42,7 @@ function prisma() {
     dSARRequest: { count: count(4) },
     scheduledJobRun: { count: count(1) },
     integrationProviderStatus: { count: count(1) },
+    paymentDispute: { count: count(0) },
     tenantPaymentGateway: { count: count(2) }
   };
 }

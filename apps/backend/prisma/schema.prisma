@@ -2253,6 +2253,35 @@ model DunningStep {
   @@map("dunning_steps")
 }
 
+/// revenue.disputes (WP-4.6, 0066): one row per Stripe dispute, upserted by `charge.dispute.*` webhooks. Disputes only
+/// originate at Stripe. `tenantId` is null when the disputed charge matches no Payment (shown as unmatched).
+model PaymentDispute {
+  id                 String    @id @default(uuid())
+  tenantId           String?
+  paymentId          String?
+  /// PLATFORM (Fauward billing) | TENANT_CUSTOMER — the kind of the matched Payment.
+  paymentKind        String?
+  stripeDisputeId    String    @unique
+  stripeChargeId     String?
+  amount             Decimal   @db.Decimal(12, 2)
+  currency           String
+  reason             String
+  /// Stripe status: warning_needs_response | needs_response | under_review | won | lost | …
+  status             String
+  evidenceDueBy      DateTime?
+  evidence           Json?
+  submittedAt        DateTime?
+  /// When the < 72 h deadline warning went out (once per dispute).
+  deadlineNotifiedAt DateTime?
+  lastEventAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, evidenceDueBy])
+  @@index([tenantId, createdAt])
+  @@map("payment_disputes")
+}
+
 /// One per failed Fauward invoice (Stripe invoice id, or the PLATFORM invoice id when Stripe is not used). The
 /// `revenue.dunning-advance` job claims step `currentStep` when `createdAt + dayOffset` is due (exactly once).
 /// Status ACTIVE | PAUSED | RECOVERED | EXHAUSTED | CANCELLED.
