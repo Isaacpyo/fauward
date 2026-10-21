@@ -1,9 +1,8 @@
 import type { FastifyRequest } from 'fastify';
+import { clientIp } from '../../shared/client-ip.js';
 
 export function ipAddress(request: FastifyRequest) {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string') return forwarded.split(',')[0].trim();
-  return request.ip;
+  return clientIp(request);
 }
 
 export function userAgent(request: FastifyRequest) {

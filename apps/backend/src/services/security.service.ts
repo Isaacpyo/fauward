@@ -4,6 +4,9 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { auditedMutation, staffMutationActor } from './console-mutation.js';
 import { notifyStaff } from './platform-notifier.service.js';
+import { config } from '../config/index.js';
+import { clientIp } from '../shared/client-ip.js';
+import { IP_BLOCK_CACHE_TTL_MS, parseBypassCidrs, publishIpBlocksChanged } from './ip-block-enforcement.service.js';
 
 // trust.security (WP-4.11). Anomalies come from the hourly `trust.security-anomaly-scan` (failed staff login spikes);
 // staff acknowledge and resolve them. Staff login attempts are recorded at console sign-in; tenant users' failed
@@ -101,17 +104,17 @@ export async function listIpBlocks(app: Pick<FastifyInstance, 'prisma'>, query: 
   return {
     data: result.data.map((row) => ({ id: row.id, ipAddress: row.ipAddress, scope: row.scope, reason: row.reason, expiresAt: row.expiresAt?.toISOString() ?? null, active: !row.expiresAt || row.expiresAt > now, createdBy: row.createdBy, hitCount: row.hitCount, lastHitAt: row.lastHitAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString() })),
     nextCursor: result.nextCursor,
-    enforcement: { enforced: false, reason: 'Blocks are recorded now; the request middleware that enforces them ships in WP-5.4.' }
+    enforcement: { enforced: true, bypassCidrs: parseBypassCidrs(config.security.ipBlockBypassCidrs).count, cacheTtlSeconds: IP_BLOCK_CACHE_TTL_MS / 1000 }
   };
 }
 
 export async function createIpBlock(app: FastifyInstance, request: FastifyRequest, body: z.infer<typeof ipBlockBody>) {
   const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
   if (expiresAt && expiresAt <= new Date()) throw new SecurityError(400, 'INVALID_EXPIRY', 'The expiry must be in the future');
-  const ownIp = request.ip;
+  const ownIp = clientIp(request);
   if (ownIp && ownIp === body.ipAddress && body.scope !== 'TENANT_API') throw new SecurityError(409, 'OWN_IP', 'That is your own address; blocking it would lock you out of the console.');
   try {
-    return await auditedMutation(app, SERVICE, staffMutationActor(request), async (tx) => {
+    const created = await auditedMutation(app, SERVICE, staffMutationActor(request), async (tx) => {
       const row = await tx.ipBlock.create({ data: { ipAddress: body.ipAddress, scope: body.scope, reason: body.reason, expiresAt, createdBy: request.platform!.user.id } });
       return {
         result: { id: row.id, ipAddress: row.ipAddress, scope: row.scope, expiresAt: row.expiresAt?.toISOString() ?? null },
@@ -119,6 +122,8 @@ export async function createIpBlock(app: FastifyInstance, request: FastifyReques
         activity: { type: 'security.ip_blocked', subjectType: 'ip_block', subjectId: row.id, summary: `IP ${row.ipAddress} blocked (${row.scope.toLowerCase()})${expiresAt ? ` until ${expiresAt.toISOString().slice(0, 16).replace('T', ' ')}` : ''}`, severity: 'ATTENTION', consoleLink: '/trust/security/ip-blocks' }
       };
     });
+    publishIpBlocksChanged(app.redis, app.log);
+    return created;
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new SecurityError(409, 'ALREADY_BLOCKED', 'That address is already blocked; remove the block first to change it.');
     throw error;
@@ -128,7 +133,7 @@ export async function createIpBlock(app: FastifyInstance, request: FastifyReques
 export async function removeIpBlock(app: FastifyInstance, request: FastifyRequest, id: string, reason: string) {
   const row = await app.prisma.ipBlock.findUnique({ where: { id } });
   if (!row) throw new SecurityError(404, 'IP_BLOCK_NOT_FOUND', 'IP block not found');
-  return auditedMutation(app, SERVICE, staffMutationActor(request), async (tx) => {
+  const removed = await auditedMutation(app, SERVICE, staffMutationActor(request), async (tx) => {
     await tx.ipBlock.delete({ where: { id } });
     return {
       result: { id, removed: true },
@@ -136,6 +141,8 @@ export async function removeIpBlock(app: FastifyInstance, request: FastifyReques
       activity: { type: 'security.ip_unblocked', subjectType: 'ip_block', subjectId: id, summary: `IP ${row.ipAddress} unblocked`, consoleLink: '/trust/security/ip-blocks' }
     };
   });
+  publishIpBlocksChanged(app.redis, app.log);
+  return removed;
 }
 
 // ── Staff sessions ───────────────────────────────────────────────────────────

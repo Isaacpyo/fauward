@@ -56,6 +56,7 @@ import { vendorErrorHandler } from './services/vendors/vendor-error.js';
 import { auditMiddleware } from '@fauward/internal-audit';
 import { consoleAuditSafetyNet } from './middleware/console-audit-safety-net.js';
 import { legalHoldDeleteGuard } from './middleware/legal-hold-guard.js';
+import { registerIpBlockEnforcement } from './middleware/enforce-ip-blocks.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerShipmentPermissionRoutes } from './modules/shipment-permission-requests/routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
@@ -143,6 +144,8 @@ export async function buildApp() {
     enabled: config.adminHardening.phase1,
     adminHostname: config.admin.hostname
   }));
+  // trust.security (WP-5.4): blocked addresses get 403 IP_BLOCKED on the block's scope.
+  registerIpBlockEnforcement(app, config.security.ipBlockBypassCidrs);
 
   app.addHook('preHandler', consoleAuditSafetyNet(app));
 

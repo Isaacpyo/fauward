@@ -93,7 +93,9 @@ const envSchema = z.object({
   // Days a closed tenant's data is kept before it becomes eligible for purge (purgeAfter = closedAt + this).
   TENANT_CLOSE_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   // gtm.contracts (WP-4.19): quotes with a discount above this percent (or a term over 24 months) need gtm.contracts.discount.large.
-  CPQ_DISCOUNT_APPROVAL_PERCENT: z.coerce.number().min(0).max(100).default(20)
+  CPQ_DISCOUNT_APPROVAL_PERCENT: z.coerce.number().min(0).max(100).default(20),
+  // trust.security (WP-5.4): comma-separated addresses/CIDRs (office, VPN) that IP blocks never apply to.
+  IP_BLOCK_BYPASS_CIDRS: z.string().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -236,6 +238,9 @@ export const config = {
   },
   tenants: {
     closeRetentionDays: parsed.data.TENANT_CLOSE_RETENTION_DAYS
+  },
+  security: {
+    ipBlockBypassCidrs: parsed.data.IP_BLOCK_BYPASS_CIDRS
   },
   cpq: {
     discountApprovalPercent: parsed.data.CPQ_DISCOUNT_APPROVAL_PERCENT,

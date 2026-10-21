@@ -15,8 +15,8 @@ export const FAILED_LOGIN_SPIKE_RULE = {
   windowMinutes: 10,
   maxFailuresPerAccount: 5,
   maxFailuresPerIp: 5,
-  ipBlockMinutes: 60,
-  effect: 'More failed console logins than allowed in the window opens a HIGH security anomaly per account and blocks the IP for an hour.'
+  ipBlockMinutes: 24 * 60,
+  effect: 'More failed console logins than allowed in the window opens a HIGH security anomaly per account and blocks the IP (all of Fauward) for 24 hours, except addresses in IP_BLOCK_BYPASS_CIDRS.'
 };
 
 export const DUNNING_SUSPEND_RULE = {
