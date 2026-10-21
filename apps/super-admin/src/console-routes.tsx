@@ -15,6 +15,7 @@ import { OnboardingFunnelPage, StuckTenantsPage } from "@/pillars/customer/onboa
 import { TicketQueuePage } from "@/pillars/customer/support/TicketQueuePage";
 import { TicketDetailPage } from "@/pillars/customer/support/TicketDetailPage";
 import { MacrosPage, SlaPage } from "@/pillars/customer/support/SlaPage";
+import { RelayConversationPage, RelayFeedbackPage, RelayInboxPage } from "@/pillars/customer/support/relay/RelayPages";
 import { SignalsPage } from "@/pillars/trust/safety/SignalsPage";
 import { RulesPage, SuspensionsPage } from "@/pillars/trust/safety/SuspensionsPage";
 import { AppealDetailPage, AppealsPage } from "@/pillars/trust/safety/AppealsPage";
@@ -240,6 +241,9 @@ export const consoleRoutes: ConsoleRoute[] = [
   { path: "/customer/support/tickets/:id", element: <PermissionRoute permission="customer.support.read">
                 <TicketDetailPage />
               </PermissionRoute> },
+  { path: "/customer/support/relay", element: <PermissionRoute permission="customer.support.read"><RelayInboxPage /></PermissionRoute> },
+  { path: "/customer/support/relay/feedback", element: <PermissionRoute permission="customer.support.read"><RelayFeedbackPage /></PermissionRoute> },
+  { path: "/customer/support/relay/:id", element: <PermissionRoute permission="customer.support.read"><RelayConversationPage /></PermissionRoute> },
   { path: "/customer/support/sla", element: <PermissionRoute permission="customer.support.read">
                 <SlaPage />
               </PermissionRoute> },

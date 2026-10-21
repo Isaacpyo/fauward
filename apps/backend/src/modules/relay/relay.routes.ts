@@ -11,10 +11,11 @@ import {
   handleUpdateConversation,
   type RelayConversation
 } from '@fauward/relay-api';
-import { getRelayAdminClient } from '@fauward/relay-api';
+import { assertRelayAuthConfigured } from '@fauward/relay-api';
 
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { runRelayAi } from './relay.ai.service.js';
+import { recordInboundRelayMessage } from '../../services/relay-console.service.js';
 
 function buildRelayRequest(request: FastifyRequest) {
   const headers = new Headers();
@@ -135,6 +136,9 @@ async function requireFeedbackConversationAccess(request: FastifyRequest, reply:
 }
 
 export async function registerRelayRoutes(app: FastifyInstance) {
+  // S13: Relay never trusts an unverified JWT; outside development the secret must be set before the routes exist.
+  assertRelayAuthConfigured();
+
   app.get('/api/v1/relay/conversations', { preHandler: [authenticate] }, async (request, reply) => {
     return forwardRelayResponse(request, reply, handleListConversations);
   });
@@ -152,6 +156,7 @@ export async function registerRelayRoutes(app: FastifyInstance) {
             const clone = relayResponse.clone();
             const data = (await clone.json()) as { conversation_id: string };
             const conv = await getRelayConversationById(data.conversation_id);
+            await recordInboundRelayMessage(app, conv, null);
             fireRelayAi(data.conversation_id, String(body?.first_message ?? ''), conv, app);
           } catch (error) {
             request.log.error({ error }, 'Failed to start relay AI for new conversation');
@@ -188,6 +193,8 @@ export async function registerRelayRoutes(app: FastifyInstance) {
       if (relayResponse.status === 201 && body?.sender_type === 'customer') {
         try {
           const conv = await getRelayConversationById(conversationId);
+          const created = (await relayResponse.clone().json().catch(() => null)) as { id?: string } | null;
+          await recordInboundRelayMessage(app, conv, created?.id ?? null);
           fireRelayAi(conversationId, String(body.body ?? ''), conv, app);
         } catch (error) {
           request.log.error({ error, conversationId }, 'Failed to start relay AI for customer message');
@@ -210,42 +217,8 @@ export async function registerRelayRoutes(app: FastifyInstance) {
     return forwardRelayResponse(request, reply, handleCreateFeedback);
   });
 
-  app.post('/api/v1/tenant/relay/messages/:id/approve-and-send', { preHandler: [authenticate] }, async (request, reply) => {
-    const { id } = request.params as { id: string };
-    const tenantId = request.tenant?.id;
-    if (!tenantId) return reply.status(400).send({ error: 'Tenant context required' });
-
-    const supabase = getRelayAdminClient();
-    const { data: message, error: readError } = await supabase
-      .from('relay_messages')
-      .select('*')
-      .eq('id', id)
-      .single();
-    if (readError || !message) return reply.status(404).send({ error: 'Relay message not found' });
-    if (message.sender_type === 'customer') return reply.status(422).send({ error: 'Customer messages cannot be approved for sending' });
-
-    const { data: conversation, error: conversationError } = await supabase
-      .from('relay_conversations')
-      .select('id, tenant_id')
-      .eq('id', message.conversation_id)
-      .single();
-    if (conversationError || !conversation) return reply.status(404).send({ error: 'Relay conversation not found' });
-    if (conversation.tenant_id !== tenantId) return reply.status(403).send({ error: 'Relay message belongs to another tenant' });
-
-    // This approval flip is the delivery signal consumed by Relay realtime clients.
-    // System status notifications from TrackingEvents are deterministic and are the only non-draft exception.
-    const { error } = await supabase
-      .from('relay_messages')
-      .update({
-        is_draft: false,
-        draft_mode: false,
-        approved_by: request.user?.sub ?? null,
-        approved_at: new Date().toISOString()
-      })
-      .eq('id', id);
-    if (error) return reply.status(400).send({ error: error.message });
-    reply.send({ sent: true, messageId: id });
-  });
+  // AI and admin drafts are approved by Fauward staff in the console (POST /api/internal/relay/messages/:id/approve-and-send,
+  // L20); the tenant-side approve route, which had no caller, was removed in WP-4.R.
 }
 
 function fireRelayAi(

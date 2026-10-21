@@ -121,17 +121,18 @@ describe.runIf(HAS_TEST_DB)('gtm.pipeline (WP-4.18, real Postgres)', () => {
 
     expect(after.months).toHaveLength(3);
     const delta = (index: number, key: 'pipeline' | 'weighted' | 'won') => cents(after.months[index][key]) - cents(before.months[index][key]);
-    // Month 0: 1000 × 50% + 333.33 × 30% = 500 + 99.999 → 600.00 (the month's sum is rounded once).
+    // Month 0: 1000 × 50% + 333.33 × 30% = 500 + 99.999 = 599.999. The month's sum is rounded once, so against a
+    // baseline that already holds fractional cents (earlier runs on the shared slot) the change is 599.99 or 600.00.
     expect(after.months[0].deals - before.months[0].deals).toBe(2);
     expect(delta(0, 'pipeline')).toBe(133333);
-    expect(delta(0, 'weighted')).toBe(60000);
+    expect([59999, 60000]).toContain(delta(0, 'weighted'));
     // Month 1: 2000 × 75% = 1500; the won deal counts as won, the lost one not at all.
     expect(after.months[1].deals - before.months[1].deals).toBe(1);
     expect(delta(1, 'weighted')).toBe(150000);
     expect(delta(1, 'won')).toBe(500000);
     // Month 5 is outside the 3-month window.
     expect(delta(2, 'weighted')).toBe(0);
-    expect(cents(after.totalWeighted) - cents(before.totalWeighted)).toBe(210000);
+    expect([209999, 210000]).toContain(cents(after.totalWeighted) - cents(before.totalWeighted));
     expect(after.overdue.deals - before.overdue.deals).toBe(1);
     expect(cents(after.overdue.amount) - cents(before.overdue.amount)).toBe(70000);
     expect(after.unscheduled.deals - before.unscheduled.deals).toBe(1);

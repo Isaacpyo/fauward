@@ -1357,6 +1357,8 @@ model SupportTicket {
   assignedPlatformUserId String?
   // Set by customer.support-sla-sweep the first time the ticket breaches its SLA (notifies once).
   slaBreachedAt          DateTime?
+  // L2 (WP-4.R): the Relay conversation a PLATFORM ticket was converted from (one ticket per conversation).
+  relayConversationId    String?        @unique
   resolvedAt   DateTime?
   closedAt     DateTime?
   createdAt    DateTime       @default(now())

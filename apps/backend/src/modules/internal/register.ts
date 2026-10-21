@@ -36,6 +36,7 @@ import { registerConsolePipelineRoutes } from './gtm/pipeline.routes.js';
 import { registerConsoleContractsRoutes } from './gtm/contracts.routes.js';
 import { registerConsoleCommsRoutes } from './customer/comms.routes.js';
 import { registerConsoleSupportRoutes } from './customer/support.routes.js';
+import { registerConsoleRelayRoutes } from './customer/relay.routes.js';
 import { registerConsoleFeedbackRoutes } from './customer/feedback.routes.js';
 import { registerMonitoringRoutes } from './monitoring.routes.js';
 import { registerJitRoutes } from './trust/jit.routes.js';
@@ -80,6 +81,7 @@ export async function registerConsoleRoutes(app: FastifyInstance) {
   await registerConsoleSearchRoutes(app);
   await registerConsoleCommsRoutes(app);
   await registerConsoleSupportRoutes(app);
+  await registerConsoleRelayRoutes(app);
   await registerConsoleFeedbackRoutes(app);
   await registerInternalIamRoutes(app);
   await registerInternalAuditRoutes(app);
