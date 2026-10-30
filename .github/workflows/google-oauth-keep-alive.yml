@@ -1,0 +1,65 @@
+name: Google OAuth Keep-Alive
+
+# Google deletes OAuth clients that have been inactive for 5+ months.
+# Website traffic does not count; only a Sign-in with Google flow or a
+# refresh-token exchange does. This workflow exchanges a stored refresh
+# token for an access token once a month so the Firebase Auth web client
+# in the `fauward` GCP project ("Web client (auto created by Google
+# Service)", used by "Continue with Google") stays active.
+#
+# One-time setup (needs a human Google sign-in):
+#   1. GCP console > Google Auth Platform > Audience: publishing status must be
+#      "In production" (Testing refresh tokens expire after 7 days).
+#   2. Clients > Web client (auto created by Google Service): add the authorized
+#      redirect URI https://developers.google.com/oauthplayground and copy the
+#      client ID + secret.
+#   3. https://developers.google.com/oauthplayground > gear icon > "Use your own
+#      OAuth credentials" > paste ID + secret. Scopes: `openid email`. Authorize,
+#      then "Exchange authorization code for tokens" and copy the refresh token.
+#      (The redirect URI from step 2 can be removed afterwards.)
+#   4. Add repo secrets GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET,
+#      GOOGLE_OAUTH_REFRESH_TOKEN, then run this workflow manually once.
+
+on:
+  schedule:
+    # Monthly, 3rd at 07:17 UTC.
+    - cron: '17 7 3 * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    name: Exchange refresh token
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST oauth2.googleapis.com/token (grant_type=refresh_token)
+        env:
+          CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.GOOGLE_OAUTH_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CLIENT_ID:-}" ] || [ -z "${CLIENT_SECRET:-}" ] || [ -z "${REFRESH_TOKEN:-}" ]; then
+            echo "::error::GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and/or GOOGLE_OAUTH_REFRESH_TOKEN repo secrets are not set."
+            exit 1
+          fi
+
+          HTTP_STATUS=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST https://oauth2.googleapis.com/token \
+            --data-urlencode "client_id=${CLIENT_ID}" \
+            --data-urlencode "client_secret=${CLIENT_SECRET}" \
+            --data-urlencode "refresh_token=${REFRESH_TOKEN}" \
+            --data-urlencode "grant_type=refresh_token")
+
+          echo "HTTP status: ${HTTP_STATUS}"
+
+          # Never print the body on success: it contains a live access token.
+          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ] \
+            || [ "$(jq -r 'has("access_token")' response.json)" != "true" ]; then
+            echo "::error::Google token exchange failed: $(jq -r '"\(.error // "unknown") - \(.error_description // "")"' response.json)"
+            rm -f response.json
+            exit 1
+          fi
+
+          rm -f response.json
+          echo "Google OAuth client keep-alive succeeded."
