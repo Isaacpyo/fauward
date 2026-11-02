@@ -222,7 +222,7 @@ cmd_backfill() { # backfill <id> --dry-run | --yes [--clear-legacy]
   [ -n "$script" ] || die "release $rel has no backfill $id (see apps/backend/src/scripts/backfills/)"
   echo "running $script${args[*]:+ ${args[*]}} in release $rel"
   # With deps: some backfills load services that connect to Redis, so compose starts it first.
-  dc "$rel" run --rm backend npx tsx "$script" ${args[@]+"${args[@]}"}
+  dc "$rel" run --rm -e NPM_CONFIG_UPDATE_NOTIFIER=false backend npx tsx "$script" ${args[@]+"${args[@]}"}
 }
 
 cmd_install_cron() {
@@ -242,14 +242,14 @@ case $cmd in
     cur=$(need_current)
     if [ "${FOLLOW:-0}" = 1 ]; then dc "$cur" logs --tail "${LOG_LINES:-200}" -f "$@"; else dc "$cur" logs --tail "${LOG_LINES:-200}" "$@"; fi ;;
   restart) cur=$(need_current); dc "$cur" restart "$@" ;;
-  migrate-status) rel=$(tool_release); dc "$rel" run --rm --no-deps backend npx prisma migrate status ;;
+  migrate-status) rel=$(tool_release); dc "$rel" run --rm --no-deps -e NPM_CONFIG_UPDATE_NOTIFIER=false backend npx prisma migrate status ;;
   migrate)
     [ "${1:-}" = --yes ] || die "this applies pending migrations to the PRODUCTION database; re-run with --yes"
-    rel=$(tool_release); echo "migrating with release $rel"; dc "$rel" run --rm --no-deps backend npx prisma migrate deploy ;;
+    rel=$(tool_release); echo "migrating with release $rel"; dc "$rel" run --rm --no-deps -e NPM_CONFIG_UPDATE_NOTIFIER=false backend npx prisma migrate deploy ;;
   migrate-resolve)
     [ "${1:-}" = --applied ] && [[ ${2:-} =~ ^[0-9]{4}_[a-z0-9_]+$ ]] && [ "${3:-}" = --yes ] \
       || die "usage: migrate-resolve --applied <migration, e.g. 0036_x> --yes (records it as applied in PRODUCTION without running it)"
-    rel=$(tool_release); dc "$rel" run --rm --no-deps backend npx prisma migrate resolve --applied "$2" ;;
+    rel=$(tool_release); dc "$rel" run --rm --no-deps -e NPM_CONFIG_UPDATE_NOTIFIER=false backend npx prisma migrate resolve --applied "$2" ;;
   backfill) cmd_backfill "$@" ;;
   backup) cmd_backup ;;
   install-cron) cmd_install_cron ;;

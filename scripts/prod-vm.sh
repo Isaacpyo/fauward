@@ -22,7 +22,7 @@ ROOT=${FAUWARD_PROD_ROOT:-/data/fauward-prod}
 PROJECT=${FAUWARD_PROD_PROJECT:-fauward-prod}
 die() { echo "prod-vm: $*" >&2; exit 1; }
 vm() { ssh "$VM" "$@"; }
-ctl() { ssh -t "$VM" "FAUWARD_PROD_ROOT=$ROOT FAUWARD_PROD_PROJECT=$PROJECT LOG_LINES=${LOG_LINES:-200} FOLLOW=${FOLLOW:-0} $ROOT/bin/prodctl.sh $*"; }
+ctl() { ssh -q -t "$VM" "FAUWARD_PROD_ROOT=$ROOT FAUWARD_PROD_PROJECT=$PROJECT LOG_LINES=${LOG_LINES:-200} FOLLOW=${FOLLOW:-0} $ROOT/bin/prodctl.sh $*"; }
 
 # Upload <ref> to releases/<commit> (once) and install its prodctl.sh. Sets rel.
 upload_release() {
