@@ -106,10 +106,10 @@ describe('mrrForSubscription (WP-1.2, reused by WP-3.1)', () => {
   it('converts to the base currency with CurrencyRate, and says so when no rate exists', async () => {
     const usd = { customContract: { findFirst: vi.fn(async () => ({ terms: { monthlyAmount: '100', currency: 'USD' } })) } };
     const converted = await mrrForSubscription(db({ ...usd, currencyRate: { findUnique: vi.fn(async ({ where }: { where: { fromCurrency_toCurrency: { fromCurrency: string } } }) => (where.fromCurrency_toCurrency.fromCurrency === 'USD' ? { rate: new Prisma.Decimal('0.8') } : null)) } }) as never, { id: 't', status: 'ACTIVE', plan: 'ENTERPRISE' }, null);
-    expect(converted).toEqual({ amount: '80.00', currency: 'GBP', source: 'contract' });
+    expect(converted).toEqual({ amount: '80.00', currency: 'GBP', source: 'contract', convertedFrom: 'USD' });
     const unconverted = await mrrForSubscription(db(usd) as never, { id: 't', status: 'ACTIVE', plan: 'ENTERPRISE' }, null);
     expect(unconverted).toMatchObject({ amount: '100.00', currency: 'USD', note: expect.stringContaining('No USD→GBP rate') });
-    expect(sumMrr([converted, unconverted])).toEqual({ amount: '80.00', currency: 'GBP', unconverted: 1 });
+    expect(sumMrr([converted, unconverted])).toEqual({ amount: '80.00', currency: 'GBP', unconverted: 1, converted: 1 });
   });
 });
 

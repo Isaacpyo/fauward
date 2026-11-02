@@ -1320,7 +1320,7 @@ Services spun up:
 
 Steps:
   1. Checkout
-  2. Setup Node 20
+  2. Setup Node 24
   3. npm ci
   4. npx prisma generate
   5. npx prisma migrate deploy --schema=apps/backend/prisma/schema.prisma

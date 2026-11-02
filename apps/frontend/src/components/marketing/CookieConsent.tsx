@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useState, useEffect } from "react";
 
-const STORAGE_KEY = "fauward_cookie_consent";
+import { ATTRIBUTION_COOKIE, CONSENT_EVENT, CONSENT_STORAGE_KEY } from "@/lib/attribution";
+
+const STORAGE_KEY = CONSENT_STORAGE_KEY;
 
 export default function CookieConsent() {
   const [visible, setVisible] = useState(false);
@@ -19,11 +21,14 @@ export default function CookieConsent() {
 
   function accept() {
     try { localStorage.setItem(STORAGE_KEY, "accepted"); } catch { /* noop */ }
+    // Lets AttributionCapture store the first-touch cookie now that consent is given (WP-4.16).
+    window.dispatchEvent(new Event(CONSENT_EVENT));
     setVisible(false);
   }
 
   function decline() {
     try { localStorage.setItem(STORAGE_KEY, "declined"); } catch { /* noop */ }
+    document.cookie = `${ATTRIBUTION_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`;
     setVisible(false);
   }
 

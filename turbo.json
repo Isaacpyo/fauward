@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["TEST_DATABASE_URL", "TEST_REDIS_URL"],
   "tasks": {
     "prisma:generate": {
       "outputs": ["node_modules/.prisma/client/**"]

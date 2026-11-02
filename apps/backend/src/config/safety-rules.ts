@@ -15,16 +15,14 @@ export const FAILED_LOGIN_SPIKE_RULE = {
   windowMinutes: 10,
   maxFailuresPerAccount: 5,
   maxFailuresPerIp: 5,
-  ipBlockMinutes: 60,
-  effect: 'More failed console logins than allowed in the window opens a HIGH security anomaly per account and blocks the IP for an hour.'
+  ipBlockMinutes: 24 * 60,
+  effect: 'More failed console logins than allowed in the window opens a HIGH security anomaly per account and blocks the IP (all of Fauward) for 24 hours, except addresses in IP_BLOCK_BYPASS_CIDRS.'
 };
 
 export const DUNNING_SUSPEND_RULE = {
   id: 'dunning-suspend',
   name: 'Dunning suspension',
-  suspendOnAttempt: 2,
-  cancelAfterDays: 30,
-  effect: 'The second failed Stripe payment suspends the tenant (DUNNING cause); payment lifts it; still suspended after 30 days with a final failure cancels the subscription.'
+  effect: 'A failed Fauward invoice follows the default dunning sequence (revenue.dunning); only its SUSPEND step suspends the tenant (DUNNING cause, default day 14). Paying the invoice recovers the enrolment and lifts that cause.'
 };
 
 export type SafetyRule = { id: string; name: string; effect: string; parameters: Record<string, string | number | readonly string[]> };
@@ -43,6 +41,6 @@ export function safetyRules(): SafetyRule[] {
         ipBlockMinutes: FAILED_LOGIN_SPIKE_RULE.ipBlockMinutes
       }
     },
-    { id: DUNNING_SUSPEND_RULE.id, name: DUNNING_SUSPEND_RULE.name, effect: DUNNING_SUSPEND_RULE.effect, parameters: { suspendOnAttempt: DUNNING_SUSPEND_RULE.suspendOnAttempt, cancelAfterDays: DUNNING_SUSPEND_RULE.cancelAfterDays } }
+    { id: DUNNING_SUSPEND_RULE.id, name: DUNNING_SUSPEND_RULE.name, effect: DUNNING_SUSPEND_RULE.effect, parameters: { sequence: 'revenue.dunning default sequence' } }
   ];
 }

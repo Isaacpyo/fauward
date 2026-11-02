@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { tenantController } from './tenant.controller.js';
+import { publicSettings } from './tenant.service.js';
 import { requireRole } from '../../shared/middleware/requireRole.js';
 import { EMAIL_TEMPLATE_KEYS } from './email-templates.js';
 import { config } from '../../config/index.js';
@@ -11,6 +12,10 @@ import { registerTenantSlugRoutes } from './slug.routes.js';
 import { registerPaymentGatewayRoutes } from './payment-gateways.routes.js';
 import { registerStaffAccessRoutes } from './staff-access.routes.js';
 import { registerTenantPlatformInvoiceRoutes } from './platform-invoices.routes.js';
+import { registerTenantTaxExemptionRoutes } from './tax-exemption.routes.js';
+import { registerTenantTrialExtensionRoutes } from './trial-extension.routes.js';
+import { registerTenantQbrRoutes } from './qbr.routes.js';
+import { registerTenantVerificationRoutes } from './verification.routes.js';
 import { registerPlanChangeRoutes } from './plan-change.routes.js';
 import { loadRequestEntitlements } from '../../shared/middleware/entitlements.js';
 
@@ -55,6 +60,10 @@ export async function registerTenantRoutes(app: FastifyInstance) {
   await registerStaffAccessRoutes(app);
   await registerPaymentGatewayRoutes(app);
   await registerTenantPlatformInvoiceRoutes(app);
+  await registerTenantTaxExemptionRoutes(app);
+  await registerTenantTrialExtensionRoutes(app);
+  await registerTenantQbrRoutes(app);
+  await registerTenantVerificationRoutes(app);
   await registerPlanChangeRoutes(app);
 
   app.get('/api/v1/tenant/usage', { preHandler: [authenticate] }, tenantController.usage);
@@ -172,7 +181,8 @@ export async function registerTenantRoutes(app: FastifyInstance) {
           opsEmailRecipients: recipients
         }
       });
-      reply.send(settings);
+      // Never echo the stored webhook secret (CC6.6, WP-5.3).
+      reply.send(publicSettings(settings));
     }
   );
 

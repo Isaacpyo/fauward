@@ -30,6 +30,7 @@ import { formatPlanLabel, type Plan } from "@/lib/plan-features";
 import { useFeatureAccess } from "@/hooks/useEntitlements";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { VerificationTab } from "@/pages/settings/VerificationTab";
 
 const settingsTabs = [
   { value: "profile", label: "Profile", minimumPlan: "starter" },
@@ -41,6 +42,7 @@ const settingsTabs = [
   { value: "email", label: "Email", minimumPlan: "enterprise" },
   { value: "branding", label: "Branding", minimumPlan: "starter" },
   { value: "privacy", label: "Privacy", minimumPlan: "starter" },
+  { value: "verification", label: "Verification", minimumPlan: "starter" },
   { value: "staff-access", label: "Staff access", minimumPlan: "starter" }
 ] as const satisfies Array<{ value: string; label: string; minimumPlan: Plan }>;
 
@@ -181,6 +183,11 @@ export function SettingsPage() {
         {visitedTabs.has("privacy") ? (
           <TabsContent value="privacy" className="rounded-lg border border-gray-200 bg-white p-4">
             <PrivacyTab />
+          </TabsContent>
+        ) : null}
+        {visitedTabs.has("verification") ? (
+          <TabsContent value="verification" className="rounded-lg border border-gray-200 bg-white p-4">
+            <VerificationTab />
           </TabsContent>
         ) : null}
         {visitedTabs.has("staff-access") ? (

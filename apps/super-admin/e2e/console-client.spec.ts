@@ -17,15 +17,16 @@ test("ACC-CLIENT-5 with the access cookie expired, /revenue/dunning refreshes on
     }
     if (!refreshed) return route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "Unauthorized" }) });
     if (path === "/auth/me") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(["revenue.dunning.read"])) });
-    if (path === "/dunning/failed-payments") {
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [{ id: "pay_001", status: "FAILED", invoiceId: "inv_001" }] }) });
+    if (path === "/dunning/overview") {
+      const tenant = { id: "tenant_1", name: "Northwind", slug: "northwind" };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ stripe: null, failedPayments: [{ id: "pay_001", source: "PLATFORM", tenant, invoiceRef: "inv_001", attempt: null, amount: "79.00", currency: "GBP", at: "2026-10-21T09:00:00.000Z" }], overdueInvoices: [], enrollments: [] }) });
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });
   });
 
   await page.goto("/revenue/dunning");
-  await expect(page.getByRole("heading", { name: "Dunning Manager" })).toBeVisible();
-  await expect(page.getByText("pay_001")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dunning", exact: true })).toBeVisible();
+  await expect(page.getByText("inv_001")).toBeVisible();
   await expect(page.getByText("No records")).toHaveCount(0);
   expect(refreshCalls).toBe(1);
 });
@@ -35,7 +36,7 @@ test("a failing ops endpoint shows the API error (status, code, permission) inst
   await page.route("**/api/internal/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
     if (path === "/auth/me") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(meBody(["revenue.dunning.read"])) });
-    if (path === "/dunning/failed-payments") {
+    if (path === "/dunning/overview") {
       return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "Forbidden", permission: "revenue.dunning.write" }) });
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data: [] }) });

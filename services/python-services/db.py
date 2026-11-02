@@ -392,8 +392,10 @@ async def ensure_service_tables() -> None:
         create index if not exists parsed_documents_tenant_type_updated_idx
         on parsed_documents (tenant_id, document_type, updated_at desc)
         """,
+        # Customs XML generation jobs. Not `customs_declarations`: that is the backend's Prisma table
+        # (camelCase columns), and sharing the name broke startup on any database Prisma created first.
         """
-        create table if not exists customs_declarations (
+        create table if not exists customs_xml_jobs (
           id text primary key,
           tenant_id text not null,
           shipment_id text,
@@ -407,24 +409,24 @@ async def ensure_service_tables() -> None:
         )
         """,
         """
-        alter table customs_declarations
+        alter table customs_xml_jobs
         add column if not exists idempotency_key text
         """,
         """
-        create index if not exists customs_declarations_tenant_id_idx
-        on customs_declarations (tenant_id, id)
+        create index if not exists customs_xml_jobs_tenant_id_idx
+        on customs_xml_jobs (tenant_id, id)
         """,
         """
-        create index if not exists customs_declarations_tenant_shipment_idx
-        on customs_declarations (tenant_id, shipment_id)
+        create index if not exists customs_xml_jobs_tenant_shipment_idx
+        on customs_xml_jobs (tenant_id, shipment_id)
         """,
         """
-        create index if not exists customs_declarations_tenant_type_updated_idx
-        on customs_declarations (tenant_id, declaration_type, updated_at desc)
+        create index if not exists customs_xml_jobs_tenant_type_updated_idx
+        on customs_xml_jobs (tenant_id, declaration_type, updated_at desc)
         """,
         """
-        create unique index if not exists customs_declarations_tenant_idempotency_key_uidx
-        on customs_declarations (tenant_id, idempotency_key)
+        create unique index if not exists customs_xml_jobs_tenant_idempotency_key_uidx
+        on customs_xml_jobs (tenant_id, idempotency_key)
         where idempotency_key is not null
         """,
         """

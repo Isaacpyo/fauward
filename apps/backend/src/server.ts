@@ -9,7 +9,7 @@ await startTenantCacheSubscriber(app).catch((err: unknown) => app.log.error({ er
 
 // Safety net: a stray rejected promise (e.g. a fire-and-forget background task
 // like tracking notifications or agent-event enqueue) must never take the whole
-// API down. Log it loudly and keep serving — Node 20 would otherwise exit.
+// API down. Log it loudly and keep serving — Node 15+ would otherwise exit.
 process.on('unhandledRejection', (reason) => {
   app.log.error({ err: reason }, 'unhandledRejection — keeping server alive');
 });

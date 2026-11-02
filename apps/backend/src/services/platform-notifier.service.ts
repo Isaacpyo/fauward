@@ -93,7 +93,7 @@ export type StaffNotificationInput = ({ permission: Permission; platformUserIds?
 };
 
 /** Platform users of active staff holding `permission` through an unexpired role assignment. */
-async function platformUsersWithPermission(app: NotifierApp, permission: Permission) {
+export async function platformUsersWithPermission(app: Pick<FastifyInstance, 'prisma'>, permission: Permission) {
   const now = new Date();
   const staff = await app.prisma.staffUser.findMany({
     where: {

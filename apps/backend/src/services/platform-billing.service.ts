@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { publishActivity, recordActivity, type ActivityInput } from './platform-activity.service.js';
 import { notifyTenantAdmins } from './platform-notifier.service.js';
 import { liftDunningSuspensionForInvoice, type SuspensionActor } from './tenant-suspension.service.js';
+import { recoverEnrollment } from './dunning.service.js';
+import { exemptionInvoiceNote } from './tax.service.js';
 import { currencyDecimals, toMinorUnits } from '../modules/payments/stripe.service.js';
 
 // Fauward → tenant billing (revenue.billing, D4): every row here is kind PLATFORM. Money stays Decimal(12,2) major units
@@ -81,7 +83,9 @@ export async function createPlatformInvoice(app: FastifyInstance, body: CreateIn
   for (const item of body.lineItems) assertCurrencyPrecision(item.unitAmount, currency);
 
   const subtotal = body.lineItems.reduce((sum, item) => sum.add(decimal(item.unitAmount).mul(item.quantity)), decimal(0));
+  // revenue.tax (WP-4.7): an approved exemption means no tax and a note saying why.
   const taxRate = tenant.taxExempt ? decimal(0) : decimal(body.taxRate ?? '0');
+  const notes = tenant.taxExempt ? [body.notes, await exemptionInvoiceNote(app, tenant.id)].filter(Boolean).join('\n') : body.notes;
   const taxAmount = subtotal.mul(taxRate).div(100).toDecimalPlaces(decimals);
   const total = subtotal.add(taxAmount);
   const now = new Date();
@@ -101,7 +105,7 @@ export async function createPlatformInvoice(app: FastifyInstance, body: CreateIn
         status: body.send ? 'SENT' : 'DRAFT',
         sentAt: body.send ? now : null,
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
-        notes: body.notes,
+        notes,
         createdBy: actor.platformUserId
       }
     });
@@ -200,7 +204,10 @@ export async function recordManualPayment(app: FastifyInstance, body: z.infer<ty
   publishActivity(app.redis, row, app.log);
   let liftedSuspension = false;
   if (settled) {
-    for (const ref of [invoice.id, invoice.stripeInvoiceId].filter((value): value is string => Boolean(value))) {
+    const refs = [invoice.id, invoice.stripeInvoiceId].filter((value): value is string => Boolean(value));
+    // The payment is committed; a failed recovery is retried by the hourly dunning sweep (it recovers PAID invoices).
+    await recoverEnrollment(app, { tenantId: invoice.tenantId, invoiceRefs: refs, via: 'payment recorded' }).catch((err: unknown) => app.log.error({ err, invoiceId: invoice.id }, 'Failed to recover the dunning enrolment'));
+    for (const ref of refs) {
       const lifted = await liftDunningSuspensionForInvoice(app, { tenantId: invoice.tenantId, invoiceRef: ref, actor });
       liftedSuspension = liftedSuspension || Boolean(lifted);
     }

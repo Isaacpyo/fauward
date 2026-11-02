@@ -17,9 +17,13 @@ export function LegalHoldsPage() {
   const release = useReleaseHold();
   const [creating, setCreating] = useState(false);
   const [tenant, setTenant] = useState<TenantOption | null>(null);
+  const [everyTenant, setEveryTenant] = useState(false);
   const [releasing, setReleasing] = useState<LegalHold | null>(null);
   useEffect(() => {
-    if (creating) setTenant(null);
+    if (creating) {
+      setTenant(null);
+      setEveryTenant(false);
+    }
   }, [creating]);
 
   return (
@@ -45,7 +49,7 @@ export function LegalHoldsPage() {
           <li key={hold.id} data-testid="legal-hold" className="rounded-lg border border-[var(--color-border)] bg-white p-4 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="flex items-center gap-2">
-                {hold.tenant ? <TenantChip tenantId={hold.tenant.id} name={hold.tenant.name} slug={hold.tenant.slug} /> : <span className="font-semibold">All tenants</span>}
+                {hold.tenant ? <TenantChip tenantId={hold.tenant.id} name={hold.tenant.name} slug={hold.tenant.slug} /> : <span className="font-semibold" data-testid="hold-global">Every tenant</span>}
                 <span className="rounded-full border border-[var(--color-border)] px-2 py-0.5 text-xs font-semibold">{words(hold.status)}</span>
               </span>
               {hold.status === "ACTIVE" ? (
@@ -72,11 +76,18 @@ export function LegalHoldsPage() {
         description="The reason is recorded with the hold and shown to staff who try to purge or erase this tenant’s data."
         confirmLabel="Place hold"
         dangerous
-        validate={() => (!tenant ? "Choose a tenant." : null)}
-        onSubmit={async (reason) => create.mutateAsync({ tenantId: tenant!.id, reason })}
+        validate={() => (!everyTenant && !tenant ? "Choose a tenant." : null)}
+        onSubmit={async (reason) => create.mutateAsync(everyTenant ? { appliesToAllTenants: true, reason } : { tenantId: tenant!.id, reason })}
         onClose={() => setCreating(false)}
       >
-        {tenant ? (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={everyTenant} onChange={(event) => setEveryTenant(event.target.checked)} className="mt-0.5" />
+          <span>
+            Hold every tenant’s data
+            <span className="block text-xs text-[var(--color-text-muted)]">Needs an approved JIT ROOT session (trust.iam.root, two approvers). Releasing it needs one too.</span>
+          </span>
+        </label>
+        {everyTenant ? null : tenant ? (
           <p className="text-sm">
             Tenant: <TenantChip tenantId={tenant.id} name={tenant.name} slug={tenant.slug} />{" "}
             <button type="button" className="text-xs font-semibold text-[var(--fauward-navy)] hover:underline" onClick={() => setTenant(null)}>
@@ -90,7 +101,7 @@ export function LegalHoldsPage() {
       <ActionDialog
         open={releasing !== null}
         title="Release this legal hold"
-        description={releasing ? `${releasing.tenant?.name ?? "All tenants"}: ${releasing.reason}. Deletion and erasure become possible again.` : undefined}
+        description={releasing ? `${releasing.appliesToAllTenants ? "Every tenant" : releasing.tenant?.name ?? "Unknown tenant"}: ${releasing.reason}. Deletion and erasure become possible again.` : undefined}
         confirmLabel="Release"
         dangerous
         onSubmit={async (reason) => release.mutateAsync({ id: releasing!.id, reason })}

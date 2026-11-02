@@ -54,6 +54,8 @@ export type DsarDetail = {
 export type LegalHold = {
   id: string;
   tenant: TenantRef | null;
+  /** A hold on every tenant (WP-5.2); placing or releasing one needs an approved JIT ROOT session. */
+  appliesToAllTenants: boolean;
   scope: unknown;
   reason: string;
   status: "ACTIVE" | "RELEASED";
@@ -124,7 +126,7 @@ export function useCreateDsar() {
 export function useCreateHold() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: async (input: { tenantId: string; reason: string }) => (await consoleApi.post<{ hold: LegalHold }>("/compliance/legal-holds", input)).data,
+    mutationFn: async (input: { tenantId: string; reason: string } | { appliesToAllTenants: true; reason: string }) => (await consoleApi.post<{ hold: LegalHold }>("/compliance/legal-holds", input)).data,
     onSuccess: invalidate
   });
 }

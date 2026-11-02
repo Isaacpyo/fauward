@@ -8,7 +8,7 @@ import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
 import { consoleUserHas, requireConsolePermission } from '../../middleware/require-console-permission.js';
 import { dangerous } from '../../middleware/dangerous.js';
 import { config } from '../../config/index.js';
-import { platformAuditClient } from '../../services/platform-audit-client.js';
+import { platformAuditSink } from '../../services/platform-audit.service.js';
 import { RefundError, decideRefund, requestRefund } from '../../services/refund.service.js';
 import { recordAndPublishActivity, staffActor } from '../../services/platform-activity.service.js';
 import {
@@ -73,7 +73,7 @@ function billingActor(request: FastifyRequest): BillingActor {
 }
 
 async function auditBilling(request: FastifyRequest, action: string, targetType: string, targetId: string, before: unknown, after: unknown, reason?: string | null) {
-  await writeAudit(platformAuditClient(request.server.prisma), {
+  await writeAudit(platformAuditSink(request.server.prisma), {
     actor_id: request.platform!.user.id,
     actor_email: request.platform!.user.email,
     actor_role: request.platform!.user.role,

@@ -136,7 +136,7 @@ describe('IAM ROOT grants (S2)', () => {
     const path = await import('node:path');
     const { fileURLToPath } = await import('node:url');
     const here = path.dirname(fileURLToPath(import.meta.url));
-    for (const file of ['../../modules/internal/iam.routes.ts', '../../modules/internal/console-phases.routes.ts']) {
+    for (const file of ['../../modules/internal/iam.routes.ts']) {
       expect(fs.readFileSync(path.resolve(here, file), 'utf8')).not.toContain("'dev-hardware-key'");
     }
   });

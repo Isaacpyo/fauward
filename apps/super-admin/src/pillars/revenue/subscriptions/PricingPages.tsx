@@ -31,11 +31,11 @@ export function ContractsPage() {
   const [creating, setCreating] = useState(false);
   const [activating, setActivating] = useState<Contract | null>(null);
   const [tenant, setTenant] = useState<TenantOption | null>(null);
-  const [form, setForm] = useState({ monthlyAmount: "", currency: "GBP", termStart: "", termEnd: "", msaUrl: "" });
+  const [form, setForm] = useState({ monthlyAmount: "", currency: "", termStart: "", termEnd: "", msaUrl: "" });
   useEffect(() => {
     if (creating) {
       setTenant(null);
-      setForm({ monthlyAmount: "", currency: "GBP", termStart: "", termEnd: "", msaUrl: "" });
+      setForm({ monthlyAmount: "", currency: "", termStart: "", termEnd: "", msaUrl: "" });
     }
   }, [creating]);
 
@@ -73,7 +73,7 @@ export function ContractsPage() {
         open={creating}
         title="New contract"
         confirmLabel="Create draft"
-        validate={() => (!tenant ? "Choose a tenant." : !/^\d+(\.\d{1,2})?$/.test(form.monthlyAmount) ? "Enter the monthly amount, e.g. 1500.00." : !form.termStart || !form.termEnd ? "Set the term." : null)}
+        validate={() => (!tenant ? "Choose a tenant." : !/^\d+(\.\d{1,2})?$/.test(form.monthlyAmount) ? "Enter the monthly amount, e.g. 1500.00." : !/^[A-Z]{3}$/.test(form.currency) ? "Enter the contract currency as a 3-letter ISO code." : !form.termStart || !form.termEnd ? "Set the term." : null)}
         onSubmit={async () => create.mutateAsync({ tenantId: tenant!.id, monthlyAmount: form.monthlyAmount, currency: form.currency, termStart: form.termStart, termEnd: form.termEnd, ...(form.msaUrl ? { msaUrl: form.msaUrl } : {}) })}
         onClose={() => setCreating(false)}
       >

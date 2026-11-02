@@ -79,7 +79,7 @@ async def find_idempotent_declaration(tenant_id: str, idempotency_key: str | Non
     row = await db.fetchrow(
         """
         select id, status
-        from customs_declarations
+        from customs_xml_jobs
         where tenant_id = $1 and idempotency_key = $2
         """,
         tenant_id,
@@ -91,7 +91,7 @@ async def find_idempotent_declaration(tenant_id: str, idempotency_key: str | Non
 async def create_declaration_job(payload: DeclarationRequest, tenant_id: str, job_id: str) -> None:
     await db.execute(
         """
-        insert into customs_declarations (
+        insert into customs_xml_jobs (
           id, tenant_id, shipment_id, declaration_type, status, metadata, idempotency_key, updated_at
         )
         values ($1, $2, $3, $4, 'QUEUED', $5::jsonb, $6, now())
@@ -108,7 +108,7 @@ async def create_declaration_job(payload: DeclarationRequest, tenant_id: str, jo
 async def mark_declaration_failed(job_id: str, tenant_id: str, error_message: str) -> None:
     await db.execute(
         """
-        update customs_declarations
+        update customs_xml_jobs
         set status = 'FAILED',
             error_message = $3,
             updated_at = now()
@@ -168,7 +168,7 @@ async def fetch_declaration_for_auth(job_id: str, auth: AuthContext) -> dict[str
         row = await db.fetchrow(
             """
             select id, tenant_id, shipment_id, declaration_type, status, error_message, updated_at
-            from customs_declarations
+            from customs_xml_jobs
             where id = $1
             """,
             job_id,
@@ -177,7 +177,7 @@ async def fetch_declaration_for_auth(job_id: str, auth: AuthContext) -> dict[str
         row = await db.fetchrow(
             """
             select id, tenant_id, shipment_id, declaration_type, status, error_message, updated_at
-            from customs_declarations
+            from customs_xml_jobs
             where id = $1 and tenant_id = $2
             """,
             job_id,

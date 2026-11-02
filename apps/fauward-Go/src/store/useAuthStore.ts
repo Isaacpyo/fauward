@@ -15,11 +15,12 @@ type AuthStore = {
   accessToken?: string;
   tenantSlug?: string;
   user?: FieldUser;
+  /** Email a sign-in link was last sent to; the token itself only ever arrives in that email (C61). */
   emailLinkTarget?: string;
-  emailLinkToken?: string;
   signIn: (email: string, password: string) => Promise<SignInResult>;
   requestEmailSignInLink: (email: string) => Promise<SignInResult>;
-  signInWithEmailLink: (token?: string) => Promise<SignInResult>;
+  /** `email` comes from the link (`?email=`) so it works on another device; falls back to `emailLinkTarget`. */
+  signInWithEmailLink: (token: string | undefined, email?: string) => Promise<SignInResult>;
   restoreSession: () => Promise<void>;
   signOut: () => void;
 };
@@ -38,7 +39,6 @@ const clearAuthState = () => ({
   tenantSlug: undefined,
   user: undefined,
   emailLinkTarget: undefined,
-  emailLinkToken: undefined,
 });
 
 export const useAuthStore = create<AuthStore>()(
@@ -50,7 +50,6 @@ export const useAuthStore = create<AuthStore>()(
       tenantSlug: undefined,
       user: undefined,
       emailLinkTarget: undefined,
-      emailLinkToken: undefined,
       signIn: async (email, password) => {
         try {
           const normalizedEmail = email.trim().toLowerCase();
@@ -63,7 +62,6 @@ export const useAuthStore = create<AuthStore>()(
             tenantSlug: session.tenantSlug,
             user: session.user,
             emailLinkTarget: undefined,
-            emailLinkToken: undefined,
           });
 
           return { ok: true };
@@ -85,17 +83,8 @@ export const useAuthStore = create<AuthStore>()(
             };
           }
 
-          const result = await fieldApi.requestEmailLink(normalizedEmail);
-
-          if (result.tenantSlug) {
-            setStoredTenantSlug(result.tenantSlug);
-          }
-
-          set({
-            emailLinkTarget: normalizedEmail,
-            emailLinkToken: result.linkToken,
-            tenantSlug: result.tenantSlug ?? get().tenantSlug,
-          });
+          await fieldApi.requestEmailLink(normalizedEmail);
+          set({ emailLinkTarget: normalizedEmail });
 
           return { ok: true };
         } catch (error) {
@@ -105,18 +94,18 @@ export const useAuthStore = create<AuthStore>()(
           };
         }
       },
-      signInWithEmailLink: async (token) => {
+      signInWithEmailLink: async (token, email) => {
         try {
-          const pendingEmail = get().emailLinkTarget;
+          const pendingEmail = (email?.trim() || get().emailLinkTarget)?.toLowerCase();
 
-          if (!pendingEmail) {
+          if (!token || !pendingEmail) {
             return {
               ok: false,
-              message: "Request a sign-in link first.",
+              message: "Open the sign-in link from your email.",
             };
           }
 
-          const session = await fieldApi.consumeEmailLink(pendingEmail, token ?? get().emailLinkToken);
+          const session = await fieldApi.consumeEmailLink(pendingEmail, token);
           setStoredTenantSlug(session.tenantSlug);
 
           set({
@@ -125,7 +114,6 @@ export const useAuthStore = create<AuthStore>()(
             tenantSlug: session.tenantSlug,
             user: session.user,
             emailLinkTarget: undefined,
-            emailLinkToken: undefined,
           });
 
           return { ok: true };
@@ -173,6 +161,13 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: "fauward-go-auth-v2",
       storage: createJSONStorage(() => localStorage),
+      // Version 0 also stored the email-link token the API used to return (C61); drop it on load.
+      version: 1,
+      migrate: (persisted) => {
+        const state = { ...(persisted as Record<string, unknown>) };
+        delete state.emailLinkToken;
+        return state as Partial<AuthStore>;
+      },
     },
   ),
 );

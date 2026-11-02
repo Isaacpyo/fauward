@@ -2,10 +2,6 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
 import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
-import { analyticsQueue, notificationQueue, outboxQueue, scheduledJobsQueue, webhookQueue } from '../../../queues/queues.js';
-import { dlqNotificationQueue } from '../../notifications/notifications.worker.js';
-import { dlqOutboxQueue } from '../../../queues/outbox.worker.js';
-import { dlqWebhookQueue } from '../../../queues/webhook.worker.js';
 import { webhooksService } from '../../webhooks/webhooks.service.js';
 import { presentConsoleGateway } from '../../../services/tenant-payment-gateway.service.js';
 import { dangerous } from '../../../middleware/dangerous.js';
@@ -19,48 +15,12 @@ const gatewayListQuery = z.object({
   tenantId: z.string().min(1).optional()
 });
 
-// platform.queues, platform.health and dead-lettered webhook deliveries (moved from /api/v1/platform in WP-1.1).
+// Tenant payment gateways and dead-lettered webhook deliveries (platform.integrations). Queues moved to queues.routes.ts
+// (WP-3.6) and health to health.routes.ts (WP-3.7).
 
-const COUNT_STATES = ['waiting', 'active', 'completed', 'failed', 'delayed'] as const;
+const failuresQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(100), cursor: z.string().min(1).optional() });
 
 export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
-  app.get('/api/internal/queues', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.queues.read')] }, async (_request, reply) => {
-    const queues = [
-      ['notification', notificationQueue],
-      ['webhook', webhookQueue],
-      ['outbox', outboxQueue],
-      ['analytics', analyticsQueue],
-      ['scheduled-jobs', scheduledJobsQueue]
-    ] as const;
-    const [counts, dlqNotification, dlqWebhook, dlqOutbox] = await Promise.all([
-      Promise.all(queues.map(([, queue]) => queue.getJobCounts(...COUNT_STATES))),
-      dlqNotificationQueue.getJobCounts(...COUNT_STATES),
-      dlqWebhookQueue.getJobCounts(...COUNT_STATES),
-      dlqOutboxQueue.getJobCounts(...COUNT_STATES)
-    ]);
-    return reply.send({
-      queues: queues.map(([name], index) => {
-        const stats = counts[index];
-        return { name, waiting: stats.waiting + stats.delayed, active: stats.active, completed: stats.completed, failed: stats.failed, lastProcessedAt: null };
-      }),
-      dlq: {
-        notification: dlqNotification.waiting + dlqNotification.delayed + dlqNotification.active,
-        webhook: dlqWebhook.waiting + dlqWebhook.delayed + dlqWebhook.active,
-        outbox: dlqOutbox.waiting + dlqOutbox.delayed + dlqOutbox.active
-      }
-    });
-  });
-
-  app.get('/api/internal/health', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.health.read')] }, async (_request, reply) => {
-    const startedDb = Date.now();
-    await app.prisma.$queryRaw`SELECT 1`;
-    const dbLatencyMs = Date.now() - startedDb;
-    const startedRedis = Date.now();
-    await app.redis.ping();
-    const redisLatencyMs = Date.now() - startedRedis;
-    return reply.send({ dbLatencyMs, redisLatencyMs, uptimeSeconds: Math.floor(process.uptime()) });
-  });
-
   // L11 (WP-2.12): tenant payment gateways across tenants — provider, mode, status, last error; never secrets.
   app.get('/api/internal/integrations/tenant-gateways', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
     const parsed = gatewayListQuery.safeParse(request.query);
@@ -75,8 +35,12 @@ export async function registerConsoleOperationsRoutes(app: FastifyInstance) {
   });
 
   // Dead-lettered tenant webhook deliveries across tenants (was GET /api/v1/platform/webhooks/failures, tenant SUPER_ADMIN).
-  app.get('/api/internal/integrations/webhooks/failures', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (_request, reply) => {
-    return reply.send({ failures: await webhooksService.platformFailures(app.prisma) });
+  app.get('/api/internal/integrations/webhooks/failures', { preHandler: [authenticatePlatformSession, requireConsolePermission('platform.integrations.read')] }, async (request, reply) => {
+    const parsed = failuresQuery.safeParse(request.query ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'INVALID_QUERY', message: parsed.error.issues[0]?.message });
+    const rows = await webhooksService.platformFailures(app.prisma, { limit: parsed.data.limit + 1, cursor: parsed.data.cursor });
+    const failures = rows.slice(0, parsed.data.limit);
+    return reply.send({ failures, nextCursor: rows.length > parsed.data.limit ? failures[failures.length - 1]?.id ?? null : null });
   });
 
   // L10 (WP-2.13): staff replay a tenant's failed delivery; the worker re-sends the stored payload signed with the

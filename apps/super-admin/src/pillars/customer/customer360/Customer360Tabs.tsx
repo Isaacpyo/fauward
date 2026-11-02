@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { usePermission } from "@fauward/internal-rbac";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ConsoleApiErrorPanel } from "@/components/service-kit/ConsoleApiErrorPanel";
 import { MoneyCell } from "@/components/service-kit/MoneyCell";
@@ -10,7 +10,8 @@ import { PermissionButton } from "@/components/service-kit/PermissionButton";
 import { consoleApi } from "@/lib/console-api";
 import { toConsoleApiError } from "@/lib/console-api-error";
 import { severityTone, useActivityFeed } from "@/lib/activity";
-import { C360_KEY, useC360, type C360Ai } from "./api";
+import { C360_KEY, useC360, type C360Ai, type HealthFactorResult, type HealthModel } from "./api";
+import { DataTree } from "@/components/service-kit/DataTree";
 
 const card = "rounded-lg border border-[var(--color-border)] bg-white p-4";
 const th = "py-1 text-left text-xs font-semibold text-[var(--color-text-muted)]";
@@ -71,9 +72,47 @@ export function OverviewTab({ tenantId }: { tenantId: string }) {
               Manage on the tenant page
             </Link>
           </section>
+          <DealsPanel tenantId={tenantId} />
         </div>
       )}
     </TabQuery>
+  );
+}
+
+type TenantDeal = { id: string; name: string; stage: string; amount: string; probability: number; closeDate: string | null; wonAt: string | null; ownerEmail: string | null };
+
+/** gtm.pipeline (WP-4.18, ACC-PIPE-4): deals linked to this tenant; only for staff who can read the pipeline. */
+function DealsPanel({ tenantId }: { tenantId: string }) {
+  const allowed = usePermission("gtm.pipeline.read") === true;
+  const deals = useQuery({
+    queryKey: [...C360_KEY, "deals", tenantId],
+    queryFn: async () => (await consoleApi.get<{ data: TenantDeal[] }>(`/customer360/${encodeURIComponent(tenantId)}/deals`)).data.data,
+    enabled: allowed && tenantId.length > 0
+  });
+  if (!allowed) return null;
+  return (
+    <section className={card} aria-label="Deals">
+      <h2 className="text-sm font-semibold">Deals</h2>
+      <TabQuery query={deals} label="deals">
+        {(rows) =>
+          rows.length === 0 ? (
+            <p className="mt-2 text-sm text-[var(--color-text-muted)]">No deal is linked to this tenant.</p>
+          ) : (
+            <ul className="mt-2 space-y-1 text-sm">
+              {rows.map((deal) => (
+                <li key={deal.id} data-testid="c360-deal">
+                  <Link to={`/gtm/pipeline/${encodeURIComponent(deal.id)}`} className="font-semibold text-[var(--fauward-navy)] hover:underline">
+                    {deal.name}
+                  </Link>{" "}
+                  · {deal.stage === "WON" ? `won ${when(deal.wonAt)}` : `${deal.stage.toLowerCase()} (${deal.probability}%)`} · <span className="tabular-nums">{deal.amount}</span>
+                  {deal.ownerEmail ? ` · ${deal.ownerEmail}` : ""}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </TabQuery>
+    </section>
   );
 }
 
@@ -221,6 +260,40 @@ export function TicketsTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+function isFactorResult(value: unknown): value is HealthFactorResult {
+  return typeof value === "object" && value !== null && "weight" in value && "included" in value;
+}
+
+/** WP-3.3 rows (version ≥ 2) have per-factor points; older rows are shown as recorded. */
+function HealthFactors({ factors, model }: { factors: unknown; model?: HealthModel }) {
+  const record = factors && typeof factors === "object" ? (factors as Record<string, unknown>) : {};
+  const rows = (model?.factors ?? []).filter((factor) => isFactorResult(record[factor.key]));
+  if (rows.length === 0) return <DataTree value={factors} />;
+  return (
+    <table className="mt-2 w-full text-sm" data-testid="health-factors">
+      <thead>
+        <tr>
+          <th className={th}>Factor</th>
+          <th className={`${th} text-right`}>Weight</th>
+          <th className={`${th} text-right`}>Points</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-[var(--color-border)]">
+        {rows.map((factor) => {
+          const result = record[factor.key] as HealthFactorResult;
+          return (
+            <tr key={factor.key} title={factor.definition}>
+              <td className="py-1">{factor.label}</td>
+              <td className="py-1 text-right tabular-nums">{factor.weight}</td>
+              <td className="py-1 text-right tabular-nums">{result.included && result.points !== null ? result.points.toFixed(1) : "Left out (no data)"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 export function HealthTab({ tenantId }: { tenantId: string }) {
   const health = useC360(tenantId, "health");
   return (
@@ -231,8 +304,10 @@ export function HealthTab({ tenantId }: { tenantId: string }) {
             <h2 className="text-sm font-semibold">
               Score {data.latest.score} ({data.latest.trend}) · {when(data.latest.computedAt)}
             </h2>
-            <pre className="mt-2 overflow-auto rounded bg-[var(--color-surface-50)] p-2 text-xs">{Array.isArray(data.latest.factors) ? data.latest.factors.join("\n") : JSON.stringify(data.latest.factors, null, 2)}</pre>
-            <p className="mt-2 text-xs text-[var(--color-text-muted)]">{data.history.length} score(s) in the last 90 days.</p>
+            <HealthFactors factors={data.latest.factors} model={data.model} />
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              {data.history.length} score(s) in the last 90 days · model version {data.latest.version}
+            </p>
           </section>
         ) : (
           <p className={card} data-testid="health-not-scored">

@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/internal/:path*",
-      "destination": "https://fauwardbackend-production.up.railway.app/api/internal/:path*"
+      "destination": "https://api.fauward.com/api/internal/:path*"
     },
     {
       "source": "/((?!api/).*)",

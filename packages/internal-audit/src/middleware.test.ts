@@ -1,16 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { auditMiddleware } from './middleware.js';
-import type { PlatformAuditClient } from './types.js';
+import type { AuditRowData } from './row.js';
 
 type FinishHandler = () => void;
 
-function createClient() {
-  return {
-    platformAuditLog: {
-      findFirst: vi.fn(async () => null),
-      create: vi.fn(async (args: { data: Record<string, unknown> }) => args.data)
-    }
-  } satisfies PlatformAuditClient;
+function createSink() {
+  return vi.fn(async (row: AuditRowData) => row);
 }
 
 function createReply(statusCode: number) {
@@ -48,49 +43,47 @@ function request(body: unknown = { ok: true }) {
 
 describe('auditMiddleware', () => {
   it('writes audit entries for successful mutating internal requests', async () => {
-    const client = createClient();
+    const sink = createSink();
     const { reply, finish } = createReply(204);
 
-    await auditMiddleware({ prisma: client })(request(), reply);
+    await auditMiddleware({ sink })(request(), reply);
     await finish();
 
-    expect(client.platformAuditLog.create).toHaveBeenCalledTimes(1);
+    expect(sink).toHaveBeenCalledTimes(1);
   });
 
   it.each([400, 500])('does not write audit entries for %i responses', async (statusCode) => {
-    const client = createClient();
+    const sink = createSink();
     const { reply, finish } = createReply(statusCode);
 
-    await auditMiddleware({ prisma: client })(request(), reply);
+    await auditMiddleware({ sink })(request(), reply);
     await finish();
 
-    expect(client.platformAuditLog.create).not.toHaveBeenCalled();
+    expect(sink).not.toHaveBeenCalled();
   });
 
   it('captures actor and staff session details from the platform session', async () => {
-    const client = createClient();
+    const sink = createSink();
     const { reply, finish } = createReply(200);
 
-    await auditMiddleware({ prisma: client })(request(), reply);
+    await auditMiddleware({ sink })(request(), reply);
     await finish();
 
-    expect(client.platformAuditLog.create).toHaveBeenCalledWith(
+    expect(sink).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          actorId: 'staff_001',
-          actorEmail: 'staff@fauward.com',
-          actorRole: 'TRUST_ANALYST',
-          sessionId: 'staff_session_001'
-        })
+        actorId: 'staff_001',
+        actorEmail: 'staff@fauward.com',
+        actorRole: 'TRUST_ANALYST',
+        sessionId: 'staff_session_001'
       })
     );
   });
 
   it('redacts password, token, and card_number fields', async () => {
-    const client = createClient();
+    const sink = createSink();
     const { reply, finish } = createReply(201);
 
-    await auditMiddleware({ prisma: client })(
+    await auditMiddleware({ sink })(
       request({
         password: 'plain-text-password',
         token: 'secret-token',
@@ -101,17 +94,27 @@ describe('auditMiddleware', () => {
     );
     await finish();
 
-    expect(client.platformAuditLog.create).toHaveBeenCalledWith(
+    expect(sink).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({
-          after: {
-            password: '[REDACTED]',
-            token: '[REDACTED]',
-            card_number: '[REDACTED_CARD]',
-            nested: { refreshToken: '[REDACTED]' }
-          }
-        })
+        after: {
+          password: '[REDACTED]',
+          token: '[REDACTED]',
+          card_number: '[REDACTED_CARD]',
+          nested: { refreshToken: '[REDACTED]' }
+        }
       })
     );
+  });
+
+  it('writes nothing when the handler already wrote its own audit row (WP-5.1 safety net)', async () => {
+    const sink = createSink();
+    const { reply, finish } = createReply(200);
+    let written = false;
+
+    await auditMiddleware({ sink, auditedProbe: () => () => written })(request(), reply);
+    written = true;
+    await finish();
+
+    expect(sink).not.toHaveBeenCalled();
   });
 });

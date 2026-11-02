@@ -7,6 +7,7 @@ import { FauwardInvoicesTable } from "@/components/billing/FauwardInvoicesTable"
 import { ManageBillingCard } from "@/components/billing/ManageBillingCard";
 import { PaymentMethodCard } from "@/components/billing/PaymentMethodCard";
 import { PlanComparisonTable } from "@/components/billing/PlanComparisonTable";
+import { TaxExemptionCard } from "@/components/billing/TaxExemptionCard";
 import { UsageSection } from "@/components/billing/UsageSection";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -40,6 +41,7 @@ export function BillingTab() {
       <PlanComparisonTable currentPlan={summary.plan} onUpgradePlan={() => setChangePlanOpen(true)} />
       <ManageBillingCard summary={summary} />
       <FauwardInvoicesTable />
+      <TaxExemptionCard />
       <PaymentMethodCard summary={summary} />
 
       <ChangePlanModal open={changePlanOpen} onOpenChange={setChangePlanOpen} />

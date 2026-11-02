@@ -25,6 +25,13 @@ export const DANGEROUS_ROUTES = [
   // L13 user lock (WP-2.15)
   { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/lock' },
   { method: 'POST', url: '/api/internal/tenants/:id/users/:userId/unlock' },
+  // platform.queues (WP-3.6)
+  { method: 'POST', url: '/api/internal/queues/:name/dlq/replay' },
+  { method: 'POST', url: '/api/internal/queues/:name/clean' },
+  { method: 'POST', url: '/api/internal/queues/:name/pause' },
+  { method: 'POST', url: '/api/internal/queues/:name/resume' },
+  // platform.jobs (WP-3.8)
+  { method: 'POST', url: '/api/internal/jobs/:name/trigger' },
   // platform.integrations: webhook replay (WP-2.13)
   { method: 'POST', url: '/api/internal/integrations/webhooks/deliveries/:id/replay' },
   // platform.flags (WP-1.4 native overrides)
@@ -43,6 +50,11 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/subscriptions/:tenantId/cancel' },
   { method: 'POST', url: '/api/internal/subscriptions/overrides' },
   { method: 'POST', url: '/api/internal/dunning/save-offers/:id/approve' },
+  // revenue.dunning enrolments (WP-4.5)
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/retry' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/pause' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/resume' },
+  { method: 'POST', url: '/api/internal/dunning/enrollments/:id/cancel' },
   // trust.compliance (WP-2.5)
   { method: 'POST', url: '/api/internal/compliance/dsar/:id/deliver' },
   { method: 'POST', url: '/api/internal/compliance/dsar/:id/erase' },
@@ -50,6 +62,24 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/compliance/legal-holds/:id/release' },
   // customer.comms (WP-2.14): delete only before any receipt
   { method: 'DELETE', url: '/api/internal/announcements/:id' },
+  // gtm.demos (WP-4.15)
+  { method: 'DELETE', url: '/api/internal/demos/:id' },
+  // gtm.trials (WP-4.14)
+  { method: 'POST', url: '/api/internal/trials/extensions/:id/decision' },
+  { method: 'POST', url: '/api/internal/trials/:tenantId/extend' },
+  // trust.security (WP-4.11)
+  { method: 'POST', url: '/api/internal/security/ip-blocks' },
+  { method: 'DELETE', url: '/api/internal/security/ip-blocks/:id' },
+  { method: 'POST', url: '/api/internal/security/sessions/:id/revoke' },
+  // trust.kyc (WP-4.10)
+  { method: 'POST', url: '/api/internal/kyc/reviews/:id/decision' },
+  { method: 'POST', url: '/api/internal/kyc/screenings/:id/decision' },
+  // revenue.tax (WP-4.7)
+  { method: 'POST', url: '/api/internal/tax/exemptions/:id/decision' },
+  // revenue.disputes (WP-4.6)
+  { method: 'POST', url: '/api/internal/disputes/:id/evidence' },
+  // trust.secrets (WP-4.12)
+  { method: 'POST', url: '/api/internal/secrets/:id/mark-rotated' },
   // trust.audit (WP-1.9)
   { method: 'POST', url: '/api/internal/audit/export' },
   // revenue.billing (WP-0.6, WP-1.5)
@@ -58,7 +88,10 @@ export const DANGEROUS_ROUTES = [
   { method: 'POST', url: '/api/internal/billing/credit-notes' },
   { method: 'POST', url: '/api/internal/billing/refunds' },
   { method: 'POST', url: '/api/internal/billing/refunds/:id/approve' },
-  { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' }
+  { method: 'POST', url: '/api/internal/billing/refunds/:id/reject' },
+  // gtm.contracts (WP-4.19)
+  { method: 'POST', url: '/api/internal/contracts/approvals/:id/decision' },
+  { method: 'POST', url: '/api/internal/contracts/quotes/:id/accept' }
 ] as const;
 
 export type DangerousRoute = (typeof DANGEROUS_ROUTES)[number];

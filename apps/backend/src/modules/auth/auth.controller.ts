@@ -87,7 +87,7 @@ export const authController = {
     }
 
     try {
-      const result = await authService.requestEmailLink(payload as { email: string }, request.server.prisma, request.tenant?.id);
+      const result = await authService.requestEmailLink(payload as { email: string }, request.server.prisma, request.tenant?.id, request.log);
       reply.send(result);
     } catch {
       reply.status(400).send({ error: 'Unable to issue email sign-in link' });
@@ -267,7 +267,7 @@ export const authController = {
       return reply.send({ success: true });
     }
 
-    const result = await authService.forgotPassword(payload, request.server.prisma, tenantId);
+    const result = await authService.forgotPassword(payload, request.server.prisma, tenantId, request.log);
     reply.send(result);
   },
   resetPassword: async (request: FastifyRequest, reply: FastifyReply) => {

@@ -47,7 +47,7 @@ const activity = {
   nextCursor: null
 };
 
-async function mock360(page: Page, options: { permissions?: string[]; failing?: string[] } = {}) {
+async function mock360(page: Page, options: { permissions?: string[]; failing?: string[]; health?: unknown } = {}) {
   await page.route("**/api/internal/**", async (route) => {
     const path = new URL(route.request().url()).pathname.replace("/api/internal", "");
     if (path === "/auth/me") return json(route, 200, meBody(options.permissions ?? ROOT_PERMISSIONS));
@@ -55,7 +55,7 @@ async function mock360(page: Page, options: { permissions?: string[]; failing?: 
     if (tab && options.failing?.includes(tab)) return json(route, 500, { error: "INTERNAL", message: `The ${tab} service is down` });
     if (tab === "summary") return json(route, 200, summary);
     if (tab === "billing") return json(route, 200, billing);
-    if (tab === "health") return json(route, 200, { latest: null, history: [] });
+    if (tab === "health") return json(route, 200, options.health ?? { latest: null, history: [] });
     if (tab === "config") return json(route, 200, config);
     if (tab === "activity") return json(route, 200, activity);
     return json(route, 200, { data: [] });
@@ -201,4 +201,30 @@ test("ACC-L13-1 People shows status, invite state, MFA and last sign-in; staff l
   await expect(person).toContainText("Credentials in a phishing kit");
   await expect(person.getByRole("button", { name: "Unlock" })).toBeVisible();
   expect(locks).toEqual([{ reason: "Credentials in a phishing kit" }]);
+});
+
+test("ACC-CS-1 the Health tab shows each factor's points, and NPS as left out when the tenant has no responses", async ({ page }) => {
+  const factor = (weight: number, points: number | null) => ({ weight, included: points !== null, fraction: points === null ? null : 0.5, points });
+  const model = {
+    version: 2,
+    minTenantAgeDays: 14,
+    factors: [
+      { key: "shipmentTrend", label: "Shipment trend", weight: 20, definition: "Shipments in the last 30 days against the 30 days before." },
+      { key: "nps", label: "NPS", weight: 10, definition: "The tenant's NPS over responses from the last 90 days." }
+    ]
+  };
+  await mock360(page, {
+    health: {
+      latest: { score: 80, trend: "up", factors: { shipmentTrend: factor(20, 16.7), nps: factor(10, null) }, inputs: {}, version: 2, computedAt: "2026-10-20T01:30:00.000Z" },
+      history: [{ score: 80, computedAt: "2026-10-20T01:30:00.000Z" }],
+      model
+    }
+  });
+  await page.goto("/customer/360/tenant_1");
+  await page.getByRole("tab", { name: "Health" }).click();
+  const table = page.getByTestId("health-factors");
+  await expect(table).toContainText("Shipment trend");
+  await expect(table).toContainText("16.7");
+  await expect(table.getByRole("row", { name: /NPS/ })).toContainText("Left out (no data)");
+  await expect(page.getByText("model version 2")).toBeVisible();
 });

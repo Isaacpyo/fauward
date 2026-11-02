@@ -1,7 +1,8 @@
 import { TenantPlan, type PrismaClient } from '@prisma/client';
+import type { FastifyBaseLogger } from 'fastify';
 import { randomBytes } from 'crypto';
 import { hashPassword, verifyPassword } from '../../shared/utils/hash.js';
-import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload, verifyAccessToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
+import { signAccessToken, signEmailLinkToken, signRefreshToken, type JwtPayload, verifyEmailLinkToken, verifyRefreshToken } from '../../shared/utils/jwt.js';
 import { EMAIL_TEMPLATE_KEYS } from '../tenants/email-templates.js';
 import { createHash } from 'crypto';
 import { verifyFirebaseIdToken } from './firebase-token.js';
@@ -10,6 +11,7 @@ import { config } from '../../config/index.js';
 import { isReservedSlug } from '../tenants/reserved-slugs.js';
 import { assertNotLocked, recordSignIn } from '../../services/tenant-user-lifecycle.service.js';
 import { deriveSlug, findAvailableSlug, isValidSlugFormat } from '../tenants/slug.util.js';
+import { firstTouchData, type AttributionInput } from '../../services/attribution.service.js';
 
 type RegisterPayload = {
   companyName: string;
@@ -19,6 +21,7 @@ type RegisterPayload = {
   password: string;
   fullName?: string;
   desiredSlug?: string;
+  attribution?: AttributionInput;
 };
 
 type LoginPayload = {
@@ -42,6 +45,16 @@ type EmailLinkConsumePayload = {
   email: string;
   token: string;
 };
+
+// A failed enqueue must not change the answer: an error only for real accounts would tell a caller which emails
+// exist (C61). The failure is logged instead.
+async function enqueueSignInEmail(email: Parameters<typeof enqueueEmail>[0], log?: Pick<FastifyBaseLogger, 'error'>) {
+  try {
+    await enqueueEmail(email);
+  } catch (err) {
+    log?.error({ err, template: email.template, userId: email.userId }, 'Sign-in email not queued');
+  }
+}
 
 const tenantPlanBySignupPlan: Record<NonNullable<RegisterPayload['plan']>, TenantPlan> = {
   starter: TenantPlan.STARTER,
@@ -239,6 +252,8 @@ export const authService = {
           billingCycle: 'MONTHLY'
         }
       });
+
+      await tx.marketingAttribution.create({ data: firstTouchData(tenant.id, payload.attribution, new Date()) });
 
       await tx.outboxEvent.createMany({
         data: [
@@ -481,14 +496,29 @@ export const authService = {
       tenantId: tenant.id
     };
   },
-  requestEmailLink: async (payload: EmailLinkRequestPayload, prisma: PrismaClient, tenantId?: string) => {
+  requestEmailLink: async (
+    payload: EmailLinkRequestPayload,
+    prisma: PrismaClient,
+    tenantId?: string,
+    log?: Pick<FastifyBaseLogger, 'error'>
+  ) => {
     const email = payload.email.toLowerCase().trim();
+    let resolvedTenantId = tenantId && tenantId !== 'system' ? tenantId : undefined;
+    if (!resolvedTenantId) {
+      // Fauward Go has no tenant before sign-in: as with forgot-password, only an email in exactly one workspace gets a link.
+      const matches = await prisma.user.findMany({
+        where: { email, isActive: true },
+        select: { tenantId: true },
+        distinct: ['tenantId']
+      });
+      if (matches.length !== 1) {
+        return { success: true };
+      }
+      resolvedTenantId = matches[0].tenantId;
+    }
+
     const user = await prisma.user.findFirst({
-      where: {
-        email,
-        isActive: true,
-        ...(tenantId ? { tenantId } : {})
-      },
+      where: { email, tenantId: resolvedTenantId, isActive: true },
       select: {
         id: true,
         email: true,
@@ -515,15 +545,23 @@ export const authService = {
       )
     );
 
-    return {
-      success: true,
-      linkToken,
-      tenantSlug: user.tenant.slug
-    };
+    // The sign-in token only ever travels in the email; the API answers the same whether or not the account exists (C61, C80).
+    await enqueueSignInEmail({
+      tenantId: user.tenantId,
+      userId: user.id,
+      to: user.email,
+      template: 'field_email_link',
+      data: {
+        link: `${config.fauwardGoUrl}/login?token=${encodeURIComponent(linkToken)}&email=${encodeURIComponent(user.email)}`,
+        expiresInMinutes: 15
+      }
+    }, log);
+
+    return { success: true };
   },
   consumeEmailLink: async (payload: EmailLinkConsumePayload, prisma: PrismaClient) => {
     const email = payload.email.toLowerCase().trim();
-    const decoded = verifyAccessToken(payload.token);
+    const decoded = verifyEmailLinkToken(payload.token);
 
     if (decoded.purpose !== 'email_link' || decoded.email.toLowerCase() !== email) {
       throw new Error('Invalid email-link token');
@@ -563,7 +601,12 @@ export const authService = {
       tenantId: tenant.id
     };
   },
-  forgotPassword: async (payload: { email: string }, prisma: PrismaClient, tenantId: string) => {
+  forgotPassword: async (
+    payload: { email: string },
+    prisma: PrismaClient,
+    tenantId: string,
+    log?: Pick<FastifyBaseLogger, 'error'>
+  ) => {
     const normalizedEmail = payload.email.toLowerCase().trim();
     const user = await prisma.user.findFirst({
       where: { tenantId, email: normalizedEmail, isActive: true }
@@ -587,13 +630,13 @@ export const authService = {
     });
 
     // The token only ever travels in the email; the API answers the same whether or not the account exists (C61).
-    await enqueueEmail({
+    await enqueueSignInEmail({
       tenantId,
       userId: user.id,
       to: user.email,
       template: 'password_reset',
       data: { resetUrl: `${config.publicSiteUrl}/reset-password?token=${rawToken}`, expiresInMinutes: 60 }
-    });
+    }, log);
 
     return { success: true };
   },

@@ -129,6 +129,7 @@ describe('EMAIL_TEMPLATES', () => {
     'invoice_overdue',
     'payment_received',
     'password_reset',
+    'field_email_link',
     'staff_invite',
     'trial_expiring',
     'usage_warning_80',

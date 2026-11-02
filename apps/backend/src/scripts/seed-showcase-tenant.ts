@@ -271,7 +271,7 @@ async function main() {
       slug: SHOWCASE_SLUG,
       plan: 'ENTERPRISE',
       status: 'ACTIVE',
-      kycStatus: 'VERIFIED',
+      kycStatus: 'APPROVED',
       region: 'uk_europe',
       logoUrl: LOGO_DATA_URI,
       primaryColor: '#0F3D91',
@@ -302,15 +302,7 @@ async function main() {
       customEmailDomain: 'mail.harbourline.example',
       slaDeliveryHours: 72,
       autoInvoiceOnDelivery: true,
-      paymentGateway: 'STRIPE',
-      paymentGatewayKey: JSON.stringify({
-        activeProvider: 'STRIPE',
-        providers: {
-          STRIPE: { enabled: true, accountId: 'acct_1QHarbourlineDemo', publishableKey: 'pk_live_51QHarbourlineShowcaseKey' },
-          BANK_TRANSFER: { enabled: true, accountName: 'Harbourline Logistics Ltd', sortCode: '04-00-04', accountNumber: '12345678' },
-          COD: { enabled: true, remittanceWindowDays: 3 }
-        }
-      })
+      paymentGateway: 'STRIPE'
     }
   });
 
@@ -1016,7 +1008,7 @@ async function main() {
       ...(tk.status === 'RESOLVED' || tk.status === 'CLOSED' ? [{ authorId: org.customerId, body: 'Perfect, that\'s sorted - thank you for the quick turnaround.', internal: false }] : [])
     ];
     await prisma.ticketMessage.createMany({
-      data: thread.map((m, idx) => ({ tenantId, ticketId: ticket.id, authorId: m.authorId, body: m.body, isInternal: m.internal, createdAt: after(createdAt, idx * Math.max(0.1, tk.ageH / (thread.length + 1)) * HOUR) }))
+      data: thread.map((m, idx) => ({ tenantId, ticketId: ticket.id, authorId: m.authorId, body: m.body, visibility: m.internal ? 'TENANT_INTERNAL' : 'PUBLIC', createdAt: after(createdAt, idx * Math.max(0.1, tk.ageH / (thread.length + 1)) * HOUR) }))
     });
   }
 

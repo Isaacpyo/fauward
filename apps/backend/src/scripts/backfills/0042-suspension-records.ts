@@ -14,3 +14,5 @@ try {
 } finally {
   await prisma.$disconnect();
 }
+// The service import opens queue connections to Redis that this script never closes; exit instead of waiting on them.
+process.exit(0);

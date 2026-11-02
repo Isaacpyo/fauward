@@ -3,7 +3,7 @@ import type { ComplianceExport, DSARRequest, LegalHold, Prisma } from '@prisma/c
 import { z } from 'zod';
 import { authenticatePlatformSession } from '../../../middleware/authenticate-platform-session.js';
 import { requirePlatformCsrf } from '../../../middleware/require-platform-csrf.js';
-import { requireConsolePermission } from '../../../middleware/require-console-permission.js';
+import { loadConsoleContext, requireConsolePermission } from '../../../middleware/require-console-permission.js';
 import { dangerous } from '../../../middleware/dangerous.js';
 import type { Permission } from '@fauward/internal-rbac';
 import { scheduledJobsQueue } from '../../../queues/queues.js';
@@ -44,11 +44,14 @@ const createDsar = z.object({
 const stepBody = z.object({ notes: z.string().trim().max(2000).optional(), reason: z.string().trim().max(2000).optional() });
 const closeBody = z.object({ reason: z.string().trim().min(8, 'Say why the request is being closed (at least 8 characters).') });
 const listHolds = z.object({ status: z.enum(['ACTIVE', 'RELEASED']).optional(), tenantId: z.string().min(1).optional() });
-const createHold = z.object({
-  tenantId: z.string().min(1, 'Legal holds are tenant-specific in this phase.'),
-  reason: z.string().trim().min(8),
-  scope: z.record(z.unknown()).optional()
-});
+const createHold = z
+  .object({
+    tenantId: z.string().min(1).optional(),
+    appliesToAllTenants: z.boolean().default(false),
+    reason: z.string().trim().min(8),
+    scope: z.record(z.unknown()).optional()
+  })
+  .refine((body) => Boolean(body.tenantId) !== body.appliesToAllTenants, 'Name one tenant, or set appliesToAllTenants for a hold on every tenant.');
 const releaseHold = z.object({ reason: z.string().trim().min(8) });
 const listExports = z.object({ tenantId: z.string().min(1).optional(), dsarId: z.string().min(1).optional() });
 
@@ -131,6 +134,7 @@ function presentHold(hold: LegalHold, tenant: TenantLabel | null) {
   return {
     id: hold.id,
     tenant,
+    appliesToAllTenants: hold.appliesToAllTenants,
     scope: hold.scope,
     reason: hold.reason,
     status: hold.status,
@@ -140,6 +144,22 @@ function presentHold(hold: LegalHold, tenant: TenantLabel | null) {
     releasedAt: hold.releasedAt?.toISOString() ?? null,
     releaseReason: hold.releaseReason
   };
+}
+
+const JIT_ROOT_PERMISSION: Permission = 'trust.iam.root';
+
+/**
+ * A global legal hold (every tenant) is placed or released only inside an approved JIT ROOT session (two approvers,
+ * WP-1.7), on top of the dangerous-action guard (WP-5.2). The grant id is stamped on the audit row.
+ */
+async function requireJitRoot(request: FastifyRequest, reply: FastifyReply) {
+  const grant = (await loadConsoleContext(request)).jit.get(JIT_ROOT_PERMISSION);
+  if (!grant) {
+    reply.status(403).send({ error: 'JIT_ROOT_REQUIRED', message: 'A legal hold on every tenant needs an approved JIT ROOT session (trust.iam.root).' });
+    return false;
+  }
+  request.jitSessionId = grant.id;
+  return true;
 }
 
 function activityDeps(app: FastifyInstance, request: FastifyRequest) {
@@ -367,7 +387,25 @@ export async function registerConsoleComplianceRoutes(app: FastifyInstance) {
     const parsed = createHold.safeParse(request.body ?? {});
     if (!parsed.success) return validation(reply, parsed.error);
     const input = parsed.data;
-    const tenant = await app.prisma.tenant.findUnique({ where: { id: input.tenantId }, select: { id: true, name: true, slug: true } });
+    if (input.appliesToAllTenants) {
+      if (!(await requireJitRoot(request, reply))) return reply;
+      const hold = await app.prisma.legalHold.create({ data: { tenantId: null, appliesToAllTenants: true, scope: (input.scope ?? {}) as Prisma.InputJsonObject, reason: input.reason, status: 'ACTIVE', createdBy: staffId(request) } });
+      await writeInternalAudit(request, 'compliance.legal_hold.create', 'legal_hold', hold.id, null, { status: hold.status, appliesToAllTenants: true }, input.reason);
+      await recordAndPublishActivity(activityDeps(app, request), {
+        service: 'trust.compliance',
+        type: 'legal_hold.created',
+        ...staffActor(request),
+        subjectType: 'legal_hold',
+        subjectId: hold.id,
+        summary: 'Legal hold placed on every tenant',
+        severity: 'CRITICAL',
+        consoleLink: '/trust/compliance/legal-hold',
+        metadata: { appliesToAllTenants: true, jitSessionId: request.jitSessionId ?? null },
+        dedupeKey: `legal_hold.created:${hold.id}`
+      });
+      return reply.status(201).send({ hold: presentHold(hold, null) });
+    }
+    const tenant = await app.prisma.tenant.findUnique({ where: { id: input.tenantId! }, select: { id: true, name: true, slug: true } });
     if (!tenant) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Tenant not found' });
     const hold = await app.prisma.legalHold.create({ data: { tenantId: tenant.id, scope: (input.scope ?? {}) as Prisma.InputJsonObject, reason: input.reason, status: 'ACTIVE', createdBy: staffId(request) } });
     await writeInternalAudit(request, 'compliance.legal_hold.create', 'legal_hold', hold.id, null, { status: hold.status, tenantId: tenant.id }, input.reason, { targetTenantId: tenant.id });
@@ -392,6 +430,7 @@ export async function registerConsoleComplianceRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const hold = await app.prisma.legalHold.findUnique({ where: { id } });
     if (!hold) return reply.status(404).send({ error: 'NOT_FOUND', message: 'Legal hold not found' });
+    if (hold.appliesToAllTenants && !(await requireJitRoot(request, reply))) return reply;
     const released = await app.prisma.legalHold.updateMany({
       where: { id: hold.id, tenantId: hold.tenantId, status: 'ACTIVE' },
       data: { status: 'RELEASED', releasedBy: staffId(request), releasedAt: new Date(), releaseReason: parsed.data.reason }
@@ -407,7 +446,7 @@ export async function registerConsoleComplianceRoutes(app: FastifyInstance) {
       ...staffActor(request),
       subjectType: 'legal_hold',
       subjectId: hold.id,
-      summary: `Legal hold released${hold.tenantId ? ` on ${label(tenants, hold.tenantId)?.name}` : ''}`,
+      summary: `Legal hold released${hold.appliesToAllTenants ? ' on every tenant' : hold.tenantId ? ` on ${label(tenants, hold.tenantId)?.name}` : ''}`,
       consoleLink: '/trust/compliance/legal-hold',
       dedupeKey: `legal_hold.released:${hold.id}`
     });

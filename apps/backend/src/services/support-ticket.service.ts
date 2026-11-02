@@ -71,9 +71,6 @@ export async function addTicketMessage(
         platformAuthorId: input.platformAuthorId ?? null,
         authorType: input.authorType,
         visibility: input.visibility,
-        // Legacy columns, dropped in 0062 (D5); kept consistent until then.
-        isInternal: input.visibility !== 'PUBLIC',
-        fromSA: input.authorType === 'STAFF',
         body: input.body,
         createdAt: now
       }

@@ -14,6 +14,13 @@ const suspension = vi.hoisted(() => ({
   getActiveSuspensions: vi.fn(async () => [])
 }));
 
+// WP-4.5: Stripe failures enrol the invoice in dunning; the sequence itself is tested on real Postgres (dunning.test.ts).
+const dunning = vi.hoisted(() => ({
+  enrollInvoice: vi.fn(async (_app: unknown, input: { invoiceId: string }) => ({ enrollment: { id: `enr_${input.invoiceId}` }, created: true })),
+  advanceEnrollment: vi.fn(async () => 1),
+  recoverEnrollment: vi.fn(async () => 1)
+}));
+vi.mock('../../../services/dunning.service.js', async (importOriginal) => ({ ...(await importOriginal<Record<string, unknown>>()), ...dunning }));
 vi.mock('../../../queues/queues.js', () => ({ notificationQueue: { add: queueAdd }, scheduledJobsQueue: { add: queueAdd }, analyticsQueue: {}, outboxQueue: {}, webhookQueue: {}, bullmqConnection: {} }));
 vi.mock('../../notifications/notifications.worker.js', () => ({ dlqNotificationQueue: {} }));
 vi.mock('../../../services/tenant-suspension.service.js', () => suspension);
@@ -113,7 +120,8 @@ function createStore() {
     dunning: [] as Row[],
     offers: [] as Row[],
     invoices: [] as Row[],
-    credits: [] as Row[]
+    credits: [] as Row[],
+    audit: [] as Row[]
   };
   const subFor = (tenantId: unknown) => subscriptions.find((row) => row.tenantId === tenantId) ?? null;
   const tenantWith = (id: unknown, withSub: boolean) => {
@@ -132,6 +140,7 @@ function createStore() {
     saveOffer: table(data.offers, 'so', { code: null, redeemedAt: null, stripeCouponId: null, redeemedCreditNoteId: null, approvedBy: null }),
     invoice: table(data.invoices, 'inv', {}, (row, args) => (args.include ? { ...row, payments: [], creditNotes: data.credits.filter((credit) => credit.invoiceId === row.id) } : row)),
     creditNote: table(data.credits, 'cn'),
+    platformAuditLog: table(data.audit, 'pal'),
     platformActivity: {
       upsert: vi.fn(async ({ where, create }: { where: { dedupeKey: string }; create: Row }) => {
         const existing = data.activity.find((row) => row.dedupeKey === where.dedupeKey);
@@ -158,6 +167,9 @@ const REASON = 'Confirmed with the account owner by phone';
 
 beforeEach(async () => {
   queueAdd.mockClear();
+  Object.values(dunning).forEach((spy) => spy.mockClear());
+  suspension.suspendTenant.mockClear();
+  suspension.liftDunningSuspensionForInvoice.mockClear();
   redis.publish.mockClear();
   redis.del.mockClear();
   tenantUser.role = 'TENANT_ADMIN';
@@ -168,11 +180,11 @@ beforeEach(async () => {
   const { registerConsoleSubscriptionRoutes } = await import('./subscriptions.routes.js');
   const { registerPlanChangeRoutes } = await import('../../tenants/plan-change.routes.js');
   const { registerPaymentsRoutes } = await import('../../payments/payments.routes.js');
-  const { registerInternalConsolePhaseRoutes } = await import('../console-phases.routes.js');
+  const { registerConsoleDunningRoutes } = await import('./dunning.routes.js');
   await registerConsoleSubscriptionRoutes(app);
+  await registerConsoleDunningRoutes(app);
   await registerPlanChangeRoutes(app);
   await registerPaymentsRoutes(app);
-  await registerInternalConsolePhaseRoutes(app);
   await app.ready();
 });
 
@@ -275,15 +287,16 @@ describe('revenue.subscriptions (WP-2.7, L6)', () => {
     expect(forged.statusCode).toBe(400);
   });
 
-  it('ACC-L6-2 signed invoice.payment_failed fixtures write DunningEvents and suspend on attempt 2; invoice.paid lifts', async () => {
+  it('ACC-L6-2 signed invoice.payment_failed fixtures write DunningEvents and enrol the invoice in dunning (attempt 2 no longer suspends); invoice.paid recovers and lifts', async () => {
     await enableStripe();
     const invoice = (attempt: number) => ({ id: 'in_42', object: 'invoice', customer: 'cus_b', attempt_count: attempt, metadata: {}, parent: { subscription_details: { metadata: { tenantId: 'tenant_b' } } } });
     await signedWebhook({ id: 'evt_fail_1', object: 'event', type: 'invoice.payment_failed', data: { object: invoice(1) } });
-    expect(suspension.suspendTenant).not.toHaveBeenCalled();
     await signedWebhook({ id: 'evt_fail_2', object: 'event', type: 'invoice.payment_failed', data: { object: invoice(2) } });
     await signedWebhook({ id: 'evt_fail_2_again', object: 'event', type: 'invoice.payment_failed', data: { object: invoice(2) } });
-    expect(suspension.suspendTenant).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_b', source: 'DUNNING', sourceRef: 'in_42' }));
+    expect(suspension.suspendTenant).not.toHaveBeenCalled();
+    expect(dunning.enrollInvoice).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_b', invoiceId: 'in_42', source: 'STRIPE' }));
     await signedWebhook({ id: 'evt_paid', object: 'event', type: 'invoice.paid', data: { object: { ...invoice(2), metadata: {}, parent: null } } });
+    expect(dunning.recoverEnrollment).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_b', invoiceRefs: ['in_42'] }));
     expect(suspension.liftDunningSuspensionForInvoice).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ tenantId: 'tenant_b', invoiceRef: 'in_42' }));
     expect(db.dunning.map((row) => [row.eventType, row.attempt])).toEqual([['payment_failed', 1], ['payment_failed', 2], ['payment_succeeded', 0]]);
     expect(db.activity.map((row) => row.type)).toEqual(['payment.failed', 'payment.failed', 'payment.succeeded']);

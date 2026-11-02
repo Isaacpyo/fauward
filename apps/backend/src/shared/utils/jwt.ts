@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { randomUUID } from 'crypto';
+import { createHmac, randomUUID } from 'crypto';
 import { config } from '../../config/index.js';
 
 export interface JwtPayload {
@@ -18,13 +18,22 @@ export interface JwtPayload {
   targetUserId?: string | null;
   impersonationSessionId?: string;
   scopes?: string[];
-  mode?: 'IMPERSONATION';
+  mode?: 'IMPERSONATION' | 'DEMO';
+  /** DEMO mode (WP-4.15): the demo environment and the share token the session came from (rotation ends it). */
+  demoEnvironmentId?: string;
+  demoTokenFingerprint?: string;
 }
 
 export function signAccessToken(payload: JwtPayload) {
   return jwt.sign(payload, config.jwt.accessSecret, {
     expiresIn: config.jwt.accessExpiresIn as jwt.SignOptions['expiresIn']
   });
+}
+
+/** A read-only demo share-link session (WP-4.15): lives until `expiresAt`; every request re-checks the demo row. */
+export function signDemoAccessToken(payload: JwtPayload, expiresAt: Date) {
+  const seconds = Math.max(1, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+  return jwt.sign(payload, config.jwt.accessSecret, { expiresIn: seconds });
 }
 
 export function signRefreshToken(payload: JwtPayload) {
@@ -34,10 +43,20 @@ export function signRefreshToken(payload: JwtPayload) {
   });
 }
 
+// Email-link tokens are signed with their own key, derived from the access secret, so an emailed link never works as
+// a Bearer access token and an access token never works as an email link (C61).
+function emailLinkKey() {
+  return createHmac('sha256', config.jwt.accessSecret).update('fauward:email-link').digest('hex');
+}
+
 export function signEmailLinkToken(payload: JwtPayload) {
-  return jwt.sign({ ...payload, purpose: 'email_link' }, config.jwt.accessSecret, {
+  return jwt.sign({ ...payload, purpose: 'email_link' }, emailLinkKey(), {
     expiresIn: '15m'
   });
+}
+
+export function verifyEmailLinkToken(token: string): JwtPayload & { purpose?: string } {
+  return jwt.verify(token, emailLinkKey()) as JwtPayload & { purpose?: string };
 }
 
 export function verifyAccessToken(token: string): JwtPayload & { purpose?: string } {

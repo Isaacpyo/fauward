@@ -31,7 +31,7 @@ function dsar(overrides: Record<string, unknown> = {}) {
   };
 }
 const exportRow = { id: "exp_1", tenant, dsarId: "dsar_1", exportType: "DSAR_BUNDLE", status: "READY", storageProvider: "POSTGRES", byteSize: 2048, sha256: "ab".repeat(32), tokenIssued: false, tokenExpiresAt: null, downloadedAt: null, error: null, requestedBy: "pu_1", createdAt: new Date(now - 86400000).toISOString() };
-const hold = { id: "hold_1", tenant, scope: {}, reason: "Litigation 2026-17 preservation notice", status: "ACTIVE", createdBy: "pu_1", createdAt: new Date(now - 86400000).toISOString(), releasedBy: null, releasedAt: null, releaseReason: null };
+const hold = { id: "hold_1", tenant, appliesToAllTenants: false, scope: {}, reason: "Litigation 2026-17 preservation notice", status: "ACTIVE", createdBy: "pu_1", createdAt: new Date(now - 86400000).toISOString(), releasedBy: null, releasedAt: null, releaseReason: null };
 
 async function mockCompliance(page: Page, options: { permissions?: string[]; detail?: Record<string, unknown>; legalHold?: boolean; listStatus?: number } = {}) {
   const posts: Array<{ path: string; body: unknown }> = [];
@@ -43,6 +43,11 @@ async function mockCompliance(page: Page, options: { permissions?: string[]; det
       posts.push({ path, body: request.postDataJSON() });
       if (path.endsWith("/erase") && options.legalHold) return json(route, 409, { error: "LEGAL_HOLD_ACTIVE", message: `An active legal hold blocks erasure: ${hold.reason}`, holdId: hold.id });
       if (path.includes("/legal-holds/")) return json(route, 200, { hold: { ...hold, status: "RELEASED" } });
+      if (path === "/compliance/legal-holds") {
+        const body = request.postDataJSON() as { appliesToAllTenants?: boolean };
+        if (body.appliesToAllTenants) return json(route, 403, { error: "JIT_ROOT_REQUIRED", message: "A legal hold on every tenant needs an approved JIT ROOT session (trust.iam.root)." });
+        return json(route, 201, { hold });
+      }
       return json(route, 200, { dsar: dsar({ status: "DELIVERED" }) });
     }
     if (path === "/compliance/dsar") {
@@ -109,6 +114,18 @@ test("ACC-DSAR-6 a legal hold is released with a reason", async ({ page }) => {
   expect(posts[0]).toEqual({ path: "/compliance/legal-holds/hold_1/release", body: { reason: "Case settled, preservation lifted" } });
   await page.goto("/trust/compliance/exports");
   await expect(page.getByTestId("export-row")).toContainText("2048 B");
+});
+
+test("ACC-LH-2 a hold on every tenant is sent as appliesToAllTenants and the API's JIT ROOT refusal shows in the dialog", async ({ page }) => {
+  const posts = await mockCompliance(page);
+  await page.goto("/trust/compliance/legal-hold");
+  await page.getByRole("button", { name: "Place a hold" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel(/Hold every tenant/).check();
+  await dialog.getByLabel(/Reason/).fill("Regulator preservation order for all accounts");
+  await dialog.getByRole("button", { name: "Place hold" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("JIT ROOT");
+  expect(posts).toEqual([{ path: "/compliance/legal-holds", body: { appliesToAllTenants: true, reason: "Regulator preservation order for all accounts" } }]);
 });
 
 test("WP-2.5 read-only staff cannot act; a failing queue shows the API error", async ({ page }) => {

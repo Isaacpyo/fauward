@@ -47,7 +47,7 @@ Railway builds the backend using the multi-stage Dockerfile at `apps/backend/Doc
 5. Creates an isolated `/prod` directory, copies only the backend `package.json` there, and runs `npm install --omit=dev`. This sidesteps npm workspace hoisting — every production dep (including `@fastify/jwt`) is guaranteed to land in `/prod/node_modules`.
 
 **Stage 2 (runtime)**
-1. Base: `node:20-alpine` + `openssl` (required by Prisma).
+1. Base: `node:24-alpine` + `openssl` (required by Prisma).
 2. Copies backend `package.json` to `/app/package.json` — provides `"type": "module"` so Node treats compiled output as ESM.
 3. Copies `/prod/node_modules` → `/app/node_modules`.
 4. Copies compiled `dist/` and `prisma/` schema.

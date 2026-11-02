@@ -50,9 +50,13 @@ import { registerGoTrackingRoutes } from './modules/tracking/tracking.go.routes.
 import { registerRealtimeTrackingRoutes } from './modules/tracking/tracking.realtime.routes.js';
 import { registerPaymentsRoutes } from './modules/payments/payments.routes.js';
 import { registerImpersonationExchangeRoutes } from './modules/auth/impersonation-exchange.routes.js';
+import { registerDemoExchangeRoutes } from './modules/auth/demo-exchange.routes.js';
 import { registerConsoleRoutes } from './modules/internal/register.js';
+import { vendorErrorHandler } from './services/vendors/vendor-error.js';
 import { auditMiddleware } from '@fauward/internal-audit';
-import type { PlatformAuditClient } from '@fauward/internal-audit';
+import { consoleAuditSafetyNet } from './middleware/console-audit-safety-net.js';
+import { legalHoldDeleteGuard } from './middleware/legal-hold-guard.js';
+import { registerIpBlockEnforcement } from './middleware/enforce-ip-blocks.js';
 import { registerFieldRoutes } from './modules/field/field.routes.js';
 import { registerShipmentPermissionRoutes } from './modules/shipment-permission-requests/routes.js';
 import { registerRelayRoutes } from './modules/relay/relay.routes.js';
@@ -66,6 +70,7 @@ import { registerAppealRoutes } from './modules/appeals/appeals.routes.js';
 import { registerOnboardingRoutes } from './modules/onboarding/onboarding.routes.js';
 import { registerTenantHealthRoutes } from './modules/tenants/health.routes.js';
 import { createAdminHostGuard } from './middleware/admin-host-guard.js';
+import { registerRequestMetrics } from './services/metrics/request-metrics.js';
 
 function escapeRegex(source: string) {
   return source.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -101,6 +106,8 @@ export async function buildApp() {
   });
 
   await app.register(sensible);
+  // D9 / S16: a failing vendor answers 502 VENDOR_ERROR (degraded), never a crash; other errors use the default handler.
+  app.setErrorHandler(vendorErrorHandler);
   await app.register(helmet);
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -130,18 +137,17 @@ export async function buildApp() {
 
   await registerPrisma(app);
   await registerRedis(app);
+  // platform.health (WP-3.7): latency and 5xx rate per route group, in Redis minute buckets.
+  registerRequestMetrics(app);
 
   app.addHook('onRequest', createAdminHostGuard({
     enabled: config.adminHardening.phase1,
     adminHostname: config.admin.hostname
   }));
+  // trust.security (WP-5.4): blocked addresses get 403 IP_BLOCKED on the block's scope.
+  registerIpBlockEnforcement(app, config.security.ipBlockBypassCidrs);
 
-  app.addHook('preHandler', auditMiddleware({ prisma: app.prisma as unknown as PlatformAuditClient, shouldAudit: (request) => {
-    const method = request.method?.toUpperCase();
-    // Marking one's own bell entries read is not a platform mutation.
-    if (request.url?.startsWith('/api/internal/notifications/staff')) return false;
-    return Boolean(request.url?.startsWith('/api/internal/') && method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method));
-  } }));
+  app.addHook('preHandler', consoleAuditSafetyNet(app));
 
   app.addHook('onRequest', (req, reply, done) => {
     (async () => {
@@ -154,18 +160,7 @@ export async function buildApp() {
     })().catch(done);
   });
   app.addHook('preHandler', enforceTenantStatus);
-  app.addHook('preHandler', async (request, reply) => {
-    if (request.method !== 'DELETE' || !request.tenant?.id) return;
-    const hold = await app.prisma.legalHold.findFirst({
-      where: {
-        status: 'ACTIVE',
-        OR: [{ tenantId: request.tenant.id }, { tenantId: null }]
-      }
-    });
-    if (hold) {
-      return reply.status(409).send({ error: 'LEGAL_HOLD_ACTIVE', tenantId: request.tenant.id });
-    }
-  });
+  app.addHook('preHandler', legalHoldDeleteGuard(app));
 
   // ── Health / readiness / version endpoints ─────────────────────────────
   app.get('/live', async () => ({ status: 'ok' }));
@@ -277,6 +272,7 @@ export async function buildApp() {
   await registerExceptionsRoutes(app);
   await registerFleetRoutes(app);
   await registerImpersonationExchangeRoutes(app);
+  await registerDemoExchangeRoutes(app);
   await registerConsoleRoutes(app);
   await registerLabelRoutes(app);
   await registerShippingLabelRoutes(app);

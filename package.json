@@ -19,11 +19,11 @@
     "test": "turbo run test --",
     "typecheck": "turbo run typecheck",
     "verify": "turbo run typecheck lint",
-    "prepare": "git config core.hooksPath .githooks",
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "platform:admin:create": "npm run platform:admin:create --workspace=apps/backend"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "serve": "^14.2.6"

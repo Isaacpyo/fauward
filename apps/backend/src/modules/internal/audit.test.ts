@@ -195,7 +195,7 @@ describe('trust.audit routes (WP-1.9)', () => {
     expect(body).toMatchObject({ rows: 2, truncated: false, format: 'csv' });
     const csv = Buffer.from(body.url.replace('data:text/csv;base64,', ''), 'base64').toString('utf8');
     const lines = csv.split('\n');
-    expect(lines[0].split(',').slice(0, 2)).toEqual(['id', 'createdAt']);
+    expect(lines[0].split(',').slice(0, 4)).toEqual(['id', 'seq', 'hashVersion', 'createdAt']);
     expect(lines).toHaveLength(3);
     expect(lines[1]).toContain('"aud_001"');
     expect(lines[1]).toContain('"Fraud ""signal"""');

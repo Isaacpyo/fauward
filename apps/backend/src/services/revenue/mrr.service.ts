@@ -6,7 +6,8 @@ import { config } from '../../config/index.js';
 // from planService, discounts from PricingOverride, contract amounts from CustomContract.terms, FX from CurrencyRate.
 
 export type MrrSource = 'plan' | 'contract' | 'none';
-export type MrrContribution = { amount: string; currency: string; source: MrrSource; note?: string };
+/** `convertedFrom`: the amount was converted from this currency with a stored CurrencyRate (flagged in totals). */
+export type MrrContribution = { amount: string; currency: string; source: MrrSource; note?: string; convertedFrom?: string };
 
 type MrrTenant = { id: string; status: string; plan: string };
 type MrrSubscription = { plan: string; billingCycle: string; status: string } | null;
@@ -99,16 +100,22 @@ export async function mrrForSubscription(
 
   const converted = await convertCurrency(db, amount, currency, baseCurrency);
   if (!converted) return { amount: amount.toFixed(2), currency, source, note: `No ${currency}→${baseCurrency} rate; shown in ${currency}` };
-  return { amount: converted.toFixed(2), currency: baseCurrency, source };
+  return { amount: converted.toFixed(2), currency: baseCurrency, source, ...(currency !== baseCurrency ? { convertedFrom: currency } : {}) };
 }
 
-/** Sum of contributions that are in the base currency; the count of rows that could not be converted is returned too. */
+/**
+ * Sum of contributions that are in the base currency. `converted` counts rows that were converted from another
+ * currency (included); `unconverted` counts rows with no rate (left out of the total).
+ */
 export function sumMrr(rows: MrrContribution[], baseCurrency = config.billing.baseCurrency) {
   let total = ZERO;
   let unconverted = 0;
+  let converted = 0;
   for (const row of rows) {
-    if (row.currency === baseCurrency) total = total.add(row.amount);
-    else unconverted += 1;
+    if (row.currency === baseCurrency) {
+      total = total.add(row.amount);
+      if (row.convertedFrom) converted += 1;
+    } else unconverted += 1;
   }
-  return { amount: total.toFixed(2), currency: baseCurrency, unconverted };
+  return { amount: total.toFixed(2), currency: baseCurrency, unconverted, converted };
 }

@@ -40,6 +40,8 @@ function world(tenantOverrides: Record<string, unknown> = {}) {
         return row;
       })
     },
+    // WP-4.7: an exempt tenant's invoice names the approved certificate (none in this world).
+    taxExemption: { findFirst: vi.fn(async () => null) },
     creditNote: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row: Row = { id: `cn_${(seq += 1)}`, createdAt: new Date(), ...data };

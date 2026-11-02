@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 
 import { getCsrfToken } from "./auth";
+import { CONSOLE_API_BASE } from "./console-api-origin";
 import { ConsoleApiError, toConsoleApiError } from "./console-api-error";
 import { requestStepUp } from "./mfa-step-up";
 
@@ -36,9 +37,14 @@ export const consoleClientHooks = {
   currentPath
 };
 
+/** A random UUID v4 from the Web Crypto API (randomUUID needs a secure context, getRandomValues does not). */
 function newIdempotencyKey() {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 function withCsrf(config: InternalAxiosRequestConfig) {
@@ -54,7 +60,7 @@ function withCsrf(config: InternalAxiosRequestConfig) {
 }
 
 // Refresh goes through a bare instance so it never recurses into the interceptors.
-export const refreshClient = axios.create({ baseURL: "/api/internal", withCredentials: true });
+export const refreshClient = axios.create({ baseURL: CONSOLE_API_BASE, withCredentials: true });
 refreshClient.interceptors.request.use(withCsrf);
 
 let refreshInFlight: Promise<void> | null = null;
@@ -115,6 +121,6 @@ function installInterceptors(instance: AxiosInstance) {
   return instance;
 }
 
-export const consoleApi = installInterceptors(axios.create({ baseURL: "/api/internal", withCredentials: true }));
+export const consoleApi = installInterceptors(axios.create({ baseURL: CONSOLE_API_BASE, withCredentials: true }));
 
 export { ConsoleApiError };

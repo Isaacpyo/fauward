@@ -147,6 +147,10 @@ export async function decidePlanChange(app: PlanApp, request: FastifyRequest, in
   if (!row) throw new PlanChangeError(404, 'NOT_FOUND', 'Plan change request not found');
   if (row.status !== 'PENDING') throw new PlanChangeError(409, 'ALREADY_DECIDED', `This request is ${row.status.toLowerCase().replace(/_/g, ' ')}.`);
   if (!(PAID_PLANS as readonly string[]).includes(row.toPlan)) throw new PlanChangeError(400, 'UNKNOWN_PLAN', 'The requested plan is not one Fauward sells.');
+  if (input.decision === 'APPROVE' && row.toPlan === 'ENTERPRISE') {
+    const kyc = await app.prisma.tenant.findUnique({ where: { id: row.tenantId }, select: { kycStatus: true } });
+    if (kyc?.kycStatus !== 'APPROVED') throw new PlanChangeError(409, 'KYC_REQUIRED', 'ENTERPRISE needs an approved KYC review for this tenant (Trust → KYC).');
+  }
   const staffId = request.platform!.user.id;
   const claimed = await app.prisma.planChangeRequest.updateMany({
     where: { id: row.id, tenantId: row.tenantId, status: 'PENDING' },

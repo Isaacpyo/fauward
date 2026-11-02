@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { authenticate } from '../../shared/middleware/authenticate.js';
 import { resolveIdempotency, storeIdempotencyResult } from '../../shared/middleware/idempotency.js';
 import { handleDunningEvent, handleDunningPaid } from './billing.service.js';
+import { upsertDisputeFromStripe } from '../../services/dispute.service.js';
 import { stripeService } from './stripe.service.js';
 import { generateTrackingNumber } from '../../shared/utils/trackingNumber.js';
 import { createInAppNotifications } from '../notifications/notifications.routes.js';
@@ -440,6 +441,11 @@ export async function registerPaymentsRoutes(app: FastifyInstance) {
       if (returnId && sessionTenantId) {
         await handleReturnPayment(app, sessionTenantId, returnId);
       }
+    }
+
+    // revenue.disputes (WP-4.6): chargebacks on charges made through Fauward's Stripe account.
+    if (eventType === 'charge.dispute.created' || eventType === 'charge.dispute.updated' || eventType === 'charge.dispute.closed') {
+      await upsertDisputeFromStripe(app, { id: String(eventAny.id ?? ''), type: eventType, created: typeof eventAny.created === 'number' ? eventAny.created : undefined, data: { object: eventAny.data?.object ?? {} } });
     }
 
     if (eventType === 'payout.paid' || eventType === 'payout.updated') {

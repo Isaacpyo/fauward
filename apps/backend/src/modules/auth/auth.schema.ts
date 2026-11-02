@@ -1,3 +1,4 @@
+import { attributionInput } from '../../services/attribution.service.js';
 import { z } from 'zod';
 
 export const registerSchema = z.object({
@@ -7,7 +8,9 @@ export const registerSchema = z.object({
   plan: z.enum(['starter', 'pro', 'enterprise']).default('starter'),
   password: z.string().min(8),
   fullName: z.string().min(1).max(120).optional(),
-  desiredSlug: z.string().min(2).max(40).optional()
+  desiredSlug: z.string().min(2).max(40).optional(),
+  /** First-touch marketing attribution forwarded by fauward.com (WP-4.16); absent when cookies were declined. */
+  attribution: attributionInput.optional()
 });
 
 export const loginSchema = z.object({

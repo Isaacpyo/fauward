@@ -88,15 +88,17 @@ function rowFor(tenantId: string, provider: GatewayProvider, value: LegacyProvid
  * - each tenant's `TenantSettings.paymentGatewayKey` (plaintext JSON) becomes one encrypted TenantPaymentGateway row per
  *   configured provider; providers that already have a row are left alone (idempotent);
  * - `TenantSettings.webhookSecret` is encrypted in place (`v1:` prefix) where it is still plaintext;
- * - with `clearLegacy`, `paymentGatewayKey` is set to null once its rows exist (the column is dropped in 0062).
+ * - with `clearLegacy`, `paymentGatewayKey` is set to null once its rows exist (the column is dropped in 0079).
  * `dryRun` only counts.
  */
-export async function backfillTenantPaymentGateways(prisma: PrismaClient, options: { dryRun: boolean; clearLegacy?: boolean }): Promise<PaymentGatewaysBackfillResult> {
+type GatewayBackfillDb = Pick<PrismaClient, '$queryRaw' | '$executeRaw' | 'tenantSettings' | 'tenantPaymentGateway'>;
+
+export async function backfillTenantPaymentGateways(prisma: GatewayBackfillDb, options: { dryRun: boolean; clearLegacy?: boolean }): Promise<PaymentGatewaysBackfillResult> {
   const result: PaymentGatewaysBackfillResult = { dryRun: options.dryRun, tenantsWithLegacyKeys: 0, gatewaysCreated: 0, skippedExisting: 0, unparseable: 0, webhookSecretsEncrypted: 0, legacyKeysCleared: 0 };
-  const settings = await prisma.tenantSettings.findMany({
-    where: { OR: [{ paymentGatewayKey: { not: null } }, { webhookSecret: { not: null } }] },
-    select: { tenantId: true, paymentGatewayKey: true, webhookSecret: true }
-  });
+  // `paymentGatewayKey` is dropped from the Prisma schema in 0079 (D10), so the legacy column is read with SQL; this
+  // backfill must run before 0079.
+  const settings = await prisma.$queryRaw<Array<{ tenantId: string; paymentGatewayKey: string | null; webhookSecret: string | null }>>`
+    SELECT "tenantId", "paymentGatewayKey", "webhookSecret" FROM "tenant_settings" WHERE "paymentGatewayKey" IS NOT NULL OR "webhookSecret" IS NOT NULL`;
   for (const row of settings) {
     if (row.paymentGatewayKey) {
       result.tenantsWithLegacyKeys += 1;
@@ -117,7 +119,7 @@ export async function backfillTenantPaymentGateways(prisma: PrismaClient, option
         }
         if (options.clearLegacy) {
           result.legacyKeysCleared += 1;
-          if (!options.dryRun) await prisma.tenantSettings.update({ where: { tenantId: row.tenantId }, data: { paymentGatewayKey: null } });
+          if (!options.dryRun) await prisma.$executeRaw`UPDATE "tenant_settings" SET "paymentGatewayKey" = NULL WHERE "tenantId" = ${row.tenantId}`;
         }
       }
     }

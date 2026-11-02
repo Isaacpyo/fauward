@@ -57,6 +57,8 @@ function fixture() {
         return [...groups.entries()].map(([ticketId, createdAt]) => ({ ticketId, _min: { createdAt } }));
       })
     },
+    // The legacy flags are read with SQL (columns dropped from the Prisma schema in 0079): rows with either flag set.
+    $queryRaw: vi.fn(async () => messages.filter((row) => row.isInternal === true || row.fromSA === true).map((row) => ({ ...row }))),
     platformAuditLog: { findMany: vi.fn(async () => [{ targetId: 'tkt_opened_in_console' }]) },
     supportTicket: {
       count: vi.fn(async ({ where }: { where: Record<string, unknown> }) => tickets.filter((row) => matches(row, where)).length),

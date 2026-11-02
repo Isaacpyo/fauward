@@ -14,6 +14,7 @@ describe('authService', () => {
       usageRecord: { create: vi.fn().mockResolvedValue({}) },
       user: { create: vi.fn().mockResolvedValue({ id: 'user-1', email: 'owner@acme.com', role: 'TENANT_ADMIN', tenantId: 'tenant-1' }) },
       subscription: { create: vi.fn().mockResolvedValue({ id: 'sub-1' }) },
+      marketingAttribution: { create: vi.fn().mockResolvedValue({ id: 'ma-1' }) },
       outboxEvent: { createMany: vi.fn().mockResolvedValue({ count: 3 }) }
     };
 
@@ -42,6 +43,8 @@ describe('authService', () => {
     expect(tx.tenant.create).toHaveBeenCalledTimes(1);
     expect(tx.user.create).toHaveBeenCalledTimes(1);
     expect(tx.outboxEvent.createMany).toHaveBeenCalledTimes(1);
+    // No attribution forwarded: the first touch is recorded as unknown (WP-4.16).
+    expect(tx.marketingAttribution.create).toHaveBeenCalledWith({ data: expect.objectContaining({ tenantId: 'tenant-1', touchType: 'FIRST_TOUCH', source: 'unknown' }) });
     expect(result.tenant.slug).toBe('acme-logistics');
     expect(result.redirectUrl).toBe('/t/acme-logistics/onboarding');
     expect(result.user.email).toBe('owner@acme.com');

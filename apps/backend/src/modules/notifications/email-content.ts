@@ -60,6 +60,7 @@ const CONTENT: Record<EmailTemplateKey, Content> = {
   ticket_reply_from_customer: { subject: (d) => `Customer replied on ticket ${str(d, 'ticketNumber')}`, lines: (d) => [str(d, 'excerpt') || 'A customer replied.', link(d, 'View ticket')] },
   ticket_resolved: { subject: (d) => `Ticket ${str(d, 'ticketNumber')} resolved`, lines: (d) => [`Your ticket "${str(d, 'subject')}" has been resolved.`, link(d, 'View ticket')] },
   password_reset: { subject: () => 'Reset your Fauward password', lines: (d) => ['We received a request to reset your password. The link expires in 60 minutes.', link(d, 'Reset password'), 'If you did not ask for this, ignore this email.'] },
+  field_email_link: { subject: () => 'Your Fauward Go sign-in link', lines: (d) => ['Use this link to sign in to Fauward Go. It expires in 15 minutes.', link(d, 'Sign in'), 'If you did not ask for this, ignore this email.'] },
   staff_invite: {
     subject: (d) => (d.isReset === true ? 'Your Fauward access code has been reset' : `You've been added to ${workspace(d)} on Fauward`),
     lines: (d) => [`You have been invited to ${workspace(d)} on Fauward.`, str(d, 'accessCode') ? `Access code: ${str(d, 'accessCode')}` : null, link(d, 'Sign in')]

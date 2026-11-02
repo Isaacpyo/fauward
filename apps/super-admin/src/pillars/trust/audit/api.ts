@@ -1,4 +1,4 @@
-import { keepPreviousData, useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { consoleApi } from "@/lib/console-api";
 
@@ -65,10 +65,42 @@ export async function exportAudit(input: AuditFilters & { format: "csv" | "json"
   return (await consoleApi.post<AuditExportResult>("/audit/export", { ...cleanAuditFilters(input), format: input.format, reason: input.reason })).data;
 }
 
-export type AuditVerifyResult = { ok: boolean; checked?: number; failedAt?: string; verifiedAt: string };
+/** One trust.audit-chain-verify run (WP-5.1): nightly, or started from the integrity page. */
+export type AuditVerificationRun = {
+  id: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED" | "TIMED_OUT";
+  triggeredBy: string;
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  result: {
+    ok: boolean;
+    checked: number;
+    legacy: number;
+    lastSeq: number | null;
+    cutoverSeq: number | null;
+    firstBrokenSeq: number | null;
+    firstBrokenId: string | null;
+    reason: string | null;
+  } | null;
+};
+
+const VERIFICATION_KEY = ["audit", "verification"] as const;
+
+export function useAuditVerification() {
+  return useQuery({
+    queryKey: VERIFICATION_KEY,
+    queryFn: async () => (await consoleApi.get<{ data: AuditVerificationRun | null; schedule: string }>("/audit/verification")).data
+  });
+}
 
 export function useVerifyAuditChain() {
-  return useMutation({ mutationFn: async () => (await consoleApi.post<AuditVerifyResult>("/audit/verify", {})).data });
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await consoleApi.post<{ data: AuditVerificationRun }>("/audit/verify", {})).data.data,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VERIFICATION_KEY })
+  });
 }
 
 /** `<input type="datetime-local">` value (local time) → ISO string for the API; empty stays empty. */

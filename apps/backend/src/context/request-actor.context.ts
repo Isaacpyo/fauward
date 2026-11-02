@@ -6,6 +6,8 @@ import { AsyncLocalStorage } from 'async_hooks';
  */
 export type RequestActor = {
   impersonation?: { sessionId: string; platformUserId: string };
+  /** Set once the handler wrote its PlatformAuditLog row, so the global safety net does not write a second (WP-5.1). */
+  auditWritten?: boolean;
 };
 
 export const requestActorStorage = new AsyncLocalStorage<RequestActor>();

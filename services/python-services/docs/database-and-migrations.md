@@ -44,7 +44,7 @@ The service owns or extends these support tables:
 - `error_logs`
 - `documents`
 - `parsed_documents`
-- `customs_declarations`
+- `customs_xml_jobs`
 - `route_jobs`
 - `analytics_snapshots`
 - `cohort_metrics`
@@ -101,10 +101,10 @@ parsed_documents(tenant_id, document_type, updated_at desc)
 Customs declarations:
 
 ```sql
-customs_declarations(tenant_id, id)
-customs_declarations(tenant_id, shipment_id)
-customs_declarations(tenant_id, declaration_type, updated_at desc)
-unique customs_declarations(tenant_id, idempotency_key) where idempotency_key is not null
+customs_xml_jobs(tenant_id, id)
+customs_xml_jobs(tenant_id, shipment_id)
+customs_xml_jobs(tenant_id, declaration_type, updated_at desc)
+unique customs_xml_jobs(tenant_id, idempotency_key) where idempotency_key is not null
 ```
 
 Route jobs:

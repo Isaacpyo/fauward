@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { authenticatePlatformSession } from '../../middleware/authenticate-platform-session.js';
 import { requireFreshPlatformMfa } from '../../middleware/require-fresh-platform-mfa.js';
 import { requirePlatformCsrf } from '../../middleware/require-platform-csrf.js';
-import { computePlatformAuditHash } from '../../services/platform-audit.service.js';
+import { auditRowFromWriteInput, computeAuditRowHash } from '@fauward/internal-audit';
 import { redactPlatformLogValue } from '../../services/platform-redaction.service.js';
 import { setPlatformCsrfCookies } from '../../services/platform-session.service.js';
 
@@ -116,9 +116,9 @@ describe('console security primitives', () => {
   });
 
   it('computes tamper-evident audit hashes from stable fields and previous hash', () => {
-    const fields = { actorId: 'platform-user-1', action: 'TENANT_SUSPENSION', metadata: { tenantId: 'tenant-1' } };
-    const first = computePlatformAuditHash(fields, null);
-    const second = computePlatformAuditHash(fields, first);
+    const row = auditRowFromWriteInput({ actor_id: 'platform-user-1', actor_role: 'TRUST_ANALYST', action: 'TENANT_SUSPENSION', target_type: 'tenant', target_id: 'tenant-1', before: null, after: null, reason: null, ip_address: '', session_id: 's1', jit_session_id: null });
+    const first = computeAuditRowHash(null, row);
+    const second = computeAuditRowHash(first, row);
     expect(first).toHaveLength(64);
     expect(second).toHaveLength(64);
     expect(second).not.toBe(first);

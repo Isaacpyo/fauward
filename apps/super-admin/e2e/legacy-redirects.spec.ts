@@ -20,8 +20,8 @@ const redirects = [
   { from: '/admin/revenue', to: '/revenue/analytics' },
   { from: '/admin/system', to: '/platform/health' },
   { from: '/admin/queues', to: '/platform/queues' },
-  { from: '/admin/relay', to: '/customer/support' },
-  { from: '/admin/support-audit', to: '/customer/support' },
+  { from: '/admin/relay', to: '/customer/support/relay' },
+  { from: '/admin/support-audit', to: '/customer/support/relay/feedback' },
   { from: '/admin/logs', to: '/trust/audit' },
   { from: '/admin/impersonation', to: '/platform/impersonation' },
   { from: '/admin/anything-else', to: '/' }

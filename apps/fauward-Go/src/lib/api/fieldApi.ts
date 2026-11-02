@@ -473,17 +473,18 @@ export const fieldApi = {
     };
   },
 
-  async requestEmailLink(email: string) {
-    return apiRequest<{ linkToken?: string; tenantSlug?: string }>("/api/v1/auth/email-link/request", {
+  // The backend emails the sign-in link and answers the same whether or not the account exists (C61).
+  async requestEmailLink(email: string): Promise<void> {
+    await apiRequest<unknown>("/api/v1/auth/email-link/request", {
       method: "POST",
       body: { email },
     });
   },
 
-  async consumeEmailLink(email: string, token?: string) {
+  async consumeEmailLink(email: string, token: string) {
     const payload = await apiRequest<unknown>("/api/v1/auth/email-link/consume", {
       method: "POST",
-      body: token ? { email, token } : { email },
+      body: { email, token },
     });
 
     const source = isRecord(payload) ? payload : {};

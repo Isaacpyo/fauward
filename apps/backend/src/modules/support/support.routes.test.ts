@@ -25,7 +25,7 @@ const OPEN_TICKET = {
   status: 'OPEN', assignedTo: null, customerId: 'user-customer-1', shipmentId: null
 };
 
-const STAFF_MESSAGE = { id: 'msg-1', ticketId: 'ticket-1', authorId: 'user-staff-1', body: 'We are investigating', isInternal: false };
+const STAFF_MESSAGE = { id: 'msg-1', ticketId: 'ticket-1', authorId: 'user-staff-1', body: 'We are investigating', visibility: 'PUBLIC' };
 // -----------------------------------------------------------------------------
 // App builder
 // -----------------------------------------------------------------------------
@@ -191,7 +191,8 @@ describe('POST /api/v1/support/tickets/:id/messages', () => {
 
     expect(res.statusCode).toBe(201);
     const messageData = ctx.prisma.ticketMessage.create.mock.calls[0][0].data;
-    expect(messageData).toMatchObject({ visibility: 'PUBLIC', authorType: 'TENANT_USER', isInternal: false });
+    expect(messageData).toMatchObject({ visibility: 'PUBLIC', authorType: 'TENANT_USER' });
+    expect(messageData).not.toHaveProperty('isInternal');
     // ACC-SUP-4: the ticket's lastMessageAt moves with every message.
     expect(ctx.prisma.supportTicket.update.mock.calls[0][0].data).toMatchObject({ lastMessageAuthorType: 'TENANT_USER' });
     expect(createInAppNotifications).toHaveBeenCalledWith(
@@ -218,7 +219,8 @@ describe('POST /api/v1/support/tickets/:id/messages', () => {
 
     expect(res.statusCode).toBe(201);
     const messageData = ctx.prisma.ticketMessage.create.mock.calls[0][0].data;
-    expect(messageData).toMatchObject({ visibility: 'TENANT_INTERNAL', isInternal: true });
+    expect(messageData).toMatchObject({ visibility: 'TENANT_INTERNAL' });
+    expect(messageData).not.toHaveProperty('fromSA');
     // Internal notes must not notify the customer
     expect(notifMock).not.toHaveBeenCalled();
   });

@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 // ACC-LEG-3 gate (WP-1.6): the module graph reachable from src/main.tsx — i.e. what Vite bundles — contains none of the
-// deleted legacy admin modules, and the relay pages stay unrouted until WP-4.R.
+// deleted legacy admin modules; the Relay pages (routed since WP-4.R) talk to the console API only.
 
 const SRC = path.resolve(__dirname, "..");
 const EXTENSIONS = [".tsx", ".ts", "/index.tsx", "/index.ts"];
@@ -25,7 +25,7 @@ const DELETED = [
   "lib/api",
   "lib/internal-api"
 ];
-const UNROUTED_UNTIL_WP_4_R = "pillars/customer/support/relay/";
+const RELAY_PAGES = "pillars/customer/support/relay/";
 
 function resolveImport(from: string, specifier: string): string | null {
   let base: string;
@@ -74,9 +74,14 @@ describe("legacy admin is not in the console bundle (ACC-LEG-3)", () => {
     for (const file of DELETED) expect(EXTENSIONS.some((extension) => fs.existsSync(path.join(SRC, file + extension)))).toBe(false);
   });
 
-  it("ACC-LEG-3 relay pages are kept but unrouted until WP-4.R", () => {
-    expect(fs.existsSync(path.join(SRC, UNROUTED_UNTIL_WP_4_R, "RelayPage.tsx"))).toBe(true);
-    expect(graph.filter((file) => file.startsWith(UNROUTED_UNTIL_WP_4_R))).toEqual([]);
+  it("ACC-L2-1 the routed Relay pages use the console API, never @fauward/relay-ui (whose client reads a localStorage token)", () => {
+    expect(graph).toContain(`${RELAY_PAGES}RelayPages`);
+    for (const file of graph.filter((item) => item.startsWith(RELAY_PAGES))) {
+      const source = fs.readFileSync(path.join(SRC, `${file}.tsx`), "utf8");
+      expect(source, file).not.toContain("@fauward/relay-ui");
+      expect(source, file).not.toMatch(/localStorage\.(getItem|setItem)/);
+    }
+    expect(graph.some((file) => fs.existsSync(path.join(SRC, `${file}.tsx`)) && fs.readFileSync(path.join(SRC, `${file}.tsx`), "utf8").includes("@fauward/relay-ui"))).toBe(false);
   });
 
   it("ACC-LEG-3 no reachable module defines the legacy AdminLayout", () => {

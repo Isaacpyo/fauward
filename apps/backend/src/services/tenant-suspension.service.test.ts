@@ -4,7 +4,7 @@ const sendEmailMock = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('../modules/notifications/notifications.service.js', () => ({ sendEmail: sendEmailMock }));
 
 const { liftSuspension, suspendTenant, SuspensionError } = await import('./tenant-suspension.service.js');
-const { handleDunningEvent, handleDunningPaid } = await import('../modules/payments/billing.service.js');
+const { handleDunningPaid } = await import('../modules/payments/billing.service.js');
 
 type Row = Record<string, unknown> & { id: string };
 
@@ -72,6 +72,8 @@ function createWorld(tenantOverrides: Record<string, unknown> = {}) {
         return row;
       })
     },
+    // WP-4.5: invoice.paid also recovers the invoice's dunning enrolment (none in this world).
+    dunningEnrollment: { findMany: vi.fn(async () => []) },
     dunningEvent: {
       findFirst: vi.fn(async ({ where }: { where: { tenantId: string; eventType: string; attempt: number; metadata: { equals: string } } }) =>
         dunningEvents.find((row) => row.tenantId === where.tenantId && row.eventType === where.eventType && row.attempt === where.attempt && (row.metadata as { invoiceRef?: string }).invoiceRef === where.metadata.equals) ?? null
@@ -156,10 +158,13 @@ describe('TenantSuspensionService (D3)', () => {
     expect(world.inApp.filter((row) => row.type === 'tenant.unsuspended')).toHaveLength(2);
   });
 
-  it('ACC-SUS-2 Stripe attempt 2 opens a DUNNING cause for the invoice once; invoice.paid for that invoice lifts it via PAYMENT', async () => {
+  it('ACC-SUS-2 the dunning SUSPEND step opens one DUNNING cause per invoice; invoice.paid for that invoice lifts it via PAYMENT', async () => {
+    // WP-4.5: the cause is opened by the sequence's SUSPEND step (dunning.service performStep), keyed by the invoice; a
+    // Stripe failure on its own no longer suspends (covered with real Postgres in dunning.test.ts, ACC-DUN-3).
     const world = createWorld();
-    await handleDunningEvent(world.app, { tenantId: 't_1', attempt: 2, invoiceRef: 'in_stripe_1' });
-    await handleDunningEvent(world.app, { tenantId: 't_1', attempt: 2, invoiceRef: 'in_stripe_1' }); // webhook retry
+    const step = { tenantId: 't_1', source: 'DUNNING' as const, category: 'BILLING' as const, reason: 'Dunning: invoice in_stripe_1 unpaid after 14 days', actor: { type: 'SYSTEM' as const, label: 'Dunning sequence' }, sourceRef: 'in_stripe_1' };
+    await suspendTenant(world.app, step);
+    await suspendTenant(world.app, step); // a re-run step
     expect(world.records).toHaveLength(1);
     expect(world.records[0]).toMatchObject({ source: 'DUNNING', category: 'BILLING', sourceRef: 'in_stripe_1', status: 'ACTIVE', suspendedBy: 'system' });
     expect(world.tenants.get('t_1')!.status).toBe('SUSPENDED');

@@ -227,7 +227,7 @@ export async function registerConsoleSupportRoutes(app: FastifyInstance) {
         lastMessageAt: now,
         lastMessageAuthorType: 'STAFF',
         firstResponseAt: now,
-        messages: { create: { tenantId: tenant.id, authorType: 'STAFF', platformAuthorId: request.platform!.user.id, visibility: 'PUBLIC', fromSA: true, body: input.body, createdAt: now } }
+        messages: { create: { tenantId: tenant.id, authorType: 'STAFF', platformAuthorId: request.platform!.user.id, visibility: 'PUBLIC', body: input.body, createdAt: now } }
       }
     });
     await writeInternalAudit(request, 'support.ticket.create', 'support_ticket', ticket.id, null, { ticketNumber, subject: ticket.subject }, null, { targetTenantId: tenant.id });
