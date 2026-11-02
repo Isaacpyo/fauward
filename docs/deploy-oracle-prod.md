@@ -2,6 +2,17 @@
 
 Railway is gone. The backend, Python services and route optimizer run as one Docker Compose project, `fauward-prod`, on the Oracle VM. A Cloudflare Tunnel publishes `api.fauward.com`. The frontends stay on Vercel and the database stays on Supabase.
 
+## Current state (2 November 2026)
+
+- **Live release:** `fe46a1ef95b7` (master `fe46a1e`, console Phases 0–5), deployed 22 October 2026. Every migration up to `0081_legal_hold_global` is applied, and all eight backfills have run. 0037 found no TOTP secrets to encrypt.
+- **Frontends:** they call `https://api.fauward.com`. The tenant portals (app and demo) and status-dashboard were switched with `scripts/ops/vercel-switch-api.sh`, see "Vercel settings" below. fauward.com proxies `/api/v1` to it through `BACKEND_URL`.
+- **The console (admin.fauward.com) calls `api.fauward.com` directly.** It does not go through its `vercel.json` rewrite, which only previews still use. As a result, Cloudflare's `CF-Connecting-IP` is the staff member's own address, and login records and IP blocks act on it.
+- **Still to do by the owner:**
+  - `install-cron` (daily backups);
+  - the Stripe webhook URL, with the `charge.dispute.*` events and its new signing secret;
+  - delete the Railway project;
+  - link the first nightly `trust.audit-chain-verify` run on PR #37.
+
 ```
 Vercel (www, app, admin, status) ──HTTPS──▶ api.fauward.com ──Cloudflare Tunnel──▶ cloudflared ─▶ backend:3001
                                                                                         │
@@ -55,12 +66,13 @@ Docker's data root is `/data/docker` on the second disk (100 GB), so images and 
    - fauward-Go (if deployed separately): `VITE_API_BASE_URL=https://api.fauward.com`. The emailed sign-in link opens Fauward Go at `FAUWARD_GO_URL` (default `https://fauward.com/go`); set it in `backend.env` if Fauward Go lives elsewhere.
    - status-dashboard: `BACKEND_URL=https://api.fauward.com`
    - super-admin needs no variable change: its `vercel.json` rewrites go to `https://api.fauward.com` once this branch is merged. Merge the PR now (not earlier: before the tunnel is up those rewrites point at nothing), and Vercel redeploys it from `master`.
-6. **Point the inbound webhooks at the new host.** In Stripe, open Developers, then Webhooks, and change the endpoint to `https://api.fauward.com/api/v1/payments/webhook/stripe`. Put its new signing secret in `backend.env` as `STRIPE_WEBHOOK_SECRET`, then run `bash scripts/prod-vm.sh restart backend`. Do the same for any PagerDuty, Persona, ComplyAdvantage or DocuSign webhook you use (`/api/internal/.../webhooks/...`).
+   - Or let `scripts/ops/vercel-switch-api.sh` do the tenant-portal and status-dashboard changes from the VM (see "Vercel settings").
+6. **Point the inbound webhooks at the new host.** In Stripe, open Developers, then Webhooks, and change the endpoint to `https://api.fauward.com/api/v1/payments/webhook/stripe`. Subscribe it to the `charge.dispute.*` events as well (console disputes, WP-4.6). Put its new signing secret in `backend.env` as `STRIPE_WEBHOOK_SECRET`, then run `bash scripts/prod-vm.sh restart backend`. Do the same for any PagerDuty, Persona, ComplyAdvantage or DocuSign webhook you use (`/api/internal/.../webhooks/...`).
 7. **Cutover backfills**, straight after steps 5 and 6, in this order (0059 reads the gateways 0055 creates):
    - `bash scripts/prod-vm.sh backfill 0037 --yes` encrypts console TOTP secrets. The new backend also accepts the old plaintext ones and encrypts each at its next sign-in.
    - `bash scripts/prod-vm.sh backfill 0055 --yes` moves tenant gateway keys into encrypted `TenantPaymentGateway` rows and encrypts tenant webhook secrets. The new backend reads gateways only from those rows, so tenants cannot take payments until this has run.
    - `bash scripts/prod-vm.sh backfill 0059 --yes` re-derives onboarding steps from real data.
-   - Later, once tenant payments are confirmed working on the new backend, clear the old plaintext keys: `backfill 0055 --dry-run --clear-legacy`, then `backfill 0055 --yes --clear-legacy`.
+   - The old plaintext gateway keys no longer need clearing by hand. Migration `0079_drop_dead_models` drops `tenant_settings.paymentGatewayKey`. Run `backfill 0079 --dry-run` (its pre-check) first: `legacyNotBackfilled` must be 0 for both counts before you migrate.
 8. **Backups.** Run `bash scripts/prod-vm.sh backup` once to check it works, then `bash scripts/prod-vm.sh install-cron` to run it daily at 03:30 UTC. If `pg_dump` cannot connect, the direct Supabase host is probably IPv6-only. Set `DIRECT_URL` to the **Session pooler** connection string (Supabase, Connect, Session pooler, port 5432), which works over IPv4.
 9. **Shut down Railway.** Once `https://api.fauward.com/health` answers, delete the Railway project so nothing tries to bill or deploy there.
 
@@ -109,6 +121,16 @@ FOLLOW=1 bash scripts/prod-vm.sh logs backend cloudflared
 Services: `backend`, `python-api`, `python-worker`, `python-beat`, `route-optimizer`, `redis`, `cloudflared`. Docker keeps 3 × 10 MB of logs per container.
 
 ## Things to know
+
+- **Vercel settings.** The backend's `VERCEL_API_TOKEN` must be a token from the account that owns the Fauward projects (team `vitalos-projects`). `VERCEL_TEAM_ID` must be that team's id, which starts `team_`, not its name. Tenant custom domains depend on both. `scripts/ops/vercel-switch-api.sh` runs on the VM with that token. It plans by default, and `--yes` updates the env vars and redeploys:
+  `curl -fsSL https://raw.githubusercontent.com/Isaacpyo/fauward/master/scripts/ops/vercel-switch-api.sh | ssh oracle-vm 'bash -s'`
+- **IP blocks (Phase 5).**
+  - Blocks are enforced on every request, scoped CONSOLE, TENANT_API or ALL.
+  - More than 5 failed staff logins from one address in 10 minutes blocks that address for 24 hours.
+  - Put the office or VPN ranges in `IP_BLOCK_BYPASS_CIDRS` (`backend.env`) so they are never blocked.
+- **Do not turn on `ADMIN_HARDENING_PHASE_1`.** Only `api.fauward.com` is published through the tunnel, and the console calls it directly, so every console request arrives with `Host: api.fauward.com`. The guard would answer 404 to all of them. Change the guard (allow `/api/internal` on the API host, or limit it to `/admin`) before enabling it.
+- **Audit chain.** The nightly `trust.audit-chain-verify` job checks the chain and raises a CRITICAL activity and a staff notification on a break. Trust → Audit → Verify now runs the same check on demand.
+- **Command output.** `prod-vm.sh` runs ssh quietly and turns off npm's update notice, so the last line of each command is its result (`backup:`, `All migrations have been successfully applied.`, `release … is live`).
 
 - **The VM is shared.** It also runs the dev slots (`scripts/vm-slot.sh`), TipSignal and vitalos-platform. Each production container has a memory limit, about 5 GB in total. If the VM runs short of memory, stop idle dev slots first.
 - **Idle reclamation.** Oracle can reclaim an Always Free instance whose CPU, network and memory all stay under 20% for 7 days. This VM's memory use is far above that, but upgrading the Oracle account to Pay As You Go removes the risk. Usage within the Always Free limits stays free.

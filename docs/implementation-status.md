@@ -4,6 +4,12 @@
 
 **Last verified:** 2026-05-18
 
+> **October 2026: console rebuild and production move (complete).**
+> - The Fauward console (`apps/super-admin` plus `/api/internal`) was rebuilt in Phases 0–5. The specs are `docs/console-spec/10-…` to `15-…`, and the PRs are #22–#37.
+> - Production moved from Railway to the Oracle VM. See `docs/deploy-oracle-prod.md`.
+> - Release `fe46a1e` (all phases) has been live since 22 Oct 2026.
+> - Open owner items are listed under "Current state" in that runbook.
+
 ---
 
 ## Summary
